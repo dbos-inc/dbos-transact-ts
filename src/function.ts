@@ -12,7 +12,6 @@ export type RegisteredFunction<T extends any[], R> = (ctxt: WorkflowContext, ...
 export function registerFunction<T extends any[], R>(fn: OperonFunction<T, R>): RegisteredFunction<T, R> {
   return function (ctxt: WorkflowContext, ...args: T): R {
     // Here you can add logic before the function call
-    console.log("Before function call");
 
     const fCtxt: FunctionContext = {
       helloFunction: ctxt.helloWorkflow
@@ -22,7 +21,6 @@ export function registerFunction<T extends any[], R>(fn: OperonFunction<T, R>): 
     const result: R = fn(fCtxt, ...args);
   
     // Add logic after the function call
-    console.log("After function call");
   
     // Return the result of the function call
     return result;

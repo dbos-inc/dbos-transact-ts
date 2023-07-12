@@ -4,10 +4,8 @@ export interface Operon {
 }
 
 // Create operon object with helloWorld function
-const operon: Operon = {
+export const operon: Operon = {
   helloWorld: function() {
-    console.log('Hello, world!');
+    console.log('[Operon] Hello, world!');
   }
 };
-
-export default operon;
