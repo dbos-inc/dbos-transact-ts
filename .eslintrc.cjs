@@ -11,6 +11,7 @@ module.exports = {
       tsconfigRootDir: __dirname,
     },
     root: true,
+    ignorePatterns: ['dist/'],
     overrides: [
       {
         files: ['*.js'],
@@ -18,7 +19,7 @@ module.exports = {
       },
     ],
     rules: {
-      'indent': ['error', 2]
+      'indent': ['error', 2],
     },
     "env": {
       "node": true
