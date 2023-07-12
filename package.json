@@ -6,6 +6,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "eslint --ext .ts ."
+    "lint": "eslint --ext .ts src --fix"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.0.0"
   }
 }
