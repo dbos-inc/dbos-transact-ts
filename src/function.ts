@@ -33,7 +33,7 @@ export function registerFunction<T extends any[], R>(fn: OperonFunction<T, R>): 
     await client.query("BEGIN");
     const result: R = await fn(fCtxt, ...args);
 
-    if(!fCtxt.isAborted) {
+    if(!fCtxt.isAborted()) {
       await client.query("COMMIT");
       client.release();
     }
