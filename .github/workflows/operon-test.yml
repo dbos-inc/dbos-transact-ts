@@ -1,0 +1,46 @@
+name: Build and Test Operon
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Service container for Postgres
+    services:
+      # Label used to access the service container.
+      bank-db:
+        image: postgres
+        env:
+          # Specify the password for Postgres superuser.
+          POSTGRES_PASSWORD: dbos
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+  
+    steps:
+      - uses: actions/checkout@v3
+      - name: Use Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Compile and Test
+        working-directory: ./
+        run: |
+          npm install .
+          npm run lint
+          npm run build
+          npm test
+        env:
+          DB_PASSWORD: dbos
