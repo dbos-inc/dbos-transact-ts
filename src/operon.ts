@@ -1,11 +1,6 @@
-// Declare Operon interface
-export interface Operon {
-  helloWorld: () => void;
-}
-
 // Create operon object with helloWorld function
-export const operon: Operon = {
-  helloWorld: function() {
+export class Operon {
+  helloWorld() {
     console.log('[Operon] Hello, world!');
   }
-};
+}
