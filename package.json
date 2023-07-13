@@ -9,6 +9,10 @@
     "lint": "eslint --ext .ts ."
   },
   "devDependencies": {
+    "@types/pg": "^8.10.2",
     "@typescript-eslint/eslint-plugin": "^6.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.11.1"
   }
 }

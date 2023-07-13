@@ -1,6 +1,8 @@
-// Create operon object with helloWorld function
+import { Pool, PoolConfig } from 'pg';
+
 export class Operon {
-  helloWorld() {
-    console.log('[Operon] Hello, world!');
+  pool: Pool;
+  constructor(config: PoolConfig) {
+    this.pool = new Pool(config)
   }
 }
