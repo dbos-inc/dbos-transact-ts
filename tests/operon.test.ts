@@ -2,8 +2,8 @@
 
 import { Operon, FunctionContext, registerFunction,registerWorkflow, WorkflowContext } from "src/";
 
-describe('testing operon', () => {
-  test('should run a simple workflow', async() => {
+describe('operon-tests', () => {
+  test('simple-function', async() => {
     const username = process.env.DB_USER || 'postgres';
     const operon: Operon = new Operon({
       user: username,
@@ -29,7 +29,7 @@ describe('testing operon', () => {
   });
 
 
-  test('tight loop function calls', async() => {
+  test('tight-loop', async() => {
     const username = process.env.DB_USER || 'postgres';
     const operon: Operon = new Operon({
       user: username,
@@ -58,7 +58,7 @@ describe('testing operon', () => {
   });
   
 
-  test('should abort function properly', async() => {
+  test('abort-function', async() => {
     const username = process.env.DB_USER || 'postgres';
     const operon: Operon = new Operon({
       user: username,
