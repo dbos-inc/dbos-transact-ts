@@ -96,6 +96,9 @@ describe('operon-tests', () => {
   test('oaoo-simple', async() => {
     const testFunction = registerFunction(async (functionCtxt: FunctionContext, name: string) => {
       const { rows }= await functionCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      if (name === "fail") {
+        await functionCtxt.rollback();
+      }
       return Number(rows[0].id);
     });
 
@@ -115,15 +118,22 @@ describe('operon-tests', () => {
       return checkResult;
     });
 
+    let workflowResult: number;
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await testWorkflow(operon, {idempotencyKey: "testkey" + String(i)}, username);
+      workflowResult = await testWorkflow(operon, {idempotencyKey: "testkey" + String(i)}, username);
       expect(workflowResult).toEqual(i + 1);
     }
+    // Should not appear in the database.
+    workflowResult = await testWorkflow(operon, {idempotencyKey: "testfail"}, "fail");
+    expect(workflowResult).toEqual(-1);
 
     // Rerun with the same idempotency key should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowResult: number = await testWorkflow(operon, {idempotencyKey: "testkey" + String(i)}, username);
       expect(workflowResult).toEqual(i + 1);
     }
+    // Given the same idempotency key but different input, should return the original execution.
+    workflowResult = await testWorkflow(operon, {idempotencyKey: "testfail"}, "hello");
+    expect(workflowResult).toEqual(-1);
   });
 });
