@@ -23,8 +23,6 @@ export class FunctionContext {
   isAborted() : boolean {
     return this.#functionAborted;
   }
-
-
 }
 
 export type OperonFunction<T extends any[], R> = (ctxt: FunctionContext, ...args: T) => Promise<R>;
@@ -52,16 +50,18 @@ export function registerFunction<T extends any[], R>(fn: OperonFunction<T, R>): 
 
     await client.query("BEGIN");
 
+    // Check if this execution previously happened, returning its original result if it did.
     const check: R | null = await checkExecution();
-
     if (check !== null) {
       await client.query("ROLLBACK");
       client.release();
       return check; 
     }
 
+    // Execute the function.
     const result: R = await fn(fCtxt, ...args);
 
+    // Record the execution, commit, and return.
     if(fCtxt.isAborted()) {
       client = await ctxt.pool.connect();
     }

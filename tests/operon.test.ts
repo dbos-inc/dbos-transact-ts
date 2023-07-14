@@ -51,7 +51,7 @@ describe('operon-tests', () => {
     });
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await testWorkflow(operon, {idempotencyKey: String(i)}, username);
+      const workflowResult: string = await testWorkflow(operon, {}, username);
       expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     }
   });
@@ -83,7 +83,7 @@ describe('operon-tests', () => {
     });
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await testWorkflow(operon, {idempotencyKey: String(i)}, username);
+      const workflowResult: number = await testWorkflow(operon, {}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     
