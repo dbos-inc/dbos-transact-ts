@@ -2,10 +2,9 @@
 
 import { Operon, FunctionContext, registerFunction,registerWorkflow, WorkflowContext } from "src/";
 
-let operon: Operon;
-const username: string = process.env.DB_USER || 'postgres';
-
 describe('operon-tests', () => {
+  let operon: Operon;
+  const username: string = process.env.DB_USER || 'postgres';
 
   beforeEach(async () => {
     operon = new Operon({
