@@ -1,5 +1,11 @@
 import { Pool, PoolConfig } from 'pg';
 
+export interface operon__FunctionOutputs {
+    workflow_id: string;
+    function_id: number;
+    output: string;
+}
+
 export class Operon {
   pool: Pool;
   constructor(config: PoolConfig) {
