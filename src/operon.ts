@@ -1,11 +1,8 @@
-// Declare Operon interface
-export interface Operon {
-  helloWorld: () => void;
-}
+import { Pool, PoolConfig } from 'pg';
 
-// Create operon object with helloWorld function
-export const operon: Operon = {
-  helloWorld: function() {
-    console.log('[Operon] Hello, world!');
+export class Operon {
+  pool: Pool;
+  constructor(config: PoolConfig) {
+    this.pool = new Pool(config)
   }
-};
+}
