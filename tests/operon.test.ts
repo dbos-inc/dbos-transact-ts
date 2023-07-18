@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
 import { Operon, FunctionContext, registerFunction,registerWorkflow, WorkflowContext } from "src/";
+import { v1 as uuidv1 } from 'uuid';
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -119,21 +120,26 @@ describe('operon-tests', () => {
     });
 
     let workflowResult: number;
+    const uuidArray: string[] = [];
     for (let i = 0; i < 10; i++) {
-      workflowResult = await testWorkflow(operon, {idempotencyKey: "testkey" + String(i)}, username);
+      const idemKey: string = uuidv1();
+      uuidArray.push(idemKey);
+      workflowResult = await testWorkflow(operon, {idempotencyKey: idemKey}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Should not appear in the database.
-    workflowResult = await testWorkflow(operon, {idempotencyKey: "testfail"}, "fail");
+    const idemKeyFail: string = uuidv1();
+    workflowResult = await testWorkflow(operon, {idempotencyKey: idemKeyFail}, "fail");
     expect(workflowResult).toEqual(-1);
 
     // Rerun with the same idempotency key should return the same output.
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await testWorkflow(operon, {idempotencyKey: "testkey" + String(i)}, username);
+      const idemKey: string = uuidArray[i];
+      const workflowResult: number = await testWorkflow(operon, {idempotencyKey: idemKey}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Given the same idempotency key but different input, should return the original execution.
-    workflowResult = await testWorkflow(operon, {idempotencyKey: "testfail"}, "hello");
+    workflowResult = await testWorkflow(operon, {idempotencyKey: idemKeyFail}, "hello");
     expect(workflowResult).toEqual(-1);
   });
 });

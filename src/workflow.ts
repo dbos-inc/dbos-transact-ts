@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, operon__FunctionOutputs, operon__IdempotencyKeys } from './operon';
+import { Operon, operon__FunctionOutputs } from './operon';
 import { Pool } from 'pg';
+import { v1 as uuidv1 } from 'uuid';
 
 export interface WorkflowParams {
   idempotencyKey?: string;
@@ -22,9 +23,8 @@ export class WorkflowContext {
   }
 }
 
-async function generateIdempotencyKey(ctxt: Operon): Promise<string> {
-  const { rows } = await ctxt.pool.query<operon__IdempotencyKeys>("SELECT nextval('operon__IdempotencyKeys') as idempotency_key;");
-  return String(rows[0].idempotency_key);
+function generateIdempotencyKey(): string {
+  return uuidv1();
 }
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -57,7 +57,7 @@ export function registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>): 
       return retInput;
     }
 
-    const workflowID: string = params.idempotencyKey ? "o" + params.idempotencyKey : await generateIdempotencyKey(ctxt);
+    const workflowID: string = params.idempotencyKey ? params.idempotencyKey : generateIdempotencyKey();
     const wCtxt: WorkflowContext = new WorkflowContext(ctxt.pool, workflowID);
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
