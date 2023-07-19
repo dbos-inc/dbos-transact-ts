@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, operon__FunctionOutputs } from './operon';
+import { operon__FunctionOutputs } from './operon';
 import { Pool, PoolClient } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 
