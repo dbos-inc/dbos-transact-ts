@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
-import { Operon, FunctionContext, registerFunction,registerWorkflow, WorkflowContext } from "src/";
+import { Operon,registerWorkflow, WorkflowContext, TransactionContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 
 describe('operon-tests', () => {
@@ -24,13 +24,13 @@ describe('operon-tests', () => {
 
 
   test('simple-function', async() => {
-    const testFunction = registerFunction(async (functionCtxt: FunctionContext, name: string) => {
-      const { rows } = await functionCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
-    });
+    };
 
     const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await testFunction(workflowCtxt, name);
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     });
 
@@ -41,13 +41,13 @@ describe('operon-tests', () => {
 
 
   test('tight-loop', async() => {
-    const testFunction = registerFunction(async (functionCtxt: FunctionContext, name: string) => {
-      const { rows }= await functionCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
-    });
+    };
 
     const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await testFunction(workflowCtxt, name);
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     });
 
@@ -59,27 +59,27 @@ describe('operon-tests', () => {
   
 
   test('abort-function', async() => {
-    const testFunction = registerFunction(async (functionCtxt: FunctionContext, name: string) => {
-      const { rows }= await functionCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
-        await functionCtxt.rollback();
+        await txnCtxt.rollback();
       }
       return Number(rows[0].id);
-    });
+    };
 
-    const testFunctionRead = registerFunction(async (functionCtxt: FunctionContext, id: number) => {
-      const { rows }= await functionCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+    const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
+      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
         // Cannot find, return a negative number.
         return -1;
       }
-    });
+    };
 
     const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: number = await testFunction(workflowCtxt, name);
-      const checkResult: number = await testFunctionRead(workflowCtxt, funcResult);
+      const funcResult: number = await workflowCtxt.transaction(testFunction, name);
+      const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     });
 
@@ -95,27 +95,27 @@ describe('operon-tests', () => {
 
 
   test('oaoo-simple', async() => {
-    const testFunction = registerFunction(async (functionCtxt: FunctionContext, name: string) => {
-      const { rows }= await functionCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
-        await functionCtxt.rollback();
+        await txnCtxt.rollback();
       }
       return Number(rows[0].id);
-    });
+    };
 
-    const testFunctionRead = registerFunction(async (functionCtxt: FunctionContext, id: number) => {
-      const { rows }= await functionCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+    const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
+      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
         // Cannot find, return a negative number.
         return -1;
       }
-    });
+    };
 
     const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: number = await testFunction(workflowCtxt, name);
-      const checkResult: number = await testFunctionRead(workflowCtxt, funcResult);
+      const funcResult: number = await workflowCtxt.transaction(testFunction, name);
+      const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     });
 
