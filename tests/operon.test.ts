@@ -145,6 +145,7 @@ describe('operon-tests', () => {
     expect(workflowResult).toEqual(-1);
   });
 
+  
   test('simple-communicator', async() => {
     const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
       const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
@@ -156,8 +157,8 @@ describe('operon-tests', () => {
     };
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await workflowCtxt.external(testCommunicator, name);
-      return funcResult;
+      const funcResult = await workflowCtxt.external(testCommunicator, {}, name);
+      return funcResult ?? "error";
     };
 
     const idemKey: string = uuidv1();
