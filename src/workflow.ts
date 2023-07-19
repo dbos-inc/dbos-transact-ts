@@ -36,9 +36,9 @@ export class WorkflowContext {
         return JSON.parse(rows[0].output) as R;
       }
     }
-    
+
     const recordExecution = async (output: R) => {
-      await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)", 
+      await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
         [this.workflowID, fCtxt.functionID, JSON.stringify(output)]);
     }
 
@@ -49,7 +49,7 @@ export class WorkflowContext {
     if (check !== null) {
       await client.query("ROLLBACK");
       client.release();
-      return check; 
+      return check;
     }
 
     // Execute the function.
