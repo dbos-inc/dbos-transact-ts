@@ -2,7 +2,7 @@
 import { Operon, operon__FunctionOutputs } from './operon';
 import { Pool, PoolClient } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
-import { OperonTransaction, TransactionContext } from './function';
+import { OperonTransaction, TransactionContext } from './transaction';
 
 export interface WorkflowParams {
   idempotencyKey?: string;
