@@ -145,7 +145,7 @@ describe('operon-tests', () => {
     expect(workflowResult).toEqual(-1);
   });
 
-  
+
   test('simple-communicator', async() => {
     const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
       const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
@@ -170,4 +170,33 @@ describe('operon-tests', () => {
     result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
     expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
   });
+
+
+test('failing-communicator', async() => {
+
+  const remoteState = {
+    num: 0
+  }
+
+  const testCommunicator = async (ctxt: CommunicatorContext) => {
+    remoteState.num += 1;
+    if (remoteState.num != 4) {
+      throw new Error("bad number");
+    }
+    return remoteState.num;
+  };
+
+  const testWorkflow = async (ctxt: WorkflowContext) => {
+    return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
+  };
+
+  const idemKey: string = uuidv1();
+
+  let result = await operon.workflow(testWorkflow, {});
+  expect(result).toEqual(4);
+
+  result = await operon.workflow(testWorkflow, {});
+  expect(result).toBeNull;
 });
+});
+

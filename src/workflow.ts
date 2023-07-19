@@ -94,8 +94,10 @@ export class WorkflowContext {
     // Execute the communicator function.
     let result: R | null = null;
     
-    if (!params.retriesAllowed) {
-      result = await commFn(ctxt, ...args);
+    if (!ctxt.retriesAllowed) {
+      try {
+        result = await commFn(ctxt, ...args);
+      } catch (error) {}
     } else {
       let numAttempts = 0;
       let intervalSeconds = ctxt.intervalSeconds;
