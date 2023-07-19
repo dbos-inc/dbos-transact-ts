@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from 'pg';
 
+export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
+
 export class TransactionContext {
   client: PoolClient;
 
@@ -22,5 +24,3 @@ export class TransactionContext {
     return this.#functionAborted;
   }
 }
-
-export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;

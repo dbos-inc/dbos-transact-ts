@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
-import { Operon,registerWorkflow, WorkflowContext, TransactionContext } from "src/";
+import { Operon, WorkflowContext, TransactionContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 
 describe('operon-tests', () => {
@@ -29,12 +29,12 @@ describe('operon-tests', () => {
       return JSON.stringify(rows[0]);
     };
 
-    const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
-    });
+    };
 
-    const workflowResult: string = await testWorkflow(operon, {}, username);
+    const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
 
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
   });
@@ -46,13 +46,13 @@ describe('operon-tests', () => {
       return JSON.stringify(rows[0]);
     };
 
-    const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
-    });
+    };
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await testWorkflow(operon, {}, username);
+      const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
       expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     }
   });
@@ -77,19 +77,19 @@ describe('operon-tests', () => {
       }
     };
 
-    const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, name);
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
-    });
+    };
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await testWorkflow(operon, {}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     
     // Should not appear in the database.
-    const workflowResult: number = await testWorkflow(operon, {}, "fail");
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -113,33 +113,33 @@ describe('operon-tests', () => {
       }
     };
 
-    const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, name);
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
-    });
+    };
 
     let workflowResult: number;
     const uuidArray: string[] = [];
     for (let i = 0; i < 10; i++) {
       const idemKey: string = uuidv1();
       uuidArray.push(idemKey);
-      workflowResult = await testWorkflow(operon, {idempotencyKey: idemKey}, username);
+      workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Should not appear in the database.
     const idemKeyFail: string = uuidv1();
-    workflowResult = await testWorkflow(operon, {idempotencyKey: idemKeyFail}, "fail");
+    workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKeyFail}, "fail");
     expect(workflowResult).toEqual(-1);
 
     // Rerun with the same idempotency key should return the same output.
     for (let i = 0; i < 10; i++) {
       const idemKey: string = uuidArray[i];
-      const workflowResult: number = await testWorkflow(operon, {idempotencyKey: idemKey}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Given the same idempotency key but different input, should return the original execution.
-    workflowResult = await testWorkflow(operon, {idempotencyKey: idemKeyFail}, "hello");
+    workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKeyFail}, "hello");
     expect(workflowResult).toEqual(-1);
   });
 });
