@@ -2,6 +2,7 @@
 import { operon__FunctionOutputs } from './operon';
 import { Pool, PoolClient } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
+import { OperonCommunicator, CommunicatorContext } from './communicator';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -63,6 +64,38 @@ export class WorkflowContext {
     await recordExecution(result);
     await client.query("COMMIT");
     client.release();
+    return result;
+  }
+
+  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
+    const commCtxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement());
+
+    const checkExecution = async () => {
+      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+        [this.workflowID, commCtxt.functionID]);
+      if (rows.length === 0) {
+        return null;
+      } else {
+        return JSON.parse(rows[0].output) as R;
+      }
+    }
+
+    const recordExecution = async (output: R) => {
+      await this.pool.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)", 
+        [this.workflowID, commCtxt.functionID, JSON.stringify(output)]);
+    }
+
+    // Check if this execution previously happened, returning its original result if it did.
+    const check: R | null = await checkExecution();
+    if (check !== null) {
+      return check; 
+    }
+
+    // Execute the communicator function.
+    const result: R = await commFn(commCtxt, ...args);
+
+    // Record the execution and return.
+    await recordExecution(result);
     return result;
   }
 }

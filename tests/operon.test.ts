@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext, registerCommunicator } from "src/";
+import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 
@@ -146,27 +146,27 @@ describe('operon-tests', () => {
   });
 
   test('simple-communicator', async() => {
-    const testCommunicator = registerCommunicator(async (commCtxt: CommunicatorContext, name: string) => {
+    const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
       const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
       const status: string = response1.statusText;
       const jsonObj: any = {};
       jsonObj[status] = name;
       const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', jsonObj);
       return JSON.stringify(response2.data);
-    });
+    };
 
-    const testWorkflow = registerWorkflow(async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await testCommunicator(workflowCtxt, name);
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.external(testCommunicator, name);
       return funcResult;
-    });
+    };
 
     const idemKey: string = uuidv1();
 
-    let result: string = await testWorkflow(operon, {idempotencyKey: idemKey}, 'qianl15');
+    let result: string = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'qianl15');
     expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
-    result = await testWorkflow(operon, {idempotencyKey: idemKey}, 'peter');
+    result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
     expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
   });
 });
