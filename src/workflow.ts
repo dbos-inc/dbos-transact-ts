@@ -91,9 +91,9 @@ export class WorkflowContext {
       return check; 
     }
 
-    // Execute the communicator function.
+    // Execute the communicator function.  If it throws an exception or returns null, retry with exponential backoff.
+    // After reaching the maximum number of retries, return null.
     let result: R | null = null;
-    
     if (!ctxt.retriesAllowed) {
       try {
         result = await commFn(ctxt, ...args);
@@ -112,7 +112,6 @@ export class WorkflowContext {
         }
       }
     }
-
 
     // Record the execution and return.
     await recordExecution(result);
