@@ -25,8 +25,22 @@ export class Operon {
     );
     await this.pool.query(`CREATE TABLE operon__Notifications (
       key VARCHAR(255) PRIMARY KEY,
-      message JSON NOT NULL
+      message TEXT NOT NULL
     );`)
+    await this.pool.query(`
+        CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
+        DECLARE
+        BEGIN
+            -- Publish a notification for all keys
+            PERFORM pg_notify('operon__NotificationsChannel', NEW.key::text);
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        CREATE TRIGGER operon__NotificationsTrigger
+        AFTER INSERT ON operon__Notifications
+        FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction();
+    `);
   }
 
   async resetOperonTables() {

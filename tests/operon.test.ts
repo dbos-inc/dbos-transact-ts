@@ -203,7 +203,7 @@ describe('operon-tests', () => {
   test('simple-notifications', async() => {
 
     const receiveWorkflow = async(ctxt: WorkflowContext) => {
-      const test = await ctxt.recv("test", 10) as number;
+      const test = await ctxt.recv("test", 2) as number;
       const fail = await ctxt.recv("fail", 0) as number | null;
       return test == 0 && fail == null;
     }

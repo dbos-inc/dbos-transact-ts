@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { operon__FunctionOutputs } from './operon';
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, Notification } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 
@@ -138,10 +138,41 @@ export class WorkflowContext {
       return check;
     }
 
-    // Poll the database once a second until the notification has been received or the timeout is reached.
-    // TODO: Do this less naively.  Use triggers maybe???
-    let elapsed = 0;
-    do {
+    // First, check if the key is in the database, returning it if it is:
+    await client.query(`BEGIN`);
+    const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+    if (rows.length > 0 ) {
+      const message = rows[0].message;
+      await this.recordExecution<any>(client, functionID, message);
+      await client.query(`COMMIT`);
+      client.release();
+      return message;
+    } else {
+      await client.query(`ROLLBACK`);
+    }
+
+    // Next, wait for a notification from the trigger.
+    await client.query('LISTEN operon__NotificationsChannel;');
+    const messagePromise = new Promise<string>((resolve) => {
+      const handler = (msg: Notification ) => {
+        console.log("ASDFASDFASDF" + JSON.stringify(msg));
+        if (msg.payload === key) {
+          client.removeListener('notification', handler);
+          resolve(key);
+        }
+      };
+
+      client.on('notification', handler);
+    });
+
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        resolve(null);
+      }, timeoutSeconds * 1000);
+    });
+
+    const trigger: string | null = await Promise.race([messagePromise, timeoutPromise]);
+    if (trigger !== null) {
       await client.query(`BEGIN`);
       const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
       if (rows.length > 0 ) {
@@ -152,15 +183,15 @@ export class WorkflowContext {
         return message;
       } else {
         await client.query(`ROLLBACK`);
-        elapsed += 1;
-        if (elapsed <= timeoutSeconds) {
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Sleep 1 second.
-        }
+        await this.recordExecution(client, functionID, null);
+        client.release();
+        return null;
       }
-    } while (elapsed <= timeoutSeconds)
-
-    await this.recordExecution<null>(client, functionID, null);
-    client.release();
-    return null;
+    } else {
+      await this.recordExecution(client, functionID, null);
+      client.release();
+      return null;
+    }
   }
+
 }
