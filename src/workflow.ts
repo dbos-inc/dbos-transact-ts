@@ -101,16 +101,17 @@ export class WorkflowContext {
     } else {
       let numAttempts = 0;
       let intervalSeconds = ctxt.intervalSeconds;
-      while (result == null && numAttempts++ < ctxt.maxAttempts) {
+      while (result === null && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
         } catch (error) { /* empty */ }
-        if (result == null && numAttempts < ctxt.maxAttempts) {
+        if (result === null && numAttempts < ctxt.maxAttempts) {
           // Sleep for an interval, then increase the interval by backoffRate.
           await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
           intervalSeconds *= ctxt.backoffRate;
         }
       }
+      // TODO: add error logging once we have a logging system.
     }
 
     // Record the execution and return.
