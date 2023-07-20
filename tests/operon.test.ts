@@ -172,31 +172,32 @@ describe('operon-tests', () => {
   });
 
 
-test('failing-communicator', async() => {
+  test('failing-communicator', async() => {
 
-  const remoteState = {
-    num: 0
-  }
-
-  const testCommunicator = async (ctxt: CommunicatorContext) => {
-    remoteState.num += 1;
-    if (remoteState.num != 4) {
-      throw new Error("bad number");
+    const remoteState = {
+      num: 0
     }
-    return remoteState.num;
-  };
 
-  const testWorkflow = async (ctxt: WorkflowContext) => {
-    return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
-  };
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  const idemKey: string = uuidv1();
+    const testCommunicator = async (ctxt: CommunicatorContext) => {
+      remoteState.num += 1;
+      if (remoteState.num != ctxt.maxAttempts) {
+        throw new Error("bad number");
+      }
+      await sleep(10);
+      return remoteState.num;
+    };
 
-  let result = await operon.workflow(testWorkflow, {});
-  expect(result).toEqual(4);
+    const testWorkflow = async (ctxt: WorkflowContext) => {
+      return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
+    };
 
-  result = await operon.workflow(testWorkflow, {});
-  expect(result).toBeNull;
-});
+    let result = await operon.workflow(testWorkflow, {});
+    expect(result).toEqual(4);
+
+    result = await operon.workflow(testWorkflow, {});
+    expect(result).toBeNull();
+  });
 });
 

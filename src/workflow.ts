@@ -97,14 +97,14 @@ export class WorkflowContext {
     if (!ctxt.retriesAllowed) {
       try {
         result = await commFn(ctxt, ...args);
-      } catch (error) {}
+      } catch (error) { /* empty */ }
     } else {
       let numAttempts = 0;
       let intervalSeconds = ctxt.intervalSeconds;
       while (result == null && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
-        } catch (error) { }
+        } catch (error) { /* empty */ }
         if (result == null && numAttempts < ctxt.maxAttempts) {
           // Sleep for an interval, then increase the interval by backoffRate.
           await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
