@@ -1,3 +1,3 @@
 export { Operon } from './operon';
-export {FunctionContext, OperonFunction, RegisteredFunction, registerFunction } from './function';
-export {WorkflowContext, OperonWorkflow, RegisteredWorkflow, registerWorkflow} from './workflow';
+export { TransactionContext, OperonTransaction } from './transaction';
+export { WorkflowContext, OperonWorkflow } from './workflow';

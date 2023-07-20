@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint --ext .ts .",
-    "test": "jest --detectOpenHandles"
+    "test": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^29.5.3",
