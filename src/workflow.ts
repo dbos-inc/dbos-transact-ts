@@ -149,7 +149,7 @@ export class WorkflowContext {
       [key, message])
     // Return true if successful, false if key already exists.
     const success: boolean = rows.length === 0;
-    recordExecution(success);
+    await recordExecution(success);
     await client.query("COMMIT");
     client.release();
     return rows.length === 0;
@@ -164,7 +164,7 @@ export class WorkflowContext {
       const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
         [this.workflowID, functionID]);
       if (rows.length === 0) {
-        return null;
+        return undefined;
       } else {
         return JSON.parse(rows[0].output);
       }
@@ -175,8 +175,8 @@ export class WorkflowContext {
         [this.workflowID, functionID, JSON.stringify(output)]);
     }
 
-    const check: any | null = await checkExecution();
-    if (check !== null) {
+    const check: any | undefined = await checkExecution();
+    if (check !== undefined) {
       client.release();
       return check;
     }
@@ -189,7 +189,7 @@ export class WorkflowContext {
       const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
       if (rows.length > 0 ) {
         const message = rows[0].message;
-        recordExecution(message);
+        await recordExecution(message);
         await client.query(`COMMIT`);
         client.release();
         return message;
@@ -202,6 +202,7 @@ export class WorkflowContext {
       }
     } while (elapsed <= timeoutSeconds)
 
+    await recordExecution(null);
     client.release();
     return null;
   }
