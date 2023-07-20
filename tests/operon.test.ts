@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
-import { Operon, WorkflowContext, TransactionContext } from "src/";
+import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
+import axios, { AxiosResponse } from 'axios';
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -142,4 +144,60 @@ describe('operon-tests', () => {
     workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKeyFail}, "hello");
     expect(workflowResult).toEqual(-1);
   });
+
+
+  test('simple-communicator', async() => {
+    const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
+      const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
+      const status: string = response1.statusText;
+      const jsonObj: any = {};
+      jsonObj[status] = name;
+      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', jsonObj);
+      return JSON.stringify(response2.data);
+    };
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult = await workflowCtxt.external(testCommunicator, {}, name);
+      return funcResult ?? "error";
+    };
+
+    const idemKey: string = uuidv1();
+
+    let result: string = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'qianl15');
+    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+
+    // Test OAOO. Should return the original result.
+    result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
+    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+  });
+
+
+  test('failing-communicator', async() => {
+
+    const remoteState = {
+      num: 0
+    }
+
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    const testCommunicator = async (ctxt: CommunicatorContext) => {
+      remoteState.num += 1;
+      if (remoteState.num != ctxt.maxAttempts) {
+        throw new Error("bad number");
+      }
+      await sleep(10);
+      return remoteState.num;
+    };
+
+    const testWorkflow = async (ctxt: WorkflowContext) => {
+      return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
+    };
+
+    let result = await operon.workflow(testWorkflow, {});
+    expect(result).toEqual(4);
+
+    result = await operon.workflow(testWorkflow, {});
+    expect(result).toBeNull();
+  });
 });
+
