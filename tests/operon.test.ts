@@ -199,5 +199,25 @@ describe('operon-tests', () => {
     result = await operon.workflow(testWorkflow, {});
     expect(result).toBeNull();
   });
+
+  test('simple-notifications', async() => {
+
+    const receiveWorkflow = async(ctxt: WorkflowContext) => {
+      const test = await ctxt.recv("test", 10) as number;
+      const fail = await ctxt.recv("fail", 0);
+      return test == 0 && fail == null;
+    }
+
+    const sendWorkflow = async(ctxt: WorkflowContext) => {
+      return await ctxt.send("test", 0);
+    }
+
+    const promise = operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    const send = operon.workflow(sendWorkflow, {});
+    expect(send).toBeTruthy;
+    expect(await promise).toBeTruthy;
+    const retry = await operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    expect(retry).toBeTruthy;
+  });
 });
 

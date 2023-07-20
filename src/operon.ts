@@ -23,10 +23,15 @@ export class Operon {
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
+    await this.pool.query(`CREATE TABLE operon__Notifications (
+      key VARCHAR(255) PRIMARY KEY,
+      message JSON NOT NULL
+    );`)
   }
 
   async resetOperonTables() {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
+    await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
     await this.initializeOperonTables();
   }
 

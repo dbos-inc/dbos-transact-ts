@@ -118,4 +118,91 @@ export class WorkflowContext {
     await recordExecution(result);
     return result;
   }
+
+  async send(key: string, message: any) : Promise<boolean> {
+    const client: PoolClient = await this.pool.connect();
+    const functionID: number = this.functionIDGetIncrement();
+
+    const checkExecution = async () => {
+      const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+        [this.workflowID, functionID]);
+      if (rows.length === 0) {
+        return null;
+      } else {
+        return JSON.parse(rows[0].output) as boolean;
+      }
+    }
+
+    const recordExecution = async (output: boolean) => {
+      await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
+        [this.workflowID, functionID, JSON.stringify(output)]);
+    }
+    
+    await client.query("BEGIN");
+    const check: boolean | null = await checkExecution();
+    if (check !== null) {
+      await client.query("ROLLBACK");
+      client.release();
+      return check;
+    }
+    const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Exists';`,
+      [key, message])
+    // Return true if successful, false if key already exists.
+    const success: boolean = rows.length === 0;
+    recordExecution(success);
+    await client.query("COMMIT");
+    client.release();
+    return rows.length === 0;
+  }
+
+  async recv(key: string, timeoutSeconds: number) : Promise<any | null> {
+    const client = await this.pool.connect();
+    const functionID: number = this.functionIDGetIncrement();
+
+
+    const checkExecution = async () => {
+      const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+        [this.workflowID, functionID]);
+      if (rows.length === 0) {
+        return null;
+      } else {
+        return JSON.parse(rows[0].output);
+      }
+    }
+
+    const recordExecution = async (output: any) => {
+      await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
+        [this.workflowID, functionID, JSON.stringify(output)]);
+    }
+
+    const check: any | null = await checkExecution();
+    if (check !== null) {
+      client.release();
+      return check;
+    }
+
+    // Poll the database once a second until the notification has been received or the timeout is reached.
+    // TODO: Do this less naively.  Use triggers maybe???
+    let elapsed = 0;
+    do {
+      await client.query(`BEGIN`);
+      const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+      if (rows.length > 0 ) {
+        const message = rows[0].message;
+        recordExecution(message);
+        await client.query(`COMMIT`);
+        client.release();
+        return message;
+      } else {
+        await client.query(`ROLLBACK`);
+        elapsed += 1;
+        if (elapsed <= timeoutSeconds) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Sleep 1 second.
+        }
+      }
+    } while (elapsed <= timeoutSeconds)
+
+    client.release();
+    return null;
+  }
 }
