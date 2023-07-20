@@ -204,7 +204,7 @@ describe('operon-tests', () => {
 
     const receiveWorkflow = async(ctxt: WorkflowContext) => {
       const test = await ctxt.recv("test", 10) as number;
-      const fail = await ctxt.recv("fail", 0);
+      const fail = await ctxt.recv("fail", 0) as number | null;
       return test == 0 && fail == null;
     }
 
@@ -214,10 +214,10 @@ describe('operon-tests', () => {
 
     const promise = operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
     const send = operon.workflow(sendWorkflow, {});
-    expect(send).toBeTruthy;
-    expect(await promise).toBeTruthy;
+    expect(send).toBeTruthy();
+    expect(await promise).toBeTruthy();
     const retry = await operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
-    expect(retry).toBeTruthy;
+    expect(retry).toBeTruthy();
   });
 });
 
