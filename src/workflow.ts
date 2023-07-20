@@ -151,27 +151,27 @@ export class WorkflowContext {
       await client.query(`ROLLBACK`);
     }
 
-    // Next, wait for a notification from the trigger.
+    // Next, wait for a notification from the trigger (or timeout).
     await client.query('LISTEN operon__notificationschannel;');
-    const messagePromise = new Promise<string>((resolve) => {
+    const messagePromise = new Promise<boolean>((resolve) => {
       const handler = (msg: Notification ) => {
         if (msg.payload === key) {
           client.removeListener('notification', handler);
-          resolve(key);
+          resolve(true);
         }
       };
 
       client.on('notification', handler);
     });
-
-    const timeoutPromise = new Promise<null>((resolve) => {
+    const timeoutPromise = new Promise<boolean>((resolve) => {
       setTimeout(() => {
-        resolve(null);
+        resolve(false);
       }, timeoutSeconds * 1000);
     });
+    const received: boolean = await Promise.race([messagePromise, timeoutPromise]);
 
-    const trigger: string | null = await Promise.race([messagePromise, timeoutPromise]);
-    if (trigger !== null) {
+    // If a notification is received, transactionally check for the message, delete it, record it, and return it.
+    if (received) {
       await client.query(`BEGIN`);
       const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
       if (rows.length > 0 ) {
