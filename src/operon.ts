@@ -32,7 +32,7 @@ export class Operon {
         DECLARE
         BEGIN
             -- Publish a notification for all keys
-            PERFORM pg_notify('operon__NotificationsChannel', NEW.key::text);
+            PERFORM pg_notify('operonnotifications', NEW.key::text);
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;

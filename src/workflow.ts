@@ -152,10 +152,9 @@ export class WorkflowContext {
     }
 
     // Next, wait for a notification from the trigger.
-    await client.query('LISTEN operon__NotificationsChannel;');
+    await client.query('LISTEN operonnotifications;');
     const messagePromise = new Promise<string>((resolve) => {
       const handler = (msg: Notification ) => {
-        console.log("ASDFASDFASDF" + JSON.stringify(msg));
         if (msg.payload === key) {
           client.removeListener('notification', handler);
           resolve(key);
