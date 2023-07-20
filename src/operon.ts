@@ -27,12 +27,13 @@ export class Operon {
       key VARCHAR(255) PRIMARY KEY,
       message TEXT NOT NULL
     );`)
+    // Weird node-postgres issue -- channel names must be all-lowercase.
     await this.pool.query(`
         CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
         DECLARE
         BEGIN
             -- Publish a notification for all keys
-            PERFORM pg_notify('operonnotifications', NEW.key::text);
+            PERFORM pg_notify('operon__notificationschannel', NEW.key::text);
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
