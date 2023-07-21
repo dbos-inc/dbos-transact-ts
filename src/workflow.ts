@@ -4,6 +4,12 @@ import { Pool, PoolClient, Notification } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unreachable code error
+BigInt.prototype.toJSON = function (): string {
+  return this.toString();
+};
+
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {

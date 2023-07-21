@@ -7,6 +7,8 @@ interface OperonKv {
   value: string,
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 describe('operon-tests', () => {
   let operon: Operon;
   const username: string = process.env.DB_USER || 'postgres';
@@ -187,8 +189,6 @@ describe('operon-tests', () => {
       num: 0
     }
 
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
     const testCommunicator = async (ctxt: CommunicatorContext) => {
       remoteState.num += 1;
       if (remoteState.num != ctxt.maxAttempts) {
@@ -236,6 +236,14 @@ describe('operon-tests', () => {
     expect(await promise).toBe(123);
     const retry = await operon.recv({idempotencyKey: "test"}, "test", 2);
     expect(retry).toBe(123);
+  });
+
+  test('bigint-tojson',async () => {
+    const testFunction = async (txnCtxt: TransactionContext, number: bigint) => {
+      await sleep(1);
+      return number;
+    };
+    await expect(operon.transaction(testFunction, {idempotencyKey: "test"}, 2n)).resolves.toBe(2n);
   });
 });
 
