@@ -44,6 +44,16 @@ describe('operon-tests', () => {
   });
 
 
+  test('return-void', async() => {
+    const testFunction = async (txnCtxt: TransactionContext) => {
+      return;
+    };
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+  });
+
+
   test('tight-loop', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
