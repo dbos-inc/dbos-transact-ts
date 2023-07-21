@@ -28,7 +28,7 @@ export class Operon {
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
-    await this.pool.query(`CREATE TABLE operon__Notifications (
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
       key VARCHAR(255) PRIMARY KEY,
       message TEXT NOT NULL
     );`)
@@ -43,9 +43,17 @@ export class Operon {
         END;
         $$ LANGUAGE plpgsql;
 
-        CREATE TRIGGER operon__NotificationsTrigger
-        AFTER INSERT ON operon__Notifications
-        FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction();
+        DO
+        $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon__notificationstrigger') THEN
+              EXECUTE '
+                  CREATE TRIGGER operon__notificationstrigger
+                  AFTER INSERT ON operon__Notifications
+                  FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction()';
+            END IF;
+        END
+        $$;
     `);
   }
 
