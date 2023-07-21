@@ -199,7 +199,7 @@ describe('operon-tests', () => {
     expect(result).toBeNull();
   });
 
-  test('simple-notifications', async() => {
+  test('simple-workflow-notifications', async() => {
 
     const receiveWorkflow = async(ctxt: WorkflowContext) => {
       const test = await ctxt.recv("test", 2) as number;
@@ -217,6 +217,15 @@ describe('operon-tests', () => {
     expect(await promise).toBe(true);
     const retry = await operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
     expect(retry).toBe(true);
+  });
+
+  test('simple-operon-notifications', async() => {
+    const promise = operon.recv({idempotencyKey: "test"}, "test", 2);
+    const send = await operon.send({}, "test", 123);
+    expect(send).toBe(true);
+    expect(await promise).toBe(123);
+    const retry = await operon.recv({idempotencyKey: "test"}, "test", 2);
+    expect(retry).toBe(123);
   });
 });
 
