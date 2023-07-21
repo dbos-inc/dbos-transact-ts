@@ -151,10 +151,7 @@ describe('operon-tests', () => {
   test('simple-communicator', async() => {
     const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
       const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
-      const status: string = response1.statusText;
-      const jsonObj: any = {};
-      jsonObj[status] = name;
-      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', jsonObj);
+      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', response1.data.data);
       return JSON.stringify(response2.data);
     };
 
@@ -166,11 +163,11 @@ describe('operon-tests', () => {
     const idemKey: string = uuidv1();
 
     let result: string = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'qianl15');
-    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
     result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
-    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
 
