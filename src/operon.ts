@@ -2,6 +2,7 @@
 import { Pool, PoolConfig } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
+import { OperonTransaction } from './transaction';
 
 export interface operon__FunctionOutputs {
     workflow_id: string;
@@ -101,8 +102,16 @@ export class Operon {
     return result;
   }
 
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    // Create a workflow and call transaction.
+    const wf = async (ctxt: WorkflowContext, ...args: T) => {
+      return await ctxt.transaction(txn, ...args);
+    };
+    return await this.workflow(wf, params, ...args);
+  }
+
   async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
-    // Create a simple workflow and call its send.
+    // Create a workflow and call send.
     const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
@@ -110,7 +119,7 @@ export class Operon {
   }
 
   async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
-    // Create a simple workflow and call its recv.
+    // Create a workflow and call recv.
     const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
