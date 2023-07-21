@@ -1,9 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
+
+interface OperonKv {
+  id: number,
+  value: string,
+}
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -62,7 +64,7 @@ describe('operon-tests', () => {
 
   test('abort-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -70,7 +72,7 @@ describe('operon-tests', () => {
     };
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -98,7 +100,7 @@ describe('operon-tests', () => {
 
   test('oaoo-simple', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -106,7 +108,7 @@ describe('operon-tests', () => {
     };
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
