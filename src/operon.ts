@@ -25,7 +25,7 @@ export class Operon {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
       workflow_id VARCHAR(64) NOT NULL,
       function_id INT NOT NULL,
-      output TEXT NOT NULL,
+      output TEXT,
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
