@@ -9,6 +9,11 @@ export interface operon__FunctionOutputs {
     output: string;
 }
 
+export interface operon__Notifications {
+  key: string;
+  message: string;
+}
+
 export class Operon {
   pool: Pool;
   constructor(config: PoolConfig) {

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { operon__FunctionOutputs } from './operon';
+import { operon__FunctionOutputs, operon__Notifications } from './operon';
 import { Pool, PoolClient, Notification } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
@@ -107,7 +107,7 @@ export class WorkflowContext {
     return result;
   }
 
-  async send(key: string, message: any) : Promise<boolean> {
+  async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
     
@@ -118,21 +118,21 @@ export class WorkflowContext {
       client.release();
       return check;
     }
-    const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Exists';`,
-      [key, message])
+    const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
+      [key, JSON.stringify(message)])
     // Return true if successful, false if key already exists.
     const success: boolean = rows.length === 0;
     await this.recordExecution<boolean>(client, functionID, success);
     await client.query("COMMIT");
     client.release();
-    return rows.length === 0;
+    return rows.length !== 0;
   }
 
-  async recv(key: string, timeoutSeconds: number) : Promise<any | null> {
+  async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
     const client = await this.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
-    const check: any | undefined = await this.checkExecution<any>(client, functionID);
+    const check: T | undefined = await this.checkExecution<T>(client, functionID);
     if (check !== undefined) {
       client.release();
       return check;
@@ -140,10 +140,10 @@ export class WorkflowContext {
 
     // First, check if the key is in the database, returning it if it is:
     await client.query(`BEGIN`);
-    const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+    const { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
-      const message = rows[0].message;
-      await this.recordExecution<any>(client, functionID, message);
+      const message: T = JSON.parse(rows[0].message) as T;
+      await this.recordExecution<T>(client, functionID, message);
       await client.query(`COMMIT`);
       client.release();
       return message;
@@ -173,10 +173,10 @@ export class WorkflowContext {
     // If a notification is received, transactionally check for the message, delete it, record it, and return it.
     if (received) {
       await client.query(`BEGIN`);
-      const { rows } = await client.query("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+      const { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
       if (rows.length > 0 ) {
-        const message = rows[0].message;
-        await this.recordExecution<any>(client, functionID, message);
+        const message = JSON.parse(rows[0].message) as T;
+        await this.recordExecution<T>(client, functionID, message);
         await client.query(`COMMIT`);
         client.release();
         return message;
