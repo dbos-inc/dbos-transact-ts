@@ -139,16 +139,17 @@ export class WorkflowContext {
     }
     // Wait for a notification from the trigger (or timeout).
     await client.query('LISTEN operon__notificationschannel;');
+    let resolveNotification: () => void;
     const messagePromise = new Promise<void>((resolve) => {
-      const handler = (msg: Notification ) => {
-        if (msg.payload === key) {
-          client.removeListener('notification', handler);
-          resolve();
-        }
-      };
-
-      client.on('notification', handler);
+      resolveNotification = resolve;
     });
+    const handler = (msg: Notification ) => {
+      if (msg.payload === key) {
+        client.removeListener('notification', handler);
+        resolveNotification();
+      }
+    };
+    client.on('notification', handler);
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
