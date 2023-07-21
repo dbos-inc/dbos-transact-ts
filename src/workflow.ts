@@ -137,21 +137,7 @@ export class WorkflowContext {
       client.release();
       return check;
     }
-
-    // First, check if the key is in the database, returning it if it is:
-    await client.query(`BEGIN`);
-    const { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
-    if (rows.length > 0 ) {
-      const message: T = JSON.parse(rows[0].message) as T;
-      await this.recordExecution<T>(client, functionID, message);
-      await client.query(`COMMIT`);
-      client.release();
-      return message;
-    } else {
-      await client.query(`ROLLBACK`);
-    }
-
-    // Next, wait for a notification from the trigger (or timeout).
+    // Wait for a notification from the trigger (or timeout).
     await client.query('LISTEN operon__notificationschannel;');
     const messagePromise = new Promise<boolean>((resolve) => {
       const handler = (msg: Notification ) => {
@@ -168,10 +154,23 @@ export class WorkflowContext {
         resolve(false);
       }, timeoutSeconds * 1000);
     });
-    const received: boolean = await Promise.race([messagePromise, timeoutPromise]);
+    const received: Promise<boolean> = Promise.race([messagePromise, timeoutPromise]);
+
+    // First, check if the key is in the database, returning it if it is:
+    await client.query(`BEGIN`); // TODO: Check if this is okay on the listener client.
+    const { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+    if (rows.length > 0 ) {
+      const message: T = JSON.parse(rows[0].message) as T;
+      await this.recordExecution<T>(client, functionID, message);
+      await client.query(`COMMIT`);
+      client.release();
+      return message;
+    } else {
+      await client.query(`ROLLBACK`);
+    }
 
     // If a notification is received, transactionally check for the message, delete it, record it, and return it.
-    if (received) {
+    if (await received) {
       await client.query(`BEGIN`);
       const { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
       if (rows.length > 0 ) {
