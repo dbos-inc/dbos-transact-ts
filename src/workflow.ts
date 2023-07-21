@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { operon__FunctionOutputs } from './operon';
-import { Pool, PoolClient } from 'pg';
+import { operon__FunctionOutputs, operon__Notifications } from './operon';
+import { Pool, PoolClient, Notification } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 
@@ -25,30 +25,30 @@ export class WorkflowContext {
     return this.#functionID++;
   }
 
+  async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | undefined> {
+    const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+      [this.workflowID, currFuncID]);
+    if (rows.length === 0) {
+      return undefined;
+    } else {
+      return JSON.parse(rows[0].output) as R;  // Could be null.
+    }
+  }
+
+  async recordExecution<R>(client: PoolClient, currFuncID: number, output: R): Promise<void> {
+    await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
+      [this.workflowID, currFuncID, JSON.stringify(output)]);
+  }
+
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
     let client: PoolClient = await this.pool.connect();
     const fCtxt: TransactionContext = new TransactionContext(client, this.functionIDGetIncrement());
 
-    const checkExecution = async () => {
-      const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [this.workflowID, fCtxt.functionID]);
-      if (rows.length === 0) {
-        return null;
-      } else {
-        return JSON.parse(rows[0].output) as R;
-      }
-    }
-
-    const recordExecution = async (output: R) => {
-      await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
-        [this.workflowID, fCtxt.functionID, JSON.stringify(output)]);
-    }
-
     await client.query("BEGIN");
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | null = await checkExecution();
-    if (check !== null) {
+    const check: R | undefined = await this.checkExecution<R>(client, fCtxt.functionID);
+    if (check !== undefined) {
       await client.query("ROLLBACK");
       client.release();
       return check;
@@ -61,7 +61,7 @@ export class WorkflowContext {
     if(fCtxt.isAborted()) {
       client = await this.pool.connect();
     }
-    await recordExecution(result);
+    await this.recordExecution(client, fCtxt.functionID, result);
     await client.query("COMMIT");
     client.release();
     return result;
@@ -69,25 +69,12 @@ export class WorkflowContext {
 
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: CommunicatorParams, ...args: T): Promise<R | null> {
     const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), params);
-
-    const checkExecution = async () => {
-      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [this.workflowID, ctxt.functionID]);
-      if (rows.length === 0) {
-        return null;
-      } else {
-        return JSON.parse(rows[0].output) as R;
-      }
-    }
-
-    const recordExecution = async (output: R | null) => {
-      await this.pool.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)", 
-        [this.workflowID, ctxt.functionID, JSON.stringify(output)]);
-    }
+    const client: PoolClient = await this.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | null = await checkExecution();
-    if (check !== null) {
+    const check: R | undefined = await this.checkExecution<R>(client, ctxt.functionID);
+    if (check !== undefined) {
+      client.release();
       return check; 
     }
 
@@ -115,7 +102,91 @@ export class WorkflowContext {
     }
 
     // Record the execution and return.
-    await recordExecution(result);
+    await this.recordExecution<R | null>(client, ctxt.functionID, result);
+    client.release();
     return result;
   }
+
+  async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
+    const client: PoolClient = await this.pool.connect();
+    const functionID: number = this.functionIDGetIncrement();
+    
+    await client.query("BEGIN");
+    const check: boolean | undefined = await this.checkExecution<boolean>(client, functionID);
+    if (check !== undefined) {
+      await client.query("ROLLBACK");
+      client.release();
+      return check;
+    }
+    const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
+      [key, JSON.stringify(message)])
+    // Return true if successful, false if key already exists.
+    const success: boolean = rows.length === 0;
+    await this.recordExecution<boolean>(client, functionID, success);
+    await client.query("COMMIT");
+    client.release();
+    return rows.length !== 0;
+  }
+
+  async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
+    const client = await this.pool.connect();
+    const functionID: number = this.functionIDGetIncrement();
+
+    const check: T | undefined = await this.checkExecution<T>(client, functionID);
+    if (check !== undefined) {
+      client.release();
+      return check;
+    }
+
+    // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
+    await client.query('LISTEN operon__notificationschannel;');
+    let resolveNotification: () => void;
+    const messagePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    const handler = (msg: Notification ) => {
+      if (msg.payload === key) {
+        client.removeListener('notification', handler);
+        resolveNotification();
+      }
+    };
+    client.on('notification', handler);
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        resolve();
+      }, timeoutSeconds * 1000);
+    });
+    const received = Promise.race([messagePromise, timeoutPromise]);
+
+    // Then, check if the key is already in the DB, returning it if it is.
+    await client.query(`BEGIN`);
+    let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+    if (rows.length > 0 ) {
+      const message: T = JSON.parse(rows[0].message) as T;
+      await this.recordExecution<T>(client, functionID, message);
+      await client.query(`COMMIT`);
+      client.release();
+      return message;
+    } else {
+      await client.query(`ROLLBACK`);
+    }
+
+    // Wait for the notification, then check if the key is in the DB, returning the message if it is and NULL if it isn't.
+    await received;
+    await client.query(`BEGIN`);
+    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
+    if (rows.length > 0 ) {
+      const message = JSON.parse(rows[0].message) as T;
+      await this.recordExecution<T>(client, functionID, message);
+      await client.query(`COMMIT`);
+      client.release();
+      return message;
+    } else {
+      await client.query(`ROLLBACK`);
+      await this.recordExecution(client, functionID, null);
+      client.release();
+      return null;
+    }
+  }
+
 }

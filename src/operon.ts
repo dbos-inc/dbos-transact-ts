@@ -9,6 +9,11 @@ export interface operon__FunctionOutputs {
     output: string;
 }
 
+export interface operon__Notifications {
+  key: string;
+  message: string;
+}
+
 export class Operon {
   pool: Pool;
   constructor(config: PoolConfig) {
@@ -23,10 +28,30 @@ export class Operon {
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
+    await this.pool.query(`CREATE TABLE operon__Notifications (
+      key VARCHAR(255) PRIMARY KEY,
+      message TEXT NOT NULL
+    );`)
+    // Weird node-postgres issue -- channel names must be all-lowercase.
+    await this.pool.query(`
+        CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
+        DECLARE
+        BEGIN
+            -- Publish a notification for all keys
+            PERFORM pg_notify('operon__notificationschannel', NEW.key::text);
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        CREATE TRIGGER operon__NotificationsTrigger
+        AFTER INSERT ON operon__Notifications
+        FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction();
+    `);
   }
 
   async resetOperonTables() {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
+    await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
     await this.initializeOperonTables();
   }
 
@@ -66,5 +91,21 @@ export class Operon {
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
+  }
+
+  async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
+    // Create a simple workflow and call its send.
+    const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
+      return await ctxt.send<T>(key, message);
+    };
+    return await this.workflow(wf, params, key, message);
+  }
+
+  async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
+    // Create a simple workflow and call its recv.
+    const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
+      return await ctxt.recv<T>(key, timeoutSeconds);
+    };
+    return await this.workflow(wf, params, key, timeoutSeconds);
   }
 }

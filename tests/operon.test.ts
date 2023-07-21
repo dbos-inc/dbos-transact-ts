@@ -1,9 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
+
+interface OperonKv {
+  id: number,
+  value: string,
+}
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -62,7 +64,7 @@ describe('operon-tests', () => {
 
   test('abort-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -70,7 +72,7 @@ describe('operon-tests', () => {
     };
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -98,7 +100,7 @@ describe('operon-tests', () => {
 
   test('oaoo-simple', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -106,7 +108,7 @@ describe('operon-tests', () => {
     };
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -149,10 +151,7 @@ describe('operon-tests', () => {
   test('simple-communicator', async() => {
     const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
       const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
-      const status: string = response1.statusText;
-      const jsonObj: any = {};
-      jsonObj[status] = name;
-      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', jsonObj);
+      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', response1.data.data);
       return JSON.stringify(response2.data);
     };
 
@@ -164,11 +163,11 @@ describe('operon-tests', () => {
     const idemKey: string = uuidv1();
 
     let result: string = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'qianl15');
-    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
     result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
-    expect(JSON.parse(result)).toMatchObject({data: { "OK" : "qianl15"}});
+    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
 
@@ -198,6 +197,35 @@ describe('operon-tests', () => {
 
     result = await operon.workflow(testWorkflow, {});
     expect(result).toBeNull();
+  });
+
+  test('simple-workflow-notifications', async() => {
+
+    const receiveWorkflow = async(ctxt: WorkflowContext) => {
+      const test = await ctxt.recv("test", 2) as number;
+      const fail = await ctxt.recv("fail", 0) ;
+      return test == 0 && fail == null;
+    }
+
+    const sendWorkflow = async(ctxt: WorkflowContext) => {
+      return await ctxt.send("test", 0);
+    }
+
+    const promise = operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    const send = await operon.workflow(sendWorkflow, {});
+    expect(send).toBe(true);
+    expect(await promise).toBe(true);
+    const retry = await operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    expect(retry).toBe(true);
+  });
+
+  test('simple-operon-notifications', async() => {
+    const promise = operon.recv({idempotencyKey: "test"}, "test", 2);
+    const send = await operon.send({}, "test", 123);
+    expect(send).toBe(true);
+    expect(await promise).toBe(123);
+    const retry = await operon.recv({idempotencyKey: "test"}, "test", 2);
+    expect(retry).toBe(123);
   });
 });
 
