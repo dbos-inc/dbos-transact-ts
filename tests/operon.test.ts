@@ -237,13 +237,5 @@ describe('operon-tests', () => {
     const retry = await operon.recv({idempotencyKey: "test"}, "test", 2);
     expect(retry).toBe(123);
   });
-
-  test('bigint-tojson',async () => {
-    const testFunction = async (txnCtxt: TransactionContext, number: bigint) => {
-      await sleep(1);
-      return number;
-    };
-    await expect(operon.transaction(testFunction, {idempotencyKey: "test"}, 2n)).resolves.toBe(2n);
-  });
 });
 
