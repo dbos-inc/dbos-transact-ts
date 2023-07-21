@@ -137,7 +137,8 @@ export class WorkflowContext {
       client.release();
       return check;
     }
-    // Wait for a notification from the trigger (or timeout).
+
+    // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
     await client.query('LISTEN operon__notificationschannel;');
     let resolveNotification: () => void;
     const messagePromise = new Promise<void>((resolve) => {
@@ -157,8 +158,8 @@ export class WorkflowContext {
     });
     const received = Promise.race([messagePromise, timeoutPromise]);
 
-    // First, check if the key is in the database, returning it if it is:
-    await client.query(`BEGIN`); // TODO: Check if this is okay on the listener client.
+    // Then, check if the key is already in the DB, returning it if it is.
+    await client.query(`BEGIN`);
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
@@ -170,7 +171,7 @@ export class WorkflowContext {
       await client.query(`ROLLBACK`);
     }
 
-    // If a notification is received, transactionally check for the message, delete it, record it, and return it.
+    // Wait for the notification, then check if the key is in the DB, returning the message if it is and NULL if it isn't.
     await received;
     await client.query(`BEGIN`);
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
