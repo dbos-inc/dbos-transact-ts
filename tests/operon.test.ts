@@ -57,7 +57,6 @@ describe('operon-tests', () => {
     await operon.transaction(testFunction, {idempotencyKey: "test"});
   });
 
-
   test('tight-loop', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
@@ -108,6 +107,38 @@ describe('operon-tests', () => {
     
     // Should not appear in the database.
     const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail");
+    expect(workflowResult).toEqual(-1);
+  });
+
+  test('multiple-aborts', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      if (name !== "fail") {
+        // Recursively call itself so we have multiple rollbacks.
+        await testFunction(txnCtxt, "fail");
+      }
+      await txnCtxt.rollback();
+      return Number(rows[0].id);
+    };
+
+    const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      if (rows.length > 0) {
+        return Number(rows[0].id);
+      } else {
+        // Cannot find, return a negative number.
+        return -1;
+      }
+    };
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: number = await workflowCtxt.transaction(testFunction, name);
+      const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
+      return checkResult;
+    };
+
+    // Should not appear in the database.
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
     expect(workflowResult).toEqual(-1);
   });
 

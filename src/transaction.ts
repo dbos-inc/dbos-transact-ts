@@ -15,6 +15,10 @@ export class TransactionContext {
   }
 
   async rollback() {
+    // If this function has already rolled back, we no longer have the client, so just return.
+    if (this.#functionAborted) {
+      return;
+    }
     await this.client.query("ROLLBACK");
     this.#functionAborted = true;
     this.client.release();
