@@ -48,6 +48,8 @@ describe('operon-tests', () => {
 
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
+      void txnCtxt;
+      await sleep(10);
       return;
     };
     await operon.transaction(testFunction, {idempotencyKey: "test"});
