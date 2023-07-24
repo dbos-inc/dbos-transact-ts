@@ -7,6 +7,8 @@ interface OperonKv {
   value: string,
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 describe('operon-tests', () => {
   let operon: Operon;
   const username: string = process.env.DB_USER || 'postgres';
@@ -43,6 +45,17 @@ describe('operon-tests', () => {
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
   });
 
+
+  test('return-void', async() => {
+    const testFunction = async (txnCtxt: TransactionContext) => {
+      void txnCtxt;
+      await sleep(10);
+      return;
+    };
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+    await operon.transaction(testFunction, {idempotencyKey: "test"});
+  });
 
   test('tight-loop', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
@@ -94,6 +107,38 @@ describe('operon-tests', () => {
     
     // Should not appear in the database.
     const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail");
+    expect(workflowResult).toEqual(-1);
+  });
+
+  test('multiple-aborts', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      if (name !== "fail") {
+        // Recursively call itself so we have multiple rollbacks.
+        await testFunction(txnCtxt, "fail");
+      }
+      await txnCtxt.rollback();
+      return Number(rows[0].id);
+    };
+
+    const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
+      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      if (rows.length > 0) {
+        return Number(rows[0].id);
+      } else {
+        // Cannot find, return a negative number.
+        return -1;
+      }
+    };
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: number = await workflowCtxt.transaction(testFunction, name);
+      const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
+      return checkResult;
+    };
+
+    // Should not appear in the database.
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -176,8 +221,6 @@ describe('operon-tests', () => {
     const remoteState = {
       num: 0
     }
-
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     const testCommunicator = async (ctxt: CommunicatorContext) => {
       remoteState.num += 1;
