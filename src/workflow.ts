@@ -114,8 +114,8 @@ export class WorkflowContext {
       throw err;
     }
 
-    // Execute the communicator function.  If it throws an exception or returns null, retry with exponential backoff.
-    // After reaching the maximum number of retries, return null.
+    // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
+    // After reaching the maximum number of retries, throw an OperonError.
     let result: R | OperonNull = operonNull;
     if (!ctxt.retriesAllowed) {
       try {
