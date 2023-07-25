@@ -1,6 +1,7 @@
 import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
+import { OperonError } from "src/error";
 
 interface OperonKv {
   id: number,
@@ -236,11 +237,11 @@ describe('operon-tests', () => {
       return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
     };
 
-    let result = await operon.workflow(testWorkflow, {});
+    const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
 
-    result = await operon.workflow(testWorkflow, {});
-    expect(result).toBeNull();
+    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError(1, "Communicator reached maximum retries."));
+
   });
 
   test('simple-workflow-notifications', async() => {

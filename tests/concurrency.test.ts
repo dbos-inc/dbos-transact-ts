@@ -1,3 +1,4 @@
+import { DatabaseError } from "pg";
 import { Operon, WorkflowContext, TransactionContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 
@@ -50,7 +51,7 @@ describe('concurrency-tests', () => {
       }
     } catch (err) {
       /* handling? */
-      console.error("Captured: ", err);
+      expect(err).toBeInstanceOf(DatabaseError);
     }
 
     expect(counter).toBe(1);

@@ -8,6 +8,7 @@ export interface operon__FunctionOutputs {
     workflow_id: string;
     function_id: number;
     output: string;
+    error: string;
 }
 
 export interface operon__Notifications {
@@ -26,6 +27,7 @@ export class Operon {
       workflow_id VARCHAR(64) NOT NULL,
       function_id INT NOT NULL,
       output TEXT,
+      error TEXT,
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
@@ -81,7 +83,7 @@ export class Operon {
       let retInput: T;
       if (rows.length === 0) {
         // This workflow has never executed before, so record the input
-        await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
+        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output) VALUES ($1, $2, $3)",
           [workflowUUID, initFuncID, JSON.stringify(input)]);
         retInput = input;
       } else {
