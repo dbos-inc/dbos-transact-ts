@@ -5,6 +5,7 @@ import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
 import { User } from './users';
+import { Role } from './roles';
 import { createId } from '@paralleldrive/cuid2';
 
 export interface operon__FunctionOutputs {
@@ -68,6 +69,19 @@ export class Operon {
       name VARCHAR(255) NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );`
+    );
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__WorkflowPermissions (
+        workflow_id VARCHAR(64) NOT NULL,
+        role VARCHAR(255) NOT NULL
+      );`
+    );
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Users (
+        id VARCHAR(64) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        role VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );`
     );
   }
