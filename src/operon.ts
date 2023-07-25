@@ -90,6 +90,8 @@ export class Operon {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
     await this.pool.query(`DROP TABLE IF EXISTS operon__Workflows;`);
+    await this.pool.query(`DROP TABLE IF EXISTS operon__WorkflowsPermissions;`);
+    await this.pool.query(`DROP TABLE IF EXISTS operon__Users;`);
     await this.initializeOperonTables();
   }
 
