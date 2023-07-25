@@ -11,6 +11,9 @@ export interface WorkflowParams {
   workflowUUID?: string;
 }
 
+interface OperonNull {}
+const operonNull: OperonNull = {};
+
 export class WorkflowContext {
   pool: Pool;
 
@@ -26,17 +29,19 @@ export class WorkflowContext {
     return this.#functionID++;
   }
 
-  async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | undefined> {
+  async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | OperonNull> {
+    // TODO: read errors.
     const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
       [this.workflowUUID, currFuncID]);
     if (rows.length === 0) {
-      return undefined;
+      return operonNull;
     } else {
       return JSON.parse(rows[0].output) as R;  // Could be null.
     }
   }
 
   async recordExecution<R>(client: PoolClient, currFuncID: number, output: R): Promise<void> {
+    // TODO: record errors.
     await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
       [this.workflowUUID, currFuncID, JSON.stringify(output)]);
   }
@@ -52,10 +57,10 @@ export class WorkflowContext {
         await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
 
         // Check if this execution previously happened, returning its original result if it did.
-        const check: R | undefined = await this.checkExecution<R>(client, fCtxt.functionID);
-        if (check !== undefined) {
+        const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
+        if (check !== operonNull) {
           await client.query("ROLLBACK");
-          return check;
+          return check as R;
         }
 
         // Execute the function.
@@ -91,10 +96,10 @@ export class WorkflowContext {
     const client: PoolClient = await this.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | undefined = await this.checkExecution<R>(client, ctxt.functionID);
-    if (check !== undefined) {
+    const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
+    if (check !== operonNull) {
       client.release();
-      return check; 
+      return check as R; 
     }
 
     // Execute the communicator function.  If it throws an exception or returns null, retry with exponential backoff.
@@ -131,11 +136,11 @@ export class WorkflowContext {
     const functionID: number = this.functionIDGetIncrement();
     
     await client.query("BEGIN");
-    const check: boolean | undefined = await this.checkExecution<boolean>(client, functionID);
-    if (check !== undefined) {
+    const check: boolean | OperonNull = await this.checkExecution<boolean>(client, functionID);
+    if (check !== operonNull) {
       await client.query("ROLLBACK");
       client.release();
-      return check;
+      return check as boolean;
     }
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
@@ -151,10 +156,10 @@ export class WorkflowContext {
     const client = await this.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
-    const check: T | undefined = await this.checkExecution<T>(client, functionID);
-    if (check !== undefined) {
+    const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
+    if (check !== operonNull) {
       client.release();
-      return check;
+      return check as T;
     }
 
     // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
