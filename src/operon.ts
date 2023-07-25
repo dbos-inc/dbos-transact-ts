@@ -131,6 +131,29 @@ export class Operon {
     return result;
   }
 
+  // XXX we can have an input type for this function
+  async registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, name: string, validRoles: Role[]): Promise<string> {
+    const client = await this.pool.connect();
+    await client.query("BEGIN;");
+
+    const workflowID = createId();
+    await this.pool.query(
+      "INSERT INTO operon__Workflows (id, name) VALUES ($1, $2)",
+      [workflowID, name]
+    );
+    for (const role of validRoles) {
+      await this.pool.query(
+        "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
+        [workflowID, role]
+      );
+    }
+
+    await client.query("COMMIT;");
+    client.release();
+
+    return workflowID;
+  }
+
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const wf = async (ctxt: WorkflowContext, ...args: T) => {

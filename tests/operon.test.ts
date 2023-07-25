@@ -4,6 +4,7 @@ import {
   TransactionContext,
   CommunicatorContext,
   User,
+  Role,
   WorkflowParams
 } from "src/";
 import { v1 as uuidv1 } from 'uuid';
