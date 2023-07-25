@@ -52,9 +52,10 @@ describe('operon-tests', () => {
       await sleep(10);
       return;
     };
-    await operon.transaction(testFunction, {idempotencyKey: "test"});
-    await operon.transaction(testFunction, {idempotencyKey: "test"});
-    await operon.transaction(testFunction, {idempotencyKey: "test"});
+    const workflowUUID = uuidv1();
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
   });
 
   test('tight-loop', async() => {
@@ -171,24 +172,24 @@ describe('operon-tests', () => {
     let workflowResult: number;
     const uuidArray: string[] = [];
     for (let i = 0; i < 10; i++) {
-      const idemKey: string = uuidv1();
-      uuidArray.push(idemKey);
-      workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, username);
+      const workflowUUID: string = uuidv1();
+      uuidArray.push(workflowUUID);
+      workflowResult = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Should not appear in the database.
-    const idemKeyFail: string = uuidv1();
-    workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKeyFail}, "fail");
+    const failUUID: string = uuidv1();
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "fail");
     expect(workflowResult).toEqual(-1);
 
-    // Rerun with the same idempotency key should return the same output.
+    // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
-      const idemKey: string = uuidArray[i];
-      const workflowResult: number = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, username);
+      const workflowUUID: string = uuidArray[i];
+      const workflowResult: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
       expect(workflowResult).toEqual(i + 1);
     }
-    // Given the same idempotency key but different input, should return the original execution.
-    workflowResult = await operon.workflow(testWorkflow, {idempotencyKey: idemKeyFail}, "hello");
+    // Given the same workflow UUID but different input, should return the original execution.
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "hello");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -205,13 +206,13 @@ describe('operon-tests', () => {
       return funcResult ?? "error";
     };
 
-    const idemKey: string = uuidv1();
+    const workflowUUID: string = uuidv1();
 
-    let result: string = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'qianl15');
+    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15');
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(testWorkflow, {idempotencyKey: idemKey}, 'peter');
+    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter');
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
@@ -254,20 +255,22 @@ describe('operon-tests', () => {
       return await ctxt.send("test", 0);
     }
 
-    const promise = operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    const workflowUUID = uuidv1();
+    const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
     const send = await operon.workflow(sendWorkflow, {});
     expect(send).toBe(true);
     expect(await promise).toBe(true);
-    const retry = await operon.workflow(receiveWorkflow, {idempotencyKey: "test"});
+    const retry = await operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
     expect(retry).toBe(true);
   });
 
   test('simple-operon-notifications', async() => {
-    const promise = operon.recv({idempotencyKey: "test"}, "test", 2);
+    const workflowUUID = uuidv1();
+    const promise = operon.recv({workflowUUID: workflowUUID}, "test", 2);
     const send = await operon.send({}, "test", 123);
     expect(send).toBe(true);
     expect(await promise).toBe(123);
-    const retry = await operon.recv({idempotencyKey: "test"}, "test", 2);
+    const retry = await operon.recv({workflowUUID: workflowUUID}, "test", 2);
     expect(retry).toBe(123);
   });
 });

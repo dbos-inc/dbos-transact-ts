@@ -8,18 +8,18 @@ import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './c
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
-  idempotencyKey?: string;
+  workflowUUID?: string;
 }
 
 export class WorkflowContext {
   pool: Pool;
 
-  readonly workflowID: string;
+  readonly workflowUUID: string;
   #functionID: number = 0;
 
-  constructor(pool: Pool, workflowID: string) {
+  constructor(pool: Pool, workflowUUID: string) {
     this.pool = pool;
-    this.workflowID = workflowID;
+    this.workflowUUID = workflowUUID;
   }
 
   functionIDGetIncrement() : number {
@@ -28,7 +28,7 @@ export class WorkflowContext {
 
   async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | undefined> {
     const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-      [this.workflowID, currFuncID]);
+      [this.workflowUUID, currFuncID]);
     if (rows.length === 0) {
       return undefined;
     } else {
@@ -38,7 +38,7 @@ export class WorkflowContext {
 
   async recordExecution<R>(client: PoolClient, currFuncID: number, output: R): Promise<void> {
     await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
-      [this.workflowID, currFuncID, JSON.stringify(output)]);
+      [this.workflowUUID, currFuncID, JSON.stringify(output)]);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {

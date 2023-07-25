@@ -64,7 +64,7 @@ export class Operon {
     await this.initializeOperonTables();
   }
 
-  #generateIdempotencyKey(): string {
+  #generateUUID(): string {
     return uuidv1();
   }
   
@@ -72,17 +72,17 @@ export class Operon {
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
-      const workflowFuncId = wCtxt.functionIDGetIncrement();
+      const initFuncID = wCtxt.functionIDGetIncrement();
       const client = await this.pool.connect();
       await client.query("BEGIN;");
       const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [workflowID, workflowFuncId]);
+        [workflowUUID, initFuncID]);
   
       let retInput: T;
       if (rows.length === 0) {
         // This workflow has never executed before, so record the input
         await client.query("INSERT INTO operon__FunctionOutputs VALUES ($1, $2, $3)",
-          [workflowID, workflowFuncId, JSON.stringify(input)]);
+          [workflowUUID, initFuncID, JSON.stringify(input)]);
         retInput = input;
       } else {
         // Return the old recorded input
@@ -95,8 +95,8 @@ export class Operon {
       return retInput;
     }
   
-    const workflowID: string = params.idempotencyKey ? params.idempotencyKey : this.#generateIdempotencyKey();
-    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowID);
+    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowUUID);
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
