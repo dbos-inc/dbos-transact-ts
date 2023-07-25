@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/*eslint-disable no-constant-condition */
 import { operon__FunctionOutputs, operon__Notifications } from './operon';
-import { Pool, PoolClient, Notification } from 'pg';
+import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 
@@ -41,30 +42,48 @@ export class WorkflowContext {
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
-    let client: PoolClient = await this.pool.connect();
-    const fCtxt: TransactionContext = new TransactionContext(client, this.functionIDGetIncrement());
+    let retryWaitMillis = 1;
+    const backoffFactor = 2;
+    while(true) {
+      let client: PoolClient = await this.pool.connect();
+      try {
+        const fCtxt: TransactionContext = new TransactionContext(client, this.functionIDGetIncrement());
 
-    await client.query("BEGIN");
+        await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
 
-    // Check if this execution previously happened, returning its original result if it did.
-    const check: R | undefined = await this.checkExecution<R>(client, fCtxt.functionID);
-    if (check !== undefined) {
-      await client.query("ROLLBACK");
-      client.release();
-      return check;
+        // Check if this execution previously happened, returning its original result if it did.
+        const check: R | undefined = await this.checkExecution<R>(client, fCtxt.functionID);
+        if (check !== undefined) {
+          await client.query("ROLLBACK");
+          return check;
+        }
+
+        // Execute the function.
+        const result: R = await txn(fCtxt, ...args);
+
+        // Record the execution, commit, and return.
+        if(fCtxt.isAborted()) {
+          client = await this.pool.connect();
+        }
+        await this.recordExecution(client, fCtxt.functionID, result);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        const err: DatabaseError = error as DatabaseError;
+        // If the error is a serialization failure, rollback and retry with exponential backoff.
+        if (err.code === '40001') { // serialization_failure in PostgreSQL
+          await client.query('ROLLBACK')
+        }  else {
+          // If the error is something else, rollback and re-throw
+          await client.query('ROLLBACK')
+          throw error
+        }
+      } finally {
+        client.release();
+      }
+      await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
+      retryWaitMillis *= backoffFactor;
     }
-
-    // Execute the function.
-    const result: R = await txn(fCtxt, ...args);
-
-    // Record the execution, commit, and return.
-    if(fCtxt.isAborted()) {
-      client = await this.pool.connect();
-    }
-    await this.recordExecution(client, fCtxt.functionID, result);
-    await client.query("COMMIT");
-    client.release();
-    return result;
   }
 
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: CommunicatorParams, ...args: T): Promise<R | null> {
