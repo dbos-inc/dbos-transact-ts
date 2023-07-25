@@ -90,7 +90,7 @@ export class Operon {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
     await this.pool.query(`DROP TABLE IF EXISTS operon__Workflows;`);
-    await this.pool.query(`DROP TABLE IF EXISTS operon__WorkflowsPermissions;`);
+    await this.pool.query(`DROP TABLE IF EXISTS operon__WorkflowPermissions;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__Users;`);
     await this.initializeOperonTables();
   }
@@ -100,6 +100,12 @@ export class Operon {
   }
 
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
+    const userHasPermission = await this.hasPermission(params.runAs, params.id);
+    if (!userHasPermission) {
+        const error: R = JSON.Parse(JSON.stringify("Permission denied")) as R;
+        return error;
+    }
+
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
       const initFuncID = wCtxt.functionIDGetIncrement();
@@ -146,7 +152,7 @@ export class Operon {
     for (const role of validRoles) {
       await this.pool.query(
         "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
-        [workflowID, role]
+        [workflowID, role.name]
       );
     }
 
@@ -178,5 +184,38 @@ export class Operon {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
     return await this.workflow(wf, params, key, timeoutSeconds);
+  }
+
+  // Roles management
+  async registerRole(role: Role): Promise<void> {
+    const client = await this.pool.connect();
+    const query = "CREATE ROLE " + role.name.toLowerCase() + " WITH LOGIN";
+    await this.pool.query(query);
+    client.release();
+  }
+
+  // Users management
+  async registerUser(user: User): Promise<void> {
+    const client = await this.pool.connect();
+    user.id = createId();
+    await this.pool.query(
+      "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
+      [user.id, user.name, user.role.name.toLowerCase()]
+    );
+    client.release();
+  }
+
+  // Permissions management
+  async hasPermission(user: User, workflowID: string): Promise<boolean> {
+    const client = await this.pool.connect();
+    const results = await this.pool.query(
+        "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1 AND role=$2",
+        [workflowID, user.role.name]
+    );
+    client.release();
+    if (results.rows.length === 0) {
+        return false;
+    }
+    return true;
   }
 }

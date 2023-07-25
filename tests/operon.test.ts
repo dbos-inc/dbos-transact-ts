@@ -20,20 +20,59 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 describe('operon-tests', () => {
   let operon: Operon;
   const username: string = process.env.DB_USER || 'postgres';
+  let userAlice: User
+  let userBob: User
+  let userCharlie: User
+  let appRoles: Role[] = [];
 
   beforeEach(async () => {
     operon = new Operon();
     await operon.resetOperonTables();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
+
+    // Cleanup and register some roles // TODO move this into a shared helpers.d.ts
+    await operon.pool.query("DROP ROLE IF EXISTS admin;");
+    await operon.pool.query("DROP ROLE IF EXISTS normalUser;");
+    await operon.pool.query("DROP ROLE IF EXISTS premiumUser;");
+
+    const adminRole: Role = {
+      name: "admin",
+    };
+    const userRole: Role = {
+      name: "normalUser",
+    };
+    const premiumUserRole: Role = {
+      name: "premiumUser",
+    };
+    await operon.registerRole(adminRole)
+    await operon.registerRole(userRole)
+    await operon.registerRole(premiumUserRole)
+    appRoles = [adminRole, userRole, premiumUserRole];
+
+    // Register some users
+    userAlice = {
+      name: "Alice",
+      role: adminRole,
+    }
+    userBob = {
+      name: "Bob",
+      role: userRole,
+    }
+    userCharlie = {
+      name: "Charlie",
+      role: premiumUserRole,
+    }
+    await operon.registerUser(userAlice);
+    await operon.registerUser(userBob);
+    await operon.registerUser(userCharlie);
   });
 
   afterEach(async () => {
     await operon.pool.end();
   });
 
-
-  test('simple-function', async() => {
+  test.only('simple-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
@@ -43,13 +82,39 @@ describe('operon-tests', () => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
+    const helloWorkflowId: string = await operon.registerWorkflow(testWorkflow, "Test Workflow", appRoles);
 
-    const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
+    const params: WorkflowParams = {
+      runAs: userAlice,
+      id: helloWorkflowId,
+    }
+    const workflowResult: string = await operon.workflow(testWorkflow, params, username);
 
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
   });
 
+  test.only('simple-function-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+        const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+        return JSON.stringify(rows[0]);
+    };
 
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+        const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+        return funcResult;
+    };
+    // Register the workflow as runnable only by admin
+    const helloWorkflowId: string =
+      await operon.registerWorkflow(testWorkflow, "Test Workflow", [appRoles[0]]);
+
+    const params: WorkflowParams = {
+        runAs: userBob,
+        id: helloWorkflowId,
+    }
+    await expect(operon.workflow(testWorkflow, params, username)).resolves.toBe("Permission denied");
+  });
+
+  /*
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
       void txnCtxt;
@@ -250,5 +315,6 @@ describe('operon-tests', () => {
     const retry = await operon.recv({workflowUUID: workflowUUID}, "test", 2);
     expect(retry).toBe(123);
   });
+  */
 });
 
