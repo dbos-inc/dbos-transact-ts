@@ -6,11 +6,14 @@ import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 import { OperonError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
+import { User } from './users';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
   workflowUUID?: string;
+  runAs: User;
+  id: string;
 }
 
 interface OperonNull {}

@@ -1,4 +1,11 @@
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
+import {
+  Operon,
+  WorkflowContext,
+  TransactionContext,
+  CommunicatorContext,
+  User,
+  WorkflowParams
+} from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 

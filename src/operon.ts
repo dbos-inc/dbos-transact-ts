@@ -4,6 +4,8 @@ import { Pool } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
+import { User } from './users';
+import { createId } from '@paralleldrive/cuid2';
 
 export interface operon__FunctionOutputs {
     workflow_id: string;
@@ -37,7 +39,7 @@ export class Operon {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
       key VARCHAR(255) PRIMARY KEY,
       message TEXT NOT NULL
-    );`)
+    );`);
     // Weird node-postgres issue -- channel names must be all-lowercase.
     await this.pool.query(`
         CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
@@ -61,18 +63,25 @@ export class Operon {
         END
         $$;
     `);
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Workflows (
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );`
+    );
   }
 
   async resetOperonTables() {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
+    await this.pool.query(`DROP TABLE IF EXISTS operon__Workflows;`);
     await this.initializeOperonTables();
   }
 
   #generateUUID(): string {
     return uuidv1();
   }
-  
 
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     // TODO: need to optimize this extra transaction per workflow.
@@ -99,9 +108,10 @@ export class Operon {
   
       return retInput;
     }
-  
+
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowUUID);
+
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
