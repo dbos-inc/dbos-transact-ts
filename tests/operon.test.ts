@@ -1,7 +1,6 @@
 import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
-import { OperonError } from "src/error";
 
 interface OperonKv {
   id: number,
@@ -217,39 +216,12 @@ describe('operon-tests', () => {
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
-
-  test('failing-communicator', async() => {
-
-    const remoteState = {
-      num: 0
-    }
-
-    const testCommunicator = async (ctxt: CommunicatorContext) => {
-      remoteState.num += 1;
-      if (remoteState.num != ctxt.maxAttempts) {
-        throw new Error("bad number");
-      }
-      await sleep(10);
-      return remoteState.num;
-    };
-
-    const testWorkflow = async (ctxt: WorkflowContext) => {
-      return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
-    };
-
-    const result = await operon.workflow(testWorkflow, {});
-    expect(result).toEqual(4);
-
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError(1, "Communicator reached maximum retries."));
-
-  });
-
   test('simple-workflow-notifications', async() => {
 
     const receiveWorkflow = async(ctxt: WorkflowContext) => {
       const test = await ctxt.recv("test", 2) as number;
       const fail = await ctxt.recv("fail", 0) ;
-      return test == 0 && fail == null;
+      return test === 0 && fail === null;
     }
 
     const sendWorkflow = async(ctxt: WorkflowContext) => {

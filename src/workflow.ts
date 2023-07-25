@@ -113,7 +113,14 @@ export class WorkflowContext {
     if (!ctxt.retriesAllowed) {
       try {
         result = await commFn(ctxt, ...args);
-      } catch (error) { /* empty */ }
+      } catch (error) {
+        // If retries not allowed, record the error and throw it to upper level.
+        const err = error as Error;
+        console.log(err);
+        await this.recordExecution<R>(client, ctxt.functionID, null, err);
+        client.release();
+        throw error;
+      }
     } else {
       let numAttempts = 0;
       let intervalSeconds = ctxt.intervalSeconds;
