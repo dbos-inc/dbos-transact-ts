@@ -12,9 +12,11 @@ describe('Operon config', () => {
         expect(() => new Operon()).toThrow('calling fs.stat on operon-config.yaml: An error');
     });
 
-    test.only('System error while checking on config file', () => {
+    // TODO
+    test('System error while checking on config file', () => {
     });
 
+    // TODO
     test('Config file is not a valid file', () => {
     });
 
