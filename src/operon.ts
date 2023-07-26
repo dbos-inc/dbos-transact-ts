@@ -80,6 +80,10 @@ export class Operon {
     return uuidv1();
   }
 
+  /**
+   * A background process that listens for notifications from Postgres then signals the appropriate
+   * workflow listener by resolving its promise.
+   */
   async listenForNotifications() {
     const client = await this.notificationsClient;
     await client.query('LISTEN operon__notificationschannel;');

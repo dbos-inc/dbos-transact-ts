@@ -189,12 +189,12 @@ export class WorkflowContext {
       return check as T;
     }
 
-    // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
-    let resolveNotification: () => void = () => {};
+    // First, register the key with the global notifications listener.
+    let resolveNotification: () => void;
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.listenerMap[key] = resolveNotification;
+    this.listenerMap[key] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
