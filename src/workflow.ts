@@ -180,7 +180,7 @@ export class WorkflowContext {
   }
 
   async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
-    const client = await this.pool.connect();
+    let client = await this.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
     const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
@@ -214,9 +214,11 @@ export class WorkflowContext {
     } else {
       await client.query(`ROLLBACK`);
     }
+    client.release();
 
     // Wait for the notification, then check if the key is in the DB, returning the message if it is and NULL if it isn't.
     await received;
+    client = await this.pool.connect();
     await client.query(`BEGIN`);
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
     if (rows.length > 0 ) {
