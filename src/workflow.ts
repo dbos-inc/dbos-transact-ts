@@ -5,6 +5,7 @@ import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 import { OperonError } from './error';
+import { serializeError, deserializeError } from 'serialize-error';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -37,16 +38,16 @@ export class WorkflowContext {
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
-      throw JSON.parse(rows[0].error);
+      throw deserializeError(JSON.parse(rows[0].error));
     } else {
       return JSON.parse(rows[0].output) as R;  // Could be null.
     }
   }
 
   async recordExecution<R>(client: PoolClient, currFuncID: number, output: R | null, err: Error | null): Promise<void> {
-    // TODO: record errors.
+    const serialErr = (err !== null) ? serializeError(err) : null;
     await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-      [this.workflowUUID, currFuncID, JSON.stringify(output), JSON.stringify(err)]);
+      [this.workflowUUID, currFuncID, JSON.stringify(output), JSON.stringify(serialErr)]);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
@@ -86,7 +87,7 @@ export class WorkflowContext {
           // If the error is something else, rollback and re-throw
           await client.query('ROLLBACK');
           await this.recordExecution(client, funcId, null, error as Error);
-          throw error
+          throw error;
         }
       } finally {
         client.release();
@@ -101,10 +102,16 @@ export class WorkflowContext {
     const client: PoolClient = await this.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
-    if (check !== operonNull) {
+    try {
+      const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
+      if (check !== operonNull) {
+        client.release();
+        return check as R; 
+      }
+    } catch (err) {
+      // Throw an error if it originally did.
       client.release();
-      return check as R; 
+      throw err;
     }
 
     // Execute the communicator function.  If it throws an exception or returns null, retry with exponential backoff.
@@ -116,7 +123,6 @@ export class WorkflowContext {
       } catch (error) {
         // If retries not allowed, record the error and throw it to upper level.
         const err = error as Error;
-        console.log(err);
         await this.recordExecution<R>(client, ctxt.functionID, null, err);
         client.release();
         throw error;

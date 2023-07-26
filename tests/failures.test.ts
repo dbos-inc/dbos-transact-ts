@@ -30,25 +30,24 @@ describe('concurrency-tests', () => {
   });
 
   test('simple-keyconflict', async() => {
+    let counter: number = 0;
+    let succeedUUID: string = '';
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
       const { rows } = await txnCtxt.client.query<KvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
       await sleep(10);
+      counter += 1;
+      succeedUUID = name;
       return rows[0];
     };
 
-    let counter: number = 0;
+    const workflowUUID1 = uuidv1();
+    const workflowUUID2 = uuidv1();
     try {
       // Start two concurrent transactions.
-      const futRes1 = operon.transaction(testFunction, {}, 10, "hello");
-      const futRes2 = operon.transaction(testFunction, {}, 10, "world");
-      const res1 = await futRes1;
-      if (res1) {
-        counter += 1;
-      }
-      const res2 = await futRes2;
-      if (res2) {
-        counter += 1;
-      }
+      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1);
+      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2);
+      await futRes1;
+      await futRes2;
     } catch (error) {
       expect(error).toBeInstanceOf(DatabaseError);
       const err: DatabaseError = error as DatabaseError;
@@ -57,6 +56,13 @@ describe('concurrency-tests', () => {
     }
 
     expect(counter).toBe(1);
+
+    // Retry with the same failed UUID, should throw the same error.
+    const failUUID = (succeedUUID === workflowUUID1) ? workflowUUID2 : workflowUUID1;
+    await expect(operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID)).rejects.toThrow(DatabaseError);
+
+    // Retry with the succeed UUID, should return the expected result.
+    await expect(operon.transaction(testFunction, {workflowUUID: succeedUUID}, 10, succeedUUID)).resolves.toStrictEqual({"id": 10});
   });
 
   test('serialization-error', async() => {
