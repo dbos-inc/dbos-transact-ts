@@ -2,6 +2,7 @@
 logs
 *.log
 npm-debug.log*
+coverage/
 
 # TypeScript build
 dist/

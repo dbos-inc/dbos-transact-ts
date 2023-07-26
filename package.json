@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint --ext .ts .",
-    "test": "npm run build && jest --detectOpenHandles"
+    "test": "npm run build && jest --coverage --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^29.5.3",
@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "pg": "^8.11.1",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "serialize-error": "8.1.0"
   }
 }

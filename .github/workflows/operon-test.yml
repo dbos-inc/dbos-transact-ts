@@ -44,3 +44,4 @@ jobs:
           npm test
         env:
           DB_PASSWORD: dbos
+          DB_USER: postgres
