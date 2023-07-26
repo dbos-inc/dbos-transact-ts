@@ -19,9 +19,10 @@ export interface operon__Notifications {
 
 export class Operon {
   pool: Pool;
+  config: OperonConfig;
   constructor() {
-    const config = new OperonConfig();
-    this.pool = config.pool;
+    this.config = new OperonConfig();
+    this.pool = this.config.pool;
   }
 
   async initializeOperonTables() {
