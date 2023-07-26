@@ -6,10 +6,11 @@ jest.mock('fs');
 
 describe('Operon config', () => {
     test('fs.stat fails', () => {
-        jest.spyOn(fs, 'stat').mockImplementation((path, callback) => {
+        const statMock = jest.spyOn(fs, 'stat').mockImplementation((path, callback) => {
             throw new Error('An error');
         });
         expect(() => new Operon()).toThrow('calling fs.stat on operon-config.yaml: An error');
+        statMock.mockRestore();
     });
 
     // TODO
@@ -32,7 +33,8 @@ describe('Operon config', () => {
             database: mockDatabaseConfig,
         };
 
-        jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(JSON.stringify(mockConfigFile));
+        const readFileSyncMock = jest.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
+
         const operon = new Operon();
         const pool: Pool = operon.pool as Pool;
         // Pool is subclassed as BoundPool by pg-node.
@@ -47,5 +49,7 @@ describe('Operon config', () => {
         expect(options.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
         expect(options.database).toBe('postgres');
         expect(options.max).toBe(10);
+
+        readFileSyncMock.mockRestore();
     });
 });
