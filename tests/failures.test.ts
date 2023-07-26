@@ -39,6 +39,7 @@ describe('concurrency-tests', () => {
       succeedUUID = name;
       return rows[0];
     };
+    operon.registerTransaction(testFunction);
 
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
@@ -80,10 +81,12 @@ describe('concurrency-tests', () => {
       await sleep(1);
       return maxRetry;
     };
+    operon.registerTransaction(testFunction);
 
     const testWorkflow = async (ctxt: WorkflowContext, maxRetry: number) => {
       return await ctxt.transaction(testFunction, maxRetry);
     };
+    operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
     await expect(operon.workflow(testWorkflow, {}, 10)).resolves.toBe(10);
@@ -104,12 +107,13 @@ describe('concurrency-tests', () => {
       await sleep(10);
       return remoteState.num;
     };
+    operon.registerCommunicator(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
 
     const testWorkflow = async (ctxt: WorkflowContext) => {
       return await ctxt.external(testCommunicator);
     };
+    operon.registerWorkflow(testWorkflow);
   
-    operon.configCommunicator(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
     const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
 
@@ -126,13 +130,13 @@ describe('concurrency-tests', () => {
       throw new Error("failed no retry");
       return 10;
     };
-
-    operon.configCommunicator(testCommunicator, { retriesAllowed: false });
+    operon.registerCommunicator(testCommunicator, { retriesAllowed: false });
 
     const testWorkflow = async (ctxt: WorkflowContext): Promise<number> => {
       void ctxt;
       return await ctxt.external(testCommunicator);
     };
+    operon.registerWorkflow(testWorkflow);
 
     const workflowUUID = uuidv1();
 

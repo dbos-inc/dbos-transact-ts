@@ -4,6 +4,7 @@ import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from 
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { OperonError } from './error';
 
 export interface operon__FunctionOutputs {
     workflow_id: string;
@@ -77,20 +78,23 @@ export class Operon {
     return uuidv1();
   }
 
-  configWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig) {
+  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, params);
   }
 
-  configTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig) {
+  registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
     this.transactionConfigMap.set(txn, params);
   }
 
-  configCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig) {
+  registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {
     this.communicatorConfigMap.set(comm, params);
   }
   
-
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
+    const wConfig = this.workflowConfigMap.get(wf);
+    if (wConfig === undefined) {
+      throw new OperonError(`Unregistered Workflow ${wf.name}`)
+    }
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
       const initFuncID = wCtxt.functionIDGetIncrement();
@@ -117,7 +121,7 @@ export class Operon {
     }
   
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID);
+    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
@@ -128,6 +132,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, ...args);
   }
 
@@ -136,6 +141,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, message);
   }
 
@@ -144,6 +150,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 }

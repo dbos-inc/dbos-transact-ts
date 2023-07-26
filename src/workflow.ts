@@ -26,7 +26,8 @@ export class WorkflowContext {
 
   readonly #operon;
 
-  constructor(operon: Operon, workflowUUID: string) {
+  constructor(operon: Operon, workflowUUID: string, workflowConfig: WorkflowConfig) {
+    void workflowConfig;
     this.#operon = operon;
     this.workflowUUID = workflowUUID;
   }
@@ -55,7 +56,10 @@ export class WorkflowContext {
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
-    const txnConfig = this.#operon.transactionConfigMap.get(txn) ?? {};
+    const txnConfig = this.#operon.transactionConfigMap.get(txn);
+    if (txnConfig === undefined) {
+      throw new OperonError(`Unregistered Transaction ${txn.name}`)
+    }
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
@@ -103,7 +107,10 @@ export class WorkflowContext {
   }
 
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
-    const commConfig = this.#operon.communicatorConfigMap.get(commFn) ?? {};
+    const commConfig = this.#operon.communicatorConfigMap.get(commFn);
+    if (commConfig === undefined) {
+      throw new OperonError(`Unregistered External ${commFn.name}`)
+    }
     const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
     const client: PoolClient = await this.#operon.pool.connect();
 
