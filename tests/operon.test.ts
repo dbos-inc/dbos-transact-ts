@@ -19,7 +19,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 describe('operon-tests', () => {
   let operon: Operon;
-  const username: string = process.env.DB_USER || 'postgres';
+  const username: string = process.env.DB_USER || 'dbos';
   let userAlice: User
   let userBob: User
   let userCharlie: User
