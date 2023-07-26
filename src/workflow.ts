@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
 import { operon__FunctionOutputs, operon__Notifications } from './operon';
-import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
+import { Pool, PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 import { OperonError } from './error';
@@ -172,11 +172,11 @@ export class WorkflowContext {
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
     // Return true if successful, false if key already exists.
-    const success: boolean = rows.length === 0;
+    const success: boolean = (rows.length !== 0);
     await this.recordExecution<boolean>(client, functionID, success, null);
     await client.query("COMMIT");
     client.release();
-    return rows.length !== 0;
+    return success;
   }
 
   async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {

@@ -29,6 +29,27 @@ describe('concurrency-tests', () => {
     await operon.destroy();
   });
 
+  test('operon-error', async() => {
+    const testCommunicator = async (ctxt: CommunicatorContext, code?: number) => {
+      void ctxt;
+      await sleep(1);
+      if (code) {
+        throw new OperonError("test operon error with code.", code);
+      } else {
+        throw new OperonError("test operon error without code");
+      }
+    };
+
+    const testWorkflow = async (ctxt: WorkflowContext, code?: number) => {
+      return await ctxt.external(testCommunicator, {retriesAllowed: false}, code);
+    };
+
+    await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+
+    // Test without code.
+    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
+  });
+
   test('simple-keyconflict', async() => {
     let counter: number = 0;
     let succeedUUID: string = '';
