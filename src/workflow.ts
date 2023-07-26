@@ -55,15 +55,16 @@ export class WorkflowContext {
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
+    const txnConfig = this.#operon.transactionConfigMap.get(txn) ?? {};
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
       try {
-        const fCtxt: TransactionContext = new TransactionContext(client, funcId);
+        const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
 
-        await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+        await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
 
         // Check if this execution previously happened, returning its original result if it did.
         const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
