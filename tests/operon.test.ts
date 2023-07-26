@@ -95,21 +95,21 @@ describe('operon-tests', () => {
 
   test.only('simple-function-permission-denied', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-        const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-        return JSON.stringify(rows[0]);
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
     };
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-        const funcResult: string = await workflowCtxt.transaction(testFunction, name);
-        return funcResult;
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
     };
     // Register the workflow as runnable only by admin
     const helloWorkflowId: string =
       await operon.registerWorkflow(testWorkflow, "Test Workflow", [appRoles[0]]);
 
     const params: WorkflowParams = {
-        runAs: userBob,
-        id: helloWorkflowId,
+      runAs: userBob,
+      id: helloWorkflowId,
     }
     await expect(operon.workflow(testWorkflow, params, username)).resolves.toBe("Permission denied");
   });

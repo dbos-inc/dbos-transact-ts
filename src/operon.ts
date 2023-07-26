@@ -102,8 +102,8 @@ export class Operon {
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     const userHasPermission = await this.hasPermission(params.runAs, params.id);
     if (!userHasPermission) {
-        const error: R = JSON.Parse(JSON.stringify("Permission denied")) as R;
-        return error;
+      const error: R = JSON.Parse(JSON.stringify("Permission denied")) as R;
+      return error;
     }
 
     // TODO: need to optimize this extra transaction per workflow.
@@ -209,12 +209,12 @@ export class Operon {
   async hasPermission(user: User, workflowID: string): Promise<boolean> {
     const client = await this.pool.connect();
     const results = await this.pool.query(
-        "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1 AND role=$2",
-        [workflowID, user.role.name]
+      "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1 AND role=$2",
+      [workflowID, user.role.name]
     );
     client.release();
     if (results.rows.length === 0) {
-        return false;
+      return false;
     }
     return true;
   }
