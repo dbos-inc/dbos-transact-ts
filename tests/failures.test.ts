@@ -112,7 +112,7 @@ describe('concurrency-tests', () => {
     const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
 
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError(1, "Communicator reached maximum retries."));
+    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
 
   });
 

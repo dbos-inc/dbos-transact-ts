@@ -145,7 +145,7 @@ export class WorkflowContext {
 
     if (result === operonNull) {
       // Record error and throw an exception.
-      const operonErr: OperonError = new OperonError(1, "Communicator reached maximum retries.");
+      const operonErr: OperonError = new OperonError("Communicator reached maximum retries.", 1);
       await this.recordExecution<R>(client, ctxt.functionID, null, operonErr);
       client.release();
       throw operonErr;
