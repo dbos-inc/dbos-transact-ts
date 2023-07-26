@@ -13,13 +13,19 @@ export class OperonConfig {
 
   constructor() {
     // Check if configFile is a valid file
-    fs.stat(configFile, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
-      if (error) {
-        throw new OperonError(`Config file ${configFile} does not exist`);
-      } else if (!stats.isFile()) {
-        throw new OperonError(`Config file ${configFile} is not a valid file`);
-      }
-    });
+    try {
+        fs.stat(configFile, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
+          if (error) {
+            throw new OperonError(`checking on ${configFile}. Errno: ${error.errno}`);
+          } else if (!stats.isFile()) {
+            throw new OperonError(`config file ${configFile} is not a file`);
+          }
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new OperonError(`calling fs.stat on ${configFile}: ${error.message}`);
+        }
+    }
 
     // Logic to parse configFile. XXX We don't have a typed schema for the config file. Should we?
     const configFileContent: string = fs.readFileSync(configFile, 'utf8')
