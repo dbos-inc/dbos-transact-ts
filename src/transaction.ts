@@ -3,6 +3,11 @@ import { PoolClient } from 'pg';
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
+export interface TransactionConfig {
+  /* TODO: add stuff. */
+}
+
+
 export class TransactionContext {
   client: PoolClient;
 

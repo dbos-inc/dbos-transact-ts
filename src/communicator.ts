@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
-export interface CommunicatorParams {
+export interface CommunicatorConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)
   intervalSeconds?: number; // Seconds to wait before the first retry attempt (default 1).
   maxAttempts?: number; // Maximum number of retry attempts (default 3). If the error occurs more times than this, return null.
@@ -18,7 +18,7 @@ export class CommunicatorContext {
 
 
   // TODO: Validate the parameters.
-  constructor(functionID: number, params: CommunicatorParams) {
+  constructor(functionID: number, params: CommunicatorConfig) {
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;

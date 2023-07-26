@@ -106,9 +106,10 @@ describe('concurrency-tests', () => {
     };
 
     const testWorkflow = async (ctxt: WorkflowContext) => {
-      return await ctxt.external(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
+      return await ctxt.external(testCommunicator);
     };
-
+  
+    operon.configCommunicator(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
     const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
 
@@ -126,9 +127,11 @@ describe('concurrency-tests', () => {
       return 10;
     };
 
+    operon.configCommunicator(testCommunicator, { retriesAllowed: false });
+
     const testWorkflow = async (ctxt: WorkflowContext): Promise<number> => {
       void ctxt;
-      return await ctxt.external(testCommunicator, { retriesAllowed: false });
+      return await ctxt.external(testCommunicator);
     };
 
     const workflowUUID = uuidv1();

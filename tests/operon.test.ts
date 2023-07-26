@@ -202,7 +202,7 @@ describe('operon-tests', () => {
     };
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult = await workflowCtxt.external(testCommunicator, {}, name);
+      const funcResult = await workflowCtxt.external(testCommunicator, name);
       return funcResult ?? "error";
     };
 

@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
-import { operon__FunctionOutputs, operon__Notifications } from './operon';
-import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
+import { operon__FunctionOutputs, operon__Notifications, Operon } from './operon';
+import { PoolClient, Notification, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
-import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
+import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 
@@ -13,17 +13,21 @@ export interface WorkflowParams {
   workflowUUID?: string;
 }
 
+export interface WorkflowConfig {
+  /* TODO: add stuff. */
+}
+
 interface OperonNull {}
 const operonNull: OperonNull = {};
 
 export class WorkflowContext {
-  pool: Pool;
-
   readonly workflowUUID: string;
   #functionID: number = 0;
 
-  constructor(pool: Pool, workflowUUID: string) {
-    this.pool = pool;
+  readonly #operon;
+
+  constructor(operon: Operon, workflowUUID: string) {
+    this.#operon = operon;
     this.workflowUUID = workflowUUID;
   }
 
@@ -55,7 +59,7 @@ export class WorkflowContext {
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
     while(true) {
-      let client: PoolClient = await this.pool.connect();
+      let client: PoolClient = await this.#operon.pool.connect();
       try {
         const fCtxt: TransactionContext = new TransactionContext(client, funcId);
 
@@ -73,7 +77,7 @@ export class WorkflowContext {
 
         // Record the execution, commit, and return.
         if(fCtxt.isAborted()) {
-          client = await this.pool.connect();
+          client = await this.#operon.pool.connect();
         }
         await this.recordExecution(client, fCtxt.functionID, result, null);
         await client.query("COMMIT");
@@ -97,9 +101,10 @@ export class WorkflowContext {
     }
   }
 
-  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: CommunicatorParams, ...args: T): Promise<R> {
-    const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), params);
-    const client: PoolClient = await this.pool.connect();
+  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
+    const commConfig = this.#operon.communicatorConfigMap.get(commFn) ?? {};
+    const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
+    const client: PoolClient = await this.#operon.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
     try {
@@ -129,7 +134,7 @@ export class WorkflowContext {
       }
     } else {
       let numAttempts = 0;
-      let intervalSeconds = ctxt.intervalSeconds;
+      let intervalSeconds: number = ctxt.intervalSeconds;
       while (result === operonNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
@@ -157,7 +162,7 @@ export class WorkflowContext {
   }
 
   async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
-    const client: PoolClient = await this.pool.connect();
+    const client: PoolClient = await this.#operon.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
     
     await client.query("BEGIN");
@@ -178,7 +183,7 @@ export class WorkflowContext {
   }
 
   async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
-    const client = await this.pool.connect();
+    const client = await this.#operon.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
     const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
