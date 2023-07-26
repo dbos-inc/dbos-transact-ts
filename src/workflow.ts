@@ -19,12 +19,14 @@ const operonNull: OperonNull = {};
 export class WorkflowContext {
   pool: Pool;
 
+  readonly listenerMap : Record<string, () => void>;
   readonly workflowUUID: string;
   #functionID: number = 0;
 
-  constructor(pool: Pool, workflowUUID: string) {
+  constructor(pool: Pool, listenerMap: Record<string, () => void>, workflowUUID: string) {
     this.pool = pool;
     this.workflowUUID = workflowUUID;
+    this.listenerMap = listenerMap;
   }
 
   functionIDGetIncrement() : number {
@@ -188,18 +190,11 @@ export class WorkflowContext {
     }
 
     // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
-    await client.query('LISTEN operon__notificationschannel;');
-    let resolveNotification: () => void;
+    let resolveNotification: () => void = () => {};
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    const handler = (msg: Notification ) => {
-      if (msg.payload === key) {
-        client.removeListener('notification', handler);
-        resolveNotification();
-      }
-    };
-    client.on('notification', handler);
+    this.listenerMap[key] = resolveNotification;
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();

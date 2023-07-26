@@ -17,8 +17,9 @@ export interface operon__Notifications {
 }
 
 export class Operon {
-  pool: Pool;
-  notificationsClient: Promise<PoolClient>;
+  readonly pool: Pool;
+  readonly notificationsClient: Promise<PoolClient>;
+  readonly listenerMap: Record<string, () => void> = {};
 
   constructor(config: PoolConfig) {
     this.pool = new Pool(config);
@@ -83,7 +84,9 @@ export class Operon {
     const client = await this.notificationsClient;
     await client.query('LISTEN operon__notificationschannel;');
     const handler = (msg: Notification ) => {
-      console.log(msg.payload);
+      if (msg.payload && msg.payload in this.listenerMap) {
+        this.listenerMap[msg.payload]();
+      }
     };
     client.on('notification', handler);
   }
@@ -116,7 +119,7 @@ export class Operon {
     }
   
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowUUID);
+    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, this.listenerMap, workflowUUID);
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
