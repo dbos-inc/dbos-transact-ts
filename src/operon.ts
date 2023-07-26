@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig } from 'pg';
+import { Pool, PoolConfig, Notification, Client, PoolClient } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
@@ -18,8 +18,17 @@ export interface operon__Notifications {
 
 export class Operon {
   pool: Pool;
+  notificationsClient: Promise<PoolClient>;
+
   constructor(config: PoolConfig) {
     this.pool = new Pool(config);
+    this.notificationsClient = this.pool.connect();
+    void this.listenForNotifications();
+  }
+
+  async destroy() {
+    (await this.notificationsClient).removeAllListeners().release();
+    await this.pool.end();
   }
 
   async initializeOperonTables() {
@@ -68,6 +77,15 @@ export class Operon {
 
   #generateUUID(): string {
     return uuidv1();
+  }
+
+  async listenForNotifications() {
+    const client = await this.notificationsClient;
+    await client.query('LISTEN operon__notificationschannel;');
+    const handler = (msg: Notification ) => {
+      console.log(msg.payload);
+    };
+    client.on('notification', handler);
   }
   
 

@@ -26,7 +26,7 @@ describe('concurrency-tests', () => {
   });
 
   afterEach(async () => {
-    await operon.pool.end();
+    await operon.destroy();
   });
 
   test('simple-keyconflict', async() => {

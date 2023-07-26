@@ -25,7 +25,7 @@ describe('operon-tests', () => {
   });
 
   afterEach(async () => {
-    await operon.pool.end();
+    await operon.destroy();
   });
 
 
