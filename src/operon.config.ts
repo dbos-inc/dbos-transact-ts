@@ -21,21 +21,22 @@ export class OperonConfig {
       }
     });
 
-    // Logic to parse configFile
+    // Logic to parse configFile. XXX We don't have a typed schema for the config file. Should we?
     const configFileContent: string = fs.readFileSync(configFile, 'utf8')
-    const parsedConfig: any = YAML.parse(configFileContent) // XXX We could maybe have a typed format for the config...
-    const dbConfig: any = parsedConfig.database;
-    // Use config provided password first then attempt to parse env vars
-    const dbPassword: string =
-            dbConfig.password ||
+    const parsedConfig = YAML.parse(configFileContent) // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+
+    // Handle DB config
+    const dbConfig = parsedConfig.database; // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+    const dbPassword: string = // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+            dbConfig.password || // eslint-disable-line @typescript-eslint/no-unsafe-member-access
             process.env.DB_PASSWORD ||
             process.env.PGPASSWORD;
     this.pool = new Pool({
-      host: dbConfig.hostname,
-      port: dbConfig.port,
-      user: dbConfig.username,
+      host: dbConfig.hostname, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+      port: dbConfig.port, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+      user: dbConfig.username, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       password: dbPassword,
-      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       database: 'postgres', // For now we use the default postgres database
     });
   }
