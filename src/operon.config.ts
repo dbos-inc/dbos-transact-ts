@@ -6,6 +6,18 @@ import fs from 'fs'
 
 const configFile: string = "operon-config.yaml";
 
+export interface OperonConfigFile {
+    database: DatabaseConfig;
+}
+
+export interface DatabaseConfig {
+    hostname: string;
+    port: number;
+    username: string;
+    password?: string;
+    connectionTimeoutMillis: number;
+}
+
 export class OperonConfig {
   readonly pool: Pool;
   // We will add operonRoles: Role[] here in a next PR
@@ -14,35 +26,35 @@ export class OperonConfig {
   constructor() {
     // Check if configFile is a valid file
     try {
-        fs.stat(configFile, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
-          if (error) {
-            throw new OperonError(`checking on ${configFile}. Errno: ${error.errno}`);
-          } else if (!stats.isFile()) {
-            throw new OperonError(`config file ${configFile} is not a file`);
-          }
-        });
-    } catch (error) {
-        if (error instanceof Error) {
-            throw new OperonError(`calling fs.stat on ${configFile}: ${error.message}`);
+      fs.stat(configFile, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
+        if (error) {
+          throw new OperonError(`checking on ${configFile}. Errno: ${error.errno}`);
+        } else if (!stats.isFile()) {
+          throw new OperonError(`config file ${configFile} is not a file`);
         }
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new OperonError(`calling fs.stat on ${configFile}: ${error.message}`);
+      }
     }
 
     // Logic to parse configFile. XXX We don't have a typed schema for the config file. Should we?
     const configFileContent: string = fs.readFileSync(configFile, 'utf8')
-    const parsedConfig = YAML.parse(configFileContent) // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+    const parsedConfig: OperonConfigFile = YAML.parse(configFileContent) as OperonConfigFile;
 
     // Handle DB config
-    const dbConfig = parsedConfig.database; // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-    const dbPassword: string = // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-            dbConfig.password || // eslint-disable-line @typescript-eslint/no-unsafe-member-access
+    const dbConfig: DatabaseConfig = parsedConfig.database;
+    const dbPassword =
+            dbConfig.password ||
             process.env.DB_PASSWORD ||
             process.env.PGPASSWORD;
     this.pool = new Pool({
-      host: dbConfig.hostname, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-      port: dbConfig.port, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-      user: dbConfig.username, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+      host: dbConfig.hostname,
+      port: dbConfig.port,
+      user: dbConfig.username,
       password: dbPassword,
-      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis, // eslint-disable-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
       database: 'postgres', // For now we use the default postgres database
     });
   }
