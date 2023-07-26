@@ -14,11 +14,7 @@ describe('operon-tests', () => {
   const username: string = process.env.DB_USER || 'postgres';
 
   beforeEach(async () => {
-    operon = new Operon({
-      user: username,
-      password: process.env.DB_PASSWORD || 'dbos',
-      connectionTimeoutMillis:  3000
-    });
+    operon = new Operon();
     await operon.resetOperonTables();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
