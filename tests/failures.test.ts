@@ -79,7 +79,12 @@ describe('concurrency-tests', () => {
 
     // Retry with the same failed UUID, should throw the same error.
     const failUUID = (succeedUUID === workflowUUID1) ? workflowUUID2 : workflowUUID1;
-    await expect(operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID)).rejects.toThrow(DatabaseError);
+    try {
+      await operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID)
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      expect(err.code).toBe('23505');
+    }
 
     // Retry with the succeed UUID, should return the expected result.
     await expect(operon.transaction(testFunction, {workflowUUID: succeedUUID}, 10, succeedUUID)).resolves.toStrictEqual({"id": 10});

@@ -30,7 +30,7 @@ describe('operon-tests', () => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
     };
-    operon.registerTransaction(testFunction);
+    operon.registerTransaction(testFunction, {readOnly: true});
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);

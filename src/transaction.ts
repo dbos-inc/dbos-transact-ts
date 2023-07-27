@@ -6,6 +6,7 @@ export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, .
 
 export interface TransactionConfig {
   isolationLevel?: string;
+  readOnly?: boolean;
 }
 
 export class TransactionContext {
@@ -13,12 +14,18 @@ export class TransactionContext {
 
   #functionAborted: boolean = false;
   readonly functionID: number;
-  readonly isolationLevel;
+  readonly readOnly : boolean;
+  readonly isolationLevel: string;
   readonly #isolationLevels = ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'];
 
   constructor(client: PoolClient, functionID: number, config: TransactionConfig) {
     this.client = client;
     this.functionID = functionID;
+    if (!config.readOnly) {
+      this.readOnly = false;
+    } else {
+      this.readOnly = config.readOnly;
+    }
     if (!config.isolationLevel) {
       this.isolationLevel = 'SERIALIZABLE';
     } else if (this.#isolationLevels.includes(config.isolationLevel.toUpperCase())) {

@@ -23,8 +23,8 @@ const operonNull: OperonNull = {};
 export class WorkflowContext {
   readonly workflowUUID: string;
   #functionID: number = 0;
-
   readonly #operon;
+  readonly resultBuffer: Map<number, any> = new Map<number, any>();
 
   constructor(operon: Operon, workflowUUID: string, workflowConfig: WorkflowConfig) {
     void workflowConfig;
@@ -37,22 +37,31 @@ export class WorkflowContext {
   }
 
   async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | OperonNull> {
-    // TODO: read errors.
     const { rows } = await client.query<operon__FunctionOutputs>("SELECT output, error FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
       [this.workflowUUID, currFuncID]);
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
-      throw deserializeError(JSON.parse(rows[0].error));
+      const error: any = deserializeError(JSON.parse(rows[0].error));
+      error.__retry__ = true;
+      throw error;
     } else {
       return JSON.parse(rows[0].output) as R;  // Could be null.
     }
   }
 
-  async recordExecution<R>(client: PoolClient, currFuncID: number, output: R | null, err: Error | null): Promise<void> {
-    const serialErr = (err !== null) ? serializeError(err) : null;
+  async recordExecutionBuffer(client: PoolClient): Promise<void> {
+    for (const [funcID, output] of this.resultBuffer) {
+      await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
+        [this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null)]);
+    }
+    this.resultBuffer.clear();
+  }
+
+  async recordError(client: PoolClient, currFuncID: number, err: Error) {
+    const serialErr = serializeError(err);
     await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-      [this.workflowUUID, currFuncID, JSON.stringify(output), JSON.stringify(serialErr)]);
+      [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
@@ -69,6 +78,9 @@ export class WorkflowContext {
         const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
 
         await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
+        if (fCtxt.readOnly) {
+          await client.query(`SET TRANSACTION READ ONLY`);
+        }
 
         // Check if this execution previously happened, returning its original result if it did.
         const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
@@ -84,7 +96,10 @@ export class WorkflowContext {
         if(fCtxt.isAborted()) {
           client = await this.#operon.pool.connect();
         }
-        await this.recordExecution(client, fCtxt.functionID, result, null);
+        this.resultBuffer.set(funcId, result);
+        if (!fCtxt.readOnly) {
+          await this.recordExecutionBuffer(client);
+        }
         await client.query("COMMIT");
         return result;
       } catch (error) {
@@ -95,7 +110,12 @@ export class WorkflowContext {
         }  else {
           // If the error is something else, rollback and re-throw
           await client.query('ROLLBACK');
-          await this.recordExecution(client, funcId, null, error as Error);
+          if (!Object.hasOwn(err, "__retry__")) {
+            await client.query('BEGIN');
+            await this.recordExecutionBuffer(client);
+            await this.recordError(client, funcId, error as Error);
+            await client.query('COMMIT');
+          }
           throw error;
         }
       } finally {
@@ -135,8 +155,10 @@ export class WorkflowContext {
         result = await commFn(ctxt, ...args);
       } catch (error) {
         // If retries not allowed, record the error and throw it to upper level.
-        const err = error as Error;
-        await this.recordExecution<R>(client, ctxt.functionID, null, err);
+        await client.query('BEGIN');
+        await this.recordExecutionBuffer(client);
+        await this.recordError(client, ctxt.functionID, error as Error);
+        await client.query('COMMIT');
         client.release();
         throw error;
       }
@@ -159,12 +181,16 @@ export class WorkflowContext {
     if (result === operonNull) {
       // Record error and throw an exception.
       const operonErr: OperonError = new OperonError("Communicator reached maximum retries.", 1);
-      await this.recordExecution<R>(client, ctxt.functionID, null, operonErr);
+      await client.query('BEGIN');
+      await this.recordExecutionBuffer(client);
+      await this.recordError(client, ctxt.functionID, operonErr as Error);
+      await client.query('COMMIT');
       client.release();
       throw operonErr;
     }
     // Record the execution and return.
-    await this.recordExecution<R>(client, ctxt.functionID, result as R, null);
+    this.resultBuffer.set(ctxt.functionID, result);
+    await this.recordExecutionBuffer(client);
     client.release();
     return result as R;
   }
@@ -184,7 +210,8 @@ export class WorkflowContext {
       [key, JSON.stringify(message)])
     // Return true if successful, false if key already exists.
     const success: boolean = (rows.length !== 0);
-    await this.recordExecution<boolean>(client, functionID, success, null);
+    this.resultBuffer.set(functionID, success);
+    await this.recordExecutionBuffer(client);
     await client.query("COMMIT");
     client.release();
     return success;
@@ -218,7 +245,8 @@ export class WorkflowContext {
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
-      await this.recordExecution<T>(client, functionID, message, null);
+      this.resultBuffer.set(functionID, message);
+      await this.recordExecutionBuffer(client);
       await client.query(`COMMIT`);
       client.release();
       return message;
@@ -234,13 +262,15 @@ export class WorkflowContext {
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
     if (rows.length > 0 ) {
       const message = JSON.parse(rows[0].message) as T;
-      await this.recordExecution<T>(client, functionID, message, null);
+      this.resultBuffer.set(functionID, message);
+      await this.recordExecutionBuffer(client);
       await client.query(`COMMIT`);
       client.release();
       return message;
     } else {
       await client.query(`ROLLBACK`);
-      await this.recordExecution(client, functionID, null, null);
+      this.resultBuffer.set(functionID, null);
+      await this.recordExecutionBuffer(client);
       client.release();
       return null;
     }
