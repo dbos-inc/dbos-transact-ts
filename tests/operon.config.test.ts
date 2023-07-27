@@ -30,6 +30,7 @@ describe('Operon config', () => {
       port: 1111,
       username: 'some test user',
       connectionTimeoutMillis: 3,
+      database: 'some database',
     };
     const mockConfigFile = {
       database: mockDatabaseConfig,
@@ -46,7 +47,7 @@ describe('Operon config', () => {
     expect(poolConfig.user).toBe(mockDatabaseConfig.username);
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
-    expect(poolConfig.database).toBe('postgres');
+    expect(poolConfig.database).toBe('some database');
 
     readFileSyncMock.mockRestore();
   });

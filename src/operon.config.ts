@@ -16,6 +16,7 @@ export interface DatabaseConfig {
     username: string;
     password?: string;
     connectionTimeoutMillis: number;
+    database: string;
 }
 
 export class OperonConfig {
@@ -56,7 +57,7 @@ export class OperonConfig {
       user: dbConfig.username,
       password: dbPassword,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
-      database: 'postgres', // For now we use the default postgres database
+      database: dbConfig.database,
     };
   }
 }
