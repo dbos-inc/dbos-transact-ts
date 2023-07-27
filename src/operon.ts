@@ -8,8 +8,7 @@ import { User } from './users';
 import { Role } from './roles';
 
 import { Pool, PoolClient, Notification, QueryArrayResult, QueryResultRow } from 'pg';
-import { v1 as uuidv1 } from 'uuid';
-import { createId } from '@paralleldrive/cuid2';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
     workflow_id: string;
@@ -124,7 +123,7 @@ export class Operon {
   }
 
   #generateUUID(): string {
-    return uuidv1();
+    return uuidv4();
   }
 
   /**
@@ -144,8 +143,7 @@ export class Operon {
 
   async registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     if (!config.id) {
-      // Generate a unique ID for this workflow.
-      config.id = createId();
+      config.id = this.#generateUUID();
     }
 
     if (!config.name) {
@@ -261,7 +259,7 @@ export class Operon {
   // Users and roles management
   async registerUser(user: User): Promise<void> {
     const client = await this.pool.connect();
-    user.id = createId();
+    user.id = this.#generateUUID();
     await this.pool.query(
       "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
       [user.id, user.name, user.role.name]
