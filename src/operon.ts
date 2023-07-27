@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig } from 'pg';
+import { OperonConfig } from './operon.config';
+import { Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction, TransactionConfig } from './transaction';
@@ -19,9 +20,21 @@ export interface operon__Notifications {
 }
 
 export class Operon {
-  pool: Pool;
-  constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+  readonly pool: Pool;
+  config: OperonConfig;
+  readonly notificationsClient: Promise<PoolClient>;
+  readonly listenerMap: Record<string, () => void> = {};
+
+  constructor() {
+    this.config = new OperonConfig();
+    this.pool = new Pool(this.config.poolConfig);
+    this.notificationsClient = this.pool.connect();
+    void this.listenForNotifications();
+  }
+
+  async destroy() {
+    (await this.notificationsClient).removeAllListeners().release();
+    await this.pool.end();
   }
 
   readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
@@ -78,6 +91,21 @@ export class Operon {
     return uuidv1();
   }
 
+  /**
+   * A background process that listens for notifications from Postgres then signals the appropriate
+   * workflow listener by resolving its promise.
+   */
+  async listenForNotifications() {
+    const client = await this.notificationsClient;
+    await client.query('LISTEN operon__notificationschannel;');
+    const handler = (msg: Notification ) => {
+      if (msg.payload && msg.payload in this.listenerMap) {
+        this.listenerMap[msg.payload]();
+      }
+    };
+    client.on('notification', handler);
+  }
+
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, params);
   }
@@ -121,7 +149,9 @@ export class Operon {
     }
   
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;
