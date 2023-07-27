@@ -40,7 +40,7 @@ export class Operon {
     for (const role of this.config.operonRoles) {
       this.roles[role.name] = role;
     }
-    
+
     this.notificationsClient = this.pool.connect();
     void this.listenForNotifications();
   }
@@ -142,8 +142,40 @@ export class Operon {
     client.on('notification', handler);
   }
 
-  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig={}) {
-    this.workflowConfigMap.set(wf, params);
+  async registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
+    if (!config.id) {
+        // Generate a unique ID for this workflow.
+        config.id = createId();
+    }
+
+    if (!config.name) {
+      // Retrieve the underlying function object `name` property
+      config.name = wf.name;
+    }
+
+    // Keep track of registered workflows in memory
+    this.workflowConfigMap.set(wf, config);
+
+    // Register the workflow and its permitted roles in the database
+    const client = await this.pool.connect();
+    await client.query("BEGIN;");
+
+    await this.pool.query(
+      "INSERT INTO operon__Workflows (id, name) VALUES ($1, $2)",
+      [config.id, config.name]
+    );
+
+    if (config.rolesThatCanRun) {
+        for (const role of config.rolesThatCanRun) {
+          await this.pool.query(
+            "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
+            [config.id, role.name]
+          );
+        }
+    }
+
+    await client.query("COMMIT;");
+    client.release();
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
