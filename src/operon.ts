@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
-import { Pool } from 'pg';
+import { Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
