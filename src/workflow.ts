@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
 import {
-    operon__FunctionOutputs,
-    operon__Notifications,
-    operon__Roles,
-    Operon
+  operon__FunctionOutputs,
+  operon__Notifications,
+  Operon
 } from './operon';
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';

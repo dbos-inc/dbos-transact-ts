@@ -6,7 +6,6 @@ import {
   TransactionContext,
   CommunicatorContext,
   User,
-  Role,
   WorkflowParams
 } from "src/";
 import { v1 as uuidv1 } from 'uuid';
@@ -25,7 +24,6 @@ describe('operon-tests', () => {
   let userAlice: User
   let userBob: User
 
-
   beforeEach(async () => {
     operon = new Operon();
     await operon.resetOperonTables();
@@ -33,9 +31,9 @@ describe('operon-tests', () => {
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
 
     if (!operon.config.poolConfig.user) {
-        username = "dbos";
+      username = "dbos";
     } else {
-        username = operon.config.poolConfig.user;
+      username = operon.config.poolConfig.user;
     }
 
     // Register some users
@@ -68,8 +66,8 @@ describe('operon-tests', () => {
     };
 
     const testWorkflowConfig: WorkflowConfig = {
-        rolesThatCanRun: [operon.roles["operonAppAdmin"], operon.roles["operonAppUser"]],
-        name: "Test Workflow",
+      rolesThatCanRun: [operon.roles["operonAppAdmin"], operon.roles["operonAppUser"]],
+      name: "Test Workflow",
     }
     await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
@@ -94,8 +92,8 @@ describe('operon-tests', () => {
     };
     // Register the workflow as runnable only by admin
     const testWorkflowConfig: WorkflowConfig = {
-        rolesThatCanRun: [operon.roles["operonAppAdmin"]],
-        name: "Test Workflow",
+      rolesThatCanRun: [operon.roles["operonAppAdmin"]],
+      name: "Test Workflow",
     }
     await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
@@ -103,7 +101,7 @@ describe('operon-tests', () => {
       runAs: userBob,
     }
     await expect(operon.workflow(testWorkflow, params, username)).rejects.toThrow(
-        OperonPermissionDeniedError
+      OperonPermissionDeniedError
     );
   });
 

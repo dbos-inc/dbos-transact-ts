@@ -7,7 +7,7 @@ import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { User } from './users';
 import { Role } from './roles';
 
-import { Pool, PoolClient, Notification } from 'pg';
+import { Pool, PoolClient, Notification, QueryArrayResult, QueryResultRow } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -144,8 +144,8 @@ export class Operon {
 
   async registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     if (!config.id) {
-        // Generate a unique ID for this workflow.
-        config.id = createId();
+      // Generate a unique ID for this workflow.
+      config.id = createId();
     }
 
     if (!config.name) {
@@ -166,12 +166,12 @@ export class Operon {
     );
 
     if (config.rolesThatCanRun) {
-        for (const role of config.rolesThatCanRun) {
-          await this.pool.query(
-            "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
-            [config.id, role.name]
-          );
-        }
+      for (const role of config.rolesThatCanRun) {
+        await this.pool.query(
+          "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
+          [config.id, role.name]
+        );
+      }
     }
 
     await client.query("COMMIT;");
@@ -196,7 +196,7 @@ export class Operon {
     // We could do the check in memory too, assuming it always have a consistent view of the DB.
     const userHasPermission = await this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
-        throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);
+      throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);
     }
 
     // TODO: need to optimize this extra transaction per workflow.
@@ -237,7 +237,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    this.registerWorkflow(wf);
+    await this.registerWorkflow(wf);
     return await this.workflow(wf, params, ...args);
   }
 
@@ -246,7 +246,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
-    this.registerWorkflow(wf);
+    await this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, message);
   }
 
@@ -255,7 +255,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
-    this.registerWorkflow(wf);
+    await this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 
@@ -274,7 +274,7 @@ export class Operon {
   async hasPermission(user: User, workflowConfig: WorkflowConfig): Promise<boolean> {
     const client = await this.pool.connect();
     // First retrieve all the roles allowed to run the workflow
-    const results = await this.pool.query(
+    const results: QueryArrayResult = await this.pool.query(
       "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1",
       [workflowConfig.id]
     );
@@ -283,12 +283,12 @@ export class Operon {
     if (results.rows.length === 0) {
       return true;
     } else if (results.rows.length > 0) {
-        // Check if the user's role is in the list
-        for (const row of results.rows) {
-          if (row.role === user.role.name) {
-            return true;
-          }
+      // Check if the user's role is in the list
+      for (const row of results.rows) {
+        if ((row as QueryResultRow).role === user.role.name) {
+          return true;
         }
+      }
     }
     return false;
   }
