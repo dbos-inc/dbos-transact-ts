@@ -22,8 +22,6 @@ describe('operon-tests', () => {
   const username: string = process.env.DB_USER || 'dbos';
   let userAlice: User
   let userBob: User
-  let userCharlie: User
-  let appRoles: Role[] = [];
 
   beforeEach(async () => {
     operon = new Operon();
@@ -31,41 +29,17 @@ describe('operon-tests', () => {
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
 
-    // Cleanup and register some roles // TODO move this into a shared helpers.d.ts
-    await operon.pool.query("DROP ROLE IF EXISTS admin;");
-    await operon.pool.query("DROP ROLE IF EXISTS normalUser;");
-    await operon.pool.query("DROP ROLE IF EXISTS premiumUser;");
-
-    const adminRole: Role = {
-      name: "admin",
-    };
-    const userRole: Role = {
-      name: "normalUser",
-    };
-    const premiumUserRole: Role = {
-      name: "premiumUser",
-    };
-    await operon.registerRole(adminRole)
-    await operon.registerRole(userRole)
-    await operon.registerRole(premiumUserRole)
-    appRoles = [adminRole, userRole, premiumUserRole];
-
     // Register some users
     userAlice = {
       name: "Alice",
-      role: adminRole,
+      role: operon.roles["admin"],
     }
     userBob = {
       name: "Bob",
-      role: userRole,
-    }
-    userCharlie = {
-      name: "Charlie",
-      role: premiumUserRole,
+      role: operon.roles["user"],
     }
     await operon.registerUser(userAlice);
     await operon.registerUser(userBob);
-    await operon.registerUser(userCharlie);
   });
 
   afterEach(async () => {
@@ -82,7 +56,7 @@ describe('operon-tests', () => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
-    const helloWorkflowId: string = await operon.registerWorkflow(testWorkflow, "Test Workflow", appRoles);
+    const helloWorkflowId: string = await operon.registerWorkflow(testWorkflow, "Test Workflow", operon.roles);
 
     const params: WorkflowParams = {
       runAs: userAlice,
@@ -105,7 +79,7 @@ describe('operon-tests', () => {
     };
     // Register the workflow as runnable only by admin
     const helloWorkflowId: string =
-      await operon.registerWorkflow(testWorkflow, "Test Workflow", [appRoles[0]]);
+      await operon.registerWorkflow(testWorkflow, "Test Workflow", [operon.roles["admin"]]);
 
     const params: WorkflowParams = {
       runAs: userBob,

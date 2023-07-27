@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
+import { OperonError } from './error';
 import { Pool } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
@@ -20,12 +21,20 @@ export interface operon__Notifications {
   message: string;
 }
 
+export interface operon__Roles {
+  [key: string]: Role;
+}
+
 export class Operon {
   pool: Pool;
   config: OperonConfig;
+  roles: operon__Roles = {};
   constructor() {
     this.config = new OperonConfig();
     this.pool = new Pool(this.config.poolConfig);
+    for (const role of this.config.operonRoles) {
+      this.roles[role.name] = role;
+    }
   }
 
   async initializeOperonTables() {
@@ -102,8 +111,7 @@ export class Operon {
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     const userHasPermission = await this.hasPermission(params.runAs, params.id);
     if (!userHasPermission) {
-      const error: R = JSON.Parse(JSON.stringify("Permission denied")) as R;
-      return error;
+        throw new OperonError(`user ${params.runAs} does not have permission to run workflow ${params.id}`);
     }
 
     // TODO: need to optimize this extra transaction per workflow.
@@ -149,6 +157,7 @@ export class Operon {
       "INSERT INTO operon__Workflows (id, name) VALUES ($1, $2)",
       [workflowID, name]
     );
+
     for (const role of validRoles) {
       await this.pool.query(
         "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
@@ -186,15 +195,7 @@ export class Operon {
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 
-  // Roles management
-  async registerRole(role: Role): Promise<void> {
-    const client = await this.pool.connect();
-    const query = "CREATE ROLE " + role.name.toLowerCase() + " WITH LOGIN";
-    await this.pool.query(query);
-    client.release();
-  }
-
-  // Users management
+  // Users and roles management
   async registerUser(user: User): Promise<void> {
     const client = await this.pool.connect();
     user.id = createId();
@@ -208,14 +209,23 @@ export class Operon {
   // Permissions management
   async hasPermission(user: User, workflowID: string): Promise<boolean> {
     const client = await this.pool.connect();
+    // First retrieve all the roles allowed to run the workflow
     const results = await this.pool.query(
-      "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1 AND role=$2",
+      "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1",
       [workflowID, user.role.name]
     );
     client.release();
+    // If results is empty the workflow is permisionless and anyone can run it
     if (results.rows.length === 0) {
       return false;
+    } else if (results.rows.length > 0) {
+        // Check if the user's role is in the list
+        for (const row of results.rows) {
+          if (row.role === user.role.name) {
+            return true;
+          }
+        }
     }
-    return true;
+    return false;
   }
 }

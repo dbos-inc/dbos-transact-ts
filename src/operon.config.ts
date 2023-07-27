@@ -1,4 +1,5 @@
 import { OperonError } from './error';
+import { Role } from './roles';
 
 import { PoolConfig } from 'pg';
 import YAML from 'yaml'
@@ -8,6 +9,7 @@ const configFile: string = "operon-config.yaml";
 
 interface OperonConfigFile {
     database: DatabaseConfig;
+    operonRoles: Role[];
 }
 
 export interface DatabaseConfig {
@@ -20,6 +22,7 @@ export interface DatabaseConfig {
 
 export class OperonConfig {
   readonly poolConfig: PoolConfig;
+  operonRoles: Role[] = [];
   // We will add operonRoles: Role[] here in a next PR
   // We will add a "debug" flag here to be used in other parts of the codebase
 

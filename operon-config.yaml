@@ -3,3 +3,6 @@ database:
   port: 5432
   username: 'postgres'
   connectionTimeoutMillis: 3000
+operonRoles:
+  - name: "operonAppAdmin"
+  - name: "operonAppUser"
