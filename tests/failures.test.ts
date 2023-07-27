@@ -35,10 +35,12 @@ describe('concurrency-tests', () => {
         throw new OperonError("test operon error without code");
       }
     };
+    operon.registerCommunicator(testCommunicator, {retriesAllowed: false});
 
     const testWorkflow = async (ctxt: WorkflowContext, code?: number) => {
-      return await ctxt.external(testCommunicator, {retriesAllowed: false}, code);
+      return await ctxt.external(testCommunicator, code);
     };
+    operon.registerWorkflow(testWorkflow);
 
     await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
