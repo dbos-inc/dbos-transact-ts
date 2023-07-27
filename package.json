@@ -7,8 +7,8 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint --ext .ts .",
-    "test": "npm run build && jest --coverage --detectOpenHandles",
-    "lint-fix": "eslint --fix --ext .ts ."
+    "lint-fix": "eslint --fix --ext .ts .",
+    "test": "npm run build && jest --coverage --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^29.5.3",
