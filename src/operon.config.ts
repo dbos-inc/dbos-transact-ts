@@ -1,6 +1,6 @@
 import { OperonError } from './error';
 
-import { Pool } from 'pg';
+import { PoolConfig } from 'pg';
 import YAML from 'yaml'
 import fs from 'fs'
 
@@ -19,7 +19,7 @@ export interface DatabaseConfig {
 }
 
 export class OperonConfig {
-  readonly pool: Pool;
+  readonly poolConfig: PoolConfig;
   // We will add operonRoles: Role[] here in a next PR
   // We will add a "debug" flag here to be used in other parts of the codebase
 
@@ -50,13 +50,13 @@ export class OperonConfig {
       throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
     }
 
-    this.pool = new Pool({
+    this.poolConfig = {
       host: dbConfig.hostname,
       port: dbConfig.port,
       user: dbConfig.username,
       password: dbPassword,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
       database: 'postgres', // For now we use the default postgres database
-    });
+    };
   }
 }

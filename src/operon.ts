@@ -22,7 +22,7 @@ export class Operon {
   config: OperonConfig;
   constructor() {
     this.config = new OperonConfig();
-    this.pool = this.config.pool;
+    this.pool = new Pool(this.config.poolConfig);
   }
 
   async initializeOperonTables() {
