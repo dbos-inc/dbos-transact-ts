@@ -264,7 +264,7 @@ export class Operon {
     user.id = createId();
     await this.pool.query(
       "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
-      [user.id, user.name, user.role.name.toLowerCase()]
+      [user.id, user.name, user.role.name]
     );
     client.release();
   }
