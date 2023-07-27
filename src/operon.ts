@@ -193,7 +193,6 @@ export class Operon {
     }
 
     // This checks if the user has permission in the DB.
-    // We could do the check in memory too, assuming it always have a consistent view of the DB.
     const userHasPermission = await this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
       throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);
