@@ -47,7 +47,7 @@ export class OperonConfig {
     const dbConfig: DatabaseConfig = parsedConfig.database;
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
-        throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
+      throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
     }
 
     this.pool = new Pool({
