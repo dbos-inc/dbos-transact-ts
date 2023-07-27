@@ -88,7 +88,6 @@ describe('operon-tests', () => {
     await expect(operon.workflow(testWorkflow, params, username)).resolves.toBe("Permission denied");
   });
 
-  /*
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
       void txnCtxt;
@@ -289,6 +288,5 @@ describe('operon-tests', () => {
     const retry = await operon.recv({workflowUUID: workflowUUID}, "test", 2);
     expect(retry).toBe(123);
   });
-  */
 });
 
