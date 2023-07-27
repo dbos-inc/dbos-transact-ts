@@ -15,11 +15,7 @@ describe('concurrency-tests', () => {
   const testTableName = 'OperonConcurrentKv';
 
   beforeEach(async () => {
-    operon = new Operon({
-      user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'dbos',
-      connectionTimeoutMillis:  3000,
-    });
+    operon = new Operon();
     await operon.resetOperonTables();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);

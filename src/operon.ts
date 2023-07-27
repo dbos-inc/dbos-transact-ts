@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig, Notification, PoolClient } from 'pg';
+import { OperonConfig } from './operon.config';
+import { Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
@@ -18,11 +19,13 @@ export interface operon__Notifications {
 
 export class Operon {
   readonly pool: Pool;
+  config: OperonConfig;
   readonly notificationsClient: Promise<PoolClient>;
   readonly listenerMap: Record<string, () => void> = {};
 
-  constructor(config: PoolConfig) {
-    this.pool = new Pool(config);
+  constructor() {
+    this.config = new OperonConfig();
+    this.pool = new Pool(this.config.poolConfig);
     this.notificationsClient = this.pool.connect();
     void this.listenForNotifications();
   }
