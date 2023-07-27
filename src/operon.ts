@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
 import { OperonError } from './error';
-import { Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
-import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { OperonError } from './error';
 import { User } from './users';
 import { Role } from './roles';
+
+import { Pool, PoolClient, Notification } from 'pg';
+import { v1 as uuidv1 } from 'uuid';
 import { createId } from '@paralleldrive/cuid2';
 
 export interface operon__FunctionOutputs {
