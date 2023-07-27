@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
 import { OperonError } from './error';
-import { Pool } from 'pg';
-import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
+import { Pool, PoolClient, Notification } from 'pg';
+import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
-import { OperonTransaction } from './transaction';
+import { OperonTransaction, TransactionConfig } from './transaction';
+import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { OperonError } from './error';
 import { User } from './users';
 import { Role } from './roles';
 import { createId } from '@paralleldrive/cuid2';
@@ -26,16 +28,33 @@ export interface operon__Roles {
 }
 
 export class Operon {
-  pool: Pool;
+  readonly pool: Pool;
   config: OperonConfig;
+  readonly notificationsClient: Promise<PoolClient>;
+  readonly listenerMap: Record<string, () => void> = {};
   roles: operon__Roles = {};
+
   constructor() {
     this.config = new OperonConfig();
     this.pool = new Pool(this.config.poolConfig);
     for (const role of this.config.operonRoles) {
       this.roles[role.name] = role;
     }
+    
+    this.notificationsClient = this.pool.connect();
+    void this.listenForNotifications();
   }
+
+  async destroy() {
+    (await this.notificationsClient).removeAllListeners().release();
+    await this.pool.end();
+  }
+
+  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
+
+  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+
+  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
 
   async initializeOperonTables() {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
@@ -108,12 +127,44 @@ export class Operon {
     return uuidv1();
   }
 
+  /**
+   * A background process that listens for notifications from Postgres then signals the appropriate
+   * workflow listener by resolving its promise.
+   */
+  async listenForNotifications() {
+    const client = await this.notificationsClient;
+    await client.query('LISTEN operon__notificationschannel;');
+    const handler = (msg: Notification ) => {
+      if (msg.payload && msg.payload in this.listenerMap) {
+        this.listenerMap[msg.payload]();
+      }
+    };
+    client.on('notification', handler);
+  }
+
+  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig={}) {
+    this.workflowConfigMap.set(wf, params);
+  }
+
+  registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
+    this.transactionConfigMap.set(txn, params);
+  }
+
+  registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {
+    this.communicatorConfigMap.set(comm, params);
+  }
+  
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
+    // TODO this below now has to integrate with workflowConfig
     const userHasPermission = await this.hasPermission(params.runAs, params.id);
     if (!userHasPermission) {
         throw new OperonError(`user ${params.runAs} does not have permission to run workflow ${params.id}`);
     }
 
+    const wConfig = this.workflowConfigMap.get(wf);
+    if (wConfig === undefined) {
+      throw new OperonError(`Unregistered Workflow ${wf.name}`)
+    }
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
       const initFuncID = wCtxt.functionIDGetIncrement();
@@ -140,7 +191,7 @@ export class Operon {
     }
 
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowUUID);
+    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
 
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
@@ -176,6 +227,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, ...args);
   }
 
@@ -184,6 +236,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, message);
   }
 
@@ -192,6 +245,7 @@ export class Operon {
     const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
+    this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 

@@ -43,7 +43,7 @@ describe('operon-tests', () => {
   });
 
   afterEach(async () => {
-    await operon.pool.end();
+    await operon.destroy();
   });
 
   test.only('simple-function', async() => {
@@ -51,12 +51,14 @@ describe('operon-tests', () => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
     };
+    operon.registerTransaction(testFunction);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
-    const helloWorkflowId: string = await operon.registerWorkflow(testWorkflow, "Test Workflow", operon.roles);
+    // const helloWorkflowId: string = await operon.registerWorkflow(testWorkflow, "Test Workflow", operon.roles);
+    operon.registerWorkflow(testWorkflow);
 
     const params: WorkflowParams = {
       runAs: userAlice,
@@ -94,6 +96,7 @@ describe('operon-tests', () => {
       await sleep(10);
       return;
     };
+    operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
     await operon.transaction(testFunction, {workflowUUID: workflowUUID});
     await operon.transaction(testFunction, {workflowUUID: workflowUUID});
@@ -105,11 +108,13 @@ describe('operon-tests', () => {
       const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       return JSON.stringify(rows[0]);
     };
+    operon.registerTransaction(testFunction);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
+    operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
       const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
@@ -126,6 +131,7 @@ describe('operon-tests', () => {
       }
       return Number(rows[0].id);
     };
+    operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
       const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
@@ -136,12 +142,14 @@ describe('operon-tests', () => {
         return -1;
       }
     };
+    operon.registerTransaction(testFunctionRead);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, name);
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
+    operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
       const workflowResult: number = await operon.workflow(testWorkflow, {}, username);
@@ -163,6 +171,7 @@ describe('operon-tests', () => {
       await txnCtxt.rollback();
       return Number(rows[0].id);
     };
+    operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
       const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
@@ -173,12 +182,14 @@ describe('operon-tests', () => {
         return -1;
       }
     };
+    operon.registerTransaction(testFunctionRead);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, name);
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
+    operon.registerWorkflow(testWorkflow);
 
     // Should not appear in the database.
     const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
@@ -194,6 +205,7 @@ describe('operon-tests', () => {
       }
       return Number(rows[0].id);
     };
+    operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
       const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
@@ -204,12 +216,14 @@ describe('operon-tests', () => {
         return -1;
       }
     };
+    operon.registerTransaction(testFunctionRead);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, name);
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
+    operon.registerWorkflow(testWorkflow);
 
     let workflowResult: number;
     const uuidArray: string[] = [];
@@ -242,11 +256,13 @@ describe('operon-tests', () => {
       const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', response1.data.data);
       return JSON.stringify(response2.data);
     };
+    operon.registerCommunicator(testCommunicator);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult = await workflowCtxt.external(testCommunicator, {}, name);
+      const funcResult = await workflowCtxt.external(testCommunicator, name);
       return funcResult ?? "error";
     };
+    operon.registerWorkflow(testWorkflow);
 
     const workflowUUID: string = uuidv1();
 
@@ -259,16 +275,17 @@ describe('operon-tests', () => {
   });
 
   test('simple-workflow-notifications', async() => {
-
     const receiveWorkflow = async(ctxt: WorkflowContext) => {
       const test = await ctxt.recv("test", 2) as number;
       const fail = await ctxt.recv("fail", 0) ;
       return test === 0 && fail === null;
     }
+    operon.registerWorkflow(receiveWorkflow);
 
     const sendWorkflow = async(ctxt: WorkflowContext) => {
       return await ctxt.send("test", 0);
     }
+    operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
     const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
@@ -280,13 +297,38 @@ describe('operon-tests', () => {
   });
 
   test('simple-operon-notifications', async() => {
-    const workflowUUID = uuidv1();
-    const promise = operon.recv({workflowUUID: workflowUUID}, "test", 2);
+    // Send and have a receiver waiting.
+    const promise = operon.recv({}, "test", 2);
     const send = await operon.send({}, "test", 123);
     expect(send).toBe(true);
     expect(await promise).toBe(123);
-    const retry = await operon.recv({workflowUUID: workflowUUID}, "test", 2);
-    expect(retry).toBe(123);
+
+    // Send and then receive.
+    await expect(operon.send({}, "test2", 456)).resolves.toBe(true);
+    await sleep(10);
+    await expect(operon.recv({}, "test2", 1)).resolves.toBe(456);
+  });
+
+  test('notification-oaoo',async () => {
+    const sendWorkflowUUID = uuidv1();
+    const recvWorkflowUUID = uuidv1();
+    const promise = operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1);
+    const send = await operon.send({workflowUUID: sendWorkflowUUID}, "test", 123);
+    expect(send).toBe(true);
+
+    expect(await promise).toBe(123);
+
+    // Send again with the same UUID but different input.
+    // Even we sent it twice, it should still be 123.
+    await expect(operon.send({workflowUUID: sendWorkflowUUID}, "test", 123)).resolves.toBe(true);
+
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+
+    // Receive again with the same workflowUUID, should get the same result.
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+
+    // Receive again with the different workflowUUID.
+    await expect(operon.recv({}, "test", 2)).resolves.toBeNull();
   });
 });
 
