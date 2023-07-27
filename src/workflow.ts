@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
 import { operon__FunctionOutputs, operon__Notifications } from './operon';
-import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
+import { Pool, PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext, CommunicatorParams } from './communicator';
 import { OperonError } from './error';
@@ -19,12 +19,14 @@ const operonNull: OperonNull = {};
 export class WorkflowContext {
   pool: Pool;
 
+  readonly listenerMap : Record<string, () => void>;
   readonly workflowUUID: string;
   #functionID: number = 0;
 
-  constructor(pool: Pool, workflowUUID: string) {
+  constructor(pool: Pool, listenerMap: Record<string, () => void>, workflowUUID: string) {
     this.pool = pool;
     this.workflowUUID = workflowUUID;
+    this.listenerMap = listenerMap;
   }
 
   functionIDGetIncrement() : number {
@@ -170,15 +172,15 @@ export class WorkflowContext {
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
     // Return true if successful, false if key already exists.
-    const success: boolean = rows.length === 0;
+    const success: boolean = (rows.length !== 0);
     await this.recordExecution<boolean>(client, functionID, success, null);
     await client.query("COMMIT");
     client.release();
-    return rows.length !== 0;
+    return success;
   }
 
   async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
-    const client = await this.pool.connect();
+    let client = await this.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
     const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
@@ -187,19 +189,12 @@ export class WorkflowContext {
       return check as T;
     }
 
-    // First, set up a channel waiting for a notification from the trigger on the key (or timeout).
-    await client.query('LISTEN operon__notificationschannel;');
+    // First, register the key with the global notifications listener.
     let resolveNotification: () => void;
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    const handler = (msg: Notification ) => {
-      if (msg.payload === key) {
-        client.removeListener('notification', handler);
-        resolveNotification();
-      }
-    };
-    client.on('notification', handler);
+    this.listenerMap[key] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
@@ -219,9 +214,11 @@ export class WorkflowContext {
     } else {
       await client.query(`ROLLBACK`);
     }
+    client.release();
 
     // Wait for the notification, then check if the key is in the DB, returning the message if it is and NULL if it isn't.
     await received;
+    client = await this.pool.connect();
     await client.query(`BEGIN`);
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
     if (rows.length > 0 ) {
