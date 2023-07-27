@@ -6,7 +6,7 @@ import fs from 'fs'
 
 const configFile: string = "operon-config.yaml";
 
-export interface OperonConfigFile {
+interface OperonConfigFile {
     database: DatabaseConfig;
 }
 

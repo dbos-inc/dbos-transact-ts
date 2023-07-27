@@ -1,6 +1,5 @@
 import {
   Operon,
-  OperonConfigFile,
   DatabaseConfig,
 } from 'src/';
 import { Pool } from 'pg';
@@ -32,7 +31,7 @@ describe('Operon config', () => {
       username: 'some test user',
       connectionTimeoutMillis: 3,
     };
-    const mockConfigFile: OperonConfigFile = {
+    const mockConfigFile = {
       database: mockDatabaseConfig,
     };
 
