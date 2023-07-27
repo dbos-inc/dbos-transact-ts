@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
-import { OperonError } from './error';
+import { OperonError, OperonPermissionDeniedError } from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
@@ -189,17 +189,15 @@ export class Operon {
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     const wConfig = this.workflowConfigMap.get(wf);
     if (wConfig === undefined) {
-      throw new OperonError(`Unregistered Workflow ${wf.name}`)
+      throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
 
     // This checks if the user has permission in the DB.
     // We could do the check in memory too, assuming it always have a consistent view of the DB.
     const userHasPermission = await this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
-        throw new OperonError(`user ${params.runAs} does not have permission to run workflow ${wConfig.id}`);
+        throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);
     }
-
-    console.log(userHasPermission);
 
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
@@ -228,10 +226,8 @@ export class Operon {
 
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
-    console.log(wCtxt);
 
     const input = await recordExecution(args);
-    console.log(input);
     const result: R = await wf(wCtxt, ...input);
     return result;
   }

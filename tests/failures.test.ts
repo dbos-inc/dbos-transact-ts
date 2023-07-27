@@ -61,7 +61,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext, code?: number) => {
       return await ctxt.external(testCommunicator, code);
     };
-    operon.registerWorkflow(testWorkflow);
+    await operon.registerWorkflow(testWorkflow);
 
     await expect(operon.workflow(testWorkflow, {runAs: userAlice}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
@@ -126,7 +126,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext, maxRetry: number) => {
       return await ctxt.transaction(testFunction, maxRetry);
     };
-    operon.registerWorkflow(testWorkflow);
+    await operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
     await expect(operon.workflow(testWorkflow, {runAs: userAlice}, 10)).resolves.toBe(10);
@@ -152,7 +152,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext) => {
       return await ctxt.external(testCommunicator);
     };
-    operon.registerWorkflow(testWorkflow);
+    await operon.registerWorkflow(testWorkflow);
   
     const result = await operon.workflow(testWorkflow, {runAs: userAlice});
     expect(result).toEqual(4);
@@ -176,7 +176,7 @@ describe('concurrency-tests', () => {
       void ctxt;
       return await ctxt.external(testCommunicator);
     };
-    operon.registerWorkflow(testWorkflow);
+    await operon.registerWorkflow(testWorkflow);
 
     const workflowUUID = uuidv1();
 
