@@ -5,8 +5,11 @@ module.exports = {
   testRegex: '((\\.|/)(test|spec))\\.ts?$',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   modulePaths: ["./"],
-  collectCoverageFrom: [ 
-    'src/**/*.ts', 
+  collectCoverageFrom: [
+    'src/**/*.ts',
     '!src/**/index.ts',
-  ]
+  ],
+  setupFiles: [
+    './jest.setup.ts'
+  ],
 };

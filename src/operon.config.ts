@@ -39,16 +39,17 @@ export class OperonConfig {
       }
     }
 
-    // Logic to parse configFile. XXX We don't have a typed schema for the config file. Should we?
+    // Logic to parse configFile.
     const configFileContent: string = fs.readFileSync(configFile, 'utf8')
     const parsedConfig: OperonConfigFile = YAML.parse(configFileContent) as OperonConfigFile;
 
     // Handle DB config
     const dbConfig: DatabaseConfig = parsedConfig.database;
-    const dbPassword =
-            dbConfig.password ||
-            process.env.DB_PASSWORD ||
-            process.env.PGPASSWORD;
+    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+    if (!dbPassword) {
+        throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
+    }
+
     this.pool = new Pool({
       host: dbConfig.hostname,
       port: dbConfig.port,

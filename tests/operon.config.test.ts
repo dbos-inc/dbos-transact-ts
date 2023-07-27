@@ -30,7 +30,6 @@ describe('Operon config', () => {
       hostname: 'some host',
       port: 1111,
       username: 'some test user',
-      password: 'some test password',
       connectionTimeoutMillis: 3,
     };
     const mockConfigFile: OperonConfigFile = {
@@ -50,7 +49,7 @@ describe('Operon config', () => {
     expect(options.host).toBe(mockDatabaseConfig.hostname);
     expect(options.port).toBe(mockDatabaseConfig.port);
     expect(options.user).toBe(mockDatabaseConfig.username);
-    expect(options.password).toBe(mockDatabaseConfig.password);
+    expect(options.password).toBe(process.env.PGPASSWORD);
     expect(options.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
     expect(options.database).toBe('postgres');
     expect(options.max).toBe(10);
