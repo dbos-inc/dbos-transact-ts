@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig } from 'pg';
+import { Pool, PoolConfig, Notification, PoolClient } from 'pg';
 import { OperonWorkflow, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction } from './transaction';
@@ -17,9 +17,19 @@ export interface operon__Notifications {
 }
 
 export class Operon {
-  pool: Pool;
+  readonly pool: Pool;
+  readonly notificationsClient: Promise<PoolClient>;
+  readonly listenerMap: Record<string, () => void> = {};
+
   constructor(config: PoolConfig) {
     this.pool = new Pool(config);
+    this.notificationsClient = this.pool.connect();
+    void this.listenForNotifications();
+  }
+
+  async destroy() {
+    (await this.notificationsClient).removeAllListeners().release();
+    await this.pool.end();
   }
 
   async initializeOperonTables() {
@@ -69,6 +79,21 @@ export class Operon {
   #generateUUID(): string {
     return uuidv1();
   }
+
+  /**
+   * A background process that listens for notifications from Postgres then signals the appropriate
+   * workflow listener by resolving its promise.
+   */
+  async listenForNotifications() {
+    const client = await this.notificationsClient;
+    await client.query('LISTEN operon__notificationschannel;');
+    const handler = (msg: Notification ) => {
+      if (msg.payload && msg.payload in this.listenerMap) {
+        this.listenerMap[msg.payload]();
+      }
+    };
+    client.on('notification', handler);
+  }
   
 
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
@@ -98,7 +123,7 @@ export class Operon {
     }
   
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, workflowUUID);
+    const wCtxt: WorkflowContext = new WorkflowContext(this.pool, this.listenerMap, workflowUUID);
     const input = await recordExecution(args);
     const result: R = await wf(wCtxt, ...input);
     return result;

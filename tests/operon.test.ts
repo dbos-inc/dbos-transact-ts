@@ -25,7 +25,7 @@ describe('operon-tests', () => {
   });
 
   afterEach(async () => {
-    await operon.pool.end();
+    await operon.destroy();
   });
 
 
@@ -238,13 +238,38 @@ describe('operon-tests', () => {
   });
 
   test('simple-operon-notifications', async() => {
-    const workflowUUID = uuidv1();
-    const promise = operon.recv({workflowUUID: workflowUUID}, "test", 2);
+    // Send and have a receiver waiting.
+    const promise = operon.recv({}, "test", 2);
     const send = await operon.send({}, "test", 123);
     expect(send).toBe(true);
     expect(await promise).toBe(123);
-    const retry = await operon.recv({workflowUUID: workflowUUID}, "test", 2);
-    expect(retry).toBe(123);
+
+    // Send and then receive.
+    await expect(operon.send({}, "test2", 456)).resolves.toBe(true);
+    await sleep(10);
+    await expect(operon.recv({}, "test2", 1)).resolves.toBe(456);
+  });
+
+  test('notification-oaoo',async () => {
+    const sendWorkflowUUID = uuidv1();
+    const recvWorkflowUUID = uuidv1();
+    const promise = operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1);
+    const send = await operon.send({workflowUUID: sendWorkflowUUID}, "test", 123);
+    expect(send).toBe(true);
+
+    expect(await promise).toBe(123);
+
+    // Send again with the same UUID but different input.
+    // Even we sent it twice, it should still be 123.
+    await expect(operon.send({workflowUUID: sendWorkflowUUID}, "test", 123)).resolves.toBe(true);
+
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+
+    // Receive again with the same workflowUUID, should get the same result.
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+
+    // Receive again with the different workflowUUID.
+    await expect(operon.recv({}, "test", 2)).resolves.toBeNull();
   });
 });
 
