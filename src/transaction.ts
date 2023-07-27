@@ -1,17 +1,31 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from 'pg';
+import { OperonError } from './error';
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
+
+export interface TransactionConfig {
+  isolationLevel?: string;
+}
 
 export class TransactionContext {
   client: PoolClient;
 
   #functionAborted: boolean = false;
   readonly functionID: number;
+  readonly isolationLevel;
+  readonly #isolationLevels = ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'];
 
-  constructor(client: PoolClient, functionID: number) {
+  constructor(client: PoolClient, functionID: number, config: TransactionConfig) {
     this.client = client;
     this.functionID = functionID;
+    if (!config.isolationLevel) {
+      this.isolationLevel = 'SERIALIZABLE';
+    } else if (this.#isolationLevels.includes(config.isolationLevel.toUpperCase())) {
+      this.isolationLevel = config.isolationLevel;
+    } else {
+      throw(new OperonError(`Invalid isolation level: ${config.isolationLevel}`));
+    }
   }
 
   async rollback() {
