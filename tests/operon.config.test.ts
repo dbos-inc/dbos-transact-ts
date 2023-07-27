@@ -40,8 +40,7 @@ describe('Operon config', () => {
 
     const operon = new Operon();
     const pool: Pool = operon.pool ;
-    // Pool is subclassed as BoundPool by pg-node.
-    // But pg only exports the `pool` type
+    // Pool is extented as `BoundPool` by pg-node. But pg only exports the `pool` type
     // So we do some terrible things to retrieve the `options` property
     expect(pool.hasOwnProperty('options')).toBe(true); // eslint-disable-line no-prototype-builtins
     /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
