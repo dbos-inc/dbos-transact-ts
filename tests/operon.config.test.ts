@@ -38,8 +38,9 @@ describe('Operon config', () => {
     const readFileSyncMock = jest.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
 
     const operonConfig: OperonConfig = new OperonConfig();
-    const poolConfig: PoolConfig = operonConfig.poolConfig;
 
+    // Test pool config options
+    const poolConfig: PoolConfig = operonConfig.poolConfig;
     expect(poolConfig.host).toBe(mockDatabaseConfig.hostname);
     expect(poolConfig.port).toBe(mockDatabaseConfig.port);
     expect(poolConfig.user).toBe(mockDatabaseConfig.username);
