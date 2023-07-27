@@ -187,16 +187,20 @@ export class Operon {
   }
   
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
-    // TODO this below now has to integrate with workflowConfig
-    const userHasPermission = await this.hasPermission(params.runAs, params.id);
-    if (!userHasPermission) {
-        throw new OperonError(`user ${params.runAs} does not have permission to run workflow ${params.id}`);
-    }
-
     const wConfig = this.workflowConfigMap.get(wf);
     if (wConfig === undefined) {
       throw new OperonError(`Unregistered Workflow ${wf.name}`)
     }
+
+    // This checks if the user has permission in the DB.
+    // We could do the check in memory too, assuming it always have a consistent view of the DB.
+    const userHasPermission = await this.hasPermission(params.runAs, wConfig);
+    if (!userHasPermission) {
+        throw new OperonError(`user ${params.runAs} does not have permission to run workflow ${wConfig.id}`);
+    }
+
+    console.log(userHasPermission);
+
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
       const initFuncID = wCtxt.functionIDGetIncrement();
@@ -224,34 +228,12 @@ export class Operon {
 
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+    console.log(wCtxt);
 
     const input = await recordExecution(args);
+    console.log(input);
     const result: R = await wf(wCtxt, ...input);
     return result;
-  }
-
-  // XXX we can have an input type for this function
-  async registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, name: string, validRoles: Role[]): Promise<string> {
-    const client = await this.pool.connect();
-    await client.query("BEGIN;");
-
-    const workflowID = createId();
-    await this.pool.query(
-      "INSERT INTO operon__Workflows (id, name) VALUES ($1, $2)",
-      [workflowID, name]
-    );
-
-    for (const role of validRoles) {
-      await this.pool.query(
-        "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
-        [workflowID, role.name]
-      );
-    }
-
-    await client.query("COMMIT;");
-    client.release();
-
-    return workflowID;
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -293,17 +275,17 @@ export class Operon {
   }
 
   // Permissions management
-  async hasPermission(user: User, workflowID: string): Promise<boolean> {
+  async hasPermission(user: User, workflowConfig: WorkflowConfig): Promise<boolean> {
     const client = await this.pool.connect();
     // First retrieve all the roles allowed to run the workflow
     const results = await this.pool.query(
       "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1",
-      [workflowID, user.role.name]
+      [workflowConfig.id]
     );
     client.release();
     // If results is empty the workflow is permisionless and anyone can run it
     if (results.rows.length === 0) {
-      return false;
+      return true;
     } else if (results.rows.length > 0) {
         // Check if the user's role is in the list
         for (const row of results.rows) {
