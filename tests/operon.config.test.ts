@@ -1,8 +1,8 @@
 import {
-  Operon,
+  OperonConfig,
   DatabaseConfig,
 } from 'src/';
-import { Pool } from 'pg';
+import { PoolConfig } from 'pg';
 import fs from 'fs';
 
 jest.mock('fs');
@@ -12,7 +12,7 @@ describe('Operon config', () => {
     const statMock = jest.spyOn(fs, 'stat').mockImplementation(() => {
       throw new Error('An error');
     });
-    expect(() => new Operon()).toThrow('calling fs.stat on operon-config.yaml: An error');
+    expect(() => new OperonConfig()).toThrow('calling fs.stat on operon-config.yaml: An error');
     statMock.mockRestore();
   });
 
@@ -37,20 +37,15 @@ describe('Operon config', () => {
 
     const readFileSyncMock = jest.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
 
-    const operon = new Operon();
-    const pool: Pool = operon.pool ;
-    // Pool is extented as `BoundPool` by pg-node. But pg only exports the `pool` type
-    // So we do some terrible things to retrieve the `options` property
-    expect(pool.hasOwnProperty('options')).toBe(true); // eslint-disable-line no-prototype-builtins
-    /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
-    const options = Object.getOwnPropertyDescriptors(pool)['options'].value;
-    expect(options.host).toBe(mockDatabaseConfig.hostname);
-    expect(options.port).toBe(mockDatabaseConfig.port);
-    expect(options.user).toBe(mockDatabaseConfig.username);
-    expect(options.password).toBe(process.env.PGPASSWORD);
-    expect(options.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
-    expect(options.database).toBe('postgres');
-    expect(options.max).toBe(10);
+    const operonConfig: OperonConfig = new OperonConfig();
+    const poolConfig: PoolConfig = operonConfig.poolConfig;
+
+    expect(poolConfig.host).toBe(mockDatabaseConfig.hostname);
+    expect(poolConfig.port).toBe(mockDatabaseConfig.port);
+    expect(poolConfig.user).toBe(mockDatabaseConfig.username);
+    expect(poolConfig.password).toBe(process.env.PGPASSWORD);
+    expect(poolConfig.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
+    expect(poolConfig.database).toBe('postgres');
 
     readFileSyncMock.mockRestore();
   });
