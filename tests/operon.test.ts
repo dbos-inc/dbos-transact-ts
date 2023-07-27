@@ -1,13 +1,7 @@
 import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
-
-interface OperonKv {
-  id: number,
-  value: string,
-}
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+import { sleep, TestKvTable } from "./helper";
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -23,7 +17,6 @@ describe('operon-tests', () => {
   afterEach(async () => {
     await operon.destroy();
   });
-
 
   test('simple-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
@@ -79,7 +72,7 @@ describe('operon-tests', () => {
 
   test('abort-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -88,7 +81,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -117,7 +110,7 @@ describe('operon-tests', () => {
 
   test('multiple-aborts', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name !== "fail") {
         // Recursively call itself so we have multiple rollbacks.
         await testFunction(txnCtxt, "fail");
@@ -128,7 +121,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -153,7 +146,7 @@ describe('operon-tests', () => {
 
   test('oaoo-simple', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -162,7 +155,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<OperonKv>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {

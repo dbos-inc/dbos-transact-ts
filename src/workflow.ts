@@ -50,6 +50,7 @@ export class WorkflowContext {
     }
   }
 
+<<<<<<< HEAD
   async recordExecutionBuffer(client: PoolClient): Promise<void> {
     for (const [funcID, output] of this.resultBuffer) {
       await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
@@ -62,6 +63,16 @@ export class WorkflowContext {
     const serialErr = serializeError(err);
     await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
       [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
+=======
+  async recordExecution<R>(client: PoolClient, currFuncID: number, output: R | null, err: Error | null): Promise<void> {
+    const serialErr = (err !== null) ? serializeError(err) : null;
+    // On conflict do something?
+    const { rows } = await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING 'Success';",
+      [this.workflowUUID, currFuncID, JSON.stringify(output), JSON.stringify(serialErr)]);
+    if (rows.length === 0) {
+      // TODO: error handling.
+    }
+>>>>>>> ff6a9d6 (add registration tests)
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {

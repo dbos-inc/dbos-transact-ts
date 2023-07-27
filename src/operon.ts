@@ -3,7 +3,7 @@ import { OperonConfig } from './operon.config';
 import { Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { v1 as uuidv1 } from 'uuid';
-import { OperonTransaction, TransactionConfig } from './transaction';
+import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { OperonError } from './error';
 
@@ -111,6 +111,7 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
+    validateTransactionConfig(params);
     this.transactionConfigMap.set(txn, params);
   }
 
@@ -125,17 +126,21 @@ export class Operon {
     }
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
-      const initFuncID = wCtxt.functionIDGetIncrement();
       const client = await this.pool.connect();
       await client.query("BEGIN;");
       const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
         [workflowUUID, initFuncID]);
-  
       let retInput: T;
       if (rows.length === 0) {
-        // This workflow has never executed before, so record the input
-        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output) VALUES ($1, $2, $3)",
+        // This workflow has never executed before, so record the input.
+        const insertRes = await client.query<operon__FunctionOutputs>("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING workflow_id",
           [workflowUUID, initFuncID, JSON.stringify(input)]);
+        if (insertRes.rowCount === 0) {
+          // If nothing returns, it means the insert failed.
+          await client.query("ROLLBACK");
+          client.release();
+          throw new OperonError("Failed to insert input", 2);
+        }
         retInput = input;
       } else {
         // Return the old recorded input
@@ -151,9 +156,24 @@ export class Operon {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
-
-    const input = await recordExecution(args);
-    const result: R = await wf(wCtxt, ...input);
+    const initFuncID = wCtxt.functionIDGetIncrement();
+  
+    let result: R;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        const input = await recordExecution(args);
+        result = await wf(wCtxt, ...input);
+        break;
+      } catch (err) {
+        if ((err instanceof OperonError) && (err.operonErrorCode === 2)) {
+          // Retry until succeed.
+          continue;
+        } else {
+          throw err;
+        }
+      }
+    }
     return result;
   }
 
