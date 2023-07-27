@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
 import { operon__FunctionOutputs, operon__Notifications, Operon } from './operon';
-import { PoolClient, Notification, DatabaseError } from 'pg';
-import { OperonTransaction, TransactionConfig, TransactionContext } from './transaction';
+import { PoolClient, DatabaseError } from 'pg';
+import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
