@@ -61,19 +61,16 @@ describe('failures-tests', () => {
 
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
-    try {
-      // Start two concurrent transactions.
-      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1);
-      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2);
-      await futRes1;
-      await futRes2;
-    } catch (error) {
-      expect(error).toBeInstanceOf(DatabaseError);
-      const err: DatabaseError = error as DatabaseError;
-      // Expect to throw a database error for primary key violation.
-      expect(err.code).toBe('23505');
-      expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
-    }
+
+    // Start two concurrent transactions.
+    const results = await Promise.allSettled([
+      operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1),
+      operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2)
+    ]);
+    const errorResult = results.find(result => result.status === 'rejected');
+    const err: DatabaseError = (errorResult as PromiseRejectedResult).reason;
+    expect(err.code).toBe('23505');
+    expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
 
     expect(counter).toBe(1);
 
