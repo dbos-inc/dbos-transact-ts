@@ -266,24 +266,20 @@ export class Operon {
 
   // Users and roles management
   async registerUser(user: User): Promise<void> {
-    const client = await this.pool.connect();
     user.id = this.#generateUUID();
     await this.pool.query(
       "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
       [user.id, user.name, user.role]
     );
-    client.release();
   }
 
   // Permissions management
   async hasPermission(user: User, workflowConfig: WorkflowConfig): Promise<boolean> {
-    const client = await this.pool.connect();
     // First retrieve all the roles allowed to run the workflow
     const results: QueryArrayResult = await this.pool.query(
       "SELECT * from operon__WorkflowPermissions WHERE workflow_id=$1",
       [workflowConfig.id]
     );
-    client.release();
     // If results is empty the workflow is permisionless and anyone can run it
     if (results.rows.length === 0) {
       return true;
