@@ -1,7 +1,5 @@
-import { Role } from './roles';
-
 export type User = {
     name: string;
-    role: Role;
+    role: string;
     id?: string; // Filled during registration
 };

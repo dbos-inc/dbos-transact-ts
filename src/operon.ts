@@ -5,7 +5,6 @@ import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { User } from './users';
-import { Role } from './roles';
 
 import { Pool, PoolClient, Notification, QueryArrayResult, QueryResultRow } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,21 +22,21 @@ export interface operon__Notifications {
 }
 
 export interface operon__Roles {
-  [key: string]: Role;
+  [key: string]: boolean;
 }
 
 export class Operon {
-  readonly pool: Pool;
   config: OperonConfig;
+  readonly pool: Pool;
   readonly notificationsClient: Promise<PoolClient>;
   readonly listenerMap: Record<string, () => void> = {};
-  roles: operon__Roles = {};
+  readonly roles: operon__Roles = {}; // Convenience map for O(1) lookups
 
   constructor() {
     this.config = new OperonConfig();
     this.pool = new Pool(this.config.poolConfig);
     for (const role of this.config.operonRoles) {
-      this.roles[role.name] = role;
+      this.roles[role] = true;
     }
 
     this.notificationsClient = this.pool.connect();
@@ -165,9 +164,12 @@ export class Operon {
 
     if (config.rolesThatCanRun) {
       for (const role of config.rolesThatCanRun) {
+        if (!this.roles[role]) {
+          throw new OperonError(`Role ${role} does not exist`);
+        }
         await this.pool.query(
           "INSERT INTO operon__WorkflowPermissions (workflow_id, role) VALUES ($1, $2)",
-          [config.id, role.name]
+          [config.id, role]
         );
       }
     }
@@ -262,7 +264,7 @@ export class Operon {
     user.id = this.#generateUUID();
     await this.pool.query(
       "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
-      [user.id, user.name, user.role.name]
+      [user.id, user.name, user.role]
     );
     client.release();
   }
@@ -282,7 +284,7 @@ export class Operon {
     } else if (results.rows.length > 0) {
       // Check if the user's role is in the list
       for (const row of results.rows) {
-        if ((row as QueryResultRow).role === user.role.name) {
+        if ((row as QueryResultRow).role === user.role) {
           return true;
         }
       }

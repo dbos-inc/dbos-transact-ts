@@ -39,11 +39,11 @@ describe('operon-tests', () => {
     // Register some users
     userAlice = {
       name: "Alice",
-      role: operon.roles["operonAppAdmin"],
+      role: "operonAppAdmin",
     }
     userBob = {
       name: "Bob",
-      role: operon.roles["operonAppUser"],
+      role: "operonAppUser",
     }
     await operon.registerUser(userAlice);
     await operon.registerUser(userBob);
@@ -66,7 +66,7 @@ describe('operon-tests', () => {
     };
 
     const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: [operon.roles["operonAppAdmin"], operon.roles["operonAppUser"]],
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
       name: "Test Workflow",
     }
     await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
@@ -92,7 +92,7 @@ describe('operon-tests', () => {
     };
     // Register the workflow as runnable only by admin
     const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: [operon.roles["operonAppAdmin"]],
+      rolesThatCanRun: ["operonAppAdmin"],
       name: "Test Workflow",
     }
     await operon.registerWorkflow(testWorkflow, testWorkflowConfig);

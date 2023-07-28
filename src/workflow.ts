@@ -11,7 +11,6 @@ import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 import { User } from './users';
-import { Role } from './roles';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -23,7 +22,7 @@ export interface WorkflowParams {
 export interface WorkflowConfig {
   id?: string;
   name?: string;
-  rolesThatCanRun?: Role[];
+  rolesThatCanRun?: string[];
 }
 
 interface OperonNull {}

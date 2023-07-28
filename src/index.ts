@@ -5,4 +5,3 @@ export { WorkflowContext, WorkflowConfig, WorkflowParams } from './workflow';
 export { CommunicatorContext } from './communicator';
 export { OperonError, OperonPermissionDeniedError } from './error';
 export { User } from './users';
-export { Role } from './roles';

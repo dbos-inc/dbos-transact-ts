@@ -32,11 +32,11 @@ describe('concurrency-tests', () => {
     // Register some users
     userAlice = {
       name: "Alice",
-      role: operon.roles["operonAppAdmin"],
+      role: "operonAppAdmin",
     }
     userBob = {
       name: "Bob",
-      role: operon.roles["operonAppUser"],
+      role: "operonAppUser",
     }
     await operon.registerUser(userAlice);
     await operon.registerUser(userBob);
