@@ -200,6 +200,10 @@ export class Operon {
     if (!workflowConfig.rolesThatCanRun) {
       return true;
     } else {
+      // Default role cannot run permissioned workflows
+      if (role === "defaultRole") {
+        return false;
+      }
       // Check if the user's role is in the list of roles that can run the workflow
       for (const roleThatCanRun of workflowConfig.rolesThatCanRun) {
         if (role === roleThatCanRun) {
