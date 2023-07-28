@@ -63,10 +63,10 @@ describe('concurrency-tests', () => {
     };
     await operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice})).rejects.toThrowError(new OperonError("test operon error without code"));
+    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
   test('simple-keyconflict', async() => {
@@ -85,8 +85,8 @@ describe('concurrency-tests', () => {
     const workflowUUID2 = uuidv1();
     try {
       // Start two concurrent transactions.
-      const futRes1 = operon.transaction(testFunction, {runAs: userAlice, workflowUUID: workflowUUID1}, 10, workflowUUID1);
-      const futRes2 = operon.transaction(testFunction, {runAs: userAlice, workflowUUID: workflowUUID2}, 10, workflowUUID2);
+      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1);
+      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2);
       await futRes1;
       await futRes2;
     } catch (error) {
@@ -100,10 +100,10 @@ describe('concurrency-tests', () => {
 
     // Retry with the same failed UUID, should throw the same error.
     const failUUID = (succeedUUID === workflowUUID1) ? workflowUUID2 : workflowUUID1;
-    await expect(operon.transaction(testFunction, {runAs: userAlice, workflowUUID: failUUID}, 10, failUUID)).rejects.toThrow(DatabaseError);
+    await expect(operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID)).rejects.toThrow(DatabaseError);
 
     // Retry with the succeed UUID, should return the expected result.
-    await expect(operon.transaction(testFunction, {runAs: userAlice, workflowUUID: succeedUUID}, 10, succeedUUID)).resolves.toStrictEqual({"id": 10});
+    await expect(operon.transaction(testFunction, {workflowUUID: succeedUUID}, 10, succeedUUID)).resolves.toStrictEqual({"id": 10});
   });
 
   test('serialization-error', async() => {
@@ -129,7 +129,7 @@ describe('concurrency-tests', () => {
     await operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice}, 10)).resolves.toBe(10);
+    await expect(operon.workflow(testWorkflow, {}, 10)).resolves.toBe(10);
     expect(remoteState.num).toBe(10);
   });
 
@@ -154,10 +154,10 @@ describe('concurrency-tests', () => {
     };
     await operon.registerWorkflow(testWorkflow);
   
-    const result = await operon.workflow(testWorkflow, {runAs: userAlice});
+    const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
 
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
 
   });
 
@@ -181,11 +181,11 @@ describe('concurrency-tests', () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice, workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(operon.workflow(testWorkflow, {runAs: userAlice, workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
 });

@@ -185,7 +185,7 @@ export class Operon {
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {
     this.communicatorConfigMap.set(comm, params);
   }
-  
+
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     const wConfig = this.workflowConfigMap.get(wf);
     if (wConfig === undefined) {
@@ -193,6 +193,12 @@ export class Operon {
     }
 
     // This checks if the user has permission in the DB.
+    if (!params.runAs) {
+      params.runAs = {
+        name: "defaultUser",
+        role: "defaultRole"
+      }
+    }
     const userHasPermission = await this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
       throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);

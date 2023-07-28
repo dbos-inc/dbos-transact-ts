@@ -105,6 +105,34 @@ describe('operon-tests', () => {
     );
   });
 
+  test('simple-function-default-user-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
+    };
+    operon.registerTransaction(testFunction);
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
+    };
+
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+      name: "Test Workflow",
+    }
+    await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
+    await expect(operon.workflow(testWorkflow, {}, username)).rejects.toThrow(
+      OperonPermissionDeniedError
+    );
+    expect(hasPermissionSpy).toHaveBeenCalledWith(
+      {name: "defaultUser", role: "defaultRole"},
+      testWorkflowConfig
+    );
+  });
+
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
       void txnCtxt;
@@ -113,9 +141,9 @@ describe('operon-tests', () => {
     };
     operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
-    await operon.transaction(testFunction, {runAs: userAlice, workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {runAs: userAlice, workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {runAs: userAlice, workflowUUID: workflowUUID});
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
   });
 
   test('tight-loop', async() => {
@@ -132,7 +160,7 @@ describe('operon-tests', () => {
     await operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await operon.workflow(testWorkflow, {runAs: userAlice}, username);
+      const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
       expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     }
   });
@@ -167,12 +195,12 @@ describe('operon-tests', () => {
     await operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await operon.workflow(testWorkflow, {runAs: userAlice}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {runAs: userAlice}, "fail");
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -303,47 +331,47 @@ describe('operon-tests', () => {
     await operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
-    const promise = operon.workflow(receiveWorkflow, {runAs: userAlice, workflowUUID: workflowUUID});
-    const send = await operon.workflow(sendWorkflow, {runAs: userAlice});
+    const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
+    const send = await operon.workflow(sendWorkflow, {});
     expect(send).toBe(true);
     expect(await promise).toBe(true);
-    const retry = await operon.workflow(receiveWorkflow, {runAs: userAlice, workflowUUID: workflowUUID});
+    const retry = await operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
     expect(retry).toBe(true);
   });
 
   test('simple-operon-notifications', async() => {
     // Send and have a receiver waiting.
-    const promise = operon.recv({runAs: userAlice}, "test", 2);
-    const send = await operon.send({runAs: userAlice}, "test", 123);
+    const promise = operon.recv({}, "test", 2);
+    const send = await operon.send({}, "test", 123);
     expect(send).toBe(true);
     expect(await promise).toBe(123);
 
     // Send and then receive.
-    await expect(operon.send({runAs: userAlice}, "test2", 456)).resolves.toBe(true);
+    await expect(operon.send({}, "test2", 456)).resolves.toBe(true);
     await sleep(10);
-    await expect(operon.recv({runAs: userAlice}, "test2", 1)).resolves.toBe(456);
+    await expect(operon.recv({}, "test2", 1)).resolves.toBe(456);
   });
 
   test('notification-oaoo',async () => {
     const sendWorkflowUUID = uuidv1();
     const recvWorkflowUUID = uuidv1();
-    const promise = operon.recv({runAs: userAlice, workflowUUID: recvWorkflowUUID}, "test", 1);
-    const send = await operon.send({runAs: userAlice, workflowUUID: sendWorkflowUUID}, "test", 123);
+    const promise = operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1);
+    const send = await operon.send({workflowUUID: sendWorkflowUUID}, "test", 123);
     expect(send).toBe(true);
 
     expect(await promise).toBe(123);
 
     // Send again with the same UUID but different input.
     // Even we sent it twice, it should still be 123.
-    await expect(operon.send({runAs: userAlice, workflowUUID: sendWorkflowUUID}, "test", 123)).resolves.toBe(true);
+    await expect(operon.send({workflowUUID: sendWorkflowUUID}, "test", 123)).resolves.toBe(true);
 
-    await expect(operon.recv({runAs: userAlice, workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
 
     // Receive again with the same workflowUUID, should get the same result.
-    await expect(operon.recv({runAs: userAlice, workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
+    await expect(operon.recv({workflowUUID: recvWorkflowUUID}, "test", 1)).resolves.toBe(123);
 
     // Receive again with the different workflowUUID.
-    await expect(operon.recv({runAs: userAlice}, "test", 2)).resolves.toBeNull();
+    await expect(operon.recv({}, "test", 2)).resolves.toBeNull();
   });
 });
 

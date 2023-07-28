@@ -16,7 +16,7 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  runAs: User;
+  runAs?: User;
 }
 
 export interface WorkflowConfig {
