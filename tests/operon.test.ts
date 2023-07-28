@@ -307,7 +307,7 @@ describe('operon-tests', () => {
 
     const workflowUUID: string = uuidv1();
 
-    let result: string = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: workflowUUID}, 'qianl15');
+    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15');
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
