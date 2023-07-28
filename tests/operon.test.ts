@@ -36,7 +36,7 @@ describe('operon-tests', () => {
       username = operon.config.poolConfig.user;
     }
 
-    // Register some users
+    // define some users
     userAlice = {
       name: "Alice",
       role: "operonAppAdmin",
