@@ -31,11 +31,17 @@ describe('concurrency-tests', () => {
     let res1: number | undefined;
     let res2: number | undefined;
     try {
-      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
-      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
-    
-      res1 = await futRes1;
-      res2 = await futRes2;
+      const results = await Promise.allSettled([
+        operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10),
+        operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10)
+      ]);
+      [res1, res2] = results.map(result => 
+        result.status === 'fulfilled' ? result.value : undefined
+      );
+      const errorResult = results.find(result => result.status === 'rejected');
+      if (errorResult && errorResult.status === 'rejected') {
+        throw errorResult.reason;
+      }
     } catch (error) {
       const err: OperonError = error as OperonError;
       expect(err.message).toBe('Conflicting UUIDs');

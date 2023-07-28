@@ -56,8 +56,7 @@ export class Operon {
     );
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__WorkflowOutputs (
       workflow_id VARCHAR(64) PRIMARY KEY,
-      output TEXT,
-      error TEXT
+      output TEXT
       );`
     );
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
@@ -147,30 +146,17 @@ export class Operon {
     }
 
     const checkWorkflowOutput = async () => {
-      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output, error FROM operon__WorkflowOutputs WHERE workflow_id=$1",
+      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
         [workflowUUID]);
       if (rows.length === 0) {
         return operonNull;
-      } else if (JSON.parse(rows[0].error) !== null) {
-        const error: any = deserializeError(JSON.parse(rows[0].error));
-        throw error;
       } else {
         return JSON.parse(rows[0].output) as R;  // Could be null.
       }
     }
 
-    const recordWorkflowOutput = async (output: R | null, error: Error | null) => {
-      const serialErr = error !== null ? serializeError(error) : null;
-      try {
-      await this.pool.query(`INSERT INTO operon__WorkflowOutputs VALUES($1, $2, $3)`, [workflowUUID, JSON.stringify(output), JSON.stringify(serialErr)]);
-      } catch (err) {
-        const error: DatabaseError = err as DatabaseError;
-        if (error.code === "40001" || error.code === "23505") {
-          throw new OperonError("Conflicting UUIDs");
-        } else {
-          throw err;
-        }
-      }
+    const recordWorkflowOutput = async (output: R) => {
+      await this.pool.query(`INSERT INTO operon__WorkflowOutputs VALUES($1, $2)`, [workflowUUID, JSON.stringify(output)]);
     }
 
     const checkWorkflowInput = async (input: T) => {
@@ -185,19 +171,14 @@ export class Operon {
       }
       return input;
     }
+
     const previousOutput = await checkWorkflowOutput();
     if (previousOutput !== operonNull) {
       return previousOutput as R;
     }
     const input = await checkWorkflowInput(args);
-    let result: R;
-    try {
-      result = await wf(wCtxt, ...input);
-    } catch (err) {
-      await recordWorkflowOutput(null, err as Error);
-      throw err;
-    }
-    await recordWorkflowOutput(result, null);
+    const result = await wf(wCtxt, ...input);
+    await recordWorkflowOutput(result);
     return result;
   }
 
