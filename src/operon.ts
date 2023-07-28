@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
-import { OperonError, OperonPermissionDeniedError } from './error';
+import { OperonError, WorkflowOperonPermissionDeniedError } from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
@@ -201,7 +201,7 @@ export class Operon {
     }
     const userHasPermission = await this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
-      throw new OperonPermissionDeniedError(params.runAs.name, wConfig.name, wConfig.id);
+      throw new WorkflowOperonPermissionDeniedError(params.runAs.name, wConfig);
     }
 
     // TODO: need to optimize this extra transaction per workflow.

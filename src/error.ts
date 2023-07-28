@@ -1,3 +1,5 @@
+import { WorkflowConfig } from './workflow';
+
 export class OperonError extends Error {
   readonly code: number;
 
@@ -8,11 +10,12 @@ export class OperonError extends Error {
   }
 }
 
-const PermissionDeniedError = 2;
-export class OperonPermissionDeniedError extends OperonError {
-  constructor(userName: string, workflowName: string | undefined, workflowId: string | undefined) {
+const WorkflowPermissionDeniedError = 2;
+export class WorkflowOperonPermissionDeniedError extends OperonError {
+  constructor(runAs: string, workflowConfig: WorkflowConfig) {
     const msg =
-        `User ${userName} does not have permission to run workflow ${workflowName} (id: ${workflowId})`;
-    super(msg, PermissionDeniedError);
+      `Subject ${runAs} does not have permission to`
+      + `run workflow ${workflowConfig.name} (id: ${workflowConfig.id})`;
+    super(msg, WorkflowPermissionDeniedError);
   }
 }
