@@ -4,7 +4,6 @@ import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { User } from './users';
 
 import { Pool, PoolClient, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
@@ -139,14 +138,11 @@ export class Operon {
 
     // Check if the user has permission to run this workflow.
     if (!params.runAs) {
-      params.runAs = {
-        name: "defaultUser",
-        role: "defaultRole"
-      }
+      params.runAs = "defaultRole";
     }
     const userHasPermission = this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
-      throw new OperonWorkflowPermissionDeniedError(params.runAs.name, wConfig);
+      throw new OperonWorkflowPermissionDeniedError(params.runAs, wConfig);
     }
 
     // TODO: need to optimize this extra transaction per workflow.
@@ -210,14 +206,14 @@ export class Operon {
   }
 
   // Permissions management
-  hasPermission(user: User, workflowConfig: WorkflowConfig): boolean {
+  hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
     // An empty list of roles in the workflow config means the workflow is permission-less
     if (!workflowConfig.rolesThatCanRun) {
       return true;
     } else {
       // Check if the user's role is in the list of roles that can run the workflow
       for (const roleThatCanRun of workflowConfig.rolesThatCanRun) {
-        if (user.role === roleThatCanRun) {
+        if (role === roleThatCanRun) {
           return true;
         }
       }

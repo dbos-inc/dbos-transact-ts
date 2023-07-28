@@ -5,7 +5,6 @@ import {
   WorkflowConfig,
   TransactionContext,
   CommunicatorContext,
-  User,
   WorkflowParams
 } from "src/";
 import { v1 as uuidv1 } from 'uuid';
@@ -21,8 +20,6 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 describe('operon-tests', () => {
   let operon: Operon;
   let username: string;
-  let userAlice: User
-  let userBob: User
 
   beforeEach(async () => {
     operon = new Operon();
@@ -34,16 +31,6 @@ describe('operon-tests', () => {
       username = "dbos";
     } else {
       username = operon.config.poolConfig.user;
-    }
-
-    // define some users
-    userAlice = {
-      name: "Alice",
-      role: "operonAppAdmin",
-    }
-    userBob = {
-      name: "Bob",
-      role: "operonAppUser",
     }
   });
 
@@ -70,7 +57,7 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
     const params: WorkflowParams = {
-      runAs: userAlice,
+      runAs: "operonAppAdmin",
     }
     const workflowResult: string = await operon.workflow(testWorkflow, params, username);
 
@@ -96,7 +83,7 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
     const params: WorkflowParams = {
-      runAs: userBob,
+      runAs: "operonAppUser",
     }
     await expect(operon.workflow(testWorkflow, params, username)).rejects.toThrow(
       OperonWorkflowPermissionDeniedError
@@ -126,7 +113,7 @@ describe('operon-tests', () => {
       OperonWorkflowPermissionDeniedError
     );
     expect(hasPermissionSpy).toHaveBeenCalledWith(
-      {name: "defaultUser", role: "defaultRole"},
+      "defaultRole",
       testWorkflowConfig
     );
   });
