@@ -235,7 +235,7 @@ describe('operon-tests', () => {
     await operon.registerWorkflow(testWorkflow);
 
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {runAs:userAlice}, "test");
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -273,22 +273,22 @@ describe('operon-tests', () => {
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidv1();
       uuidArray.push(workflowUUID);
-      workflowResult = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: workflowUUID}, username);
+      workflowResult = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Should not appear in the database.
     const failUUID: string = uuidv1();
-    workflowResult = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: failUUID}, "fail");
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "fail");
     expect(workflowResult).toEqual(-1);
 
     // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: workflowUUID}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
       expect(workflowResult).toEqual(i + 1);
     }
     // Given the same workflow UUID but different input, should return the original execution.
-    workflowResult = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: failUUID}, "hello");
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "hello");
     expect(workflowResult).toEqual(-1);
   });
 
@@ -313,7 +313,7 @@ describe('operon-tests', () => {
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(testWorkflow, {runAs:userAlice, workflowUUID: workflowUUID}, 'peter');
+    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter');
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
