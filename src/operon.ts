@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
-import { Pool, PoolClient, Notification } from 'pg';
+import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
-import { v1 as uuidv1 } from 'uuid';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { OperonError } from './error';
+
+import { Pool, PoolClient, Notification } from 'pg';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
     workflow_id: string;
@@ -20,8 +21,8 @@ export interface operon__Notifications {
 }
 
 export class Operon {
-  readonly pool: Pool;
   config: OperonConfig;
+  readonly pool: Pool;
   readonly notificationsClient: Promise<PoolClient>;
   readonly listenerMap: Record<string, () => void> = {};
 
@@ -55,7 +56,7 @@ export class Operon {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
       key VARCHAR(255) PRIMARY KEY,
       message TEXT NOT NULL
-    );`)
+    );`);
     // Weird node-postgres issue -- channel names must be all-lowercase.
     await this.pool.query(`
         CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
@@ -88,7 +89,7 @@ export class Operon {
   }
 
   #generateUUID(): string {
-    return uuidv1();
+    return uuidv4();
   }
 
   /**
@@ -106,8 +107,8 @@ export class Operon {
     client.on('notification', handler);
   }
 
-  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowConfig={}) {
-    this.workflowConfigMap.set(wf, params);
+  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
+    this.workflowConfigMap.set(wf, config);
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
@@ -117,12 +118,22 @@ export class Operon {
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {
     this.communicatorConfigMap.set(comm, params);
   }
-  
+
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
     const wConfig = this.workflowConfigMap.get(wf);
     if (wConfig === undefined) {
-      throw new OperonError(`Unregistered Workflow ${wf.name}`)
+      throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
+
+    // Check if the user has permission to run this workflow.
+    if (!params.runAs) {
+      params.runAs = "defaultRole";
+    }
+    const userHasPermission = this.hasPermission(params.runAs, wConfig);
+    if (!userHasPermission) {
+      throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
+    }
+
     // TODO: need to optimize this extra transaction per workflow.
     const recordExecution = async (input: T) => {
       const initFuncID = wCtxt.functionIDGetIncrement();
@@ -147,9 +158,8 @@ export class Operon {
   
       return retInput;
     }
-  
-    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
+    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
 
     const input = await recordExecution(args);
@@ -182,5 +192,26 @@ export class Operon {
     };
     this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds);
+  }
+
+  // Permissions management
+  hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
+    // An empty list of roles in the workflow config means the workflow is permission-less
+    if (!workflowConfig.rolesThatCanRun) {
+      return true;
+    } else {
+      // Default role cannot run permissioned workflows
+      if (role === "defaultRole") {
+        return false;
+      }
+      // Check if the user's role is in the list of roles that can run the workflow
+      for (const roleThatCanRun of workflowConfig.rolesThatCanRun) {
+        if (role === roleThatCanRun) {
+          return true;
+        }
+      }
+    }
+    // Reject by default
+    return false;
   }
 }

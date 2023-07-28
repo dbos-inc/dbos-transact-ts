@@ -1,4 +1,12 @@
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext } from "src/";
+import {
+  Operon,
+  OperonWorkflowPermissionDeniedError,
+  WorkflowContext,
+  WorkflowConfig,
+  TransactionContext,
+  CommunicatorContext,
+  WorkflowParams
+} from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 
@@ -11,19 +19,24 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 describe('operon-tests', () => {
   let operon: Operon;
-  const username: string = process.env.DB_USER || 'postgres';
+  let username: string;
 
   beforeEach(async () => {
     operon = new Operon();
     await operon.resetOperonTables();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
+
+    if (!operon.config.poolConfig.user) {
+      username = "dbos";
+    } else {
+      username = operon.config.poolConfig.user;
+    }
   });
 
   afterEach(async () => {
     await operon.destroy();
   });
-
 
   test('simple-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
@@ -36,13 +49,71 @@ describe('operon-tests', () => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
-    operon.registerWorkflow(testWorkflow);
 
-    const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const params: WorkflowParams = {
+      runAs: "operonAppAdmin",
+    }
+    const workflowResult: string = await operon.workflow(testWorkflow, params, username);
 
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
   });
 
+  test('simple-function-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
+    };
+    operon.registerTransaction(testFunction);
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
+    };
+    // Register the workflow as runnable only by admin
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const params: WorkflowParams = {
+      runAs: "operonAppUser",
+    }
+    await expect(operon.workflow(testWorkflow, params, username)).rejects.toThrow(
+      OperonWorkflowPermissionDeniedError
+    );
+  });
+
+  test('simple-function-default-user-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
+    };
+    operon.registerTransaction(testFunction);
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
+    };
+
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
+    await expect(operon.workflow(testWorkflow, {}, username)).rejects.toThrow(
+      OperonWorkflowPermissionDeniedError
+    );
+    expect(hasPermissionSpy).toHaveBeenCalledWith(
+      "defaultRole",
+      testWorkflowConfig
+    );
+  });
 
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {

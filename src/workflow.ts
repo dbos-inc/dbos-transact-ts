@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /*eslint-disable no-constant-condition */
-import { operon__FunctionOutputs, operon__Notifications, Operon } from './operon';
+import {
+  operon__FunctionOutputs,
+  operon__Notifications,
+  Operon
+} from './operon';
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
@@ -11,10 +15,11 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 
 export interface WorkflowParams {
   workflowUUID?: string;
+  runAs?: string;
 }
 
 export interface WorkflowConfig {
-  /* TODO: add stuff. */
+  rolesThatCanRun?: string[];
 }
 
 interface OperonNull {}
