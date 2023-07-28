@@ -52,7 +52,6 @@ describe('operon-tests', () => {
 
     const testWorkflowConfig: WorkflowConfig = {
       rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-      name: "Test Workflow",
     }
     operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
@@ -78,7 +77,6 @@ describe('operon-tests', () => {
     // Register the workflow as runnable only by admin
     const testWorkflowConfig: WorkflowConfig = {
       rolesThatCanRun: ["operonAppAdmin"],
-      name: "Test Workflow",
     }
     operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
@@ -104,7 +102,6 @@ describe('operon-tests', () => {
 
     const testWorkflowConfig: WorkflowConfig = {
       rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-      name: "Test Workflow",
     }
     operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 

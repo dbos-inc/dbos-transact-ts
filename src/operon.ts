@@ -29,7 +29,6 @@ export class Operon {
   constructor() {
     this.config = new OperonConfig();
     this.pool = new Pool(this.config.poolConfig);
-
     this.notificationsClient = this.pool.connect();
     void this.listenForNotifications();
   }
@@ -109,16 +108,6 @@ export class Operon {
   }
 
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
-    if (!config.id) {
-      config.id = this.#generateUUID();
-    }
-
-    if (!config.name) {
-      // Retrieve the underlying function object `name` property
-      config.name = wf.name;
-    }
-
-    // Keep track of registered workflows in memory
     this.workflowConfigMap.set(wf, config);
   }
 
@@ -142,7 +131,7 @@ export class Operon {
     }
     const userHasPermission = this.hasPermission(params.runAs, wConfig);
     if (!userHasPermission) {
-      throw new OperonWorkflowPermissionDeniedError(params.runAs, wConfig);
+      throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
     }
 
     // TODO: need to optimize this extra transaction per workflow.

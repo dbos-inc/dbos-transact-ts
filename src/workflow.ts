@@ -19,8 +19,6 @@ export interface WorkflowParams {
 }
 
 export interface WorkflowConfig {
-  id?: string;
-  name?: string;
   rolesThatCanRun?: string[];
 }
 
