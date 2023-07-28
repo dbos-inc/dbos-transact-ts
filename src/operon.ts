@@ -137,7 +137,7 @@ export class Operon {
       throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
 
-    // This checks if the user has permission in the DB.
+    // Check if the user has permission to run this workflow.
     if (!params.runAs) {
       params.runAs = {
         name: "defaultUser",
