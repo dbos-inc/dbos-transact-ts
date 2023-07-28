@@ -4,7 +4,6 @@ import {
   TransactionContext,
   OperonError,
   CommunicatorContext,
-  User
 } from "src/";
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
@@ -20,24 +19,12 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 describe('concurrency-tests', () => {
   let operon: Operon;
   const testTableName = 'OperonConcurrentKv';
-  let userAlice: User;
-  let userBob: User;
 
   beforeEach(async () => {
     operon = new Operon();
     await operon.resetOperonTables();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
-
-    // Register some users
-    userAlice = {
-      name: "Alice",
-      role: "operonAppAdmin",
-    }
-    userBob = {
-      name: "Bob",
-      role: "operonAppUser",
-    }
   });
 
   afterEach(async () => {
@@ -59,7 +46,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext, code?: number) => {
       return await ctxt.external(testCommunicator, code);
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
@@ -124,7 +111,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext, maxRetry: number) => {
       return await ctxt.transaction(testFunction, maxRetry);
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
     await expect(operon.workflow(testWorkflow, {}, 10)).resolves.toBe(10);
@@ -150,7 +137,7 @@ describe('concurrency-tests', () => {
     const testWorkflow = async (ctxt: WorkflowContext) => {
       return await ctxt.external(testCommunicator);
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
   
     const result = await operon.workflow(testWorkflow, {});
     expect(result).toEqual(4);
@@ -174,7 +161,7 @@ describe('concurrency-tests', () => {
       void ctxt;
       return await ctxt.external(testCommunicator);
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     const workflowUUID = uuidv1();
 

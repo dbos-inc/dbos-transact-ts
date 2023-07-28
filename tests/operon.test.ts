@@ -67,7 +67,7 @@ describe('operon-tests', () => {
       rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
       name: "Test Workflow",
     }
-    await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
     const params: WorkflowParams = {
       runAs: userAlice,
@@ -93,7 +93,7 @@ describe('operon-tests', () => {
       rolesThatCanRun: ["operonAppAdmin"],
       name: "Test Workflow",
     }
-    await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
     const params: WorkflowParams = {
       runAs: userBob,
@@ -119,7 +119,7 @@ describe('operon-tests', () => {
       rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
       name: "Test Workflow",
     }
-    await operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
 
     const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
     await expect(operon.workflow(testWorkflow, {}, username)).rejects.toThrow(
@@ -155,7 +155,7 @@ describe('operon-tests', () => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
       const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
@@ -190,7 +190,7 @@ describe('operon-tests', () => {
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
       const workflowResult: number = await operon.workflow(testWorkflow, {}, username);
@@ -230,7 +230,7 @@ describe('operon-tests', () => {
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     // Should not appear in the database.
     const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
@@ -264,7 +264,7 @@ describe('operon-tests', () => {
       const checkResult: number = await workflowCtxt.transaction(testFunctionRead, funcResult);
       return checkResult;
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     let workflowResult: number;
     const uuidArray: string[] = [];
@@ -303,7 +303,7 @@ describe('operon-tests', () => {
       const funcResult = await workflowCtxt.external(testCommunicator, name);
       return funcResult ?? "error";
     };
-    await operon.registerWorkflow(testWorkflow);
+    operon.registerWorkflow(testWorkflow);
 
     const workflowUUID: string = uuidv1();
 
@@ -321,12 +321,12 @@ describe('operon-tests', () => {
       const fail = await ctxt.recv("fail", 0) ;
       return test === 0 && fail === null;
     }
-    await operon.registerWorkflow(receiveWorkflow);
+    operon.registerWorkflow(receiveWorkflow);
 
     const sendWorkflow = async(ctxt: WorkflowContext) => {
       return await ctxt.send("test", 0);
     }
-    await operon.registerWorkflow(sendWorkflow);
+    operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
     const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});

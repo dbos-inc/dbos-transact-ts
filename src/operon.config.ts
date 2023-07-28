@@ -21,7 +21,6 @@ export interface DatabaseConfig {
 
 export class OperonConfig {
   readonly poolConfig: PoolConfig;
-  readonly operonRoles: string[];
   // We will add a "debug" flag here to be used in other parts of the codebase
 
   constructor() {
@@ -59,8 +58,5 @@ export class OperonConfig {
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
       database: 'postgres', // For now we use the default postgres database
     };
-
-    // Logic to parse roles
-    this.operonRoles = parsedConfig.operonRoles;
   }
 }
