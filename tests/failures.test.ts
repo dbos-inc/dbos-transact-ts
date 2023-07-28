@@ -1,5 +1,11 @@
+import {
+  Operon,
+  WorkflowContext,
+  TransactionContext,
+  OperonError,
+  CommunicatorContext,
+} from "src/";
 import { DatabaseError } from "pg";
-import { Operon, WorkflowContext, TransactionContext, OperonError, CommunicatorContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import { TestKvTable, sleep } from "./helper";
 

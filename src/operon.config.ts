@@ -21,7 +21,6 @@ export interface DatabaseConfig {
 
 export class OperonConfig {
   readonly poolConfig: PoolConfig;
-  // We will add operonRoles: Role[] here in a next PR
   // We will add a "debug" flag here to be used in other parts of the codebase
 
   constructor() {
