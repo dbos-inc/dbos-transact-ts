@@ -8,12 +8,15 @@ import fs from 'fs';
 jest.mock('fs');
 
 describe('Operon config', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test('fs.stat fails', () => {
-    const statMock = jest.spyOn(fs, 'stat').mockImplementation(() => {
+    jest.spyOn(fs, 'stat').mockImplementation(() => {
       throw new Error('An error');
     });
     expect(() => new OperonConfig()).toThrow('calling fs.stat on operon-config.yaml: An error');
-    statMock.mockRestore();
   });
 
   // TODO
@@ -30,12 +33,14 @@ describe('Operon config', () => {
       port: 1111,
       username: 'some test user',
       connectionTimeoutMillis: 3,
+      schemaFile: 'some schema file',
     };
     const mockConfigFile = {
       database: mockDatabaseConfig,
     };
 
-    const readFileSyncMock = jest.spyOn(fs, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
+    jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(JSON.stringify(mockConfigFile));
+    jest.spyOn(fs, 'readFileSync').mockReturnValueOnce("SQL STATEMENTS");
 
     const operonConfig: OperonConfig = new OperonConfig();
 
@@ -46,8 +51,24 @@ describe('Operon config', () => {
     expect(poolConfig.user).toBe(mockDatabaseConfig.username);
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
+    // expect(poolConfig.database).toBe('operon');
     expect(poolConfig.database).toBe('postgres');
 
-    readFileSyncMock.mockRestore();
+    // Test schema file has been set
+    expect(operonConfig.operonDbSchema).toBe('SQL STATEMENTS');
+  });
+
+  test('config file is empty', () => {
+    const mockConfigFile = '';
+    jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(JSON.stringify(mockConfigFile));
+    expect(() => new OperonConfig()).toThrow('Operon configuration operon-config.yaml is empty');
+  });
+
+  test('config file is missing database config', () => {
+    const mockConfigFile = {};
+    jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(JSON.stringify(mockConfigFile));
+    expect(() => new OperonConfig()).toThrow(
+      'Operon configuration operon-config.yaml does not contain database config'
+    );
   });
 });
