@@ -8,7 +8,6 @@ const configFile: string = "operon-config.yaml";
 
 interface OperonConfigFile {
     database: DatabaseConfig;
-    operonRoles: string[];
 }
 
 export interface DatabaseConfig {
