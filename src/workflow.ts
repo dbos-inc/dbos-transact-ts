@@ -50,7 +50,7 @@ export class WorkflowContext {
     }
   }
 
-  async recordExecutionBuffer(client: PoolClient): Promise<void> {
+  async flushResultBuffer(client: PoolClient): Promise<void> {
     for (const [funcID, output] of this.resultBuffer) {
       await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
         [this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null)]);
@@ -98,7 +98,7 @@ export class WorkflowContext {
         }
         this.resultBuffer.set(funcId, result);
         if (!fCtxt.readOnly) {
-          await this.recordExecutionBuffer(client);
+          await this.flushResultBuffer(client);
         }
         await client.query("COMMIT");
         return result;
@@ -112,7 +112,7 @@ export class WorkflowContext {
           await client.query('ROLLBACK');
           if (!Object.hasOwn(err, "__retry__")) {
             await client.query('BEGIN');
-            await this.recordExecutionBuffer(client);
+            await this.flushResultBuffer(client);
             await this.recordError(client, funcId, error as Error);
             await client.query('COMMIT');
           }
@@ -156,7 +156,7 @@ export class WorkflowContext {
       } catch (error) {
         // If retries not allowed, record the error and throw it to upper level.
         await client.query('BEGIN');
-        await this.recordExecutionBuffer(client);
+        await this.flushResultBuffer(client);
         await this.recordError(client, ctxt.functionID, error as Error);
         await client.query('COMMIT');
         client.release();
@@ -182,7 +182,7 @@ export class WorkflowContext {
       // Record error and throw an exception.
       const operonErr: OperonError = new OperonError("Communicator reached maximum retries.", 1);
       await client.query('BEGIN');
-      await this.recordExecutionBuffer(client);
+      await this.flushResultBuffer(client);
       await this.recordError(client, ctxt.functionID, operonErr as Error);
       await client.query('COMMIT');
       client.release();
@@ -190,7 +190,7 @@ export class WorkflowContext {
     }
     // Record the execution and return.
     this.resultBuffer.set(ctxt.functionID, result);
-    await this.recordExecutionBuffer(client);
+    await this.flushResultBuffer(client);
     client.release();
     return result as R;
   }
@@ -211,7 +211,7 @@ export class WorkflowContext {
     // Return true if successful, false if key already exists.
     const success: boolean = (rows.length !== 0);
     this.resultBuffer.set(functionID, success);
-    await this.recordExecutionBuffer(client);
+    await this.flushResultBuffer(client);
     await client.query("COMMIT");
     client.release();
     return success;
@@ -246,7 +246,7 @@ export class WorkflowContext {
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
       this.resultBuffer.set(functionID, message);
-      await this.recordExecutionBuffer(client);
+      await this.flushResultBuffer(client);
       await client.query(`COMMIT`);
       client.release();
       return message;
@@ -263,14 +263,14 @@ export class WorkflowContext {
     if (rows.length > 0 ) {
       const message = JSON.parse(rows[0].message) as T;
       this.resultBuffer.set(functionID, message);
-      await this.recordExecutionBuffer(client);
+      await this.flushResultBuffer(client);
       await client.query(`COMMIT`);
       client.release();
       return message;
     } else {
       await client.query(`ROLLBACK`);
       this.resultBuffer.set(functionID, null);
-      await this.recordExecutionBuffer(client);
+      await this.flushResultBuffer(client);
       client.release();
       return null;
     }
