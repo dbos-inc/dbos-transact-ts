@@ -1,4 +1,4 @@
-import { Operon, TransactionContext } from "src/";
+import { Operon, OperonError, TransactionContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "./helper";
 
@@ -28,11 +28,26 @@ describe('concurrency-tests', () => {
     operon.registerTransaction(testFunction, {});
 
     const workflowUUID = uuidv1();
-    const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
-    const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
-  
-    await expect(futRes1).resolves.toBe(10);
-    await expect(futRes2).resolves.toBe(10);
+    let res1: number | undefined;
+    let res2: number | undefined;
+    try {
+      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
+      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10);
+    
+      res1 = await futRes1;
+      res2 = await futRes2;
+    } catch (error) {
+      expect(error).toBeInstanceOf(OperonError);
+      const err: OperonError = error as OperonError;
+      expect(err.message).toBe('Conflicting UUIDs');
+    }
+
+    if (res1 === undefined) {
+      expect(res2).toBe(10);
+    } else {
+      expect(res2).toBeUndefined();
+      expect(res1).toBe(10);
+    }
   });
 
 });
