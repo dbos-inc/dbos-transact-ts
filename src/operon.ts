@@ -102,14 +102,6 @@ export class Operon {
         role VARCHAR(255) NOT NULL
       );`
     );
-    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Users (
-        id VARCHAR(64) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        role VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );`
-    );
   }
 
   async resetOperonTables() {
@@ -117,7 +109,6 @@ export class Operon {
     await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
     await this.pool.query(`DROP TABLE IF EXISTS operon__Workflows;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__WorkflowPermissions;`);
-    await this.pool.query(`DROP TABLE IF EXISTS operon__Users;`);
     await this.initializeOperonTables();
   }
 
@@ -262,15 +253,6 @@ export class Operon {
     };
     await this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds);
-  }
-
-  // Users and roles management
-  async registerUser(user: User): Promise<void> {
-    user.id = this.#generateUUID();
-    await this.pool.query(
-      "INSERT INTO operon__Users (id, name, role) VALUES ($1, $2, $3)",
-      [user.id, user.name, user.role]
-    );
   }
 
   // Permissions management

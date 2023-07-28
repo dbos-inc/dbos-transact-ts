@@ -38,8 +38,6 @@ describe('concurrency-tests', () => {
       name: "Bob",
       role: "operonAppUser",
     }
-    await operon.registerUser(userAlice);
-    await operon.registerUser(userBob);
   });
 
   afterEach(async () => {
