@@ -349,5 +349,35 @@ describe('operon-tests', () => {
     // Receive again with the different workflowUUID.
     await expect(operon.recv({}, "test", 2)).resolves.toBeNull();
   });
+
+  test('endtoend-oaoo', async () => {
+    const remoteState = {
+      num: 0
+    }
+  
+    const testFunction = async (txnCtxt: TransactionContext, code: number) => {
+      void txnCtxt;
+      await sleep(1);
+      return code + 1;
+    };
+  
+    const testWorkflow = async (workflowCtxt: WorkflowContext, code: number) => {
+      const funcResult: number = await workflowCtxt.transaction(testFunction, code);
+      remoteState.num += 1;
+      return funcResult;
+    };
+    operon.registerTransaction(testFunction);
+    operon.registerWorkflow(testWorkflow);
+  
+    const workflowUUID = uuidv1();
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
+    expect(remoteState.num).toBe(1);
+  
+    // TODO: for async flush, wait until the workflow output is in the DB.
+    // Run it again with the same UUID, should get the same output.
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
+    // The workflow should not run at all.
+    expect(remoteState.num).toBe(1);
+  });  
 });
 
