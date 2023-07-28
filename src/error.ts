@@ -11,7 +11,7 @@ export class OperonError extends Error {
 }
 
 const WorkflowPermissionDeniedError = 2;
-export class WorkflowOperonPermissionDeniedError extends OperonError {
+export class OperonWorkflowPermissionDeniedError extends OperonError {
   constructor(runAs: string, workflowConfig: WorkflowConfig) {
     const msg =
       `Subject ${runAs} does not have permission to`

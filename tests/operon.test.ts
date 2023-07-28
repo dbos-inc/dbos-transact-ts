@@ -1,6 +1,6 @@
 import {
   Operon,
-  WorkflowOperonPermissionDeniedError,
+  OperonWorkflowPermissionDeniedError,
   WorkflowContext,
   WorkflowConfig,
   TransactionContext,
@@ -101,7 +101,7 @@ describe('operon-tests', () => {
       runAs: userBob,
     }
     await expect(operon.workflow(testWorkflow, params, username)).rejects.toThrow(
-      WorkflowOperonPermissionDeniedError
+      OperonWorkflowPermissionDeniedError
     );
   });
 
@@ -125,7 +125,7 @@ describe('operon-tests', () => {
 
     const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
     await expect(operon.workflow(testWorkflow, {}, username)).rejects.toThrow(
-      WorkflowOperonPermissionDeniedError
+      OperonWorkflowPermissionDeniedError
     );
     expect(hasPermissionSpy).toHaveBeenCalledWith(
       {name: "defaultUser", role: "defaultRole"},
