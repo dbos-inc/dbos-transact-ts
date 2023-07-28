@@ -51,17 +51,35 @@ export class WorkflowContext {
   }
 
   async flushResultBuffer(client: PoolClient): Promise<void> {
-    for (const [funcID, output] of this.resultBuffer) {
-      await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-        [this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null)]);
+    try {
+      for (const [funcID, output] of this.resultBuffer) {
+        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
+          [this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null)]);
+      }
+      this.resultBuffer.clear();
+    } catch (err) {
+      const error: DatabaseError = err as DatabaseError;
+      if (error.code === "40001" || error.code === "23505") {
+        throw new OperonError("Conflicting UUIDs");
+      } else {
+        throw err;
+      }
     }
-    this.resultBuffer.clear();
   }
 
   async recordError(client: PoolClient, currFuncID: number, err: Error) {
     const serialErr = serializeError(err);
-    await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-      [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
+    try {
+      await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
+        [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
+    } catch (err) {
+      const error: DatabaseError = err as DatabaseError;
+      if (error.code === "40001" || error.code === "23505") {
+        throw new OperonError("Conflicting UUIDs");
+      } else {
+        throw err;
+      }
+    }
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {

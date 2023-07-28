@@ -141,22 +141,8 @@ export class Operon {
       return input;
     }
   
-    let result: R;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      try {
-        const input = await recordExecution(args);
-        result = await wf(wCtxt, ...input);
-        break;
-      } catch (err) {
-        if ((err instanceof OperonError) && (err.operonErrorCode === 2)) {
-          // Retry until succeed.
-          continue;
-        } else {
-          throw err;
-        }
-      }
-    }
+    const input = await recordExecution(args);
+    const result: R = await wf(wCtxt, ...input);
     return result;
   }
 

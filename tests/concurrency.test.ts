@@ -1,7 +1,6 @@
 import { Operon, TransactionContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
-import { TestKvTable, sleep } from "./helper";
-import { DatabaseError } from "pg";
+import { sleep } from "./helper";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
