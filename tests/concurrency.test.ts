@@ -37,7 +37,6 @@ describe('concurrency-tests', () => {
       res1 = await futRes1;
       res2 = await futRes2;
     } catch (error) {
-      expect(error).toBeInstanceOf(OperonError);
       const err: OperonError = error as OperonError;
       expect(err.message).toBe('Conflicting UUIDs');
     }

@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
 import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
-import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
+import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams, OperonNull, operonNull } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { serializeError, deserializeError } from 'serialize-error';
 
-import { Pool, PoolClient, Notification } from 'pg';
+import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
@@ -53,6 +54,12 @@ export class Operon {
       PRIMARY KEY (workflow_id, function_id)
       );`
     );
+    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__WorkflowOutputs (
+      workflow_id VARCHAR(64) PRIMARY KEY,
+      output TEXT,
+      error TEXT
+      );`
+    );
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
       key VARCHAR(255) PRIMARY KEY,
       message TEXT NOT NULL
@@ -85,6 +92,7 @@ export class Operon {
   async resetOperonTables() {
     await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
     await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
+    await this.pool.query(`DROP TABLE IF EXISTS operon__WorkflowOutputs`)
     await this.initializeOperonTables();
   }
 
@@ -127,7 +135,7 @@ export class Operon {
     }
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
-    const initFuncID = wCtxt.functionIDGetIncrement();
+    const workflowInputID = wCtxt.functionIDGetIncrement();
 
     // Check if the user has permission to run this workflow.
     if (!params.runAs) {
@@ -138,21 +146,58 @@ export class Operon {
       throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
     }
 
-    // TODO: need to optimize this extra transaction per workflow.
-    const recordExecution = async (input: T) => {
+    const checkWorkflowOutput = async () => {
+      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output, error FROM operon__WorkflowOutputs WHERE workflow_id=$1",
+        [workflowUUID]);
+      if (rows.length === 0) {
+        return operonNull;
+      } else if (JSON.parse(rows[0].error) !== null) {
+        const error: any = deserializeError(JSON.parse(rows[0].error));
+        throw error;
+      } else {
+        return JSON.parse(rows[0].output) as R;  // Could be null.
+      }
+    }
+
+    const recordWorkflowOutput = async (output: R | null, error: Error | null) => {
+      const serialErr = error !== null ? serializeError(error) : null;
+      try {
+      await this.pool.query(`INSERT INTO operon__WorkflowOutputs VALUES($1, $2, $3)`, [workflowUUID, JSON.stringify(output), JSON.stringify(serialErr)]);
+      } catch (err) {
+        const error: DatabaseError = err as DatabaseError;
+        if (error.code === "40001" || error.code === "23505") {
+          throw new OperonError("Conflicting UUIDs");
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const checkWorkflowInput = async (input: T) => {
       const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [workflowUUID, initFuncID]);
+        [workflowUUID, workflowInputID]);
       if (rows.length === 0) {
         // This workflow has never executed before, so record the input.
-        wCtxt.resultBuffer.set(initFuncID, JSON.stringify(input));
+        wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
       } else {
         // Return the old recorded input
         input = JSON.parse(rows[0].output) as T;
       }
       return input;
     }
-    const input = await recordExecution(args);
-    const result: R = await wf(wCtxt, ...input);
+    const previousOutput = await checkWorkflowOutput();
+    if (previousOutput !== operonNull) {
+      return previousOutput as R;
+    }
+    const input = await checkWorkflowInput(args);
+    let result: R;
+    try {
+      result = await wf(wCtxt, ...input);
+    } catch (err) {
+      await recordWorkflowOutput(null, err as Error);
+      throw err;
+    }
+    await recordWorkflowOutput(result, null);
     return result;
   }
 

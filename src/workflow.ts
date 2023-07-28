@@ -22,8 +22,8 @@ export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
 
-interface OperonNull {}
-const operonNull: OperonNull = {};
+export interface OperonNull {}
+export const operonNull: OperonNull = {};
 
 export class WorkflowContext {
   readonly workflowUUID: string;
@@ -63,6 +63,7 @@ export class WorkflowContext {
       }
       this.resultBuffer.clear();
     } catch (err) {
+      client.query('ROLLBACK');
       const error: DatabaseError = err as DatabaseError;
       if (error.code === "40001" || error.code === "23505") {
         throw new OperonError("Conflicting UUIDs");
@@ -78,6 +79,7 @@ export class WorkflowContext {
       await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
         [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
     } catch (err) {
+      client.query('ROLLBACK');
       const error: DatabaseError = err as DatabaseError;
       if (error.code === "40001" || error.code === "23505") {
         throw new OperonError("Conflicting UUIDs");
