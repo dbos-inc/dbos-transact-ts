@@ -1,12 +1,19 @@
 import {
   Operon,
+  OperonInitializationError,
 } from "src/";
 import { Client, Pool } from 'pg';
 
 describe('operon-init', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test('successful init', async() => {
     const operon = new Operon(); // TODO have this test pass a custom config with a tmp database schema
     await operon.init();
+
+    expect(operon.initialized).toBeTruthy();
 
     // Check pgSystemClient has been shutdown
     expect(operon.pgSystemClient).toBeDefined();
@@ -41,13 +48,27 @@ describe('operon-init', () => {
     // TODO check that resources have been released. The client objects hold that information but it is not exposed.
   });
 
-  // test: two inits in a row do not attempt to re-create the database
+  test('init can only be called once', async() => {
+    const operon = new Operon();
+    const loadOperonDatabaseSpy = jest.spyOn(operon, 'loadOperonDatabase');
+    const listenForNotificationsSpy = jest.spyOn(operon, 'listenForNotifications');
+    await operon.init();
+    await operon.init();
+    expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
+    expect(listenForNotificationsSpy).toHaveBeenCalledTimes(1);
+    await operon.destroy();
+  });
 
-
-  // test: fails to create database
-
-  // test: fails to load operon schema
+  // TODO fails to create database (do when we can to pass a custom config with a specific schema name)
+  // TODO fails to load operon schema (do when we can to pass a custom config with a specific schema name)
 
   // test fails to create listener
+  test('Failing to create listener throws', async() => {
+    const operon = new Operon();
+    jest.spyOn(operon, 'listenForNotifications').mockImplementation(() => {
+      throw new Error('mock error');
+    });
+    await expect(operon.init()).rejects.toThrow(OperonInitializationError);
+  });
 
 });

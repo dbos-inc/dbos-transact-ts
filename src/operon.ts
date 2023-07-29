@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
-import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
+import {
+  OperonError,
+  OperonWorkflowPermissionDeniedError,
+  OperonInitializationError
+} from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
@@ -21,10 +25,11 @@ export interface operon__Notifications {
 }
 
 export class Operon {
+  initialized: boolean;
   readonly config: OperonConfig;
   readonly pool: Pool;
   readonly pgSystemClient: Client;
-  readonly notificationsClient: Client;
+  readonly pgNotificationsClient: Client;
   readonly listenerMap: Record<string, () => void> = {};
 
   /* OPERON LIFE CYCLE MANAGEMENT */
@@ -37,7 +42,7 @@ export class Operon {
       password: this.config.poolConfig.password,
       database: 'postgres',
     });
-    this.notificationsClient = new Client({
+    this.pgNotificationsClient = new Client({
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
       host: this.config.poolConfig.host,
@@ -45,11 +50,22 @@ export class Operon {
       database: this.config.poolConfig.database,
     });
     this.pool = new Pool(this.config.poolConfig);
+    this.initialized = false;
   }
 
   async init(): Promise<void> {
-    await this.loadOperonDatabase()
-    await this.listenForNotifications()
+    if (this.initialized) {
+      // TODO add logging when we have a logger
+      return;
+    }
+    try {
+      await this.loadOperonDatabase()
+      await this.listenForNotifications()
+    } catch (err) {
+      if (err instanceof Error) {
+        throw new OperonInitializationError(err.message);
+      }
+    }
   }
 
   // Operon database management
@@ -63,12 +79,13 @@ export class Operon {
     }
     // We could end the client at destroy(), but given we are only using it here, do it now.
     await this.pgSystemClient.end();
-    // Load the Operon system schema
+    // Load the Operon system schema (XXX should we only do this if the database did not exist? Could guard against idempotency error in the schema)
     await this.pool.query(this.config.operonDbSchema);
+    this.initialized = true;
   }
 
   async destroy() {
-    await this.notificationsClient.removeAllListeners().end();
+    await this.pgNotificationsClient.removeAllListeners().end();
     await this.pool.end();
   }
 
@@ -77,14 +94,14 @@ export class Operon {
    * workflow listener by resolving its promise.
    */
   async listenForNotifications() {
-    await this.notificationsClient.connect();
-    await this.notificationsClient.query('LISTEN operon__notificationschannel;');
+    await this.pgNotificationsClient.connect();
+    await this.pgNotificationsClient.query('LISTEN operon__notificationschannel;');
     const handler = (msg: Notification ) => {
       if (msg.payload && msg.payload in this.listenerMap) {
         this.listenerMap[msg.payload]();
       }
     };
-    this.notificationsClient.on('notification', handler);
+    this.pgNotificationsClient.on('notification', handler);
   }
 
   /* Operon Workflows */
