@@ -68,7 +68,7 @@ describe('failures-tests', () => {
       operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2)
     ]);
     const errorResult = results.find(result => result.status === 'rejected');
-    const err: DatabaseError = (errorResult as PromiseRejectedResult).reason;
+    const err: DatabaseError = (errorResult as PromiseRejectedResult).reason as DatabaseError;
     expect(err.code).toBe('23505');
     expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
 

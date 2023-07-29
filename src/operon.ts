@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
 import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
-import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams, OperonNull, operonNull } from './workflow';
+import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams, operonNull } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { serializeError, deserializeError } from 'serialize-error';
 
-import { Pool, PoolClient, Notification, DatabaseError } from 'pg';
+import { Pool, PoolClient, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
@@ -24,26 +23,34 @@ export interface operon__Notifications {
 export class Operon {
   config: OperonConfig;
   readonly pool: Pool;
+
   readonly notificationsClient: Promise<PoolClient>;
   readonly listenerMap: Record<string, () => void> = {};
+
+  readonly workflowOutputBuffer: Map<string, string> = new Map();
+  readonly flushBufferIntervalMs: number = 1000;
+  readonly flushBufferID: NodeJS.Timeout;
+
+  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
+  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
 
   constructor() {
     this.config = new OperonConfig();
     this.pool = new Pool(this.config.poolConfig);
     this.notificationsClient = this.pool.connect();
     void this.listenForNotifications();
+    this.flushBufferID = setInterval(() => {
+      void this.flushWorkflowOutputBuffer();
+    }, this.flushBufferIntervalMs)
   }
 
   async destroy() {
+    clearInterval(this.flushBufferID);
+    await this.flushWorkflowOutputBuffer();
     (await this.notificationsClient).removeAllListeners().release();
     await this.pool.end();
   }
-
-  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
-
-  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
-
-  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
 
   async initializeOperonTables() {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
@@ -114,6 +121,18 @@ export class Operon {
     client.on('notification', handler);
   }
 
+  async flushWorkflowOutputBuffer() {
+    const localBuffer = new Map(this.workflowOutputBuffer);
+    this.workflowOutputBuffer.clear();
+    const client: PoolClient = await this.pool.connect();
+    await client.query("BEGIN");
+    for (const [workflowUUID, output] of localBuffer) {
+      await client.query("INSERT INTO operon__WorkflowOutputs VALUES($1, $2) ON CONFLICT DO NOTHING", [workflowUUID, output]);
+    }
+    await client.query("COMMIT");
+    client.release();
+  }
+
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, config);
   }
@@ -155,8 +174,8 @@ export class Operon {
       }
     }
 
-    const recordWorkflowOutput = async (output: R) => {
-      await this.pool.query(`INSERT INTO operon__WorkflowOutputs VALUES($1, $2)`, [workflowUUID, JSON.stringify(output)]);
+    const recordWorkflowOutput = (output: R) => {
+      this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
     }
 
     const checkWorkflowInput = async (input: T) => {
@@ -178,7 +197,7 @@ export class Operon {
     }
     const input = await checkWorkflowInput(args);
     const result = await wf(wCtxt, ...input);
-    await recordWorkflowOutput(result);
+    recordWorkflowOutput(result);
     return result;
   }
 

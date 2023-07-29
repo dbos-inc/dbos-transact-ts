@@ -373,7 +373,7 @@ describe('operon-tests', () => {
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
     expect(remoteState.num).toBe(1);
   
-    // TODO: for async flush, wait until the workflow output is in the DB.
+    await operon.flushWorkflowOutputBuffer();
     // Run it again with the same UUID, should get the same output.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
     // The workflow should not run at all.

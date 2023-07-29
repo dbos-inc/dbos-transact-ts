@@ -48,6 +48,7 @@ export class WorkflowContext {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
       const error: any = deserializeError(JSON.parse(rows[0].error));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       error.__retry__ = true;
       throw error;
     } else {
@@ -67,6 +68,7 @@ export class WorkflowContext {
       const error: DatabaseError = err as DatabaseError;
       if (error.code === "40001" || error.code === "23505") {
         const operonError = new OperonError("Conflicting UUIDs");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (operonError as any).__retry__ = true; // We know this is a retry because another transaction ran previously with the same UUID.
         throw operonError;
       } else {

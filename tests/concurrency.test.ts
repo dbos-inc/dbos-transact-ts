@@ -34,7 +34,7 @@ describe('concurrency-tests', () => {
     const errorResult = results.find(result => result.status === 'rejected');
     const goodResult = results.find(result => result.status === 'fulfilled');
     expect((goodResult as PromiseFulfilledResult<number>).value).toBe(10);
-    const err: OperonError = (errorResult as PromiseRejectedResult).reason;
+    const err: OperonError = (errorResult as PromiseRejectedResult).reason as OperonError;
     expect(err.message).toBe('Conflicting UUIDs')
 
   });
