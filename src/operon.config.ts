@@ -109,7 +109,6 @@ export class OperonConfig {
     }
 
     try {
-      // TODO eventually we should handle all path absolute, with path.join & co
       this.operonDbSchema = fs.readFileSync(schemaPath, 'utf8')
     } catch(error) {
       if (error instanceof Error) {
