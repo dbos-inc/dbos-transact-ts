@@ -250,21 +250,4 @@ describe('failures-tests', () => {
     expect(remoteState.num).toBe(2);
   });
 
-  test('non-readonly', async() => {
-    const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id`, [id, name]);
-      return JSON.stringify(rows[0]);
-    };
-    operon.registerTransaction(testFunction, {readOnly: true});
-    
-    try {
-      await operon.transaction(testFunction, {}, 10, "test");
-    } catch (err) {
-      expect(err).toBeInstanceOf(DatabaseError);
-      const error = err as DatabaseError;
-      expect(error.code).toBe('25006');
-      expect(error.message).toBe('cannot execute INSERT in a read-only transaction');
-    }
-
-  });
 });

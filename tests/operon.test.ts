@@ -366,7 +366,7 @@ describe('operon-tests', () => {
       remoteState.num += 1;
       return funcResult;
     };
-    operon.registerTransaction(testFunction);
+    operon.registerTransaction(testFunction, {readOnly: true});
     operon.registerWorkflow(testWorkflow);
   
     const workflowUUID = uuidv1();
@@ -378,6 +378,46 @@ describe('operon-tests', () => {
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
     // The workflow should not run at all.
     expect(remoteState.num).toBe(1);
-  });  
+  });
+
+  test('readonly-recording', async() => {
+    const remoteState = {
+      num: 0
+    };
+
+    const readFunction = async (txnCtxt: TransactionContext, id: number) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM OperonKv WHERE id=$1`, [id]);
+      remoteState.num += 1;
+      if (rows.length === 0) {
+        return null;
+      }
+      return rows[0].value;
+    };
+    operon.registerTransaction(readFunction, {readOnly: true});
+
+    const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO OperonKv VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      return rows[0].value;
+    };
+    operon.registerTransaction(writeFunction, {});
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
+      await workflowCtxt.transaction(readFunction, id);
+      await workflowCtxt.transaction(writeFunction, id, name);
+      throw Error("dumb test error");
+    };
+    operon.registerWorkflow(testWorkflow, {});
+
+    const workflowUUID = uuidv1();
+
+    // Invoke the workflow, should get the error.
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
+    expect(remoteState.num).toBe(1);
+
+    // Invoke it again, there should be no output recorded and throw the same error.
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
+    expect(remoteState.num).toBe(1);
+
+  });
 });
 
