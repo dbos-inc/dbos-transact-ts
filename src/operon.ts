@@ -55,20 +55,20 @@ export class Operon {
   // Operon database management
   async loadOperonDatabase() {
     await this.pgSystemClient.connect();
-    // Check whether the database exists
+    // Check whether the Operon system database exists, create it if needed
     const dbExists = await this.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`);
     if (dbExists.rows.length === 0) {
         const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
         await this.pgSystemClient.query(createDbStatement);
-        console.log(this.config.operonDbSchema);
-        await this.pgSystemClient.query(this.config.operonDbSchema);
     }
+    // We could end the client at destroy(), but given we are only using it here, do it now.
     await this.pgSystemClient.end();
+    // Load the Operon system schema
+    await this.pool.query(this.config.operonDbSchema);
   }
 
   async destroy() {
-    await this.notificationsClient.removeAllListeners();
-    await this.notificationsClient.end();
+    (await this.notificationsClient).removeAllListeners().end();
     await this.pool.end();
   }
 
