@@ -31,6 +31,7 @@ describe('Operon config', () => {
     const mockDatabaseConfig: DatabaseConfig = {
       hostname: 'some host',
       port: 1111,
+      database: 'some database',
       username: 'some test user',
       connectionTimeoutMillis: 3,
       schemaFile: 'some schema file',
@@ -51,8 +52,7 @@ describe('Operon config', () => {
     expect(poolConfig.user).toBe(mockDatabaseConfig.username);
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(mockDatabaseConfig.connectionTimeoutMillis);
-    // expect(poolConfig.database).toBe('operon');
-    expect(poolConfig.database).toBe('postgres');
+    expect(poolConfig.database).toBe(mockDatabaseConfig.database);
 
     // Test schema file has been set
     expect(operonConfig.operonDbSchema).toBe('SQL STATEMENTS');

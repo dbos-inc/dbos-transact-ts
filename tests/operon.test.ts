@@ -23,7 +23,7 @@ describe('operon-tests', () => {
 
   beforeEach(async () => {
     operon = new Operon();
-    await operon.resetOperonTables();
+    await operon.init();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
 

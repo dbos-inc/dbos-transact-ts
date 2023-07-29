@@ -22,7 +22,7 @@ describe('concurrency-tests', () => {
 
   beforeEach(async () => {
     operon = new Operon();
-    await operon.resetOperonTables();
+    await operon.init();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
   });

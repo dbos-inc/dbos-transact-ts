@@ -5,7 +5,7 @@ import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 
-import { Pool, PoolClient, Notification } from 'pg';
+import { Pool, PoolClient, Client, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
@@ -21,75 +21,55 @@ export interface operon__Notifications {
 }
 
 export class Operon {
-  config: OperonConfig;
-  readonly pool: Pool;
-  readonly notificationsClient: Promise<PoolClient>;
+  readonly config: OperonConfig;
+  readonly pool: Pool; // TODO rename to something more explicit, like "systemPool"
+  readonly pgSystemClient: Client;
+  readonly notificationsClient: Client;
   readonly listenerMap: Record<string, () => void> = {};
 
+  /* OPERON LIFE CYCLE MANAGEMENT */
   constructor() {
     this.config = new OperonConfig();
+    this.pgSystemClient = new Client({
+      user: this.config.poolConfig.user,
+      port: this.config.poolConfig.port,
+      host: this.config.poolConfig.host,
+      password: this.config.poolConfig.password,
+      database: 'postgres',
+    });
+    this.notificationsClient = new Client({
+      user: this.config.poolConfig.user,
+      port: this.config.poolConfig.port,
+      host: this.config.poolConfig.host,
+      password: this.config.poolConfig.password,
+      database: this.config.poolConfig.database,
+    });
     this.pool = new Pool(this.config.poolConfig);
-    this.notificationsClient = this.pool.connect();
-    void this.listenForNotifications();
+  }
+
+  async init(): Promise<void> {
+    await this.loadOperonDatabase()
+    await this.listenForNotifications()
+  }
+
+  // Operon database management
+  async loadOperonDatabase() {
+    await this.pgSystemClient.connect();
+    // Check whether the database exists
+    const dbExists = await this.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`);
+    if (dbExists.rows.length === 0) {
+        const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
+        await this.pgSystemClient.query(createDbStatement);
+        console.log(this.config.operonDbSchema);
+        await this.pgSystemClient.query(this.config.operonDbSchema);
+    }
+    await this.pgSystemClient.end();
   }
 
   async destroy() {
-    (await this.notificationsClient).removeAllListeners().release();
+    await this.notificationsClient.removeAllListeners();
+    await this.notificationsClient.end();
     await this.pool.end();
-  }
-
-  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
-
-  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
-
-  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
-
-  async initializeOperonTables() {
-    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
-      workflow_id VARCHAR(64) NOT NULL,
-      function_id INT NOT NULL,
-      output TEXT,
-      error TEXT,
-      PRIMARY KEY (workflow_id, function_id)
-      );`
-    );
-    await this.pool.query(`CREATE TABLE IF NOT EXISTS operon__Notifications (
-      key VARCHAR(255) PRIMARY KEY,
-      message TEXT NOT NULL
-    );`);
-    // Weird node-postgres issue -- channel names must be all-lowercase.
-    await this.pool.query(`
-        CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
-        DECLARE
-        BEGIN
-            -- Publish a notification for all keys
-            PERFORM pg_notify('operon__notificationschannel', NEW.key::text);
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-
-        DO
-        $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon__notificationstrigger') THEN
-              EXECUTE '
-                  CREATE TRIGGER operon__notificationstrigger
-                  AFTER INSERT ON operon__Notifications
-                  FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction()';
-            END IF;
-        END
-        $$;
-    `);
-  }
-
-  async resetOperonTables() {
-    await this.pool.query(`DROP TABLE IF EXISTS operon__FunctionOutputs;`);
-    await this.pool.query(`DROP TABLE IF EXISTS operon__Notifications`)
-    await this.initializeOperonTables();
-  }
-
-  #generateUUID(): string {
-    return uuidv4();
   }
 
   /**
@@ -97,14 +77,26 @@ export class Operon {
    * workflow listener by resolving its promise.
    */
   async listenForNotifications() {
-    const client = await this.notificationsClient;
-    await client.query('LISTEN operon__notificationschannel;');
+    await this.notificationsClient.connect();
+    await this.notificationsClient.query('LISTEN operon__notificationschannel;');
     const handler = (msg: Notification ) => {
       if (msg.payload && msg.payload in this.listenerMap) {
         this.listenerMap[msg.payload]();
       }
     };
-    client.on('notification', handler);
+    this.notificationsClient.on('notification', handler);
+  }
+
+  /* Operon Workflows */
+
+  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
+
+  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+
+  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
+
+  #generateUUID(): string {
+    return uuidv4();
   }
 
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
@@ -194,7 +186,8 @@ export class Operon {
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 
-  // Permissions management
+  /* Operon Permissions */
+
   hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
     // An empty list of roles in the workflow config means the workflow is permission-less
     if (!workflowConfig.rolesThatCanRun) {

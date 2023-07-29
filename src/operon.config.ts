@@ -18,6 +18,7 @@ export interface DatabaseConfig {
     username: string;
     connectionTimeoutMillis: number;
     schemaFile: string;
+    database: string;
 }
 
 export class OperonConfig {
@@ -44,7 +45,7 @@ export class OperonConfig {
     }
 
     // Logic to parse CONFIG_FILE.
-    // We have to initialize an empty object so TSC lets us check on it later on
+    // We have to initialize an empty object so TSC lets us do if(!parseConfig) later on
     let parsedConfig: OperonConfigFile = {
       database: {
         hostname: '',
@@ -52,6 +53,7 @@ export class OperonConfig {
         username: '',
         connectionTimeoutMillis: 0,
         schemaFile: '',
+        database: '',
       }
     };
     try {
@@ -82,8 +84,7 @@ export class OperonConfig {
       user: dbConfig.username,
       password: dbPassword,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
-      // database: 'operon',
-      database: 'postgres',
+      database: dbConfig.database,
     };
 
     // Logic to parse Operon DB schema.
