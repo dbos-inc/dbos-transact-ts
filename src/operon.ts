@@ -5,7 +5,7 @@ import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 
-import { Pool, PoolClient, Client, Notification } from 'pg';
+import { Pool, Client, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface operon__FunctionOutputs {
@@ -22,7 +22,7 @@ export interface operon__Notifications {
 
 export class Operon {
   readonly config: OperonConfig;
-  readonly pool: Pool; // TODO rename to something more explicit, like "systemPool"
+  readonly pool: Pool;
   readonly pgSystemClient: Client;
   readonly notificationsClient: Client;
   readonly listenerMap: Record<string, () => void> = {};
@@ -58,8 +58,8 @@ export class Operon {
     // Check whether the Operon system database exists, create it if needed
     const dbExists = await this.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`);
     if (dbExists.rows.length === 0) {
-        const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
-        await this.pgSystemClient.query(createDbStatement);
+      const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
+      await this.pgSystemClient.query(createDbStatement);
     }
     // We could end the client at destroy(), but given we are only using it here, do it now.
     await this.pgSystemClient.end();
@@ -68,7 +68,7 @@ export class Operon {
   }
 
   async destroy() {
-    (await this.notificationsClient).removeAllListeners().end();
+    await this.notificationsClient.removeAllListeners().end();
     await this.pool.end();
   }
 
