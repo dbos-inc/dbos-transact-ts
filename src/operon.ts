@@ -66,6 +66,7 @@ export class Operon {
         throw new OperonInitializationError(err.message);
       }
     }
+    this.initialized = true;
   }
 
   // Operon database management
@@ -76,12 +77,11 @@ export class Operon {
     if (dbExists.rows.length === 0) {
       const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
       await this.pgSystemClient.query(createDbStatement);
+      // Load the Operon system schema
+      await this.pool.query(this.config.operonDbSchema);
     }
     // We could end the client at destroy(), but given we are only using it here, do it now.
     await this.pgSystemClient.end();
-    // Load the Operon system schema (XXX should we only do this if the database did not exist? Could guard against idempotency error in the schema)
-    await this.pool.query(this.config.operonDbSchema);
-    this.initialized = true;
   }
 
   async destroy() {
