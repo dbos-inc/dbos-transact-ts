@@ -382,7 +382,8 @@ describe('operon-tests', () => {
 
   test('readonly-recording', async() => {
     const remoteState = {
-      num: 0
+      num: 0,
+      workflowCnt: 0
     };
 
     const readFunction = async (txnCtxt: TransactionContext, id: number) => {
@@ -403,7 +404,9 @@ describe('operon-tests', () => {
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
       await workflowCtxt.transaction(readFunction, id);
+      remoteState.workflowCnt += 1;
       await workflowCtxt.transaction(writeFunction, id, name);
+      remoteState.workflowCnt += 1; // Make sure the workflow actually runs.
       throw Error("dumb test error");
     };
     operon.registerWorkflow(testWorkflow, {});
@@ -413,11 +416,12 @@ describe('operon-tests', () => {
     // Invoke the workflow, should get the error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
+    expect(remoteState.workflowCnt).toBe(2);
 
     // Invoke it again, there should be no output recorded and throw the same error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
-
+    expect(remoteState.workflowCnt).toBe(4);
   });
 });
 
