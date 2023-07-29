@@ -3,7 +3,9 @@
 import {
   operon__FunctionOutputs,
   operon__Notifications,
-  Operon
+  Operon,
+  OperonNull,
+  operonNull
 } from './operon';
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
@@ -21,9 +23,6 @@ export interface WorkflowParams {
 export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
-
-export interface OperonNull {}
-export const operonNull: OperonNull = {};
 
 export class WorkflowContext {
   readonly workflowUUID: string;

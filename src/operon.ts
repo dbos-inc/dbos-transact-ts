@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonConfig } from './operon.config';
 import { OperonError, OperonWorkflowPermissionDeniedError } from './error';
-import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams, operonNull } from './workflow';
+import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 
@@ -19,6 +19,9 @@ export interface operon__Notifications {
   key: string;
   message: string;
 }
+
+export interface OperonNull {}
+export const operonNull: OperonNull = {};
 
 export class Operon {
   config: OperonConfig;
