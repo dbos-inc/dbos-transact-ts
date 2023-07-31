@@ -47,6 +47,28 @@ describe('failures-tests', () => {
     await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
+  test('readonly-error', async() => {
+    const remoteState = {
+      cnt: 0
+    }
+    const testFunction = async (txnCtxt: TransactionContext, id: number) => {
+      await sleep(1);
+      void txnCtxt;
+      remoteState.cnt += 1;
+      throw new Error("test error");
+      return id;
+    };
+    operon.registerTransaction(testFunction, {readOnly: true});
+
+    const testUUID = uuidv1();
+    await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
+    expect(remoteState.cnt).toBe(1);
+
+    // The error should be recorded in the database, so the function shouldn't run again.
+    await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
+    expect(remoteState.cnt).toBe(1);
+  });
+
   test('simple-keyconflict', async() => {
     let counter: number = 0;
     let succeedUUID: string = '';

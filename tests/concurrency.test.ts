@@ -33,8 +33,8 @@ describe('concurrency-tests', () => {
 
     const workflowUUID = uuidv1();
     let results = await Promise.allSettled([
-      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10),
-      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 10)
+      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 100),
+      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 100)
     ]);
     const errorResult = results.find(result => result.status === 'rejected');
     const goodResult = results.find(result => result.status === 'fulfilled');

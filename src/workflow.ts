@@ -107,8 +107,8 @@ export class WorkflowContext {
         return check as R;
       }
       // Flush the result buffer, setting a placeholder entry with the function's ID to block concurrent executions with the same UUID.
+      this.resultBuffer.set(funcId, null);
       if (!fCtxt.readOnly) {
-        this.resultBuffer.set(funcId, null);
         await this.flushResultBuffer(client);
       }
 
