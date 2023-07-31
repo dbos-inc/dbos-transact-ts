@@ -1,5 +1,5 @@
 import { OperonConfig } from 'src';
-import { Client, QueryArrayResult } from 'pg';
+import { Client } from 'pg';
 
 export function generateOperonTestConfig(): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
