@@ -18,26 +18,21 @@ export function validateTransactionConfig (params: TransactionConfig){
 }
 
 export class TransactionContext {
-  client: PoolClient;
-
   #functionAborted: boolean = false;
-  readonly functionID: number;
   readonly readOnly : boolean;
   readonly isolationLevel;
 
-  constructor(client: PoolClient, functionID: number, config: TransactionConfig) {
-    this.client = client;
-    this.functionID = functionID;
-    if (!config.readOnly) {
-      this.readOnly = false;
-    } else {
+  constructor(readonly client: PoolClient, readonly functionID: number, config: TransactionConfig) {
+    if (config.readOnly) {
       this.readOnly = config.readOnly;
-    }
-    if (!config.isolationLevel) {
-      this.isolationLevel = 'SERIALIZABLE';
     } else {
+      this.readOnly = false;
+    }
+    if (config.isolationLevel) {
       // We already validated the isolation level during config time.
       this.isolationLevel = config.isolationLevel;
+    } else {
+      this.isolationLevel = 'SERIALIZABLE';
     }
   }
 

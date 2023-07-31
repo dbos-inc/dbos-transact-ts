@@ -25,15 +25,12 @@ export interface WorkflowConfig {
 }
 
 export class WorkflowContext {
-  readonly workflowUUID: string;
   #functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
 
-  constructor(operon: Operon, workflowUUID: string, workflowConfig: WorkflowConfig) {
-    void workflowConfig;
+  constructor(operon: Operon, readonly workflowUUID: string, readonly workflowConfig: WorkflowConfig) {
     this.#operon = operon;
-    this.workflowUUID = workflowUUID;
   }
 
   functionIDGetIncrement() : number {

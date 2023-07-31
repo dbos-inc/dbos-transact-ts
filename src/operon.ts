@@ -15,6 +15,11 @@ export interface operon__FunctionOutputs {
     error: string;
 }
 
+export interface operon__WorkflowOutputs {
+  workflow_id: string;
+  output: string;
+}
+
 export interface operon__Notifications {
   key: string;
   message: string;
@@ -168,7 +173,7 @@ export class Operon {
     }
 
     const checkWorkflowOutput = async () => {
-      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
+      const { rows } = await this.pool.query<operon__WorkflowOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
         [workflowUUID]);
       if (rows.length === 0) {
         return operonNull;
