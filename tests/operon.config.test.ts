@@ -3,6 +3,7 @@ import {
   OperonConfig,
   OperonInitializationError,
 } from 'src/';
+import { generateOperonTestConfig } from './helpers';
 import * as utils from  '../src/utils';
 import { PoolConfig } from 'pg';
 
@@ -26,6 +27,7 @@ describe('operon-config', () => {
     jest.spyOn(utils, 'readFileSync').mockReturnValueOnce("SQL STATEMENTS");
 
     const operon: Operon = new Operon();
+    expect(operon.initialized).toBe(false);
     const operonConfig: OperonConfig = operon.config;
 
     // Test pool config options
@@ -39,6 +41,16 @@ describe('operon-config', () => {
 
     // Test schema file has been set
     expect(operonConfig.operonSystemDbSchemaFile).toBe('schema.sql');
+  });
+
+  test('Custom config is parsed as expected', () => {
+    // We use readFileSync as a proxy for checking the config was not read from the default location
+    const readFileSpy = jest.spyOn(utils, 'readFileSync');
+    const config: OperonConfig = generateOperonTestConfig();
+    const operon: Operon = new Operon(config);
+    expect(operon.initialized).toBe(false);
+    expect(operon.config).toBe(config);
+    expect(readFileSpy).toHaveBeenCalledTimes(0);
   });
 
   test('fails to read config file', () => {
