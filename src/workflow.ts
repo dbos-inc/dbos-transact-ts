@@ -37,9 +37,16 @@ export class WorkflowContext {
     return this.#functionID++;
   }
 
-  async checkExecution<R>(client: PoolClient, currFuncID: number): Promise<R | OperonNull> {
+  /**
+   * Check if an operation has already executed in a workflow.
+   * This should run before any operation's execution.
+   * If it previously executed succesfully, return its output.
+   * If it previously executed and threw an error, throw that error.
+   * Otherwise, return OperonNull.
+   */
+  async checkExecution<R>(client: PoolClient, funcID: number): Promise<R | OperonNull> {
     const { rows } = await client.query<operon__FunctionOutputs>("SELECT output, error FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-      [this.workflowUUID, currFuncID]);
+      [this.workflowUUID, funcID]);
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
@@ -51,6 +58,13 @@ export class WorkflowContext {
     }
   }
 
+  /**
+   * Write all entries in the workflow result buffer to the database.  
+   * Additionally write a blank "guard" row protecting the function's ID.
+   * This should run at the start of any write transaction (including external, send, and recv).
+   * It must be followed in the same transaction by a call to writeOutput or recordError.
+   * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
+   */
   async flushResultBuffer(client: PoolClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
     funcIDs.sort();
@@ -63,7 +77,7 @@ export class WorkflowContext {
       await client.query('ROLLBACK');
       client.release();
       const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
+      if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
         throw new OperonError("Conflicting UUIDs", 5); // TODO: Break out of the workflow.
       } else {
         throw err;
@@ -71,17 +85,31 @@ export class WorkflowContext {
     }
   }
 
-  async writeGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+  /**
+   * Write a function's output to the database.
+   * This should run immediately before committing a successful write transaction.
+   */
+  async writeOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
     await client.query("UPDATE operon__FunctionOutputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
       [JSON.stringify(output), this.workflowUUID, funcID]);
   }
 
+  /**
+   * Record an error to the database.
+   * This should run during error handling after flushing the buffer.
+   */
   async recordError(client: PoolClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
     await client.query("UPDATE operon__FunctionOutputs SET error=$1 WHERE workflow_id=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
   }
 
+  /**
+   * Execute a transactional function.
+   * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.
+   * If the transaction encounters a Postgres serialization error, retry it.
+   * If it encounters any other error, throw it.
+   */
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
     const txnConfig = this.#operon.transactionConfigMap.get(txn);
     if (txnConfig === undefined) {
@@ -153,7 +181,7 @@ export class WorkflowContext {
           await this.flushResultBuffer(client);
         }
         // Synchronously record the output of write transactions.
-        await this.writeGuardedOutput<R>(client, funcId, result);
+        await this.writeOutput<R>(client, funcId, result);
         await client.query("COMMIT");
         this.resultBuffer.clear();
         client.release();
@@ -162,6 +190,11 @@ export class WorkflowContext {
     }
   }
 
+  /**
+   * Execute a communicator function.
+   * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an OperonError.
+   * The communicator may execute many times, but once it is complete (either by succeeding or throwing an OperonError), it will not re-execute.
+   */
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
     const commConfig = this.#operon.communicatorConfigMap.get(commFn);
     if (commConfig === undefined) {
@@ -227,6 +260,11 @@ export class WorkflowContext {
     }
   }
 
+  /**
+   * Send a message to a key.
+   * If no message is associated with the key, return true.
+   * If a message is associated with the key, do nothing and return false.
+   */
   async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
     const client: PoolClient = await this.#operon.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
@@ -243,13 +281,18 @@ export class WorkflowContext {
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
-    await this.writeGuardedOutput(client, functionID, success);
+    await this.writeOutput(client, functionID, success);
     await client.query("COMMIT");
     this.resultBuffer.clear();
     client.release();
     return success;
   }
 
+  /**
+   * Receive and consume a message from a key, returning the message.
+   * Waits until the message arrives or a timeout is reached.
+   * If the timeout is reached, return null.
+   */
   async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
     let client = await this.#operon.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
@@ -280,7 +323,7 @@ export class WorkflowContext {
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
-      await this.writeGuardedOutput(client, functionID, message);
+      await this.writeOutput(client, functionID, message);
       await client.query(`COMMIT`);
       this.resultBuffer.clear();
       client.release();
@@ -301,7 +344,7 @@ export class WorkflowContext {
     if (rows.length > 0 ) {
       message = JSON.parse(rows[0].message) as T;
     }
-    await this.writeGuardedOutput(client, functionID, message);
+    await this.writeOutput(client, functionID, message);
     await client.query(`COMMIT`);
     this.resultBuffer.clear();
     client.release();
