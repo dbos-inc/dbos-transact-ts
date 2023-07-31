@@ -43,50 +43,43 @@ export class WorkflowContext {
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
-      const error: any = deserializeError(JSON.parse(rows[0].error));
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      error.__retry__ = true;
-      throw error;
+      await client.query("ROLLBACK");
+      client.release();
+      throw deserializeError(JSON.parse(rows[0].error));
     } else {
       return JSON.parse(rows[0].output) as R;  // Could be null.
     }
   }
 
   async flushResultBuffer(client: PoolClient): Promise<void> {
+    const funcIDs = Array.from(this.resultBuffer.keys());
+    funcIDs.sort();
     try {
-      for (const [funcID, output] of this.resultBuffer) {
+      for (const funcID of funcIDs) {
         await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-          [this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null)]);
-      }
-      this.resultBuffer.clear();
-    } catch (err) {
+          [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
+      } 
+    } catch (error) {
       await client.query('ROLLBACK');
-      const error: DatabaseError = err as DatabaseError;
-      if (error.code === "40001" || error.code === "23505") {
-        const operonError = new OperonError("Conflicting UUIDs");
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        (operonError as any).__retry__ = true; // We know this is a retry because another transaction ran previously with the same UUID.
-        throw operonError;
+      client.release();
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') {
+        throw new OperonError("Conflicting UUIDs", 5); // TODO: Break out of the workflow.
       } else {
-        throw err;
+        throw err; // Database connection error?  Handle later.
       }
     }
   }
 
-  async recordError(client: PoolClient, currFuncID: number, err: Error) {
-    const serialErr = serializeError(err);
-    try {
-      await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
-        [this.workflowUUID, currFuncID, JSON.stringify(null), JSON.stringify(serialErr)]);
-    } catch (err) {
-      await client.query('ROLLBACK');
-      const error: DatabaseError = err as DatabaseError;
-      if (error.code === "40001" || error.code === "23505") {
-        throw new OperonError("Conflicting UUIDs");
-      } else {
-        throw err;
-      }
-    }
+  async writeGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+    await client.query("UPDATE operon__FunctionOutputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
+      [JSON.stringify(output), this.workflowUUID, funcID]);
+  }
+
+  async recordError(client: PoolClient, funcID: number, err: Error) {
+    const serialErr = JSON.stringify(serializeError(err));
+    await client.query("UPDATE operon__FunctionOutputs SET error=$1 WHERE workflow_id=$2 AND function_id=$3;",
+      [serialErr, this.workflowUUID, funcID]);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
@@ -99,53 +92,70 @@ export class WorkflowContext {
     const funcId = this.functionIDGetIncrement();
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
+      const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
+
+      await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
+      if (fCtxt.readOnly) {
+        await client.query(`SET TRANSACTION READ ONLY`);
+      }
+        
+      // Check if this execution previously happened, returning its original result if it did.
+      const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
+      if (check !== operonNull) {
+        await client.query("ROLLBACK");
+        client.release();
+        return check as R;
+      }
+      // Guard stuff
+      if (!fCtxt.readOnly) {
+        this.resultBuffer.set(funcId, null);
+        await this.flushResultBuffer(client);
+      }
+
+      let result: R;
       try {
-        const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
-
-        await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
-        if (fCtxt.readOnly) {
-          await client.query(`SET TRANSACTION READ ONLY`);
-        }
-
-        // Check if this execution previously happened, returning its original result if it did.
-        const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
-        if (check !== operonNull) {
-          await client.query("ROLLBACK");
-          return check as R;
-        }
-
         // Execute the function.
-        const result: R = await txn(fCtxt, ...args);
-
-        // Record the execution, commit, and return.
-        if(fCtxt.isAborted()) {
-          client = await this.#operon.pool.connect();
-        }
-        this.resultBuffer.set(funcId, result);
-        if (!fCtxt.readOnly) {
-          await this.flushResultBuffer(client);
-        }
-        await client.query("COMMIT");
-        return result;
+        result = await txn(fCtxt, ...args);
       } catch (error) {
         const err: DatabaseError = error as DatabaseError;
         // If the error is a serialization failure, rollback and retry with exponential backoff.
         await client.query('ROLLBACK');
         if (err.code !== '40001') { // serialization_failure in PostgreSQL
           // If the error is something else, record  and re-throw
-          if (!Object.hasOwn(err, "__retry__")) {
-            await client.query('BEGIN');
-            await this.flushResultBuffer(client);
-            await this.recordError(client, funcId, error as Error);
-            await client.query('COMMIT');
-          }
+          await client.query('BEGIN');
+          await this.flushResultBuffer(client);
+          await this.recordError(client, funcId, error as Error);
+          this.resultBuffer.clear();
+          await client.query('COMMIT');
+          client.release();
           throw error;
+        } else {
+          client.release();
+          await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
+          retryWaitMillis *= backoffFactor;
+          continue;
         }
-      } finally {
+      }
+
+      // Record the execution, commit, and return.
+      if (fCtxt.readOnly) {
+        this.resultBuffer.set(funcId, result);
+        if (!fCtxt.isAborted()) {
+          await client.query("COMMIT");
+          client.release();
+        }
+      } else {
+        if (fCtxt.isAborted()) {
+          client = await this.#operon.pool.connect();
+          await client.query("BEGIN");
+          await this.flushResultBuffer(client);
+        }
+        await this.writeGuardedOutput<R>(client, funcId, result);
+        this.resultBuffer.clear();
+        await client.query("COMMIT");
         client.release();
       }
-      await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
-      retryWaitMillis *= backoffFactor;
+      return result;
     }
   }
 
