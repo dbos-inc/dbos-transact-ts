@@ -51,7 +51,7 @@ interface operon__DatabaseConfig {
 
 export class Operon {
   initialized: boolean;
-  private readonly config: OperonConfig;
+  readonly config: OperonConfig;
   // "Global" pool
   readonly pool: Pool;
   // PG client for interacting with the `postgres` database
@@ -132,21 +132,25 @@ export class Operon {
       configuration = YAML.parse(configContent) as operon__ConfigFile;
     } catch(error) {
       if (error instanceof Error) {
-        throw new OperonError(`parsing ${configPath}: ${error.message}`);
+        throw(new OperonInitializationError(`parsing ${configPath}: ${error.message}`));
       }
     }
     if (!configuration) {
-      throw new OperonError(`Operon configuration ${configPath} is empty`);
+      throw(new OperonInitializationError(`Operon configuration ${configPath} is empty`));
     }
 
     // Handle "Global" pool config
     if (!configuration.database) {
-      throw new OperonError(`Operon configuration ${configPath} does not contain database config`);
+      throw(new OperonInitializationError(
+        `Operon configuration ${configPath} does not contain database config`
+      ));
     }
     const dbConfig: operon__DatabaseConfig = configuration.database;
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
-      throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
+      throw(new OperonInitializationError(
+        'DB_PASSWORD or PGPASSWORD environment variable not set'
+      ));
     }
     const poolConfig: PoolConfig = {
       host: dbConfig.hostname,
@@ -158,7 +162,9 @@ export class Operon {
     };
 
     if (!dbConfig.schemaFile) {
-      throw new OperonError(`Operon configuration ${configPath} does not contain a DB schema file`);
+      throw(new OperonInitializationError(
+        `Operon configuration ${configPath} does not contain a DB schema file`
+      ));
     }
 
     return {
@@ -174,13 +180,13 @@ export class Operon {
       operonDbSchema = readFileSync(schemaPath);
     } catch(error) {
       if (error instanceof Error) {
-        throw new OperonError(
+        throw new OperonInitializationError(
           `parsing Operon DB schema file ${schemaFile}: ${error.message}`
         );
       }
     }
     if (operonDbSchema === '') {
-      throw new OperonError(`Operon DB schema ${schemaFile} is empty`);
+      throw new OperonInitializationError(`Operon DB schema ${schemaFile} is empty`);
     }
     return operonDbSchema;
   }
