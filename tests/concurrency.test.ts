@@ -20,8 +20,13 @@ describe('concurrency-tests', () => {
   test('duplicate-transaction',async () => {
     // Run two transactions concurrently with the same UUID.
     // Only one should succeed, and the other one must fail.
+    // Since we put a guard before each transaction, only one should proceed.
+    const remoteState = {
+      cnt: 0
+    };
     const testFunction = async (txnCtxt: TransactionContext, id: number, sleepMs: number=0) => {
       await sleep(sleepMs);
+      remoteState.cnt += 1;
       return id;
     };
     operon.registerTransaction(testFunction, {});
@@ -36,8 +41,10 @@ describe('concurrency-tests', () => {
     expect((goodResult as PromiseFulfilledResult<number>).value).toBe(10);
     const err: OperonError = (errorResult as PromiseRejectedResult).reason as OperonError;
     expect(err.message).toBe('Conflicting UUIDs');
+    expect(remoteState.cnt).toBe(1);
 
     // If we mark the function as read-only, both should succeed.
+    remoteState.cnt = 0;
     operon.registerTransaction(testFunction, {readOnly: true});
     const readUUID = uuidv1();
     results = await Promise.allSettled([
@@ -46,6 +53,7 @@ describe('concurrency-tests', () => {
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
+    expect(remoteState.cnt).toBe(2);
   });
 
   test('duplicate-communicator',async () => {
@@ -82,6 +90,26 @@ describe('concurrency-tests', () => {
 
     // But the communicator function still runs twice as we do not guarantee OAOO.
     expect(remoteState.cnt).toBe(2);
+  });
+
+  test('duplicate-notifications',async () => {
+    // Run two send/recv concurrently with the same UUID, only one can succeed.
+    // It's a bit hard to trigger conflicting send because the transaction runs quickly.
+    const recvUUID = uuidv1();
+    const recvResPromise = Promise.allSettled([
+      operon.recv({workflowUUID: recvUUID}, "testmsg", 2),
+      operon.recv({workflowUUID: recvUUID}, "testmsg", 2)
+    ]);
+
+    // Send would trigger both to receive, but only one can succeed.
+    await sleep(10); // Both would be listening to the notification.
+    await expect(operon.send({}, "testmsg", "hello")).resolves.toBe(true);
+    const recvRes = await recvResPromise;
+    const recvErr = recvRes.find(result => result.status === 'rejected');
+    const recvGood = recvRes.find(result => result.status === 'fulfilled');
+    expect((recvGood as PromiseFulfilledResult<boolean>).value).toBe("hello");
+    const err = (recvErr as PromiseRejectedResult).reason as OperonError;
+    expect(err.message).toBe('Conflicting UUIDs');
   });
 
 });
