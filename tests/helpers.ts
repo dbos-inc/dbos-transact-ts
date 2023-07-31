@@ -31,14 +31,6 @@ export async function teardownOperonTestDb(config: OperonConfig) {
   });
   await pgSystemClient.connect();
 
-  try {
-    const dbExists: QueryArrayResult = await pgSystemClient.query(
-      `SELECT FROM pg_database WHERE datname = '${config.poolConfig.database}'`
-    );
-    if (dbExists.rows.length > 0) {
-      await pgSystemClient.query(`DROP DATABASE ${config.poolConfig.database};`);
-    }
-  } finally {
-    await pgSystemClient.end();
-  }
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+  await pgSystemClient.end();
 }
