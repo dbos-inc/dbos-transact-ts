@@ -1,5 +1,5 @@
 import { OperonConfig } from 'src';
-import { Client } from 'pg';
+import { Client, QueryArrayResult } from 'pg';
 
 export function generateOperonTestConfig(): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
@@ -30,6 +30,15 @@ export async function teardownOperonTestDb(config: OperonConfig) {
     database: 'postgres',
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE ${config.poolConfig.database};`);
-  await pgSystemClient.end();
+
+  try {
+    const dbExists: QueryArrayResult = await pgSystemClient.query(
+      `SELECT FROM pg_database WHERE datname = '${config.poolConfig.database}'`
+    );
+    if (dbExists.rows.length > 0) {
+      await pgSystemClient.query(`DROP DATABASE ${config.poolConfig.database};`);
+    }
+  } finally {
+    await pgSystemClient.end();
+  }
 }

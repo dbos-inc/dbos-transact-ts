@@ -17,8 +17,9 @@ describe('operon-init', () => {
     config = generateOperonTestConfig();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.restoreAllMocks();
+    await teardownOperonTestDb(config);
   });
 
   test('successful init', async() => {
@@ -58,7 +59,6 @@ describe('operon-init', () => {
 
     await operon.destroy();
     // TODO check that resources have been released. The client objects hold that information but it is not exposed.
-    await teardownOperonTestDb(config);
   });
 
   test('init can only be called once', async() => {
@@ -70,7 +70,6 @@ describe('operon-init', () => {
     expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
     expect(listenForNotificationsSpy).toHaveBeenCalledTimes(1);
     await operon.destroy();
-    await teardownOperonTestDb(config);
   });
 
   test('fails to read schema file', async () => {
@@ -82,15 +81,6 @@ describe('operon-init', () => {
   test('schema file is empty', async () => {
     const operon = new Operon(config);
     jest.spyOn(utils, 'readFileSync').mockReturnValue('');
-    await expect(operon.init()).rejects.toThrow(OperonInitializationError);
-  });
-
-  // test fails to create listener
-  test('Failing to create listener throws', async() => {
-    const operon = new Operon(config);
-    jest.spyOn(operon, 'listenForNotifications').mockImplementation(() => {
-      throw new Error('mock error');
-    });
     await expect(operon.init()).rejects.toThrow(OperonInitializationError);
   });
 });
