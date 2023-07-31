@@ -161,6 +161,7 @@ export class Operon {
     }
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+
     const workflowInputID = wCtxt.functionIDGetIncrement();
 
     // Check if the user has permission to run this workflow.
@@ -187,6 +188,7 @@ export class Operon {
     }
 
     const checkWorkflowInput = async (input: T) => {
+      // The workflow input is always at function ID = 0 in the operon__FunctionOutputs table.
       const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
         [workflowUUID, workflowInputID]);
       if (rows.length === 0) {

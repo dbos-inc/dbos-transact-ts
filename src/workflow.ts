@@ -168,16 +168,10 @@ export class WorkflowContext {
     const client: PoolClient = await this.#operon.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
-    try {
-      const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
-      if (check !== operonNull) {
-        client.release();
-        return check as R; 
-      }
-    } catch (err) {
-      // Throw an error if it originally did.
+    const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
+    if (check !== operonNull) {
       client.release();
-      throw err;
+      return check as R; 
     }
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
@@ -189,10 +183,13 @@ export class WorkflowContext {
       } catch (error) {
         // If retries not allowed, record the error and throw it to upper level.
         await client.query('BEGIN');
+        // Guard stuff.
+        this.resultBuffer.set(ctxt.functionID, null);
         await this.flushResultBuffer(client);
         await this.recordError(client, ctxt.functionID, error as Error);
         await client.query('COMMIT');
         client.release();
+        this.resultBuffer.clear();
         throw error;
       }
     } else {
@@ -215,16 +212,22 @@ export class WorkflowContext {
       // Record error and throw an exception.
       const operonErr: OperonError = new OperonError("Communicator reached maximum retries.", 1);
       await client.query('BEGIN');
+      // Guard stuff.
+      this.resultBuffer.set(ctxt.functionID, null);
       await this.flushResultBuffer(client);
       await this.recordError(client, ctxt.functionID, operonErr as Error);
       await client.query('COMMIT');
       client.release();
+      this.resultBuffer.clear();
       throw operonErr;
     }
     // Record the execution and return.
+    await client.query('BEGIN');
     this.resultBuffer.set(ctxt.functionID, result);
     await this.flushResultBuffer(client);
+    await client.query('COMMIT');
     client.release();
+    this.resultBuffer.clear();
     return result as R;
   }
 
@@ -239,12 +242,14 @@ export class WorkflowContext {
       client.release();
       return check as boolean;
     }
+    // Guard stuff.
+    this.resultBuffer.set(functionID, null);
+    await this.flushResultBuffer(client);
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
     // Return true if successful, false if key already exists.
     const success: boolean = (rows.length !== 0);
-    this.resultBuffer.set(functionID, success);
-    await this.flushResultBuffer(client);
+    await this.writeGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
     client.release();
     return success;
@@ -275,12 +280,15 @@ export class WorkflowContext {
 
     // Then, check if the key is already in the DB, returning it if it is.
     await client.query(`BEGIN`);
+    // Guard stuff.
+    this.resultBuffer.set(functionID, null);
+    await this.flushResultBuffer(client);
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
-      this.resultBuffer.set(functionID, message);
-      await this.flushResultBuffer(client);
+      await this.writeGuardedOutput(client, functionID, message);
       await client.query(`COMMIT`);
+      this.resultBuffer.clear();
       client.release();
       return message;
     } else {
@@ -292,21 +300,19 @@ export class WorkflowContext {
     await received;
     client = await this.#operon.pool.connect();
     await client.query(`BEGIN`);
+    this.resultBuffer.set(functionID, null);
+    await this.flushResultBuffer(client);
+
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
+    let message: T | null = null;
     if (rows.length > 0 ) {
-      const message = JSON.parse(rows[0].message) as T;
-      this.resultBuffer.set(functionID, message);
-      await this.flushResultBuffer(client);
-      await client.query(`COMMIT`);
-      client.release();
-      return message;
-    } else {
-      await client.query(`ROLLBACK`);
-      this.resultBuffer.set(functionID, null);
-      await this.flushResultBuffer(client);
-      client.release();
-      return null;
+      message = JSON.parse(rows[0].message) as T;
     }
+    await this.writeGuardedOutput(client, functionID, message);
+    await client.query(`COMMIT`);
+    client.release();
+    this.resultBuffer.clear();
+    return message;
   }
 
 }
