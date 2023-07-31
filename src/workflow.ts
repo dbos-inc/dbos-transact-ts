@@ -120,8 +120,14 @@ export class WorkflowContext {
         const err: DatabaseError = error as DatabaseError;
         // If the error is a serialization failure, rollback and retry with exponential backoff.
         await client.query('ROLLBACK');
-        if (err.code !== '40001') { // serialization_failure in PostgreSQL
-          // If the error is something else, record  and re-throw
+        if (err.code === '40001') { // serialization_failure in PostgreSQL
+          // Retry serialization failures
+          client.release();
+          await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
+          retryWaitMillis *= backoffFactor;
+          continue;
+        } else {
+          // Record and re-throw other errors
           await client.query('BEGIN');
           await this.flushResultBuffer(client);
           await this.recordError(client, funcId, error as Error);
@@ -129,11 +135,6 @@ export class WorkflowContext {
           this.resultBuffer.clear();
           client.release();
           throw error;
-        } else {
-          client.release();
-          await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
-          retryWaitMillis *= backoffFactor;
-          continue;
         }
       }
 
