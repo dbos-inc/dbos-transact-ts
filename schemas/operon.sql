@@ -1,7 +1,5 @@
 /*  Workflow and functions */
 
-BEGIN;
-
 CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
   workflow_id VARCHAR(64) NOT NULL,
   function_id INT NOT NULL,
@@ -37,5 +35,3 @@ CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
       END IF;
   END
   $$;
-
-COMMIT;
