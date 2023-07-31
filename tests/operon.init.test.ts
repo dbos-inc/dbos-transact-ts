@@ -25,7 +25,7 @@ describe('operon-init', () => {
     const operon = new Operon(config);
     await operon.init();
 
-    expect(operon.initialized).toBeTruthy();
+    expect(operon.initialized).toBe(true);
 
     // Check pgSystemClient has been shutdown
     expect(operon.pgSystemClient).toBeDefined();
