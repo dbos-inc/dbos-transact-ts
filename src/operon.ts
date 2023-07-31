@@ -33,7 +33,7 @@ const SCHEMAS_DIR: string = "schemas";
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
-  readonly operonDbSchema: string;
+  readonly operonSystemDbSchemaFile: string;
 }
 
 interface operon__ConfigFile {
@@ -96,7 +96,7 @@ export class Operon {
       await this.listenForNotifications()
     } catch (err) {
       if (err instanceof Error) {
-        throw new OperonInitializationError(err.message);
+        throw(new OperonInitializationError(err.message));
       }
     }
     this.initialized = true;
@@ -104,17 +104,33 @@ export class Operon {
 
   // Operon database management
   async loadOperonDatabase() {
-    await this.pgSystemClient.connect();
     // Check whether the Operon system database exists, create it if needed
-    const dbExists = await this.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`);
-    if (dbExists.rows.length === 0) {
-      const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
-      await this.pgSystemClient.query(createDbStatement);
-      // Load the Operon system schema
-      await this.pool.query(this.config.operonDbSchema);
+    await this.pgSystemClient.connect();
+    try {
+      const dbExists = await this.pgSystemClient.query(
+        `SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`
+      );
+      if (dbExists.rows.length === 0) {
+      // First load the schema
+        const schemaFile: string = this.config.operonSystemDbSchemaFile;
+        const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, schemaFile);
+        const operonDbSchema: string = readFileSync(schemaPath);
+        if (operonDbSchema === '') {
+          throw(new Error(`Operon DB schema ${schemaFile} is empty`));
+        }
+        // Create the Operon system database
+        const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
+        await this.pgSystemClient.query(createDbStatement);
+        // Load the Operon system schema
+        await this.pool.query(operonDbSchema);
+      }
+      // We could end the client at destroy(), but given we are only using it here, do it now.
+    } catch (err) {
+      // We just want to ensure the client is closed
+      throw(err);
+    } finally {
+      await this.pgSystemClient.end();
     }
-    // We could end the client at destroy(), but given we are only using it here, do it now.
-    await this.pgSystemClient.end();
   }
 
   async destroy() {
@@ -169,26 +185,8 @@ export class Operon {
 
     return {
       poolConfig,
-      operonDbSchema: Operon.loadOperonDbSchema(dbConfig.schemaFile),
+      operonSystemDbSchemaFile: dbConfig.schemaFile,
     };
-  }
-
-  static loadOperonDbSchema(schemaFile: string): string {
-    const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, schemaFile);
-    let operonDbSchema: string = '';
-    try {
-      operonDbSchema = readFileSync(schemaPath);
-    } catch(error) {
-      if (error instanceof Error) {
-        throw new OperonInitializationError(
-          `parsing Operon DB schema file ${schemaFile}: ${error.message}`
-        );
-      }
-    }
-    if (operonDbSchema === '') {
-      throw new OperonInitializationError(`Operon DB schema ${schemaFile} is empty`);
-    }
-    return operonDbSchema;
   }
 
   /**
