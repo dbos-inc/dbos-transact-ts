@@ -1,16 +1,28 @@
 import {
   Operon,
+  OperonConfig,
   OperonInitializationError,
 } from "src/";
+import {
+  generateOperonTestConfig,
+  teardownOperonTestDb,
+} from './helpers';
+import * as utils from  '../src/utils';
 import { Client, Pool } from 'pg';
 
 describe('operon-init', () => {
+  let config: OperonConfig;
+
+  beforeAll(() => {
+    config = generateOperonTestConfig();
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   test('successful init', async() => {
-    const operon = new Operon(); // TODO have this test pass a custom config with a tmp database schema
+    const operon = new Operon(config);
     await operon.init();
 
     expect(operon.initialized).toBeTruthy();
@@ -46,10 +58,11 @@ describe('operon-init', () => {
 
     await operon.destroy();
     // TODO check that resources have been released. The client objects hold that information but it is not exposed.
+    await teardownOperonTestDb(config);
   });
 
   test('init can only be called once', async() => {
-    const operon = new Operon();
+    const operon = new Operon(config);
     const loadOperonDatabaseSpy = jest.spyOn(operon, 'loadOperonDatabase');
     const listenForNotificationsSpy = jest.spyOn(operon, 'listenForNotifications');
     await operon.init();
@@ -57,10 +70,23 @@ describe('operon-init', () => {
     expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
     expect(listenForNotificationsSpy).toHaveBeenCalledTimes(1);
     await operon.destroy();
+    await teardownOperonTestDb(config);
   });
 
-  // TODO fails to create database (do when we can to pass a custom config with a specific schema name)
-  // TODO fails to load operon schema (do when we can to pass a custom config with a specific schema name)
+  test('fails to read schema file', async () => {
+    const operon = new Operon(config);
+    jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw(new Error('some error')); });
+    await expect(operon.loadOperonDatabase()).rejects.toThrow('some error');
+  });
+
+  test('schema file is empty', async () => {
+    // We need a new DB for this test so we can enter the schema loading path
+    const cfg: OperonConfig = generateOperonTestConfig();
+    const operon = new Operon(cfg);
+    jest.spyOn(utils, 'readFileSync').mockReturnValue('');
+    await expect(operon.init()).rejects.toThrow(OperonInitializationError);
+    await operon.destroy();
+  });
 
   // test fails to create listener
   test('Failing to create listener throws', async() => {
@@ -70,5 +96,4 @@ describe('operon-init', () => {
     });
     await expect(operon.init()).rejects.toThrow(OperonInitializationError);
   });
-
 });

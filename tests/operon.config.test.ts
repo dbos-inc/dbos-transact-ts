@@ -38,11 +38,11 @@ describe('operon-config', () => {
     expect(poolConfig.database).toBe('some DB');
 
     // Test schema file has been set
-    expect(operonConfig.operonDbSchema).toBe('SQL STATEMENTS');
+    expect(operonConfig.operonSystemDbSchemaFile).toBe('schema.sql');
   });
 
   test('fails to read config file', () => {
-    jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw new Error('some error'); });
+    jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw(new Error('some error')); });
     expect(() => new Operon()).toThrow(OperonInitializationError);
   });
 
@@ -53,7 +53,7 @@ describe('operon-config', () => {
   });
 
   test('config file is missing database config', () => {
-    const mockConfigFile = {};
+    const mockConfigFile = {someOtherConfig: 'some other config'};
     jest.spyOn(utils, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
     expect(() => new Operon()).toThrow(OperonInitializationError);
   });
@@ -70,19 +70,4 @@ describe('operon-config', () => {
     jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockOperonConfigYamlString);
     expect(() => new Operon()).toThrow(OperonInitializationError);
   });
-
-  test('fails to read schema file', () => {
-    jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockOperonConfigYamlString);
-    jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw new Error('some error'); });
-    expect(() => new Operon()).toThrow(OperonInitializationError);
-  });
-
-  test('schema file is empty', () => {
-    jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockOperonConfigYamlString);
-    const mockSchema = '';
-    jest.spyOn(utils, 'readFileSync').mockReturnValue(mockSchema);
-    expect(() => new Operon()).toThrow(OperonInitializationError);
-  });
-
-
 });

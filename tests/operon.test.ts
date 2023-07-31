@@ -8,6 +8,10 @@ import {
   CommunicatorContext,
   WorkflowParams
 } from "src/";
+import {
+  generateOperonTestConfig,
+  teardownOperonTestDb,
+} from './helpers';
 import { Client } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
@@ -21,25 +25,16 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 describe('operon-tests', () => {
   let operon: Operon;
-  const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-  if (!dbPassword) {
-    throw(new Error('DB_PASSWORD or PGPASSWORD environment variable not set'));
-  }
-  const username: string = 'postgres';
+  let username: string;
   let config: OperonConfig;
 
   beforeAll(() => {
-    config = {
-      poolConfig: {
-        host: "localhost",
-        port: 5432,
-        user: username,
-        password: dbPassword,
-        // We can use another way of randomizing the DB name if needed
-        database: "operontest_" + Math.round(Date.now()).toString(),
-      },
-      operonDbSchema: Operon.loadOperonDbSchema('operon.sql'),
-    };
+    config = generateOperonTestConfig();
+    username = config.poolConfig.user || "postgres";
+  });
+
+  afterAll(async () => {
+    await teardownOperonTestDb(config);
   });
 
   beforeEach(async () => {
@@ -51,20 +46,6 @@ describe('operon-tests', () => {
 
   afterEach(async () => {
     await operon.destroy();
-  });
-
-  afterAll(async () => {
-    // Reconnect a client an tear down the test DB
-    const pgSystemClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: 'postgres',
-    });
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE ${config.poolConfig.database};`);
-    await pgSystemClient.end();
   });
 
   test('simple-function', async() => {
