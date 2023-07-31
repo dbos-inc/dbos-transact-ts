@@ -1,11 +1,12 @@
 import {
   Operon,
+  OperonConfig,
   WorkflowContext,
   TransactionContext,
   OperonError,
   CommunicatorContext,
 } from "src/";
-import { DatabaseError } from "pg";
+import { Client, DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
 
 interface KvTable {
@@ -20,8 +21,29 @@ describe('concurrency-tests', () => {
   let operon: Operon;
   const testTableName = 'OperonConcurrentKv';
 
+  // TODO: make this logic re-usable in a helper file.
+  const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+  if (!dbPassword) {
+    throw(new Error('DB_PASSWORD or PGPASSWORD environment variable not set'));
+  }
+  let config: OperonConfig;
+
+  beforeAll(() => {
+    config = {
+      poolConfig: {
+        host: "localhost",
+        port: 5432,
+        user: 'postgres', // TODO make this "dbos" before merging
+        password: dbPassword,
+        // We can use another way of randomizing the DB name if needed
+        database: "operontest_" + Math.round(Date.now()).toString(),
+      },
+      operonDbSchema: Operon.loadOperonDbSchema('operon.sql'),
+    };
+  });
+
   beforeEach(async () => {
-    operon = new Operon();
+    operon = new Operon(config);
     await operon.init();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
@@ -29,6 +51,20 @@ describe('concurrency-tests', () => {
 
   afterEach(async () => {
     await operon.destroy();
+  });
+
+  afterAll(async () => {
+    // Reconnect a client an tear down the test DB
+    const pgSystemClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: 'postgres',
+    });
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`DROP DATABASE ${config.poolConfig.database};`);
+    await pgSystemClient.end();
   });
 
   test('operon-error', async() => {
