@@ -124,11 +124,8 @@ export class Operon {
         // Load the Operon system schema
         await this.pool.query(operonDbSchema);
       }
-      // We could end the client at destroy(), but given we are only using it here, do it now.
-    } catch (err) {
-      // We just want to ensure the client is closed
-      throw(err);
     } finally {
+      // We want to close the client no matter what
       await this.pgSystemClient.end();
     }
   }

@@ -12,7 +12,6 @@ import {
   generateOperonTestConfig,
   teardownOperonTestDb,
 } from './helpers';
-import { Client } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 
