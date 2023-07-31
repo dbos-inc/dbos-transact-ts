@@ -66,7 +66,7 @@ export class WorkflowContext {
       if (err.code === '40001' || err.code === '23505') {
         throw new OperonError("Conflicting UUIDs", 5); // TODO: Break out of the workflow.
       } else {
-        throw err; // Database connection error?  Handle later.
+        throw err;
       }
     }
   }
@@ -106,7 +106,7 @@ export class WorkflowContext {
         client.release();
         return check as R;
       }
-      // Guard stuff
+      // Flush the result buffer, setting a placeholder entry with the function's ID to block concurrent executions with the same UUID.
       if (!fCtxt.readOnly) {
         this.resultBuffer.set(funcId, null);
         await this.flushResultBuffer(client);
@@ -140,6 +140,7 @@ export class WorkflowContext {
 
       // Record the execution, commit, and return.
       if (fCtxt.readOnly) {
+        // Buffer the output of read-only transactions instead of synchronously writing it.
         this.resultBuffer.set(funcId, result);
         if (!fCtxt.isAborted()) {
           await client.query("COMMIT");
@@ -151,6 +152,7 @@ export class WorkflowContext {
           await client.query("BEGIN");
           await this.flushResultBuffer(client);
         }
+        // Synchronously record the output of write transactions.
         await this.writeGuardedOutput<R>(client, funcId, result);
         await client.query("COMMIT");
         this.resultBuffer.clear();
@@ -166,70 +168,63 @@ export class WorkflowContext {
       throw new OperonError(`Unregistered External ${commFn.name}`)
     }
     const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
-    const client: PoolClient = await this.#operon.pool.connect();
+    let client: PoolClient = await this.#operon.pool.connect();
 
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
+    client.release();
     if (check !== operonNull) {
-      client.release();
       return check as R; 
     }
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an OperonError.
     let result: R | OperonNull = operonNull;
-    if (!ctxt.retriesAllowed) {
-      try {
-        result = await commFn(ctxt, ...args);
-      } catch (error) {
-        // If retries not allowed, record the error and throw it to upper level.
-        await client.query('BEGIN');
-        // Guard stuff.
-        this.resultBuffer.set(ctxt.functionID, null);
-        await this.flushResultBuffer(client);
-        await this.recordError(client, ctxt.functionID, error as Error);
-        await client.query('COMMIT');
-        this.resultBuffer.clear();
-        client.release();
-        throw error;
-      }
-    } else {
+    let err: Error | OperonNull = operonNull;
+    if (ctxt.retriesAllowed) {
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
       while (result === operonNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
-        } catch (error) { /* empty */ }
-        if (result === operonNull && numAttempts < ctxt.maxAttempts) {
-          // Sleep for an interval, then increase the interval by backoffRate.
-          await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
-          intervalSeconds *= ctxt.backoffRate;
+        } catch (error) { 
+          if (numAttempts < ctxt.maxAttempts) {
+            // Sleep for an interval, then increase the interval by backoffRate.
+            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+            intervalSeconds *= ctxt.backoffRate;
+          }
         }
       }
-      // TODO: add error logging once we have a logging system.
+    } else {
+      try {
+        result = await commFn(ctxt, ...args);
+      } catch (error) {
+        err = error as Error;
+      }
     }
 
+    client = await this.#operon.pool.connect();
     if (result === operonNull) {
-      // Record error and throw an exception.
-      const operonErr: OperonError = new OperonError("Communicator reached maximum retries.", 1);
+      // Record the error, then throw it.
+      err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
       await client.query('BEGIN');
-      // Guard stuff.
       this.resultBuffer.set(ctxt.functionID, null);
       await this.flushResultBuffer(client);
-      await this.recordError(client, ctxt.functionID, operonErr as Error);
+      await this.recordError(client, ctxt.functionID, err as Error);
       await client.query('COMMIT');
       this.resultBuffer.clear();
       client.release();
-      throw operonErr;
+      throw err;
+    } else {
+      // Record the execution and return.
+      await client.query('BEGIN');
+      this.resultBuffer.set(ctxt.functionID, result);
+      await this.flushResultBuffer(client);
+      await client.query('COMMIT');
+      this.resultBuffer.clear();
+      client.release();
+      return result as R;
     }
-    // Record the execution and return.
-    await client.query('BEGIN');
-    this.resultBuffer.set(ctxt.functionID, result);
-    await this.flushResultBuffer(client);
-    await client.query('COMMIT');
-    this.resultBuffer.clear();
-    client.release();
-    return result as R;
   }
 
   async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
@@ -243,13 +238,11 @@ export class WorkflowContext {
       client.release();
       return check as boolean;
     }
-    // Guard stuff.
     this.resultBuffer.set(functionID, null);
     await this.flushResultBuffer(client);
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
-    // Return true if successful, false if key already exists.
-    const success: boolean = (rows.length !== 0);
+    const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
     await this.writeGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
     this.resultBuffer.clear();
@@ -282,7 +275,6 @@ export class WorkflowContext {
 
     // Then, check if the key is already in the DB, returning it if it is.
     await client.query(`BEGIN`);
-    // Guard stuff.
     this.resultBuffer.set(functionID, null);
     await this.flushResultBuffer(client);
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
@@ -304,7 +296,6 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.resultBuffer.set(functionID, null);
     await this.flushResultBuffer(client);
-
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
     let message: T | null = null;
     if (rows.length > 0 ) {
