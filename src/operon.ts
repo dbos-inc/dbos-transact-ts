@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { OperonConfig } from './operon.config';
 import {
   OperonError,
   OperonWorkflowPermissionDeniedError,
@@ -8,15 +7,19 @@ import {
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { readFileSync } from './utils';
 
-import { Pool, Client, Notification } from 'pg';
+import { Pool, PoolConfig, Client, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import YAML from 'yaml';
 
+/* Interfaces for Operon system data structures */
 export interface operon__FunctionOutputs {
-    workflow_id: string;
-    function_id: number;
-    output: string;
-    error: string;
+  workflow_id: string;
+  function_id: number;
+  output: string;
+  error: string;
 }
 
 export interface operon__Notifications {
@@ -24,17 +27,47 @@ export interface operon__Notifications {
   message: string;
 }
 
+/* Interface for Operon configuration */
+const CONFIG_FILE: string = "operon-config.yaml";
+const SCHEMAS_DIR: string = "schemas";
+
+export interface OperonConfig {
+  readonly poolConfig: PoolConfig;
+  readonly operonDbSchema: string;
+}
+
+interface operon__ConfigFile {
+  database: operon__DatabaseConfig;
+}
+
+interface operon__DatabaseConfig {
+  hostname: string;
+  port: number;
+  username: string;
+  connectionTimeoutMillis: number;
+  schemaFile: string;
+  database: string;
+}
+
 export class Operon {
   initialized: boolean;
-  readonly config: OperonConfig;
+  private readonly config: OperonConfig;
+  // "Global" pool
   readonly pool: Pool;
+  // PG client for interacting with the `postgres` database
   readonly pgSystemClient: Client;
+  // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
   readonly listenerMap: Record<string, () => void> = {};
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor() {
-    this.config = new OperonConfig();
+  constructor(config?: OperonConfig) {
+    if (config) {
+      this.config = config;
+    } else {
+      this.config = this.generateOperonConfig();
+    }
+
     this.pgSystemClient = new Client({
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
@@ -87,6 +120,69 @@ export class Operon {
   async destroy() {
     await this.pgNotificationsClient.removeAllListeners().end();
     await this.pool.end();
+  }
+
+  generateOperonConfig(): OperonConfig {
+    const configPath: string = path.join(__dirname, '..', CONFIG_FILE);
+
+    // Load default configuration
+    let configuration: operon__ConfigFile | undefined;
+    try {
+      const configContent = readFileSync(configPath);
+      configuration = YAML.parse(configContent) as operon__ConfigFile;
+    } catch(error) {
+      if (error instanceof Error) {
+        throw new OperonError(`parsing ${configPath}: ${error.message}`);
+      }
+    }
+    if (!configuration) {
+      throw new OperonError(`Operon configuration ${configPath} is empty`);
+    }
+
+    // Handle "Global" pool config
+    if (!configuration.database) {
+      throw new OperonError(`Operon configuration ${configPath} does not contain database config`);
+    }
+    const dbConfig: operon__DatabaseConfig = configuration.database;
+    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+    if (!dbPassword) {
+      throw new OperonError('DB_PASSWORD or PGPASSWORD environment variable not set');
+    }
+    const poolConfig: PoolConfig = {
+      host: dbConfig.hostname,
+      port: dbConfig.port,
+      user: dbConfig.username,
+      password: dbPassword,
+      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
+      database: dbConfig.database,
+    };
+
+    if (!dbConfig.schemaFile) {
+      throw new OperonError(`Operon configuration ${configPath} does not contain a DB schema file`);
+    }
+
+    return {
+      poolConfig,
+      operonDbSchema: Operon.loadOperonDbSchema(dbConfig.schemaFile),
+    };
+  }
+
+  static loadOperonDbSchema(schemaFile: string): string {
+    const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, schemaFile);
+    let operonDbSchema: string = '';
+    try {
+      operonDbSchema = readFileSync(schemaPath);
+    } catch(error) {
+      if (error instanceof Error) {
+        throw new OperonError(
+          `parsing Operon DB schema file ${schemaFile}: ${error.message}`
+        );
+      }
+    }
+    if (operonDbSchema === '') {
+      throw new OperonError(`Operon DB schema ${schemaFile} is empty`);
+    }
+    return operonDbSchema;
   }
 
   /**
