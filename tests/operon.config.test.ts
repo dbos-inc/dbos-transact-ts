@@ -14,7 +14,6 @@ describe('operon-config', () => {
         port: 1234
         username: 'some user'
         connectionTimeoutMillis: 3000
-        schemaFile: 'schema.sql'
         database: 'some DB'
       `;
 
@@ -38,9 +37,6 @@ describe('operon-config', () => {
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(3000);
     expect(poolConfig.database).toBe('some DB');
-
-    // Test schema file has been set
-    expect(operonConfig.operonSystemDbSchemaFile).toBe('schema.sql');
   });
 
   test('Custom config is parsed as expected', () => {
@@ -67,19 +63,6 @@ describe('operon-config', () => {
   test('config file is missing database config', () => {
     const mockConfigFile = {someOtherConfig: 'some other config'};
     jest.spyOn(utils, 'readFileSync').mockReturnValue(JSON.stringify(mockConfigFile));
-    expect(() => new Operon()).toThrow(OperonInitializationError);
-  });
-
-  test('config file is missing schema file', () => {
-    const mockOperonConfigYamlString = `
-      database:
-        hostname: 'some host'
-        port: 1234
-        username: 'some user'
-        connectionTimeoutMillis: 3000
-        database: 'some DB'
-      `;
-    jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockOperonConfigYamlString);
     expect(() => new Operon()).toThrow(OperonInitializationError);
   });
 });

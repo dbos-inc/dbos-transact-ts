@@ -29,11 +29,11 @@ export interface operon__Notifications {
 
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
+const OPERON_SYSTEM_SCHEMA: string = 'operon.sql';
 const SCHEMAS_DIR: string = "schemas";
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
-  readonly operonSystemDbSchemaFile: string;
 }
 
 interface operon__ConfigFile {
@@ -45,7 +45,6 @@ interface operon__DatabaseConfig {
   port: number;
   username: string;
   connectionTimeoutMillis: number;
-  schemaFile: string;
   database: string;
 }
 
@@ -112,11 +111,10 @@ export class Operon {
       );
       if (dbExists.rows.length === 0) {
       // First load the schema
-        const schemaFile: string = this.config.operonSystemDbSchemaFile;
-        const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, schemaFile);
+        const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, OPERON_SYSTEM_SCHEMA);
         const operonDbSchema: string = readFileSync(schemaPath);
         if (operonDbSchema === '') {
-          throw(new Error(`Operon DB schema ${schemaFile} is empty`));
+          throw(new Error(`Operon DB schema ${schemaPath} is empty`));
         }
         // Create the Operon system database
         const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
@@ -174,15 +172,8 @@ export class Operon {
       database: dbConfig.database,
     };
 
-    if (!dbConfig.schemaFile) {
-      throw(new OperonInitializationError(
-        `Operon configuration ${configPath} does not contain a DB schema file`
-      ));
-    }
-
     return {
       poolConfig,
-      operonSystemDbSchemaFile: dbConfig.schemaFile,
     };
   }
 

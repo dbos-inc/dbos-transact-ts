@@ -16,7 +16,6 @@ export function generateOperonTestConfig(): OperonConfig {
       // We can use another way of randomizing the DB name if needed
       database: "operontest_" + Math.round(Date.now()).toString(),
     },
-    operonSystemDbSchemaFile: 'operon.sql',
   }
 
   return operonTestConfig;
