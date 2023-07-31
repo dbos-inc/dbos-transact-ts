@@ -125,8 +125,8 @@ export class WorkflowContext {
           await client.query('BEGIN');
           await this.flushResultBuffer(client);
           await this.recordError(client, funcId, error as Error);
-          this.resultBuffer.clear();
           await client.query('COMMIT');
+          this.resultBuffer.clear();
           client.release();
           throw error;
         } else {
@@ -151,8 +151,8 @@ export class WorkflowContext {
           await this.flushResultBuffer(client);
         }
         await this.writeGuardedOutput<R>(client, funcId, result);
-        this.resultBuffer.clear();
         await client.query("COMMIT");
+        this.resultBuffer.clear();
         client.release();
       }
       return result;
@@ -188,8 +188,8 @@ export class WorkflowContext {
         await this.flushResultBuffer(client);
         await this.recordError(client, ctxt.functionID, error as Error);
         await client.query('COMMIT');
-        client.release();
         this.resultBuffer.clear();
+        client.release();
         throw error;
       }
     } else {
@@ -217,8 +217,8 @@ export class WorkflowContext {
       await this.flushResultBuffer(client);
       await this.recordError(client, ctxt.functionID, operonErr as Error);
       await client.query('COMMIT');
-      client.release();
       this.resultBuffer.clear();
+      client.release();
       throw operonErr;
     }
     // Record the execution and return.
@@ -226,8 +226,8 @@ export class WorkflowContext {
     this.resultBuffer.set(ctxt.functionID, result);
     await this.flushResultBuffer(client);
     await client.query('COMMIT');
-    client.release();
     this.resultBuffer.clear();
+    client.release();
     return result as R;
   }
 
@@ -251,6 +251,7 @@ export class WorkflowContext {
     const success: boolean = (rows.length !== 0);
     await this.writeGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
+    this.resultBuffer.clear();
     client.release();
     return success;
   }
@@ -310,8 +311,8 @@ export class WorkflowContext {
     }
     await this.writeGuardedOutput(client, functionID, message);
     await client.query(`COMMIT`);
-    client.release();
     this.resultBuffer.clear();
+    client.release();
     return message;
   }
 
