@@ -110,7 +110,7 @@ export class Operon {
         `SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`
       );
       if (dbExists.rows.length === 0) {
-      // First load the schema
+        // First load the schema
         const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, OPERON_SYSTEM_SCHEMA);
         const operonDbSchema: string = readFileSync(schemaPath);
         if (operonDbSchema === '') {

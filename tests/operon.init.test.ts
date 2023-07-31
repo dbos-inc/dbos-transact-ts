@@ -80,17 +80,14 @@ describe('operon-init', () => {
   });
 
   test('schema file is empty', async () => {
-    // We need a new DB for this test so we can enter the schema loading path
-    const cfg: OperonConfig = generateOperonTestConfig();
-    const operon = new Operon(cfg);
+    const operon = new Operon(config);
     jest.spyOn(utils, 'readFileSync').mockReturnValue('');
     await expect(operon.init()).rejects.toThrow(OperonInitializationError);
-    await operon.destroy();
   });
 
   // test fails to create listener
   test('Failing to create listener throws', async() => {
-    const operon = new Operon();
+    const operon = new Operon(config);
     jest.spyOn(operon, 'listenForNotifications').mockImplementation(() => {
       throw new Error('mock error');
     });
