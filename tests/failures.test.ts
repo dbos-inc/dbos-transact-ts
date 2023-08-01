@@ -56,10 +56,10 @@ describe('failures-tests', () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(operon.workflow(testWorkflow, {}, 11).getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
+    await expect(operon.workflow(testWorkflow, {}).getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
   test('readonly-error', async() => {
@@ -147,7 +147,7 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
-    await expect(operon.workflow(testWorkflow, {}, 10)).resolves.toBe(10);
+    await expect(operon.workflow(testWorkflow, {}, 10).getResult()).resolves.toBe(10);
     expect(remoteState.num).toBe(10);
   });
 
@@ -172,10 +172,10 @@ describe('failures-tests', () => {
     };
     operon.registerWorkflow(testWorkflow);
   
-    const result = await operon.workflow(testWorkflow, {});
+    const result = await operon.workflow(testWorkflow, {}).getResult();
     expect(result).toEqual(4);
 
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(operon.workflow(testWorkflow, {}).getResult()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
 
   });
 
@@ -199,11 +199,11 @@ describe('failures-tests', () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult()).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult()).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
 
@@ -228,7 +228,7 @@ describe('failures-tests', () => {
     };
 
     // Invoke an unregistered workflow.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Workflow ${testWorkflow.name}`));
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).rejects.toThrowError(new OperonError(`Unregistered Workflow ${testWorkflow.name}`));
 
     // Invoke an unregistered transaction.
     await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
@@ -237,12 +237,12 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow, {});
 
     // Invoke an unregistered communicator.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered External ${testCommunicator.name}`));
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).rejects.toThrowError(new OperonError(`Unregistered External ${testCommunicator.name}`));
 
     operon.registerCommunicator(testCommunicator, {});
 
     // Now everything should work.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).resolves.toBe(11);
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).resolves.toBe(11);
   });
 
   test('set-isolation', async () => {

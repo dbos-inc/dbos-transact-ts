@@ -4,7 +4,7 @@ import {
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError
 } from './error';
-import { OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
+import { InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -243,61 +243,67 @@ export class Operon {
     this.communicatorConfigMap.set(comm, params);
   }
 
-  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
-    const wConfig = this.workflowConfigMap.get(wf);
-    if (wConfig === undefined) {
-      throw new OperonError(`Unregistered Workflow ${wf.name}`);
-    }
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
+    
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
 
-    const workflowInputID = wCtxt.functionIDGetIncrement();
-
-    // Check if the user has permission to run this workflow.
-    if (!params.runAs) {
-      params.runAs = "defaultRole";
-    }
-    const userHasPermission = this.hasPermission(params.runAs, wConfig);
-    if (!userHasPermission) {
-      throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
-    }
-
-    const checkWorkflowOutput = async () => {
-      const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output FROM operon__WorkflowStatus WHERE workflow_id=$1",
-        [workflowUUID]);
-      if (rows.length === 0) {
-        return operonNull;
-      } else {
-        return JSON.parse(rows[0].output) as R;  // Could be null.
+    const runWorkflow = async () => {
+      const wConfig = this.workflowConfigMap.get(wf);
+      if (wConfig === undefined) {
+        throw new OperonError(`Unregistered Workflow ${wf.name}`);
       }
-    }
+      const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
 
-    const recordWorkflowOutput = (output: R) => {
-      this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
-    }
+      const workflowInputID = wCtxt.functionIDGetIncrement();
 
-    const checkWorkflowInput = async (input: T) => {
+      // Check if the user has permission to run this workflow.
+      if (!params.runAs) {
+        params.runAs = "defaultRole";
+      }
+      const userHasPermission = this.hasPermission(params.runAs, wConfig);
+      if (!userHasPermission) {
+        throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
+      }
+
+      const checkWorkflowOutput = async () => {
+        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output FROM operon__WorkflowStatus WHERE workflow_id=$1",
+          [workflowUUID]);
+        if (rows.length === 0) {
+          return operonNull;
+        } else {
+          return JSON.parse(rows[0].output) as R;  // Could be null.
+        }
+      }
+
+      const recordWorkflowOutput = (output: R) => {
+        this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
+      }
+
+      const checkWorkflowInput = async (input: T) => {
       // The workflow input is always at function ID = 0 in the operon__FunctionOutputs table.
-      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [workflowUUID, workflowInputID]);
-      if (rows.length === 0) {
+        const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+          [workflowUUID, workflowInputID]);
+        if (rows.length === 0) {
         // This workflow has never executed before, so record the input.
-        wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
-      } else {
+          wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
+        } else {
         // Return the old recorded input
-        input = JSON.parse(rows[0].output) as T;
+          input = JSON.parse(rows[0].output) as T;
+        }
+        return input;
       }
-      return input;
-    }
 
-    const previousOutput = await checkWorkflowOutput();
-    if (previousOutput !== operonNull) {
-      return previousOutput as R;
+      const previousOutput = await checkWorkflowOutput();
+      if (previousOutput !== operonNull) {
+        return previousOutput as R;
+      }
+      const input = await checkWorkflowInput(args);
+      const result = await wf(wCtxt, ...input);
+      recordWorkflowOutput(result);
+      return result;
     }
-    const input = await checkWorkflowInput(args);
-    const result = await wf(wCtxt, ...input);
-    recordWorkflowOutput(result);
-    return result;
+    const workflowPromise: Promise<R> = runWorkflow();
+    return new InvokedHandle(this.pool, workflowPromise, workflowUUID);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -306,7 +312,7 @@ export class Operon {
       return await ctxt.transaction(txn, ...args);
     };
     this.registerWorkflow(wf);
-    return await this.workflow(wf, params, ...args);
+    return await this.workflow(wf, params, ...args).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
@@ -315,7 +321,7 @@ export class Operon {
       return await ctxt.send<T>(key, message);
     };
     this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, message);
+    return await this.workflow(wf, params, key, message).getResult();
   }
 
   async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
@@ -324,7 +330,7 @@ export class Operon {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
     this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, timeoutSeconds);
+    return await this.workflow(wf, params, key, timeoutSeconds).getResult();
   }
 
   /* INTERNAL HELPERS */
