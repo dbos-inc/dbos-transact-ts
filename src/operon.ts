@@ -116,9 +116,9 @@ export class Operon {
       if (dbExists.rows.length === 0) {
         // Create the Operon system database
         await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
-        // Load the Operon system schema
-        await this.pool.query(operonSystemDbSchema);
       }
+      // Load the Operon system schema
+      await this.pool.query(operonSystemDbSchema);
     } finally {
       // We want to close the client no matter what
       await this.pgSystemClient.end();
