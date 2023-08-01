@@ -7,8 +7,8 @@ import {
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import operonSystemDbSchema from '../schemas/operon';
 import { readFileSync } from './utils';
+import operonSystemDbSchema from '../schemas/operon';
 
 import { Pool, PoolConfig, Client, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
