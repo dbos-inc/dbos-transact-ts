@@ -1,13 +1,11 @@
 import {
   Operon,
   OperonConfig,
-  OperonInitializationError,
 } from "src/";
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
 } from './helpers';
-import * as utils from  '../src/utils';
 import { Client, Pool } from 'pg';
 
 describe('operon-init', () => {
