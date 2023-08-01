@@ -15,3 +15,10 @@ export class OperonWorkflowPermissionDeniedError extends OperonError {
     super(msg, WorkflowPermissionDeniedError);
   }
 }
+
+const InitializationError = 3;
+export class OperonInitializationError extends OperonError {
+  constructor(msg: string) {
+    super(msg, InitializationError);
+  }
+}

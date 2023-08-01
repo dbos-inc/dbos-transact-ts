@@ -1,5 +1,6 @@
 import {
   Operon,
+  OperonConfig,
   OperonWorkflowPermissionDeniedError,
   WorkflowContext,
   WorkflowConfig,
@@ -7,6 +8,10 @@ import {
   CommunicatorContext,
   WorkflowParams
 } from "src/";
+import {
+  generateOperonTestConfig,
+  teardownOperonTestDb,
+} from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 
@@ -20,18 +25,22 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 describe('operon-tests', () => {
   let operon: Operon;
   let username: string;
+  let config: OperonConfig;
+
+  beforeAll(() => {
+    config = generateOperonTestConfig();
+    username = config.poolConfig.user || "postgres";
+  });
+
+  afterAll(async () => {
+    await teardownOperonTestDb(config);
+  });
 
   beforeEach(async () => {
-    operon = new Operon();
-    await operon.resetOperonTables();
+    operon = new Operon(config);
+    await operon.init();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
-
-    if (!operon.config.poolConfig.user) {
-      username = "dbos";
-    } else {
-      username = operon.config.poolConfig.user;
-    }
   });
 
   afterEach(async () => {
