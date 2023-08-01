@@ -4,7 +4,7 @@ import {
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError
 } from './error';
-import { InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
+import { InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -243,7 +243,7 @@ export class Operon {
     this.communicatorConfigMap.set(comm, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T) {
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
     
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
