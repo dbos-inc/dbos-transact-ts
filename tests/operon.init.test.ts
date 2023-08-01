@@ -72,6 +72,13 @@ describe('operon-init', () => {
     await operon.destroy();
   });
 
+  test('Attempt to inject SQL in the database name fails', async() => {
+    const newConfig: OperonConfig = generateOperonTestConfig();
+    newConfig.poolConfig.database = `${newConfig.poolConfig.database}; DROP SCHEMA public;`;
+    const operon = new Operon(newConfig);
+    await expect(operon.init()).rejects.toThrow(`invalid DB name: ${newConfig.poolConfig.database}`);
+  });
+
   test('fails to read schema file', async () => {
     const operon = new Operon(config);
     jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw(new Error('some error')); });

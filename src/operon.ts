@@ -103,11 +103,17 @@ export class Operon {
 
   // Operon database management
   async loadOperonDatabase() {
-    // Check whether the Operon system database exists, create it if needed
     await this.pgSystemClient.connect();
     try {
+      const databaseName: string = this.config.poolConfig.database as string;
+      // Validate the database name
+      const regex = /^[a-z0-9]+$/i;
+      if (!regex.test(databaseName)) {
+        throw(new Error(`invalid DB name: ${databaseName}`));
+      }
+      // Check whether the Operon system database exists, create it if needed
       const dbExists = await this.pgSystemClient.query(
-        `SELECT FROM pg_database WHERE datname = '${this.config.poolConfig.database}'`
+        `SELECT FROM pg_database WHERE datname = '${databaseName}'`
       );
       if (dbExists.rows.length === 0) {
         // First load the schema
@@ -117,8 +123,8 @@ export class Operon {
           throw(new Error(`Operon DB schema ${schemaPath} is empty`));
         }
         // Create the Operon system database
-        const createDbStatement = `CREATE DATABASE ${this.config.poolConfig.database}`;
-        await this.pgSystemClient.query(createDbStatement);
+        await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
+        // await this.pgSystemClient.query("CREATE DATABASE $1", [databaseName]);
         // Load the Operon system schema
         await this.pool.query(operonDbSchema);
       }
