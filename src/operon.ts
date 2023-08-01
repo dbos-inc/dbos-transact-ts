@@ -12,7 +12,6 @@ import operonSystemDbSchema from '../schemas/operon';
 
 import { Pool, PoolConfig, Client, Notification } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
 import YAML from 'yaml';
 
 /* Interfaces for Operon system data structures */
