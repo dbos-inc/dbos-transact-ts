@@ -132,26 +132,24 @@ export class Operon {
   }
 
   generateOperonConfig(): OperonConfig {
-    const configPath: string = path.join(__dirname, '..', CONFIG_FILE);
-
     // Load default configuration
     let configuration: operon__ConfigFile | undefined;
     try {
-      const configContent = readFileSync(configPath);
+      const configContent = readFileSync(CONFIG_FILE);
       configuration = YAML.parse(configContent) as operon__ConfigFile;
     } catch(error) {
       if (error instanceof Error) {
-        throw(new OperonInitializationError(`parsing ${configPath}: ${error.message}`));
+        throw(new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`));
       }
     }
     if (!configuration) {
-      throw(new OperonInitializationError(`Operon configuration ${configPath} is empty`));
+      throw(new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`));
     }
 
     // Handle "Global" pool config
     if (!configuration.database) {
       throw(new OperonInitializationError(
-        `Operon configuration ${configPath} does not contain database config`
+        `Operon configuration ${CONFIG_FILE} does not contain database config`
       ));
     }
     const dbConfig: operon__DatabaseConfig = configuration.database;
