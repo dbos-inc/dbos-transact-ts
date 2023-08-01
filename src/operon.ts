@@ -59,6 +59,12 @@ export class Operon {
   readonly config: OperonConfig;
   // "Global" pool
   readonly pool: Pool;
+  // PG client for interacting with the `postgres` database
+  readonly pgSystemClient: Client;
+  // PG client for listening to Operon notifications
+  readonly pgNotificationsClient: Client;
+
+  readonly listenerMap: Record<string, () => void> = {};
 
   readonly workflowOutputBuffer: Map<string, string> = new Map();
   readonly flushBufferIntervalMs: number = 1000;
@@ -67,13 +73,6 @@ export class Operon {
   readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
   readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
-
-
-  // PG client for interacting with the `postgres` database
-  readonly pgSystemClient: Client;
-  // PG client for listening to Operon notifications
-  readonly pgNotificationsClient: Client;
-  readonly listenerMap: Record<string, () => void> = {};
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -195,6 +194,7 @@ export class Operon {
     };
   }
 
+  /* BACKGROUND PROCESSES */
   /**
    * A background process that listens for notifications from Postgres then signals the appropriate
    * workflow listener by resolving its promise.
@@ -210,10 +210,9 @@ export class Operon {
     this.pgNotificationsClient.on('notification', handler);
   }
 
-  #generateUUID(): string {
-    return uuidv4();
-  }
-
+  /**
+   * A background process that periodically flushes the workflow output buffer to the database.
+   */
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
       const localBuffer = new Map(this.workflowOutputBuffer);
@@ -228,6 +227,7 @@ export class Operon {
     }
   }
 
+  /* OPERON INTERFACE */
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, config);
   }
@@ -325,7 +325,10 @@ export class Operon {
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 
-  /* Operon Permissions */
+  /* INTERNAL HELPERS */
+  #generateUUID(): string {
+    return uuidv4();
+  }
 
   hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
     // An empty list of roles in the workflow config means the workflow is permission-less
