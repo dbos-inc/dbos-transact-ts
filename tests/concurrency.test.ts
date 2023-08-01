@@ -1,14 +1,25 @@
-import { CommunicatorContext, Operon, OperonError, TransactionContext, WorkflowContext } from "src/";
+import { CommunicatorContext, Operon, OperonConfig, OperonError, TransactionContext, WorkflowContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "./helper";
+import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
   const testTableName = 'OperonConcurrencyTestKv';
 
+  let config: OperonConfig;
+
+  beforeAll(() => {
+    config = generateOperonTestConfig();
+  });
+
+  afterAll(async () => {
+    await teardownOperonTestDb(config);
+  });
+
   beforeEach(async () => {
-    operon = new Operon();
-    await operon.resetOperonTables();
+    operon = new Operon(config);
+    await operon.init();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
   });
