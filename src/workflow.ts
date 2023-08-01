@@ -5,9 +5,10 @@ import {
   operon__Notifications,
   Operon,
   OperonNull,
-  operonNull
+  operonNull,
+  operon__WorkflowStatus
 } from './operon';
-import { PoolClient, DatabaseError } from 'pg';
+import { PoolClient, DatabaseError, Pool } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError } from './error';
@@ -23,6 +24,10 @@ export interface WorkflowParams {
 export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
+
+export const PENDING = "PENDING";
+export const SUCCESS = "SUCCESS";
+export const ERROR = "ERROR";
 
 export class WorkflowContext {
   #functionID: number = 0;
@@ -351,4 +356,30 @@ export class WorkflowContext {
     return message;
   }
 
+}
+
+export interface WorkflowHandle<R> {
+  getStatus(): Promise<string>;
+  getResult(): Promise<R>;
+  getWorkflowUUID(): string;
+}
+
+export class InvokedHandle<R> implements WorkflowHandle<R> {
+  constructor(readonly pool: Pool, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<string> {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+    if (rows.length === 0) {
+      return PENDING;
+    }
+    return rows[0].status;
+  }
+
+  async getResult(): Promise<R> {
+    return this.workflowPromise;
+  }
 }

@@ -4,7 +4,7 @@ import {
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError
 } from './error';
-import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
+import { OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -22,9 +22,11 @@ export interface operon__FunctionOutputs {
   error: string;
 }
 
-export interface operon__WorkflowOutputs {
+export interface operon__WorkflowStatus {
   workflow_id: string;
+  status: string;
   output: string;
+  error: string;
 }
 
 export interface operon__Notifications {
@@ -220,7 +222,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowOutputs VALUES($1, $2) ON CONFLICT DO NOTHING", [workflowUUID, output]);
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", [workflowUUID, SUCCESS, output]);
       }
       await client.query("COMMIT");
       client.release();
@@ -261,7 +263,7 @@ export class Operon {
     }
 
     const checkWorkflowOutput = async () => {
-      const { rows } = await this.pool.query<operon__WorkflowOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
+      const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output FROM operon__WorkflowStatus WHERE workflow_id=$1",
         [workflowUUID]);
       if (rows.length === 0) {
         return operonNull;
