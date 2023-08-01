@@ -7,6 +7,7 @@ import {
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import operonSystemDbSchema from '../schemas/operon';
 import { readFileSync } from './utils';
 
 import { Pool, PoolConfig, Client, Notification } from 'pg';
@@ -29,8 +30,6 @@ export interface operon__Notifications {
 
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
-const OPERON_SYSTEM_SCHEMA: string = 'operon.sql';
-const SCHEMAS_DIR: string = "schemas";
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
@@ -116,17 +115,10 @@ export class Operon {
         `SELECT FROM pg_database WHERE datname = '${databaseName}'`
       );
       if (dbExists.rows.length === 0) {
-        // First load the schema
-        const schemaPath: string = path.join(__dirname, '..', SCHEMAS_DIR, OPERON_SYSTEM_SCHEMA);
-        const operonDbSchema: string = readFileSync(schemaPath);
-        if (operonDbSchema === '') {
-          throw(new Error(`Operon DB schema ${schemaPath} is empty`));
-        }
         // Create the Operon system database
         await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
-        // await this.pgSystemClient.query("CREATE DATABASE $1", [databaseName]);
         // Load the Operon system schema
-        await this.pool.query(operonDbSchema);
+        await this.pool.query(operonSystemDbSchema);
       }
     } finally {
       // We want to close the client no matter what

@@ -78,16 +78,4 @@ describe('operon-init', () => {
     const operon = new Operon(newConfig);
     await expect(operon.init()).rejects.toThrow(`invalid DB name: ${newConfig.poolConfig.database}`);
   });
-
-  test('fails to read schema file', async () => {
-    const operon = new Operon(config);
-    jest.spyOn(utils, 'readFileSync').mockImplementation(() => { throw(new Error('some error')); });
-    await expect(operon.loadOperonDatabase()).rejects.toThrow('some error');
-  });
-
-  test('schema file is empty', async () => {
-    const operon = new Operon(config);
-    jest.spyOn(utils, 'readFileSync').mockReturnValue('');
-    await expect(operon.init()).rejects.toThrow(OperonInitializationError);
-  });
 });
