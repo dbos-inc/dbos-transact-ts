@@ -82,17 +82,22 @@ export class WorkflowContext {
   }
 
   /**
-   * Write a guarded operation's output to the database.
-   * An operation is guarded if a placeholder output has previously been written to the database to guard against concurrent executions with the same UUID.
+   * Buffer a placeholder value to guard an operation against concurrent executions with the same UUID.
    */
-  async writeGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+  guardOperation(funcID: number) {
+    this.resultBuffer.set(funcID, null);
+  }
+
+  /**
+   * Write a guarded operation's output to the database.
+   */
+  async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
     await client.query("UPDATE operon__FunctionOutputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
       [JSON.stringify(output), this.workflowUUID, funcID]);
   }
 
   /**
    * Record an error in a guarded operation to the database.
-   * An operation is guarded if a placeholder output has previously been written to the database to guard against concurrent executions with the same UUID.
    */
   async recordGuardedError(client: PoolClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
@@ -130,8 +135,8 @@ export class WorkflowContext {
         client.release();
         return check as R;
       }
-      // Flush the result buffer, setting a placeholder entry with the function's ID to block concurrent executions with the same UUID.
-      this.resultBuffer.set(funcId, null);
+      // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
+      this.guardOperation(funcId);
       if (!fCtxt.readOnly) {
         await this.flushResultBuffer(client);
       }
@@ -177,7 +182,7 @@ export class WorkflowContext {
           await this.flushResultBuffer(client);
         }
         // Synchronously record the output of write transactions.
-        await this.writeGuardedOutput<R>(client, funcId, result);
+        await this.recordGuardedOutput<R>(client, funcId, result);
         await client.query("COMMIT");
         this.resultBuffer.clear();
         client.release();
@@ -237,7 +242,7 @@ export class WorkflowContext {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
       await client.query('BEGIN');
-      this.resultBuffer.set(ctxt.functionID, null);
+      this.guardOperation(ctxt.functionID);
       await this.flushResultBuffer(client);
       await this.recordGuardedError(client, ctxt.functionID, err as Error);
       await client.query('COMMIT');
@@ -271,12 +276,12 @@ export class WorkflowContext {
       client.release();
       return check as boolean;
     }
-    this.resultBuffer.set(functionID, null);
+    this.guardOperation(functionID);
     await this.flushResultBuffer(client);
     const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
       [key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
-    await this.writeGuardedOutput(client, functionID, success);
+    await this.recordGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
     this.resultBuffer.clear();
     client.release();
@@ -313,12 +318,12 @@ export class WorkflowContext {
 
     // Then, check if the key is already in the DB, returning it if it is.
     await client.query(`BEGIN`);
-    this.resultBuffer.set(functionID, null);
+    this.guardOperation(functionID);
     await this.flushResultBuffer(client);
     let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
-      await this.writeGuardedOutput(client, functionID, message);
+      await this.recordGuardedOutput(client, functionID, message);
       await client.query(`COMMIT`);
       this.resultBuffer.clear();
       client.release();
@@ -332,14 +337,14 @@ export class WorkflowContext {
     await received;
     client = await this.#operon.pool.connect();
     await client.query(`BEGIN`);
-    this.resultBuffer.set(functionID, null);
+    this.guardOperation(functionID);
     await this.flushResultBuffer(client);
     ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
     let message: T | null = null;
     if (rows.length > 0 ) {
       message = JSON.parse(rows[0].message) as T;
     }
-    await this.writeGuardedOutput(client, functionID, message);
+    await this.recordGuardedOutput(client, functionID, message);
     await client.query(`COMMIT`);
     this.resultBuffer.clear();
     client.release();
