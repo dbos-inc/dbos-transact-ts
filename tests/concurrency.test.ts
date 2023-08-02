@@ -107,18 +107,19 @@ describe('concurrency-tests', () => {
     // Run two send/recv concurrently with the same UUID, only one can succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
+    operon.registerTopic('testTopic', ['defaultRole']);
     const recvResPromise = Promise.allSettled([
-      operon.recv({workflowUUID: recvUUID}, "testmsg", 2),
-      operon.recv({workflowUUID: recvUUID}, "testmsg", 2)
+      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2),
+      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2)
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
-    await expect(operon.send({}, "testmsg", "hello")).resolves.toBe(true);
+    await expect(operon.send({}, 'testTopic', 'testmsg', 'hello')).resolves.toBe(true);
     const recvRes = await recvResPromise;
     const recvErr = recvRes.find(result => result.status === 'rejected');
     const recvGood = recvRes.find(result => result.status === 'fulfilled');
-    expect((recvGood as PromiseFulfilledResult<boolean>).value).toBe("hello");
+    expect((recvGood as PromiseFulfilledResult<boolean>).value).toBe('hello');
     const err = (recvErr as PromiseRejectedResult).reason as OperonError;
     expect(err.message).toBe('Conflicting UUIDs');
   });
