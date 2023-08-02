@@ -66,7 +66,7 @@ export class Operon {
 
   readonly listenerMap: Record<string, () => void> = {};
 
-  readonly workflowOutputBuffer: Map<string, string> = new Map();
+  readonly workflowOutputBuffer: Map<string, any> = new Map();
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
@@ -220,7 +220,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowOutputs VALUES($1, $2) ON CONFLICT DO NOTHING", [workflowUUID, output]);
+        await client.query("INSERT INTO operon__WorkflowOutputs VALUES($1, $2) ON CONFLICT DO NOTHING", [workflowUUID, JSON.stringify(output)]);
       }
       await client.query("COMMIT");
       client.release();
@@ -277,7 +277,7 @@ export class Operon {
     }
 
     const recordWorkflowOutput = (output: R) => {
-      this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
+      this.workflowOutputBuffer.set(workflowUUID, output);
     }
 
     const checkWorkflowInput = async (input: T) => {
