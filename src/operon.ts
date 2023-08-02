@@ -251,10 +251,8 @@ export class Operon {
     if (wConfig === undefined) {
       throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
-    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, params.runAs, wConfig);
 
-    const workflowInputID = wCtxt.functionIDGetIncrement();
+    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     // Check if the user has permission to run this workflow.
     if (!params.runAs) {
@@ -264,6 +262,9 @@ export class Operon {
     if (!userHasPermission) {
       throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
     }
+
+    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, params.runAs, wConfig);
+    const workflowInputID = wCtxt.functionIDGetIncrement();
 
     const checkWorkflowOutput = async () => {
       const { rows } = await this.pool.query<operon__WorkflowOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
@@ -285,7 +286,7 @@ export class Operon {
         [workflowUUID, workflowInputID]);
       if (rows.length === 0) {
         // This workflow has never executed before, so record the input.
-        wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
+        wCtxt.resultBuffer.set(workflowInputID, input);
       } else {
         // Return the old recorded input
         input = JSON.parse(rows[0].output) as T;

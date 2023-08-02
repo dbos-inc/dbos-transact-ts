@@ -225,7 +225,7 @@ export class WorkflowContext {
       while (result === operonNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
-        } catch (error) { 
+        } catch (error) {
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -242,6 +242,7 @@ export class WorkflowContext {
     }
 
     client = await this.#operon.pool.connect();
+    // `result` can only be operonNull when the communicator timed out
     if (result === operonNull) {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
