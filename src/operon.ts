@@ -73,6 +73,7 @@ export class Operon {
   readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
   readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
+  readonly topicConfigMap: Map<string, string[]> = new Map();
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -119,7 +120,6 @@ export class Operon {
     this.initialized = true;
   }
 
-  // Operon database management
   async loadOperonDatabase() {
     await this.pgSystemClient.connect();
     try {
@@ -227,7 +227,12 @@ export class Operon {
     }
   }
 
-  /* OPERON INTERFACE */
+  /* WORKFLOW OPERATIONS */
+
+  registerTopic(topic: string, rolesThatCanPubSub: string[] = []) {
+    this.topicConfigMap.set(topic, rolesThatCanPubSub);
+  }
+
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, config);
   }
@@ -247,7 +252,7 @@ export class Operon {
       throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, params.runAs, wConfig);
 
     const workflowInputID = wCtxt.functionIDGetIncrement();
 
