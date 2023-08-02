@@ -11,7 +11,7 @@ import {
 import { PoolClient, DatabaseError, Pool } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
-import { OperonError } from './error';
+import { OperonError, OperonWorkflowConflictUUIDError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -79,7 +79,7 @@ export class WorkflowContext {
       client.release();
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
-        throw new OperonError("Conflicting UUIDs", 5); // TODO: Break out of the workflow.
+        throw new OperonWorkflowConflictUUIDError(); // TODO: Break out of the workflow.
       } else {
         throw err;
       }

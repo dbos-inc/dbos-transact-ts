@@ -19,3 +19,10 @@ export class OperonInitializationError extends OperonError {
     super(msg, InitializationError);
   }
 }
+
+const ConflictingUUIDError = 5;
+export class OperonWorkflowConflictUUIDError extends OperonError {
+  constructor() {
+    super("Conflicting UUIDs", ConflictingUUIDError);
+  }
+}

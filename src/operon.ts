@@ -2,9 +2,10 @@
 import {
   OperonError,
   OperonWorkflowPermissionDeniedError,
-  OperonInitializationError
+  OperonInitializationError,
+  OperonWorkflowConflictUUIDError
 } from './error';
-import { InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams } from './workflow';
+import { ERROR, InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -13,6 +14,7 @@ import operonSystemDbSchema from '../schemas/operon';
 import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
+import { deserializeError, serializeError } from 'serialize-error';
 
 /* Interfaces for Operon system data structures */
 export interface operon__FunctionOutputs {
@@ -266,10 +268,12 @@ export class Operon {
       }
 
       const checkWorkflowOutput = async () => {
-        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output FROM operon__WorkflowStatus WHERE workflow_id=$1",
+        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output, error FROM operon__WorkflowStatus WHERE workflow_id=$1",
           [workflowUUID]);
         if (rows.length === 0) {
           return operonNull;
+        } else if (JSON.parse(rows[0].error) !== null) {
+          throw deserializeError(JSON.parse(rows[0].error));
         } else {
           return JSON.parse(rows[0].output) as R;  // Could be null.
         }
@@ -277,6 +281,11 @@ export class Operon {
 
       const recordWorkflowOutput = (output: R) => {
         this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
+      }
+
+      const recordWorkflowError = async (err: Error) => {
+        const serialErr = JSON.stringify(serializeError(err));
+        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", [workflowUUID, ERROR, serialErr]);
       }
 
       const checkWorkflowInput = async (input: T) => {
@@ -298,9 +307,21 @@ export class Operon {
         return previousOutput as R;
       }
       const input = await checkWorkflowInput(args);
-      const result = await wf(wCtxt, ...input);
-      recordWorkflowOutput(result);
-      return result;
+      let result: R;
+      try {
+        result = await wf(wCtxt, ...input);
+        recordWorkflowOutput(result);
+      } catch (err) {
+        if (err instanceof OperonWorkflowConflictUUIDError) {
+          // Do not record the error, directly throw it back.
+          throw err;
+        } else {
+          // Record the error.
+          await recordWorkflowError(err as Error);
+          throw err;
+        }
+      }
+      return result!;
     }
     const workflowPromise: Promise<R> = runWorkflow();
     return new InvokedHandle(this.pool, workflowPromise, workflowUUID);

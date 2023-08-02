@@ -6,7 +6,8 @@ import {
   WorkflowConfig,
   TransactionContext,
   CommunicatorContext,
-  WorkflowParams
+  WorkflowParams,
+  WorkflowHandle
 } from "src/";
 import {
   generateOperonTestConfig,
@@ -15,6 +16,7 @@ import {
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 import { sleep, TestKvTable } from "./helper";
+import { PENDING, SUCCESS } from "src/workflow";
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -44,9 +46,10 @@ describe('operon-tests', () => {
   test('simple-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      await sleep(10);
       return JSON.stringify(rows[0]);
     };
-    operon.registerTransaction(testFunction, {readOnly: true});
+    operon.registerTransaction(testFunction);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
@@ -61,9 +64,13 @@ describe('operon-tests', () => {
     const params: WorkflowParams = {
       runAs: "operonAppAdmin",
     }
-    const workflowResult: string = await operon.workflow(testWorkflow, params, username).getResult();
-
+    const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
+    expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
+    await expect(workflowHandle.getStatus()).resolves.toBe(PENDING);
+    const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
+    await operon.flushWorkflowOutputBuffer();
+    await expect(workflowHandle.getStatus()).resolves.toBe(SUCCESS);
   });
 
   test('simple-function-permission-denied', async() => {
@@ -427,10 +434,10 @@ describe('operon-tests', () => {
     expect(remoteState.num).toBe(1);
     expect(remoteState.workflowCnt).toBe(2);
 
-    // Invoke it again, there should be no output recorded and throw the same error.
+    // Invoke it again, should return the recorded same error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(4);
+    expect(remoteState.workflowCnt).toBe(2);
   });
 });
 
