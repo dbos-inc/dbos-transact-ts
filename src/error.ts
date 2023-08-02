@@ -26,7 +26,7 @@ export class OperonTopicPermissionDeniedError extends OperonError {
     const msg =
       `Subject ${runAs} does not have permission on topic ${topic}.`
       + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
-    super(msg, WorkflowPermissionDeniedError);
+    super(msg, TopicPermissionDeniedError);
   }
 }
 
