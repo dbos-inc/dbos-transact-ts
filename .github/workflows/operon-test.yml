@@ -5,6 +5,11 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+    types:
+      - ready_for_review
+      - opened
+      - reopened
+      - synchronize
   workflow_dispatch:
 
 jobs:

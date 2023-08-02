@@ -75,5 +75,6 @@ describe('operon-init', () => {
     newConfig.poolConfig.database = `${newConfig.poolConfig.database}; DROP SCHEMA public;`;
     const operon = new Operon(newConfig);
     await expect(operon.init()).rejects.toThrow(`invalid DB name: ${newConfig.poolConfig.database}`);
+    await operon.destroy();
   });
 });

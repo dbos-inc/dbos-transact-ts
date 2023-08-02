@@ -12,18 +12,12 @@ import {
 } from './helpers';
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
+import { TestKvTable, sleep } from "./helper";
 
-interface KvTable {
-  id?: number,
-  value?: string,
-}
-
-// Sleep for specified milliseconds.
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-describe('concurrency-tests', () => {
+describe('failures-tests', () => {
   let operon: Operon;
-  const testTableName = 'OperonConcurrentKv';
+
+  const testTableName = 'OperonFailureTestKv';
   let config: OperonConfig;
 
   beforeAll(() => {
@@ -68,11 +62,33 @@ describe('concurrency-tests', () => {
     await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
+  test('readonly-error', async() => {
+    const remoteState = {
+      cnt: 0
+    }
+    const testFunction = async (txnCtxt: TransactionContext, id: number) => {
+      await sleep(1);
+      void txnCtxt;
+      remoteState.cnt += 1;
+      throw new Error("test error");
+      return id;
+    };
+    operon.registerTransaction(testFunction, {readOnly: true});
+
+    const testUUID = uuidv1();
+    await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
+    expect(remoteState.cnt).toBe(1);
+
+    // The error should be recorded in the database, so the function shouldn't run again.
+    await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
+    expect(remoteState.cnt).toBe(1);
+  });
+
   test('simple-keyconflict', async() => {
     let counter: number = 0;
     let succeedUUID: string = '';
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<KvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
       await sleep(10);
       counter += 1;
       succeedUUID = name;
@@ -82,25 +98,28 @@ describe('concurrency-tests', () => {
 
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
-    try {
-      // Start two concurrent transactions.
-      const futRes1 = operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1);
-      const futRes2 = operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2);
-      await futRes1;
-      await futRes2;
-    } catch (error) {
-      expect(error).toBeInstanceOf(DatabaseError);
-      const err: DatabaseError = error as DatabaseError;
-      // Expect to throw a database error for primary key violation.
-      expect(err.code).toBe('23505');
-    }
+
+    // Start two concurrent transactions.
+    const results = await Promise.allSettled([
+      operon.transaction(testFunction, {workflowUUID: workflowUUID1}, 10, workflowUUID1),
+      operon.transaction(testFunction, {workflowUUID: workflowUUID2}, 10, workflowUUID2)
+    ]);
+    const errorResult = results.find(result => result.status === 'rejected');
+    const err: DatabaseError = (errorResult as PromiseRejectedResult).reason as DatabaseError;
+    expect(err.code).toBe('23505');
+    expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
 
     expect(counter).toBe(1);
 
     // Retry with the same failed UUID, should throw the same error.
     const failUUID = (succeedUUID === workflowUUID1) ? workflowUUID2 : workflowUUID1;
-    await expect(operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID)).rejects.toThrow(DatabaseError);
-
+    try {
+      await operon.transaction(testFunction, {workflowUUID: failUUID}, 10, failUUID);
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      expect(err.code).toBe('23505');
+      expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
+    }
     // Retry with the succeed UUID, should return the expected result.
     await expect(operon.transaction(testFunction, {workflowUUID: succeedUUID}, 10, succeedUUID)).resolves.toStrictEqual({"id": 10});
   });
@@ -187,4 +206,85 @@ describe('concurrency-tests', () => {
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
+
+  test('no-registration',async () => {
+    const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
+      if (rows.length === 0) {
+        return null;
+      }
+      return rows[0].id;
+    };
+
+    const testCommunicator = async (ctxt: CommunicatorContext, code: number) => {
+      void ctxt;
+      await sleep(1);
+      return code + 1;
+    };
+
+    const testWorkflow = async (ctxt: WorkflowContext, id: number, name: string) => {
+      const resId = await ctxt.external(testCommunicator, id);
+      return await ctxt.transaction(testFunction, resId, name);
+    };
+
+    // Invoke an unregistered workflow.
+    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Workflow ${testWorkflow.name}`));
+
+    // Invoke an unregistered transaction.
+    await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
+
+    operon.registerTransaction(testFunction, {});
+    operon.registerWorkflow(testWorkflow, {});
+
+    // Invoke an unregistered communicator.
+    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered External ${testCommunicator.name}`));
+
+    operon.registerCommunicator(testCommunicator, {});
+
+    // Now everything should work.
+    await expect(operon.workflow(testWorkflow, {}, 10, "test")).resolves.toBe(11);
+  });
+
+  test('set-isolation', async () => {
+    const remoteState = {
+      num: 0
+    }
+    const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      remoteState.num += 1;
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id`, [id, name]);
+      await sleep(10);
+      if (rows.length === 0) {
+        return null;
+      }
+      return rows[0].id;
+    };
+
+    // Invalid isolation level.
+    expect(() =>{operon.registerTransaction(testFunction, {isolationLevel: "Random level"})}).toThrowError(new OperonError(`Invalid isolation level: Random level`));
+
+    // This function should not be registered yet.
+    await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
+
+    // Default should be serializable, so running testFunction concurrently should cause serialization error and retry.
+    operon.registerTransaction(testFunction, {});
+
+    // Start two concurrent transactions.
+    let futRes1 = operon.transaction(testFunction, {}, 10, "test1");
+    let futRes2 = operon.transaction(testFunction, {}, 10, "test2");
+    await futRes1;
+    await futRes2;
+
+    expect(remoteState.num).toBeGreaterThan(2);
+
+    // Now, reset remoteState, register with read committed. No retry should happen.
+    remoteState.num = 0;
+    operon.registerTransaction(testFunction, {isolationLevel: "READ COMMITTED"});
+    futRes1 = operon.transaction(testFunction, {}, 10, "test1");
+    futRes2 = operon.transaction(testFunction, {}, 10, "test2");
+    await futRes1;
+    await futRes2;
+
+    expect(remoteState.num).toBe(2);
+  });
+
 });

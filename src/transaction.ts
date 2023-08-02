@@ -6,25 +6,33 @@ export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, .
 
 export interface TransactionConfig {
   isolationLevel?: string;
+  readOnly?: boolean;
+}
+
+const isolationLevels = ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'];
+
+export function validateTransactionConfig (params: TransactionConfig){
+  if (params.isolationLevel && !isolationLevels.includes(params.isolationLevel.toUpperCase())) {
+    throw(new OperonError(`Invalid isolation level: ${params.isolationLevel}`));
+  }
 }
 
 export class TransactionContext {
-  client: PoolClient;
-
   #functionAborted: boolean = false;
-  readonly functionID: number;
+  readonly readOnly : boolean;
   readonly isolationLevel;
-  readonly #isolationLevels = ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'];
 
-  constructor(client: PoolClient, functionID: number, config: TransactionConfig) {
-    this.client = client;
-    this.functionID = functionID;
-    if (!config.isolationLevel) {
-      this.isolationLevel = 'SERIALIZABLE';
-    } else if (this.#isolationLevels.includes(config.isolationLevel.toUpperCase())) {
+  constructor(readonly client: PoolClient, readonly functionID: number, config: TransactionConfig) {
+    if (config.readOnly) {
+      this.readOnly = config.readOnly;
+    } else {
+      this.readOnly = false;
+    }
+    if (config.isolationLevel) {
+      // We already validated the isolation level during config time.
       this.isolationLevel = config.isolationLevel;
     } else {
-      throw(new OperonError(`Invalid isolation level: ${config.isolationLevel}`));
+      this.isolationLevel = 'SERIALIZABLE';
     }
   }
 

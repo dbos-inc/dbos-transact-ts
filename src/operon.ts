@@ -5,12 +5,12 @@ import {
   OperonInitializationError
 } from './error';
 import { OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowParams } from './workflow';
-import { OperonTransaction, TransactionConfig } from './transaction';
+import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
 import operonSystemDbSchema from '../schemas/operon';
 
-import { Pool, PoolConfig, Client, Notification } from 'pg';
+import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 
@@ -22,10 +22,18 @@ export interface operon__FunctionOutputs {
   error: string;
 }
 
+export interface operon__WorkflowOutputs {
+  workflow_id: string;
+  output: string;
+}
+
 export interface operon__Notifications {
   key: string;
   message: string;
 }
+
+export interface OperonNull {}
+export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
@@ -55,7 +63,16 @@ export class Operon {
   readonly pgSystemClient: Client;
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
+
   readonly listenerMap: Record<string, () => void> = {};
+
+  readonly workflowOutputBuffer: Map<string, string> = new Map();
+  readonly flushBufferIntervalMs: number = 1000;
+  readonly flushBufferID: NodeJS.Timeout;
+
+  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
+  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -80,6 +97,9 @@ export class Operon {
       database: this.config.poolConfig.database,
     });
     this.pool = new Pool(this.config.poolConfig);
+    this.flushBufferID = setInterval(() => {
+      void this.flushWorkflowOutputBuffer();
+    }, this.flushBufferIntervalMs) ;
     this.initialized = false;
   }
 
@@ -89,8 +109,8 @@ export class Operon {
       return;
     }
     try {
-      await this.loadOperonDatabase()
-      await this.listenForNotifications()
+      await this.loadOperonDatabase();
+      await this.listenForNotifications();
     } catch (err) {
       if (err instanceof Error) {
         throw(new OperonInitializationError(err.message));
@@ -126,6 +146,8 @@ export class Operon {
   }
 
   async destroy() {
+    clearInterval(this.flushBufferID);
+    await this.flushWorkflowOutputBuffer();
     await this.pgNotificationsClient.removeAllListeners().end();
     await this.pool.end();
   }
@@ -172,6 +194,7 @@ export class Operon {
     };
   }
 
+  /* BACKGROUND PROCESSES */
   /**
    * A background process that listens for notifications from Postgres then signals the appropriate
    * workflow listener by resolving its promise.
@@ -187,23 +210,30 @@ export class Operon {
     this.pgNotificationsClient.on('notification', handler);
   }
 
-  /* Operon Workflows */
-
-  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
-
-  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
-
-  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
-
-  #generateUUID(): string {
-    return uuidv4();
+  /**
+   * A background process that periodically flushes the workflow output buffer to the database.
+   */
+  async flushWorkflowOutputBuffer() {
+    if (this.initialized) {
+      const localBuffer = new Map(this.workflowOutputBuffer);
+      this.workflowOutputBuffer.clear();
+      const client: PoolClient = await this.pool.connect();
+      await client.query("BEGIN");
+      for (const [workflowUUID, output] of localBuffer) {
+        await client.query("INSERT INTO operon__WorkflowOutputs VALUES($1, $2) ON CONFLICT DO NOTHING", [workflowUUID, output]);
+      }
+      await client.query("COMMIT");
+      client.release();
+    }
   }
 
+  /* OPERON INTERFACE */
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     this.workflowConfigMap.set(wf, config);
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
+    validateTransactionConfig(params);
     this.transactionConfigMap.set(txn, params);
   }
 
@@ -216,6 +246,10 @@ export class Operon {
     if (wConfig === undefined) {
       throw new OperonError(`Unregistered Workflow ${wf.name}`);
     }
+    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+
+    const workflowInputID = wCtxt.functionIDGetIncrement();
 
     // Check if the user has permission to run this workflow.
     if (!params.runAs) {
@@ -226,36 +260,41 @@ export class Operon {
       throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
     }
 
-    // TODO: need to optimize this extra transaction per workflow.
-    const recordExecution = async (input: T) => {
-      const initFuncID = wCtxt.functionIDGetIncrement();
-      const client = await this.pool.connect();
-      await client.query("BEGIN;");
-      const { rows } = await client.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
-        [workflowUUID, initFuncID]);
-  
-      let retInput: T;
+    const checkWorkflowOutput = async () => {
+      const { rows } = await this.pool.query<operon__WorkflowOutputs>("SELECT output FROM operon__WorkflowOutputs WHERE workflow_id=$1",
+        [workflowUUID]);
       if (rows.length === 0) {
-        // This workflow has never executed before, so record the input
-        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output) VALUES ($1, $2, $3)",
-          [workflowUUID, initFuncID, JSON.stringify(input)]);
-        retInput = input;
+        return operonNull;
       } else {
-        // Return the old recorded input
-        retInput = JSON.parse(rows[0].output) as T;
+        return JSON.parse(rows[0].output) as R;  // Could be null.
       }
-  
-      await client.query("COMMIT");
-      client.release();
-  
-      return retInput;
     }
 
-    const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+    const recordWorkflowOutput = (output: R) => {
+      this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
+    }
 
-    const input = await recordExecution(args);
-    const result: R = await wf(wCtxt, ...input);
+    const checkWorkflowInput = async (input: T) => {
+      // The workflow input is always at function ID = 0 in the operon__FunctionOutputs table.
+      const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+        [workflowUUID, workflowInputID]);
+      if (rows.length === 0) {
+        // This workflow has never executed before, so record the input.
+        wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
+      } else {
+        // Return the old recorded input
+        input = JSON.parse(rows[0].output) as T;
+      }
+      return input;
+    }
+
+    const previousOutput = await checkWorkflowOutput();
+    if (previousOutput !== operonNull) {
+      return previousOutput as R;
+    }
+    const input = await checkWorkflowInput(args);
+    const result = await wf(wCtxt, ...input);
+    recordWorkflowOutput(result);
     return result;
   }
 
@@ -286,7 +325,10 @@ export class Operon {
     return await this.workflow(wf, params, key, timeoutSeconds);
   }
 
-  /* Operon Permissions */
+  /* INTERNAL HELPERS */
+  #generateUUID(): string {
+    return uuidv4();
+  }
 
   hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
     // An empty list of roles in the workflow config means the workflow is permission-less

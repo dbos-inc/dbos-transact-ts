@@ -21,7 +21,7 @@ describe('operon-config', () => {
     jest.restoreAllMocks();
   });
 
-  test('Config is valid and is parsed as expected', () => {
+  test('Config is valid and is parsed as expected', async () => {
     jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockOperonConfigYamlString);
     jest.spyOn(utils, 'readFileSync').mockReturnValueOnce("SQL STATEMENTS");
 
@@ -37,9 +37,10 @@ describe('operon-config', () => {
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(3000);
     expect(poolConfig.database).toBe('some DB');
+    await operon.destroy();
   });
 
-  test('Custom config is parsed as expected', () => {
+  test('Custom config is parsed as expected', async () => {
     // We use readFileSync as a proxy for checking the config was not read from the default location
     const readFileSpy = jest.spyOn(utils, 'readFileSync');
     const config: OperonConfig = generateOperonTestConfig();
@@ -47,6 +48,7 @@ describe('operon-config', () => {
     expect(operon.initialized).toBe(false);
     expect(operon.config).toBe(config);
     expect(readFileSpy).toHaveBeenCalledTimes(0);
+    await operon.destroy();
   });
 
   test('fails to read config file', () => {
