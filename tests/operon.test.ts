@@ -12,10 +12,11 @@ import {
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
+  TestKvTable
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
-import { sleep, TestKvTable } from "./helper";
+import { sleep } from "src/utils";
 import { WorkflowStatus } from "src/workflow";
 
 describe('operon-tests', () => {

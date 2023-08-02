@@ -9,10 +9,11 @@ import {
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
+  TestKvTable
 } from './helpers';
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
-import { TestKvTable, sleep } from "./helper";
+import { sleep } from "src/utils";
 import { WorkflowStatus } from "src/workflow";
 
 describe('failures-tests', () => {

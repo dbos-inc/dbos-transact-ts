@@ -1,6 +1,11 @@
 import { OperonConfig } from 'src';
 import { Client } from 'pg';
 
+export interface TestKvTable {
+  id?: number,
+  value?: string,
+}
+
 export function generateOperonTestConfig(): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
