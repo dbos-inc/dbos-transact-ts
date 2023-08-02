@@ -349,6 +349,7 @@ export class WorkflowContext {
       await client.query(`COMMIT`);
       this.resultBuffer.clear();
       client.release();
+      delete this.#operon.listenerMap[`${topic}::${key}`];
       return message;
     } else {
       await client.query(`ROLLBACK`);
