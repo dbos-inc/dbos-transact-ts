@@ -82,6 +82,8 @@ export class Operon {
 
   readonly workflowNameMap: Map<string, OperonWorkflow<any, any>> = new Map();
 
+  readonly initialTime: Date;
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
     if (config) {
@@ -109,6 +111,7 @@ export class Operon {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
     this.initialized = false;
+    this.initialTime = new Date();
   }
 
   async init(): Promise<void> {
@@ -224,6 +227,8 @@ export class Operon {
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
       const localBuffer = new Map(this.workflowOutputBuffer);
+      console.log(this.initialTime);
+      console.log(localBuffer);
       this.workflowOutputBuffer.clear();
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
@@ -239,8 +244,8 @@ export class Operon {
   /**
    * A background process that runs once asynchronously during init and restarts all pending workflows.
    */
-  async recoverPendingWorkflows(initialTime: Date) {
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update < $2", [WorkflowStatus.PENDING, initialTime]);
+  async recoverPendingWorkflows() {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update < $2", [WorkflowStatus.PENDING, this.initialTime]);
     for (const row of rows) {
       const wf = this.workflowNameMap.get(row.workflow_name);
       if (wf === undefined) {
@@ -252,7 +257,8 @@ export class Operon {
 
   /* OPERON INTERFACE */
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
-    if (this.workflowNameMap.has(wf.name)) {
+    // TODO: fix anonymous workflow names in the next PR.
+    if ((wf.name !== 'anonWf') && this.workflowNameMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`)
     }
     this.workflowNameMap.set(wf.name, wf);
@@ -304,6 +310,7 @@ export class Operon {
 
       const recordWorkflowOutput = (output: R) => {
         this.workflowOutputBuffer.set(workflowUUID, JSON.stringify(output));
+        console.log(this.workflowOutputBuffer);
       }
 
       const recordWorkflowError = async (err: Error) => {
@@ -335,6 +342,7 @@ export class Operon {
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
+        console.log("Workflow finished")
         recordWorkflowOutput(result);
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
@@ -354,29 +362,29 @@ export class Operon {
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
-    const wf = async (ctxt: WorkflowContext, ...args: T) => {
+    const anonWf = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    this.registerWorkflow(wf);
-    return await this.workflow(wf, params, ...args).getResult();
+    this.registerWorkflow(anonWf);
+    return await this.workflow(anonWf, params, ...args).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
     // Create a workflow and call send.
-    const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
+    const anonWf = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
-    this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, message).getResult();
+    this.registerWorkflow(anonWf);
+    return await this.workflow(anonWf, params, key, message).getResult();
   }
 
   async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
     // Create a workflow and call recv.
-    const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
+    const anonWf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
-    this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, timeoutSeconds).getResult();
+    this.registerWorkflow(anonWf);
+    return await this.workflow(anonWf, params, key, timeoutSeconds).getResult();
   }
 
   async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {

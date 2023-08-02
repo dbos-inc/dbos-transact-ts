@@ -416,6 +416,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
         throw new OperonError("Error: Workflow does not exist"); // Should be impossible.
       }
       const status = rows[0].status;
+      console.log(rows[0]);
       if (status === WorkflowStatus.SUCCESS) {
         return JSON.parse(rows[0].output) as R;
       } else if (status === WorkflowStatus.ERROR) {
