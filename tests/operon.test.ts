@@ -70,8 +70,14 @@ describe('operon-tests', () => {
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
+    
     await operon.flushWorkflowOutputBuffer();
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    
+    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
+    expect(retrievedHandle).toBeTruthy();
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    expect(JSON.parse(await retrievedHandle!.getResult())).toEqual({"current_user": username});
   });
 
   test('simple-function-permission-denied', async() => {
