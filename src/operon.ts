@@ -26,6 +26,7 @@ export interface operon__FunctionOutputs {
 
 export interface operon__WorkflowStatus {
   workflow_id: string;
+  workflow_name: string;
   status: string;
   output: string;
   error: string;
@@ -78,6 +79,8 @@ export class Operon {
   readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
   readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
+
+  readonly workflowNameMap: Map<string, OperonWorkflow<any, any>> = new Map();
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -202,7 +205,7 @@ export class Operon {
   /* BACKGROUND PROCESSES */
   /**
    * A background process that listens for notifications from Postgres then signals the appropriate
-   * workflow listener by resolving its promise.
+   * workflow listener by resolving its promise.no
    */
   async listenForNotifications() {
     await this.pgNotificationsClient.connect();
@@ -233,8 +236,26 @@ export class Operon {
     }
   }
 
+  /**
+   * A background process that runs once asynchronously during init and restarts all pending workflows.
+   */
+  async recoverPendingWorkflows(initialTime: Date) {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update < $2", [WorkflowStatus.PENDING, initialTime]);
+    for (const row of rows) {
+      const wf = this.workflowNameMap.get(row.workflow_name);
+      if (wf === undefined) {
+        throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
+      }
+      this.workflow(wf, {workflowUUID: row.workflow_id});
+    }
+  }
+
   /* OPERON INTERFACE */
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
+    if (this.workflowNameMap.has(wf.name)) {
+      throw new OperonError(`Repeated workflow name: ${wf.name}`)
+    }
+    this.workflowNameMap.set(wf.name, wf);
     this.workflowConfigMap.set(wf, config);
   }
 
@@ -256,7 +277,7 @@ export class Operon {
       if (wConfig === undefined) {
         throw new OperonError(`Unregistered Workflow ${wf.name}`);
       }
-      const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig);
+      const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, wConfig, wf.name);
 
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
@@ -317,7 +338,7 @@ export class Operon {
         recordWorkflowOutput(result);
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
-          // Do not record the error, directly throw it back.
+          // TODO: Retrieve, then return await result.
           throw err;
         } else {
           // Record the error.
