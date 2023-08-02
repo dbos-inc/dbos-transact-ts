@@ -22,11 +22,8 @@ describe('failures-tests', () => {
   const testTableName = 'OperonFailureTestKv';
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
-  });
-
-  afterAll(async () => {
     await teardownOperonTestDb(config);
   });
 

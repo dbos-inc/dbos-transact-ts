@@ -67,7 +67,8 @@ export class WorkflowContext {
   }
 
   /**
-   * Write all entries in the workflow result buffer to the database.  
+   * Write all entries in the workflow result buffer to the database.
+   * Also update workflow status to PENDING.
    * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
    */
   async flushResultBuffer(client: PoolClient): Promise<void> {
@@ -75,9 +76,12 @@ export class WorkflowContext {
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
+        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4);",
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
-      } 
+      }
+      // Update workflow PENDING status.
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status) VALUES ($1, $2) ON CONFLICT (workflow_id) DO NOTHING;",
+        [this.workflowUUID, WorkflowStatus.PENDING]);
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();

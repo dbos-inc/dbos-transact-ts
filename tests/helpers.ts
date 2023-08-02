@@ -19,7 +19,7 @@ export function generateOperonTestConfig(): OperonConfig {
       user: 'postgres',
       password: process.env.PGPASSWORD,
       // We can use another way of randomizing the DB name if needed
-      database: "operontest" + Math.round(Date.now()).toString(),
+      database: "operontest",
     },
   }
 

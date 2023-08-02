@@ -9,11 +9,8 @@ describe('concurrency-tests', () => {
 
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
-  });
-
-  afterAll(async () => {
     await teardownOperonTestDb(config);
   });
 

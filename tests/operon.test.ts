@@ -24,12 +24,9 @@ describe('operon-tests', () => {
   let username: string;
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
     username = config.poolConfig.user || "postgres";
-  });
-
-  afterAll(async () => {
     await teardownOperonTestDb(config);
   });
 
@@ -73,9 +70,8 @@ describe('operon-tests', () => {
     
     await operon.flushWorkflowOutputBuffer();
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    
     const retrievedHandle = await operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
-    expect(retrievedHandle).toBeTruthy();
+    expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
     expect(JSON.parse(await retrievedHandle!.getResult())).toEqual({"current_user": username});
   });
@@ -445,6 +441,69 @@ describe('operon-tests', () => {
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
     expect(remoteState.workflowCnt).toBe(2);
+  });
+
+  test('retrieve-workflowstatus', async() => {
+    // Test workflow status changes correctly.
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let resolve2: () => void;
+    const promise2 = new Promise<void>((resolve) => {
+      resolve2 = resolve;
+    });
+
+    let resolve3: () => void;
+    const promise3 = new Promise<void>((resolve) => {
+      resolve3 = resolve;
+    });
+
+    const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO OperonKv VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      return rows[0].value!;
+    };
+    operon.registerTransaction(writeFunction, {});
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
+      await promise1;
+      const value = await workflowCtxt.transaction(writeFunction, id, name);
+      resolve3();  // Signal the execution has done.
+      await promise2;
+      return value;
+    };
+    operon.registerWorkflow(testWorkflow, {});
+
+    const workflowUUID = uuidv1();
+
+    const workflowHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
+
+    expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+
+    // Retrieve handle, should be null.
+    await expect(operon.retrieveWorkflow<string>(workflowUUID)).resolves.toBeNull();
+
+    resolve1!();
+    await promise3;
+
+    // Now should see the pending state.
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    expect(retrievedHandle!.getWorkflowUUID()).toBe(workflowUUID);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+
+    // Proceed to the end.
+    resolve2!();
+    await expect(retrievedHandle!.getResult()).resolves.toBe("hello");
+    await expect(workflowHandle.getResult()).resolves.toBe("hello");
+
+    // Should return Success status.
+    await operon.flushWorkflowOutputBuffer();
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
   });
 });
 

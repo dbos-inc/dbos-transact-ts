@@ -224,7 +224,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;",
           [workflowUUID, WorkflowStatus.SUCCESS, output]);
       }
       await client.query("COMMIT");
@@ -269,11 +269,11 @@ export class Operon {
       }
 
       const checkWorkflowOutput = async () => {
-        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT output, error FROM operon__WorkflowStatus WHERE workflow_id=$1",
+        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1",
           [workflowUUID]);
-        if (rows.length === 0) {
+        if ((rows.length === 0) || (rows[0].status === WorkflowStatus.PENDING)) {
           return operonNull;
-        } else if (JSON.parse(rows[0].error) !== null) {
+        } else if (rows[0].status === WorkflowStatus.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
         } else {
           return JSON.parse(rows[0].output) as R;  // Could be null.
@@ -286,7 +286,7 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", 
+        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;", 
           [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
@@ -295,8 +295,9 @@ export class Operon {
         const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
-        // This workflow has never executed before, so record the input.
+          // This workflow has never executed before, so record the input.
           wCtxt.resultBuffer.set(workflowInputID, JSON.stringify(input));
+          // TODO: Also indicate this workflow is pending now.
         } else {
         // Return the old recorded input
           input = JSON.parse(rows[0].output) as T;
