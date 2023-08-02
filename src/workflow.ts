@@ -308,7 +308,7 @@ export class WorkflowContext {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.#operon.listenerMap[key] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
+    this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
@@ -339,7 +339,7 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
+    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]));
     let message: T | null = null;
     if (rows.length > 0 ) {
       message = JSON.parse(rows[0].message) as T;

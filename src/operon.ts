@@ -307,22 +307,22 @@ export class Operon {
     return await this.workflow(wf, params, ...args);
   }
 
-  async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
+  async send<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, message: T) : Promise<boolean> {
     // Create a workflow and call send.
-    const wf = async (ctxt: WorkflowContext, key: string, message: T) => {
-      return await ctxt.send<T>(key, message);
+    const wf = async (ctxt: WorkflowContext, topic: string, key: string, message: T) => {
+      return await ctxt.send<T>(topic, key, message);
     };
     this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, message);
+    return await this.workflow(wf, params, topic, key, message);
   }
 
-  async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
+  async recv<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, timeoutSeconds: number) : Promise<T | null> {
     // Create a workflow and call recv.
-    const wf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
-      return await ctxt.recv<T>(key, timeoutSeconds);
+    const wf = async (ctxt: WorkflowContext, topic: string, key: string, timeoutSeconds: number) => {
+      return await ctxt.recv<T>(topic, key, timeoutSeconds);
     };
     this.registerWorkflow(wf);
-    return await this.workflow(wf, params, key, timeoutSeconds);
+    return await this.workflow(wf, params, topic, key, timeoutSeconds);
   }
 
   /* INTERNAL HELPERS */
