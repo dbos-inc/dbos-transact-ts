@@ -29,6 +29,7 @@ export interface operon__WorkflowStatus {
   status: string;
   output: string;
   error: string;
+  last_update: Date;
 }
 
 export interface operon__Notifications {
@@ -224,7 +225,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;",
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update=now();",
           [workflowUUID, WorkflowStatus.SUCCESS, output]);
       }
       await client.query("COMMIT");
@@ -286,7 +287,7 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;", 
+        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update=now();", 
           [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 

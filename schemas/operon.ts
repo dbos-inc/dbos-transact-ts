@@ -11,7 +11,8 @@ const operonSystemDbSchema = `
     workflow_id VARCHAR(64) PRIMARY KEY,
     status VARCHAR(64),
     output TEXT,
-    error TEXT
+    error TEXT,
+    last_update TIMESTAMP NOT NULL DEFAULT current_timestamp
   );
 
   CREATE TABLE IF NOT EXISTS operon__Notifications (
