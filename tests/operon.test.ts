@@ -16,7 +16,7 @@ import {
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
 import { sleep, TestKvTable } from "./helper";
-import { PENDING, SUCCESS } from "src/workflow";
+import { WorkflowStatus } from "src/workflow";
 
 describe('operon-tests', () => {
   let operon: Operon;
@@ -66,11 +66,11 @@ describe('operon-tests', () => {
     }
     const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
     expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
-    await expect(workflowHandle.getStatus()).resolves.toBe(PENDING);
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     await operon.flushWorkflowOutputBuffer();
-    await expect(workflowHandle.getStatus()).resolves.toBe(SUCCESS);
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
   });
 
   test('simple-function-permission-denied', async() => {

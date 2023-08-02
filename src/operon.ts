@@ -5,7 +5,7 @@ import {
   OperonInitializationError,
   OperonWorkflowConflictUUIDError
 } from './error';
-import { ERROR, InvokedHandle, OperonWorkflow, SUCCESS, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams } from './workflow';
+import { WorkflowStatus, InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -224,7 +224,8 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", [workflowUUID, SUCCESS, output]);
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
+          [workflowUUID, WorkflowStatus.SUCCESS, output]);
       }
       await client.query("COMMIT");
       client.release();
@@ -285,7 +286,8 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", [workflowUUID, ERROR, serialErr]);
+        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT DO NOTHING", 
+          [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
       const checkWorkflowInput = async (input: T) => {
@@ -352,6 +354,14 @@ export class Operon {
     };
     this.registerWorkflow(wf);
     return await this.workflow(wf, params, key, timeoutSeconds).getResult();
+  }
+
+  async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [workflowUUID]);
+    if (rows.length === 0) {
+      return null;
+    }
+    return new RetrievedHandle(this.pool, workflowUUID);
   }
 
   /* INTERNAL HELPERS */

@@ -13,7 +13,7 @@ import {
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
 import { TestKvTable, sleep } from "./helper";
-import { ERROR, PENDING } from "src/workflow";
+import { WorkflowStatus } from "src/workflow";
 
 describe('failures-tests', () => {
   let operon: Operon;
@@ -58,17 +58,17 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     const codeHandle = operon.workflow(testWorkflow, {}, 11);
-    await expect(codeHandle.getStatus()).resolves.toBe(PENDING);
+    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
-    await expect(codeHandle.getStatus()).resolves.toBe(ERROR);
+    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
 
     // Test without code.
     const wfUUID = uuidv1();
     const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
-    await expect(noCodeHandle.getStatus()).resolves.toBe(PENDING);
+    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
     expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
-    await expect(noCodeHandle.getStatus()).resolves.toBe(ERROR);
+    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
   });
 
   test('readonly-error', async() => {

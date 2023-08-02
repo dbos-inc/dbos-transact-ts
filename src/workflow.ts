@@ -13,6 +13,7 @@ import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonWorkflowConflictUUIDError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
+import { sleep } from './utils';
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -25,9 +26,12 @@ export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
 
-export const PENDING = "PENDING";
-export const SUCCESS = "SUCCESS";
-export const ERROR = "ERROR";
+export const WorkflowStatus = {
+  NOTFOUND: "NOTFOUND",
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  ERROR: "ERROR",
+} as const;
 
 export class WorkflowContext {
   #functionID: number = 0;
@@ -374,12 +378,46 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<string> {
     const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
     if (rows.length === 0) {
-      return PENDING;
+      return WorkflowStatus.PENDING;
     }
     return rows[0].status;
   }
 
   async getResult(): Promise<R> {
     return this.workflowPromise;
+  }
+}
+
+export class RetrievedHandle<R> implements WorkflowHandle<R> {
+  constructor(readonly pool: Pool, readonly workflowUUID: string) {}
+
+  static readonly pollingIntervalMs: number = 1000;
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<string> {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+    if (rows.length === 0) {
+      throw new OperonError("Error: Workflow does not exist"); // Should be impossible.
+    }
+    return rows[0].status;
+  }
+
+  async getResult(): Promise<R> {
+    while(true) {
+      const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+      if (rows.length === 0) { 
+        throw new OperonError("Error: Workflow does not exist"); // Should be impossible.
+      }
+      const status = rows[0].status;
+      if (status === WorkflowStatus.SUCCESS) {
+        return JSON.parse(rows[0].output) as R;
+      } else if (status === WorkflowStatus.ERROR) {
+        throw deserializeError(JSON.parse(rows[0].error));
+      }
+      await sleep(RetrievedHandle.pollingIntervalMs);
+    }
   }
 }
