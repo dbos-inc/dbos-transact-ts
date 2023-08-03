@@ -80,7 +80,7 @@ export class WorkflowContext {
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
       }
       // Update workflow PENDING status.
-      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update=EXTRACT(EPOCH FROM now())::bigint;",
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
         [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
     } catch (error) {
       await client.query('ROLLBACK');
@@ -165,7 +165,7 @@ export class WorkflowContext {
         if (err.code === '40001') { // serialization_failure in PostgreSQL
           // Retry serialization failures
           client.release();
-          await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
+          await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
           continue;
         } else {
@@ -237,7 +237,7 @@ export class WorkflowContext {
         } catch (error) { 
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
-            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+            await sleep(intervalSeconds);
             intervalSeconds *= ctxt.backoffRate;
           }
         }
