@@ -28,6 +28,7 @@ describe('concurrency-tests', () => {
 
   test('duplicate-transaction',async () => {
     // Disable flush workflow output background task for tests.
+    // Workflow status should be updated in the same transaction for  temporary workflows.
     clearInterval(operon.flushBufferID);
 
     // Run two transactions concurrently with the same UUID.
@@ -115,6 +116,11 @@ describe('concurrency-tests', () => {
   test('duplicate-notifications',async () => {
     // Run two send/recv concurrently with the same UUID, only one can succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
+
+    // Disable flush workflow output background task for tests.
+    // Workflow output buffer should be updated in the same transaction with send/recv for temporary workflows.
+    clearInterval(operon.flushBufferID);
+    
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
