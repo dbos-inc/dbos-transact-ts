@@ -9,10 +9,11 @@ import {
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
+  TestKvTable,
+  sleep,
 } from './helpers';
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
-import { TestKvTable, sleep } from "./helper";
 
 describe('failures-tests', () => {
   let operon: Operon;

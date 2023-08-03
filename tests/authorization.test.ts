@@ -32,8 +32,8 @@ describe('authorization', () => {
   });
 
   describe('workflow authorization', () => {
-    const testWorkflow = async (workflowCtxt: WorkflowContext) => {
-      return;
+    const testWorkflow = async () => {
+      return await new Promise<void>((resolve) => resolve());
     };
 
     test('permission granted', async() => {
@@ -89,54 +89,54 @@ describe('authorization', () => {
     });
   });
 
-  describe.only('topic authorization', () => {
+  describe('topic authorization', () => {
     const recvWorkflow = async (ctxt: WorkflowContext) => {
-        return ctxt.recv("testTopic", "key");
+      return ctxt.recv("testTopic", "key");
     };
     const sendWorkflow = async (ctxt: WorkflowContext) => {
-        return ctxt.send("testTopic", "key", "value");
+      return ctxt.send("testTopic", "key", "value");
     };
 
     test('unregistered topic: fails sending', async() => {
-       operon.registerWorkflow(sendWorkflow);
-       await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
+      operon.registerWorkflow(sendWorkflow);
+      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
     });
 
     test('unregistered topic: fails receiving', async() => {
-       operon.registerWorkflow(recvWorkflow);
-       await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
+      operon.registerWorkflow(recvWorkflow);
+      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
     });
 
     test('permission-less topic: succeeds sending and receiving', async() => {
-       operon.registerTopic("testTopic");
-       operon.registerWorkflow(sendWorkflow);
-       operon.registerWorkflow(recvWorkflow);
-       const recv = operon.workflow(recvWorkflow, {});
-       const send = operon.workflow(sendWorkflow, {});
-       await expect(send).resolves.not.toThrow();
-       await expect(recv).resolves.not.toThrow();
+      operon.registerTopic("testTopic");
+      operon.registerWorkflow(sendWorkflow);
+      operon.registerWorkflow(recvWorkflow);
+      const recv = operon.workflow(recvWorkflow, {});
+      const send = operon.workflow(sendWorkflow, {});
+      await expect(send).resolves.not.toThrow();
+      await expect(recv).resolves.not.toThrow();
     });
 
     test('permission-ed topic: succeeds sending and receiving', async() => {
-       operon.registerTopic("testTopic", ["operonAppUser"]);
-       operon.registerWorkflow(sendWorkflow, { rolesThatCanRun: ["operonAppUser"] });
-       operon.registerWorkflow(recvWorkflow, { rolesThatCanRun: ["operonAppUser"] });
-       const recv = operon.workflow(recvWorkflow, { runAs: "operonAppUser" });
-       const send = operon.workflow(sendWorkflow, { runAs: "operonAppUser" });
-       await expect(send).resolves.not.toThrow();
-       await expect(recv).resolves.not.toThrow();
+      operon.registerTopic("testTopic", ["operonAppUser"]);
+      operon.registerWorkflow(sendWorkflow, { rolesThatCanRun: ["operonAppUser"] });
+      operon.registerWorkflow(recvWorkflow, { rolesThatCanRun: ["operonAppUser"] });
+      const recv = operon.workflow(recvWorkflow, { runAs: "operonAppUser" });
+      const send = operon.workflow(sendWorkflow, { runAs: "operonAppUser" });
+      await expect(send).resolves.not.toThrow();
+      await expect(recv).resolves.not.toThrow();
     });
 
     test('unauthorized receiver: fails receiving', async() => {
-       operon.registerTopic("testTopic", ["operonAppUser"]);
-       operon.registerWorkflow(recvWorkflow);
-       await expect(operon.workflow(recvWorkflow, {})).rejects.toThrow(OperonTopicPermissionDeniedError);
+      operon.registerTopic("testTopic", ["operonAppUser"]);
+      operon.registerWorkflow(recvWorkflow);
+      await expect(operon.workflow(recvWorkflow, {})).rejects.toThrow(OperonTopicPermissionDeniedError);
     });
 
     test('unauthorized sender: fails sending', async() => {
-       operon.registerTopic("testTopic", ["operonAppUser"]);
-       operon.registerWorkflow(sendWorkflow);
-       await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonTopicPermissionDeniedError);
+      operon.registerTopic("testTopic", ["operonAppUser"]);
+      operon.registerWorkflow(sendWorkflow);
+      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonTopicPermissionDeniedError);
     });
   });
 });

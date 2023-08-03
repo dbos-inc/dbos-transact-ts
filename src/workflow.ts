@@ -381,7 +381,7 @@ export class WorkflowContext {
       throw new OperonError(`Unregistered topic ${requestedTopic}`);
     }
     if (topicAllowedRoles.length === 0) {
-        return true;
+      return true;
     }
     return topicAllowedRoles.includes(this.runAs);
   }
