@@ -13,7 +13,7 @@ import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonTopicPermissionDeniedError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 
-const defaultWorkflowReceiveTimeout = 10; // seconds
+const defaultWorkflowReceiveTimeout = 60; // seconds
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
