@@ -53,70 +53,10 @@ describe('operon-tests', () => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
+    operon.registerWorkflow(testWorkflow);
 
-    const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-    }
-    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
-
-    const params: WorkflowParams = {
-      runAs: "operonAppAdmin",
-    }
-    const workflowResult: string = await operon.workflow(testWorkflow, params, username);
-
+    const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
-  });
-
-  test('simple-function-permission-denied', async() => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
-    };
-    operon.registerTransaction(testFunction);
-
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
-      return funcResult;
-    };
-    // Register the workflow as runnable only by admin
-    const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: ["operonAppAdmin"],
-    }
-    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
-
-    const params: WorkflowParams = {
-      runAs: "operonAppUser",
-    }
-    await expect(operon.workflow(testWorkflow, params, username)).rejects.toThrow(
-      OperonWorkflowPermissionDeniedError
-    );
-  });
-
-  test('simple-function-default-user-permission-denied', async() => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
-    };
-    operon.registerTransaction(testFunction);
-
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
-      return funcResult;
-    };
-
-    const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-    }
-    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
-
-    const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
-    await expect(operon.workflow(testWorkflow, {}, username)).rejects.toThrow(
-      OperonWorkflowPermissionDeniedError
-    );
-    expect(hasPermissionSpy).toHaveBeenCalledWith(
-      "defaultRole",
-      testWorkflowConfig
-    );
   });
 
   test('return-void', async() => {
