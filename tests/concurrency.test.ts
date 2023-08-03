@@ -1,4 +1,4 @@
-import { CommunicatorContext, Operon, OperonConfig, OperonError, TransactionContext, WorkflowContext } from "src/";
+import { CommunicatorContext, Operon, OperonConfig, TransactionContext, WorkflowContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";

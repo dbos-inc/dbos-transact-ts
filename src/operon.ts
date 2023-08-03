@@ -84,7 +84,9 @@ export class Operon {
 
   readonly workflowNameMap: Map<string, OperonWorkflow<any, any>> = new Map();
 
-  readonly initialEpochTimeMs: number;  // UNIX timestamp in seconds.
+  readonly initialEpochTimeMs: number;
+
+  readonly tempWorkflowName = "operon_temp_workflow";
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -265,8 +267,7 @@ export class Operon {
 
   /* OPERON INTERFACE */
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
-    // TODO: fix anonymous workflow names in the next PR.
-    if ((wf.name !== 'anonWf') && this.workflowNameMap.has(wf.name)) {
+    if (wf.name === this.tempWorkflowName || this.workflowNameMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`)
     }
     this.workflowNameMap.set(wf.name, wf);
@@ -350,7 +351,9 @@ export class Operon {
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
-        recordWorkflowOutput(result);
+        if (!wCtxt.isTempWorkflow) {
+          recordWorkflowOutput(result);
+        }
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
@@ -358,7 +361,9 @@ export class Operon {
           result = await retrievedHandle!.getResult();
         } else {
           // Record the error.
-          await recordWorkflowError(err as Error);
+          if (!wCtxt.isTempWorkflow) {
+            await recordWorkflowError(err as Error);
+          }
           throw err;
         }
       }
@@ -370,29 +375,29 @@ export class Operon {
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
-    const anonWf = async (ctxt: WorkflowContext, ...args: T) => {
+    const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    this.registerWorkflow(anonWf);
-    return await this.workflow(anonWf, params, ...args).getResult();
+    this.workflowConfigMap.set(operon_temp_workflow, {});
+    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, key: string, message: T) : Promise<boolean> {
     // Create a workflow and call send.
-    const anonWf = async (ctxt: WorkflowContext, key: string, message: T) => {
+    const operon_temp_workflow = async (ctxt: WorkflowContext, key: string, message: T) => {
       return await ctxt.send<T>(key, message);
     };
-    this.registerWorkflow(anonWf);
-    return await this.workflow(anonWf, params, key, message).getResult();
+    this.workflowConfigMap.set(operon_temp_workflow, {});
+    return await this.workflow(operon_temp_workflow, params, key, message).getResult();
   }
 
   async recv<T extends NonNullable<any>>(params: WorkflowParams, key: string, timeoutSeconds: number) : Promise<T | null> {
     // Create a workflow and call recv.
-    const anonWf = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
+    const operon_temp_workflow = async (ctxt: WorkflowContext, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(key, timeoutSeconds);
     };
-    this.registerWorkflow(anonWf);
-    return await this.workflow(anonWf, params, key, timeoutSeconds).getResult();
+    this.workflowConfigMap.set(operon_temp_workflow, {});
+    return await this.workflow(operon_temp_workflow, params, key, timeoutSeconds).getResult();
   }
 
   async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {

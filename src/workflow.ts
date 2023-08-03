@@ -37,9 +37,11 @@ export class WorkflowContext {
   #functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
+  readonly isTempWorkflow: boolean;
 
   constructor(operon: Operon, readonly workflowUUID: string, readonly workflowConfig: WorkflowConfig, readonly workflowName: string) {
     this.#operon = operon;
+    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
   }
 
   functionIDGetIncrement() : number {
@@ -80,8 +82,10 @@ export class WorkflowContext {
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
       }
       // Update workflow PENDING status.
-      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
-        [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
+      if (!this.isTempWorkflow) {
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
+          [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
+      }
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();
@@ -105,8 +109,13 @@ export class WorkflowContext {
    * Write a guarded operation's output to the database.
    */
   async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+    const serialOutput = JSON.stringify(output);
     await client.query("UPDATE operon__FunctionOutputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
-      [JSON.stringify(output), this.workflowUUID, funcID]);
+      [serialOutput, this.workflowUUID, funcID]);
+    if (this.isTempWorkflow) {
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status, output) VALUES ($1, $2, $3, $4);",
+        [this.workflowUUID, this.workflowName, WorkflowStatus.SUCCESS, serialOutput]);
+    }
   }
 
   /**
@@ -116,6 +125,10 @@ export class WorkflowContext {
     const serialErr = JSON.stringify(serializeError(err));
     await client.query("UPDATE operon__FunctionOutputs SET error=$1 WHERE workflow_id=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
+    if (this.isTempWorkflow) {
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status, error) VALUES ($1, $2, $3, $4);",
+        [this.workflowUUID, this.workflowName, WorkflowStatus.ERROR, serialErr]);
+    }
   }
 
   /**
