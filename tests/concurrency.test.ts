@@ -44,11 +44,8 @@ describe('concurrency-tests', () => {
       operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 100),
       operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10, 100)
     ]);
-    const errorResult = results.find(result => result.status === 'rejected');
-    const goodResult = results.find(result => result.status === 'fulfilled');
-    expect((goodResult as PromiseFulfilledResult<number>).value).toBe(10);
-    const err: OperonError = (errorResult as PromiseRejectedResult).reason as OperonError;
-    expect(err.message).toBe('Conflicting UUIDs');
+    expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
+    expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
     expect(remoteState.cnt).toBe(1);
 
     // If we mark the function as read-only, both should succeed.
@@ -90,11 +87,8 @@ describe('concurrency-tests', () => {
       operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 11, 10).getResult(),
       operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 11, 10).getResult()
     ]);
-    const errorResult = results.find(result => result.status === 'rejected');
-    const goodResult = results.find(result => result.status === 'fulfilled');
-    expect((goodResult as PromiseFulfilledResult<number>).value).toBe(11);
-    const err: OperonError = (errorResult as PromiseRejectedResult).reason as OperonError;
-    expect(err.message).toBe('Conflicting UUIDs');
+    expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
+    expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
 
     // But the communicator function still runs twice as we do not guarantee OAOO.
     expect(remoteState.cnt).toBe(2);
@@ -113,11 +107,8 @@ describe('concurrency-tests', () => {
     await sleep(10); // Both would be listening to the notification.
     await expect(operon.send({}, "testmsg", "hello")).resolves.toBe(true);
     const recvRes = await recvResPromise;
-    const recvErr = recvRes.find(result => result.status === 'rejected');
-    const recvGood = recvRes.find(result => result.status === 'fulfilled');
-    expect((recvGood as PromiseFulfilledResult<boolean>).value).toBe("hello");
-    const err = (recvErr as PromiseRejectedResult).reason as OperonError;
-    expect(err.message).toBe('Conflicting UUIDs');
+    expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
+    expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
   });
 
 });
