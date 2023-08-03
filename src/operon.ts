@@ -75,6 +75,8 @@ export class Operon {
   readonly workflowOutputBuffer: Map<string, string> = new Map();
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
+  readonly recoveryDelayMs: number = 20000;
+  readonly recoveryID: NodeJS.Timeout;
 
   readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
   readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
@@ -110,6 +112,7 @@ export class Operon {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
+    this.recoveryID = setTimeout(() => this.recoverPendingWorkflows(), this.recoveryDelayMs);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
@@ -157,6 +160,7 @@ export class Operon {
   }
 
   async destroy() {
+    clearTimeout(this.recoveryID);
     clearInterval(this.flushBufferID);
     await this.flushWorkflowOutputBuffer();
     await this.pgNotificationsClient.removeAllListeners().end();
@@ -241,8 +245,9 @@ export class Operon {
   }
 
   /**
-   * A background process that runs once asynchronously during init and restarts all pending workflows.
-   * It then waits for all recovering workflows to finish.
+   * A background process that runs once asynchronously a certain period after initialization.
+   * It executes all pending workflows that were last updated before initialization.
+   * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
     const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update_epoch_ms<$2", 
