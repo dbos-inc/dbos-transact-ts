@@ -20,8 +20,6 @@ describe('concurrency-tests', () => {
     await operon.init();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
-    // Disable flush workflow output background task for tests.
-    clearInterval(operon.flushBufferID);
   });
 
   afterEach(async () => {
@@ -29,6 +27,9 @@ describe('concurrency-tests', () => {
   });
 
   test('duplicate-transaction',async () => {
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
+
     // Run two transactions concurrently with the same UUID.
     // Only one should succeed, and the other one must fail.
     // Since we put a guard before each transaction, only one should proceed.

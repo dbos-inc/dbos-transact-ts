@@ -35,8 +35,6 @@ describe('operon-tests', () => {
     await operon.init();
     await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
     await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
-    // Disable flush workflow output background task for tests.
-    clearInterval(operon.flushBufferID);
   });
 
   afterEach(async () => {
@@ -446,6 +444,9 @@ describe('operon-tests', () => {
   });
 
   test('retrieve-workflowstatus', async() => {
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
+  
     // Test workflow status changes correctly.
     let resolve1: () => void;
     const promise1 = new Promise<void>((resolve) => {
@@ -489,7 +490,6 @@ describe('operon-tests', () => {
 
     resolve1!();
     await promise3;
-    console.log("breakpoint");
 
     // Now should see the pending state.
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
@@ -498,15 +498,13 @@ describe('operon-tests', () => {
     expect(retrievedHandle!.getWorkflowUUID()).toBe(workflowUUID);
     await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
 
-    console.log("breakpoint2");
     // Proceed to the end.
     resolve2!();
-    await expect(retrievedHandle!.getResult()).resolves.toBe("hello");
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
-
-    // Should return Success status.
-    console.log("breakpoint3");
+  
+    // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
     await operon.flushWorkflowOutputBuffer();
+    await expect(retrievedHandle!.getResult()).resolves.toBe("hello");
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
     await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
   });
