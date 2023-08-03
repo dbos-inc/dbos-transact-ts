@@ -351,9 +351,7 @@ export class Operon {
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
-        if (!wCtxt.isTempWorkflow) {
-          recordWorkflowOutput(result);
-        }
+        recordWorkflowOutput(result);
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
@@ -361,9 +359,7 @@ export class Operon {
           result = await retrievedHandle!.getResult();
         } else {
           // Record the error.
-          if (!wCtxt.isTempWorkflow) {
-            await recordWorkflowError(err as Error);
-          }
+          await recordWorkflowError(err as Error);
           throw err;
         }
       }

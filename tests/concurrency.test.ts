@@ -2,6 +2,7 @@ import { CommunicatorContext, Operon, OperonConfig, TransactionContext, Workflow
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
+import { WorkflowStatus } from "src/workflow";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
@@ -29,6 +30,9 @@ describe('concurrency-tests', () => {
     // Run two transactions concurrently with the same UUID.
     // Only one should succeed, and the other one must fail.
     // Since we put a guard before each transaction, only one should proceed.
+
+    // Disable flush workflow output -- the output should be recorded correctly with the same transaction.
+    clearInterval(operon.flushBufferID);
     const remoteState = {
       cnt: 0
     };
@@ -48,6 +52,11 @@ describe('concurrency-tests', () => {
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
     expect(remoteState.cnt).toBe(1);
 
+    // Retrieve should work properly.
+    let retrievedHandle = await operon.retrieveWorkflow(workflowUUID);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(retrievedHandle!.getResult()).resolves.toBe(10);
+
     // If we mark the function as read-only, both should succeed.
     remoteState.cnt = 0;
     operon.registerTransaction(testFunction, {readOnly: true});
@@ -59,6 +68,15 @@ describe('concurrency-tests', () => {
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
     expect(remoteState.cnt).toBe(2);
+
+    // Before flush, would be null.
+    await expect(operon.retrieveWorkflow(readUUID)).resolves.toBeNull();
+
+    // After flush, should work properly.
+    await operon.flushWorkflowOutputBuffer();
+    retrievedHandle = await operon.retrieveWorkflow(readUUID);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(retrievedHandle!.getResult()).resolves.toBe(12);
   });
 
   test('duplicate-communicator',async () => {
