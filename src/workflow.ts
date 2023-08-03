@@ -13,6 +13,8 @@ import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonTopicPermissionDeniedError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 
+const defaultWorkflowReceiveTimeout = 10; // seconds
+
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
@@ -34,7 +36,7 @@ export class WorkflowContext {
     readonly workflowUUID: string,
     readonly runAs: string,
     readonly workflowConfig: WorkflowConfig) {
-      this.#operon = operon;
+    this.#operon = operon;
   }
 
   functionIDGetIncrement() : number {
@@ -271,15 +273,15 @@ export class WorkflowContext {
    * If a message is already associated with the key, do nothing and return false.
    */
   async send<T extends NonNullable<any>>(topic: string, key: string, message: T) : Promise<boolean> {
-    const client: PoolClient = await this.#operon.pool.connect();
     const functionID: number = this.functionIDGetIncrement();
 
     // Is this receiver permitted to read from this topic?
     const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
     if (!hasTopicPermissions) {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-      client.release();
     }
+
+    const client: PoolClient = await this.#operon.pool.connect();
 
     await client.query("BEGIN");
     const check: boolean | OperonNull = await this.checkExecution<boolean>(client, functionID);
@@ -307,17 +309,16 @@ export class WorkflowContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  // TODO set a default timeout
-  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number) : Promise<T | null> {
-    let client = await this.#operon.pool.connect();
+  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultWorkflowReceiveTimeout) : Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Is this receiver permitted to read from this topic?
     const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
     if (!hasTopicPermissions) {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-      client.release();
     }
+
+    let client = await this.#operon.pool.connect();
 
     const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
     if (check !== operonNull) {
@@ -375,16 +376,13 @@ export class WorkflowContext {
   }
 
   hasTopicPermissions(requestedTopic: string): boolean {
-      const topic = this.#operon.topicConfigMap.get(requestedTopic);
-      if (topic === undefined) {
-        throw new OperonError(`Unregistered topic ${requestedTopic}`);
-      }
-
-      for (const allowedRoles of topic) {
-        if (allowedRoles.includes(this.runAs)) {
-          return true;
-        }
-      }
-      return false;
+    const topicAllowedRoles = this.#operon.topicConfigMap.get(requestedTopic);
+    if (topicAllowedRoles === undefined) {
+      throw new OperonError(`Unregistered topic ${requestedTopic}`);
+    }
+    if (topicAllowedRoles.length === 0) {
+        return true;
+    }
+    return topicAllowedRoles.includes(this.runAs);
   }
 }
