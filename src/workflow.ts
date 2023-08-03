@@ -292,8 +292,6 @@ export class WorkflowContext {
     }
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    // When can we attempt to insert a duplicate key?
-    // --> Programmer error
     const { rows } = await client.query(`INSERT INTO operon__Notifications (topic, key, message) VALUES ($1, $2, $3) ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
       [topic, key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.

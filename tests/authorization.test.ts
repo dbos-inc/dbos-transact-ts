@@ -37,7 +37,6 @@ describe('authorization', () => {
     };
 
     test('permission granted', async() => {
-      // Register the workflow as runnable only by admin
       const testWorkflowConfig: WorkflowConfig = {
         rolesThatCanRun: ["operonAppUser"],
       }
