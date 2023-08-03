@@ -1,7 +1,6 @@
 import {
   Operon,
   OperonConfig,
-  OperonError,
   OperonTopicPermissionDeniedError,
   OperonWorkflowPermissionDeniedError,
   WorkflowContext,
