@@ -20,6 +20,8 @@ describe('concurrency-tests', () => {
     await operon.init();
     await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
   });
 
   afterEach(async () => {
@@ -30,9 +32,6 @@ describe('concurrency-tests', () => {
     // Run two transactions concurrently with the same UUID.
     // Only one should succeed, and the other one must fail.
     // Since we put a guard before each transaction, only one should proceed.
-
-    // Disable flush workflow output -- the output should be recorded correctly with the same transaction.
-    clearInterval(operon.flushBufferID);
     const remoteState = {
       cnt: 0
     };
@@ -116,6 +115,7 @@ describe('concurrency-tests', () => {
     // Run two send/recv concurrently with the same UUID, only one can succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
+    const sendUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
       operon.recv({workflowUUID: recvUUID}, "testmsg", 2),
       operon.recv({workflowUUID: recvUUID}, "testmsg", 2)
@@ -123,10 +123,19 @@ describe('concurrency-tests', () => {
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
-    await expect(operon.send({}, "testmsg", "hello")).resolves.toBe(true);
+    await expect(operon.send({workflowUUID: sendUUID}, "testmsg", "hello")).resolves.toBe(true);
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
     expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
+
+    // Make sure we retrieve results correctly.
+    const sendHandle = await operon.retrieveWorkflow(sendUUID);
+    await expect(sendHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(sendHandle!.getResult()).resolves.toBe(true);
+
+    const recvHandle = await operon.retrieveWorkflow(recvUUID);
+    await expect(recvHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(recvHandle!.getResult()).resolves.toBe("hello");
   });
 
 });
