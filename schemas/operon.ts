@@ -13,7 +13,7 @@ const operonSystemDbSchema = `
     status VARCHAR(64),
     output TEXT,
     error TEXT,
-    last_update TIMESTAMP NOT NULL
+    last_update BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM now())::bigint
   );
 
   CREATE TABLE IF NOT EXISTS operon__Notifications (

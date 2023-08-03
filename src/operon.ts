@@ -30,7 +30,7 @@ export interface operon__WorkflowStatus {
   status: string;
   output: string;
   error: string;
-  last_update: Date;
+  last_update: number;  // UNIX timestamp in seconds.
 }
 
 export interface operon__Notifications {
@@ -82,7 +82,7 @@ export class Operon {
 
   readonly workflowNameMap: Map<string, OperonWorkflow<any, any>> = new Map();
 
-  readonly initialTime: Date;
+  readonly initialTime: number;  // UNIX timestamp in seconds.
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -111,8 +111,7 @@ export class Operon {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
     this.initialized = false;
-    this.initialTime = new Date();
-    console.log(this.initialTime);
+    this.initialTime = Math.floor(Date.now() / 1000);
   }
 
   async init(): Promise<void> {
@@ -232,7 +231,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output, last_update) VALUES($1, $2, $3, (now() AT TIME ZONE 'UTC')) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update=(now() AT TIME ZONE 'UTC');",
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update=EXTRACT(EPOCH FROM now())::bigint;",
           [workflowUUID, WorkflowStatus.SUCCESS, output]);
       }
       await client.query("COMMIT");
@@ -245,12 +244,9 @@ export class Operon {
    * It then waits for all recovering workflows to finish.
    */
   async recoverPendingWorkflows() {
-
-    // TODO: fix the timestamp comparison issue.
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1", [WorkflowStatus.PENDING]);
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update<$2", [WorkflowStatus.PENDING, this.initialTime]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
-      console.log("POSTGRES", row.last_update);
       const wf = this.workflowNameMap.get(row.workflow_name);
       if (wf === undefined) {
         throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
@@ -319,7 +315,7 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error, last_update) VALUES($1, $2, $3, (now() AT TIME ZONE 'UTC')) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update=(now() AT TIME ZONE 'UTC');", 
+        await this.pool.query("INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update=EXTRACT(EPOCH FROM now())::bigint;", 
           [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
