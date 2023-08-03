@@ -112,7 +112,7 @@ export class Operon {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
-    this.recoveryID = setTimeout(() => this.recoverPendingWorkflows(), this.recoveryDelayMs);
+    this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
