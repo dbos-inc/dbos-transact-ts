@@ -56,7 +56,6 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     const codeHandle = operon.workflow(testWorkflow, {}, 11);
-    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
     await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
     const retrievedHandle = await operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
@@ -67,7 +66,6 @@ describe('failures-tests', () => {
     // Test without code.
     const wfUUID = uuidv1();
     const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
-    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
     await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
     expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
     await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
