@@ -376,7 +376,7 @@ export class WorkflowContext {
   hasTopicPermissions(requestedTopic: string): boolean {
     const topicAllowedRoles = this.#operon.topicConfigMap.get(requestedTopic);
     if (topicAllowedRoles === undefined) {
-      throw new OperonError(`Unregistered topic ${requestedTopic}`);
+      throw new OperonError(`unregistered topic: ${requestedTopic}`);
     }
     if (topicAllowedRoles.length === 0) {
       return true;

@@ -98,12 +98,12 @@ describe('authorization', () => {
 
     test('unregistered topic: fails sending', async() => {
       operon.registerWorkflow(sendWorkflow);
-      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
+      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow('unregistered topic: testTopic');
     });
 
     test('unregistered topic: fails receiving', async() => {
       operon.registerWorkflow(recvWorkflow);
-      await expect(operon.workflow(sendWorkflow, {})).rejects.toThrow(OperonError);
+      await expect(operon.workflow(recvWorkflow, {})).rejects.toThrow('unregistered topic: testTopic');
     });
 
     test('permission-less topic: succeeds sending and receiving', async() => {
@@ -113,7 +113,7 @@ describe('authorization', () => {
       const recv = operon.workflow(recvWorkflow, {});
       const send = operon.workflow(sendWorkflow, {});
       await expect(send).resolves.not.toThrow();
-      await expect(recv).resolves.not.toThrow();
+      await expect(recv).resolves.toBe('value');
     });
 
     test('permission-ed topic: succeeds sending and receiving', async() => {
@@ -123,7 +123,7 @@ describe('authorization', () => {
       const recv = operon.workflow(recvWorkflow, { runAs: "operonAppUser" });
       const send = operon.workflow(sendWorkflow, { runAs: "operonAppUser" });
       await expect(send).resolves.not.toThrow();
-      await expect(recv).resolves.not.toThrow();
+      await expect(recv).resolves.toBe('value');
     });
 
     test('unauthorized receiver: fails receiving', async() => {
