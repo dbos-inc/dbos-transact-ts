@@ -13,7 +13,7 @@ const operonSystemDbSchema = `
     status VARCHAR(64),
     output TEXT,
     error TEXT,
-    last_update TIMESTAMP NOT NULL DEFAULT current_timestamp
+    last_update TIMESTAMP NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS operon__Notifications (

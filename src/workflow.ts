@@ -80,7 +80,7 @@ export class WorkflowContext {
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
       }
       // Update workflow PENDING status.
-      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update=now();",
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status, last_update) VALUES ($1, $2, $3, (now() AT TIME ZONE 'UTC')) ON CONFLICT (workflow_id) DO UPDATE SET last_update=now() AT TIME ZONE 'UTC';",
         [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
     } catch (error) {
       await client.query('ROLLBACK');

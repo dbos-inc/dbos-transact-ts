@@ -321,7 +321,6 @@ describe('failures-tests', () => {
       const value = await workflowCtxt.transaction(writeFunction, id, name);
       resolve1();  // Signal the execution has done.
       await promise2;
-      console.log("workflow finished");
       return value;
     };
     operon.registerWorkflow(testWorkflow, {});
@@ -339,16 +338,17 @@ describe('failures-tests', () => {
     // Shut down the server.
     await operon.destroy();
 
+    await sleep(1000);
+
     // Create a new operon and register everything
     operon = new Operon(config);
     await operon.init();
-    console.log("new operon");
     operon.registerTransaction(writeFunction, {});
     operon.registerWorkflow(testWorkflow, {});
 
     // Start the recovery.
-    await operon.recoverPendingWorkflows();
     resolve2!();
+    await operon.recoverPendingWorkflows();
     const recoverHandle = await operon.retrieveWorkflow<string>(workflowUUID);
     await expect(recoverHandle!.getResult()).resolves.toBe("hello");
   });
