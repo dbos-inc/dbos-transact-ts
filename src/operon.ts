@@ -18,14 +18,14 @@ import { deserializeError, serializeError } from 'serialize-error';
 
 /* Interfaces for Operon system data structures */
 export interface function_outputs {
-  workflow_id: string;
+  workflow_uuid: string;
   function_id: number;
   output: string;
   error: string;
 }
 
 export interface workflow_status {
-  workflow_id: string;
+  workflow_uuid: string;
   workflow_name: string;
   status: string;
   output: string;
@@ -248,7 +248,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query(`INSERT INTO operon.workflow_status (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
+        await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
       }
@@ -271,7 +271,7 @@ export class Operon {
       if (wInfo === undefined) {
         throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
       }
-      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_id}));
+      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_uuid}));
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }
@@ -326,7 +326,7 @@ export class Operon {
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
       const checkWorkflowOutput = async () => {
-        const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_id=$1",
+        const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1",
           [workflowUUID]);
         if ((rows.length === 0) || (rows[0].status === WorkflowStatus.PENDING)) {
           return operonNull;
@@ -343,14 +343,14 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query(`INSERT INTO operon.workflow_status (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
+        await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
         DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
       const checkWorkflowInput = async (input: T) => {
       // The workflow input is always at function ID = 0 in the operon.function_outputs table.
-        const { rows } = await this.pool.query<function_outputs>("SELECT output FROM operon.function_outputs WHERE workflow_id=$1 AND function_id=$2",
+        const { rows } = await this.pool.query<function_outputs>("SELECT output FROM operon.function_outputs WHERE workflow_uuid=$1 AND function_id=$2",
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
@@ -414,7 +414,7 @@ export class Operon {
   }
 
   async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_id=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
       return null;
     }

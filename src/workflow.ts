@@ -61,7 +61,7 @@ export class WorkflowContext {
    * Otherwise, return OperonNull.
    */
   async checkExecution<R>(client: PoolClient, funcID: number): Promise<R | OperonNull> {
-    const { rows } = await client.query<function_outputs>("SELECT output, error FROM operon.function_outputs WHERE workflow_id=$1 AND function_id=$2",
+    const { rows } = await client.query<function_outputs>("SELECT output, error FROM operon.function_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [this.workflowUUID, funcID]);
     if (rows.length === 0) {
       return operonNull;
@@ -84,12 +84,12 @@ export class WorkflowContext {
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await client.query("INSERT INTO operon.function_outputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4);",
+        await client.query("INSERT INTO operon.function_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
       }
       // Update workflow PENDING status.
       if (!this.isTempWorkflow) {
-        await client.query("INSERT INTO operon.workflow_status (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
+        await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
           [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
       }
     } catch (error) {
@@ -116,10 +116,10 @@ export class WorkflowContext {
    */
   async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await client.query("UPDATE operon.function_outputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
+    await client.query("UPDATE operon.function_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialOutput, this.workflowUUID, funcID]);
     if (this.isTempWorkflow) {
-      await client.query("INSERT INTO operon.workflow_status (workflow_id, workflow_name, status, output) VALUES ($1, $2, $3, $4);",
+      await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status, output) VALUES ($1, $2, $3, $4);",
         [this.workflowUUID, this.workflowName, WorkflowStatus.SUCCESS, serialOutput]);
     }
   }
@@ -129,10 +129,10 @@ export class WorkflowContext {
    */
   async recordGuardedError(client: PoolClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await client.query("UPDATE operon.function_outputs SET error=$1 WHERE workflow_id=$2 AND function_id=$3;",
+    await client.query("UPDATE operon.function_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
     if (this.isTempWorkflow) {
-      await client.query("INSERT INTO operon.workflow_status (workflow_id, workflow_name, status, error) VALUES ($1, $2, $3, $4);",
+      await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status, error) VALUES ($1, $2, $3, $4);",
         [this.workflowUUID, this.workflowName, WorkflowStatus.ERROR, serialErr]);
     }
   }
@@ -427,7 +427,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<string> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_id=$1", [this.workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
     if (rows.length === 0) {
       return WorkflowStatus.PENDING;
     }
@@ -449,7 +449,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<string> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_id=$1", [this.workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
     if (rows.length === 0) {
       throw new OperonError("UNREACHABLE: Workflow does not exist");
     }
@@ -458,7 +458,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getResult(): Promise<R> {
     while(true) {
-      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_id=$1", [this.workflowUUID]);
+      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
       if (rows.length === 0) { 
         throw new OperonError("UNREACHABLE: Workflow does not exist");
       }
