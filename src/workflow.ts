@@ -2,7 +2,7 @@
 /*eslint-disable no-constant-condition */
 import {
   function_outputs,
-  operon__Notifications,
+  notifications,
   Operon,
   OperonNull,
   operonNull,
@@ -318,7 +318,7 @@ export class WorkflowContext {
     }
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    const { rows } = await client.query(`INSERT INTO operon__Notifications (topic, key, message) VALUES ($1, $2, $3) ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
+    const { rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
       [topic, key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
     await this.recordGuardedOutput(client, functionID, success);
@@ -368,7 +368,7 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]);
+    let { rows } = await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
       await this.recordGuardedOutput(client, functionID, message);
@@ -389,7 +389,7 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]));
+    ({ rows } = await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]));
     let message: T | null = null;
     if (rows.length > 0 ) {
       message = JSON.parse(rows[0].message) as T;

@@ -18,7 +18,7 @@ const operonSystemDbSchema = `
     last_update_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
-  CREATE TABLE IF NOT EXISTS operon__Notifications (
+  CREATE TABLE IF NOT EXISTS operon.notifications (
     topic VARCHAR(255) NOT NULL,
     key VARCHAR(255) NOT NULL,
     message TEXT NOT NULL,
@@ -41,7 +41,7 @@ const operonSystemDbSchema = `
         IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon__notificationstrigger') THEN
           EXECUTE '
               CREATE TRIGGER operon__notificationstrigger
-              AFTER INSERT ON operon__Notifications
+              AFTER INSERT ON operon.notifications
               FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction()';
         END IF;
     END

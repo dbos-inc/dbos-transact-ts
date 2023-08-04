@@ -33,7 +33,8 @@ export interface workflow_status {
   last_update: number;  // UNIX timestamp in seconds.
 }
 
-export interface operon__Notifications {
+export interface notifications {
+  topic: string;
   key: string;
   message: string;
 }
