@@ -61,6 +61,11 @@ interface operon__DatabaseConfig {
   database: string;
 }
 
+interface WorkflowInfo<T extends any[], R> {
+  workflow: OperonWorkflow<T, R>;
+  config: WorkflowConfig;
+}
+
 export class Operon {
   initialized: boolean;
   readonly config: OperonConfig;
@@ -70,6 +75,8 @@ export class Operon {
   readonly pgSystemClient: Client;
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
+  
+  readonly tempWorkflowName = "operon_temp_workflow";
 
   readonly listenerMap: Record<string, () => void> = {};
 
@@ -79,16 +86,19 @@ export class Operon {
   readonly recoveryDelayMs: number = 20000;
   readonly recoveryID: NodeJS.Timeout;
 
-  readonly workflowConfigMap: WeakMap<OperonWorkflow<any, any>, WorkflowConfig> = new WeakMap();
+  readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
+    [this.tempWorkflowName, 
+      {
+        // eslint-disable-next-line @typescript-eslint/require-await
+        workflow: async () => console.error("UNREACHABLE: Indirect invoke of temp workflow"),
+        config: {}
+      }]
+  ]);
   readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
   readonly topicConfigMap: Map<string, string[]> = new Map();
 
-  readonly workflowNameMap: Map<string, OperonWorkflow<any, any>> = new Map();
-
   readonly initialEpochTimeMs: number;
-
-  readonly tempWorkflowName = "operon_temp_workflow";
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -263,7 +273,7 @@ export class Operon {
       [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
-      const wf = this.workflowNameMap.get(row.workflow_name);
+      const wf = this.workflowInfoMap.get(row.workflow_name)?.workflow;
       if (wf === undefined) {
         throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
       }
@@ -279,11 +289,14 @@ export class Operon {
   }
 
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
-    if (wf.name === this.tempWorkflowName || this.workflowNameMap.has(wf.name)) {
+    if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`)
     }
-    this.workflowNameMap.set(wf.name, wf);
-    this.workflowConfigMap.set(wf, config);
+    const workflowInfo: WorkflowInfo<T, R> = {
+      workflow: wf,
+      config: config
+    }
+    this.workflowInfoMap.set(wf.name, workflowInfo);
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
@@ -300,10 +313,11 @@ export class Operon {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
-      const wConfig = this.workflowConfigMap.get(wf);
-      if (wConfig === undefined) {
+      const wInfo = this.workflowInfoMap.get(wf.name);
+      if (wInfo === undefined) {
         throw new OperonError(`Unregistered Workflow ${wf.name}`);
       }
+      const wConfig = wInfo.config;
 
       // Check if the user has permission to run this workflow.
       if (!params.runAs) {
@@ -392,7 +406,6 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    this.workflowConfigMap.set(operon_temp_workflow, {});
     return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
@@ -401,7 +414,6 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, topic: string, key: string, message: T) => {
       return await ctxt.send<T>(topic, key, message);
     };
-    this.workflowConfigMap.set(operon_temp_workflow, {});
     return await this.workflow(operon_temp_workflow, params, topic, key, message).getResult();
   }
 
@@ -410,7 +422,6 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, topic: string, key: string, timeoutSeconds: number) => {
       return await ctxt.recv<T>(topic, key, timeoutSeconds);
     };
-    this.workflowConfigMap.set(operon_temp_workflow, {});
     return await this.workflow(operon_temp_workflow, params, topic, key, timeoutSeconds).getResult();
   }
 
