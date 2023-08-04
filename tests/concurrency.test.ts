@@ -105,7 +105,8 @@ describe('concurrency-tests', () => {
     }
     operon.registerWorkflow(testWorkflow);
 
-    const testFunction = async (txnCtxt: TransactionContext) => {
+    const testFunction = async (ctxt: TransactionContext) => {
+      void ctxt;
       await sleep(1);
       funCounter++;
       return;
