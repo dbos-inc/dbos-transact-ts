@@ -76,6 +76,7 @@ export class Operon {
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
   
+  // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
 
   readonly listenerMap: Record<string, () => void> = {};
@@ -87,6 +88,7 @@ export class Operon {
   readonly recoveryID: NodeJS.Timeout;
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
+    // We initialize the map with an entry for temporary workflows.
     [this.tempWorkflowName, 
       {
         // eslint-disable-next-line @typescript-eslint/require-await
