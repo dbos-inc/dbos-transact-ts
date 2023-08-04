@@ -25,7 +25,7 @@ const operonSystemDbSchema = `
     PRIMARY KEY (topic, key)
   );
 
-  CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
+  CREATE OR REPLACE FUNCTION operon.notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         topic_key text := NEW.topic || '::' || NEW.key;
     BEGIN
@@ -42,7 +42,7 @@ const operonSystemDbSchema = `
           EXECUTE '
               CREATE TRIGGER operon__notificationstrigger
               AFTER INSERT ON operon.notifications
-              FOR EACH ROW EXECUTE FUNCTION operon__NotificationsFunction()';
+              FOR EACH ROW EXECUTE FUNCTION operon.notifications_function()';
         END IF;
     END
     $$;
