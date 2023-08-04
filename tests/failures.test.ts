@@ -9,11 +9,12 @@ import {
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
-  TestKvTable,
-  sleep,
+  TestKvTable
 } from './helpers';
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
+import { sleep } from "src/utils";
+import { WorkflowStatus } from "src/workflow";
 
 describe('failures-tests', () => {
   let operon: Operon;
@@ -21,11 +22,8 @@ describe('failures-tests', () => {
   const testTableName = 'OperonFailureTestKv';
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
-  });
-
-  afterAll(async () => {
     await teardownOperonTestDb(config);
   });
 
@@ -43,7 +41,7 @@ describe('failures-tests', () => {
   test('operon-error', async() => {
     const testCommunicator = async (ctxt: CommunicatorContext, code?: number) => {
       void ctxt;
-      await sleep(1);
+      await sleep(10);
       if (code) {
         throw new OperonError("test operon error with code.", code);
       } else {
@@ -57,10 +55,20 @@ describe('failures-tests', () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    const codeHandle = operon.workflow(testWorkflow, {}, 11);
+    await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    const retrievedHandle = await operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    await expect(retrievedHandle!.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("test operon error without code"));
+    const wfUUID = uuidv1();
+    const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
+    await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
+    expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
+    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
   });
 
   test('readonly-error', async() => {
@@ -148,7 +156,7 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
-    await expect(operon.workflow(testWorkflow, {}, 10)).resolves.toBe(10);
+    await expect(operon.workflow(testWorkflow, {}, 10).getResult()).resolves.toBe(10);
     expect(remoteState.num).toBe(10);
   });
 
@@ -173,10 +181,10 @@ describe('failures-tests', () => {
     };
     operon.registerWorkflow(testWorkflow);
   
-    const result = await operon.workflow(testWorkflow, {});
+    const result = await operon.workflow(testWorkflow, {}).getResult();
     expect(result).toEqual(4);
 
-    await expect(operon.workflow(testWorkflow, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(operon.workflow(testWorkflow, {}).getResult()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
 
   });
 
@@ -200,11 +208,11 @@ describe('failures-tests', () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult()).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID})).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult()).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
 
@@ -229,7 +237,7 @@ describe('failures-tests', () => {
     };
 
     // Invoke an unregistered workflow.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Workflow ${testWorkflow.name}`));
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).rejects.toThrowError(new OperonError(`Unregistered Workflow ${testWorkflow.name}`));
 
     // Invoke an unregistered transaction.
     await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
@@ -238,54 +246,66 @@ describe('failures-tests', () => {
     operon.registerWorkflow(testWorkflow, {});
 
     // Invoke an unregistered communicator.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered External ${testCommunicator.name}`));
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).rejects.toThrowError(new OperonError(`Unregistered External ${testCommunicator.name}`));
 
     operon.registerCommunicator(testCommunicator, {});
 
     // Now everything should work.
-    await expect(operon.workflow(testWorkflow, {}, 10, "test")).resolves.toBe(11);
+    await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).resolves.toBe(11);
   });
 
-  test('set-isolation', async () => {
-    const remoteState = {
-      num: 0
-    }
-    const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      remoteState.num += 1;
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id`, [id, name]);
-      await sleep(10);
-      if (rows.length === 0) {
-        return null;
-      }
-      return rows[0].id;
+  test('failure-recovery', async() => {
+    // Run a workflow until it reaches PENDING state, then shut down the server, and recover from there.
+
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let resolve2: () => void;
+    const promise2 = new Promise<void>((resolve) => {
+      resolve2 = resolve;
+    });
+
+    const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      return rows[0].value!;
     };
+    operon.registerTransaction(writeFunction, {});
 
-    // Invalid isolation level.
-    expect(() =>{operon.registerTransaction(testFunction, {isolationLevel: "Random level"})}).toThrowError(new OperonError(`Invalid isolation level: Random level`));
+    const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
+      const value = await workflowCtxt.transaction(writeFunction, id, name);
+      resolve1();  // Signal the execution has done.
+      await promise2;
+      return value;
+    };
+    operon.registerWorkflow(testWorkflow, {});
 
-    // This function should not be registered yet.
-    await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
+    const workflowUUID = uuidv1();
 
-    // Default should be serializable, so running testFunction concurrently should cause serialization error and retry.
-    operon.registerTransaction(testFunction, {});
+    operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
 
-    // Start two concurrent transactions.
-    let futRes1 = operon.transaction(testFunction, {}, 10, "test1");
-    let futRes2 = operon.transaction(testFunction, {}, 10, "test2");
-    await futRes1;
-    await futRes2;
+    await promise1;
 
-    expect(remoteState.num).toBeGreaterThan(2);
+    // Now should see the pending state.
+    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowUUID);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
 
-    // Now, reset remoteState, register with read committed. No retry should happen.
-    remoteState.num = 0;
-    operon.registerTransaction(testFunction, {isolationLevel: "READ COMMITTED"});
-    futRes1 = operon.transaction(testFunction, {}, 10, "test1");
-    futRes2 = operon.transaction(testFunction, {}, 10, "test2");
-    await futRes1;
-    await futRes2;
+    // Shut down the server.
+    await operon.destroy();
 
-    expect(remoteState.num).toBe(2);
+    await sleep(1000);
+
+    // Create a new operon and register everything
+    operon = new Operon(config);
+    await operon.init();
+    operon.registerTransaction(writeFunction, {});
+    operon.registerWorkflow(testWorkflow, {});
+
+    // Start the recovery.
+    resolve2!();
+    await operon.recoverPendingWorkflows();
+    const recoverHandle = await operon.retrieveWorkflow<string>(workflowUUID);
+    await expect(recoverHandle!.getResult()).resolves.toBe("hello");
   });
-
 });

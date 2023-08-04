@@ -19,3 +19,5 @@ export function readFileSync(path: string): string {
   const fileContent: string = fs.readFileSync(path, 'utf8');
   return fileContent;
 }
+
+export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));

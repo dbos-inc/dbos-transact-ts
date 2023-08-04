@@ -4,27 +4,28 @@ import {
   WorkflowContext,
   TransactionContext,
   CommunicatorContext,
+  WorkflowParams,
+  WorkflowHandle,
+  OperonWorkflowPermissionDeniedError
 } from "src/";
 import {
   generateOperonTestConfig,
   teardownOperonTestDb,
-  sleep,
-  TestKvTable,
+  TestKvTable
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import axios, { AxiosResponse } from 'axios';
+import { sleep } from "src/utils";
+import { WorkflowConfig, WorkflowStatus } from "src/workflow";
 
 describe('operon-tests', () => {
   let operon: Operon;
   let username: string;
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
     username = config.poolConfig.user || "postgres";
-  });
-
-  afterAll(async () => {
     await teardownOperonTestDb(config);
   });
 
@@ -43,18 +44,88 @@ describe('operon-tests', () => {
   test('simple-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      await sleep(10);
       return JSON.stringify(rows[0]);
     };
-    operon.registerTransaction(testFunction, {readOnly: true});
+    operon.registerTransaction(testFunction);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
       const funcResult: string = await workflowCtxt.transaction(testFunction, name);
       return funcResult;
     };
-    operon.registerWorkflow(testWorkflow);
 
-    const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const params: WorkflowParams = {
+      runAs: "operonAppAdmin",
+    }
+    const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
+    expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
+    
+    await operon.flushWorkflowOutputBuffer();
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    expect(JSON.parse(await retrievedHandle!.getResult())).toEqual({"current_user": username});
+  });
+
+  test('simple-function-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
+    };
+    operon.registerTransaction(testFunction);
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
+    };
+    // Register the workflow as runnable only by admin
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const params: WorkflowParams = {
+      runAs: "operonAppUser",
+    }
+    await expect(operon.workflow(testWorkflow, params, username).getResult()).rejects.toThrow(
+      OperonWorkflowPermissionDeniedError
+    );
+  });
+
+  test('simple-function-default-user-permission-denied', async() => {
+    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+      return JSON.stringify(rows[0]);
+    };
+    operon.registerTransaction(testFunction);
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
+      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
+      return funcResult;
+    };
+
+    const testWorkflowConfig: WorkflowConfig = {
+      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+    }
+    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+
+    const hasPermissionSpy = jest.spyOn(operon, 'hasPermission');
+    await expect(operon.workflow(testWorkflow, {}, username).getResult()).rejects.toThrow(
+      OperonWorkflowPermissionDeniedError
+    );
+    expect(hasPermissionSpy).toHaveBeenCalledWith(
+      "defaultRole",
+      testWorkflowConfig
+    );
   });
 
   test('return-void', async() => {
@@ -84,7 +155,7 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await operon.workflow(testWorkflow, {}, username);
+      const workflowResult: string = await operon.workflow(testWorkflow, {}, username).getResult();
       expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     }
   });
@@ -119,12 +190,12 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await operon.workflow(testWorkflow, {}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {}, username).getResult();
       expect(workflowResult).toEqual(i + 1);
     }
     
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail");
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail").getResult();
     expect(workflowResult).toEqual(-1);
   });
 
@@ -159,7 +230,7 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {}, "test");
+    const workflowResult: number = await operon.workflow(testWorkflow, {}, "test").getResult();
     expect(workflowResult).toEqual(-1);
   });
 
@@ -197,22 +268,22 @@ describe('operon-tests', () => {
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidv1();
       uuidArray.push(workflowUUID);
-      workflowResult = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
+      workflowResult = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username).getResult();
       expect(workflowResult).toEqual(i + 1);
     }
     // Should not appear in the database.
     const failUUID: string = uuidv1();
-    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "fail");
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "fail").getResult();
     expect(workflowResult).toEqual(-1);
 
     // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username);
+      const workflowResult: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, username).getResult();
       expect(workflowResult).toEqual(i + 1);
     }
     // Given the same workflow UUID but different input, should return the original execution.
-    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "hello");
+    workflowResult = await operon.workflow(testWorkflow, {workflowUUID: failUUID}, "hello").getResult();
     expect(workflowResult).toEqual(-1);
   });
 
@@ -233,11 +304,11 @@ describe('operon-tests', () => {
 
     const workflowUUID: string = uuidv1();
 
-    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15');
+    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15').getResult();
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter');
+    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter').getResult();
     expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
   });
 
@@ -255,11 +326,11 @@ describe('operon-tests', () => {
     operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
-    const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
-    const send = await operon.workflow(sendWorkflow, {});
+    const promise = operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID}).getResult();
+    const send = await operon.workflow(sendWorkflow, {}).getResult();
     expect(send).toBe(true);
     expect(await promise).toBe(true);
-    const retry = await operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID});
+    const retry = await operon.workflow(receiveWorkflow, {workflowUUID: workflowUUID}).getResult();
     expect(retry).toBe(true);
   });
 
@@ -318,12 +389,12 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
   
     const workflowUUID = uuidv1();
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     expect(remoteState.num).toBe(1);
   
     await operon.flushWorkflowOutputBuffer();
     // Run it again with the same UUID, should get the same output.
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10)).resolves.toBe(11);
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     // The workflow should not run at all.
     expect(remoteState.num).toBe(1);
   });
@@ -362,14 +433,80 @@ describe('operon-tests', () => {
     const workflowUUID = uuidv1();
 
     // Invoke the workflow, should get the error.
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
     expect(remoteState.workflowCnt).toBe(2);
 
-    // Invoke it again, there should be no output recorded and throw the same error.
-    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test")).rejects.toThrowError(new Error("dumb test error"));
+    // Invoke it again, should return the recorded same error.
+    await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
     expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(4);
+    expect(remoteState.workflowCnt).toBe(2);
+  });
+
+  test('retrieve-workflowstatus', async() => {
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
+  
+    // Test workflow status changes correctly.
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let resolve2: () => void;
+    const promise2 = new Promise<void>((resolve) => {
+      resolve2 = resolve;
+    });
+
+    let resolve3: () => void;
+    const promise3 = new Promise<void>((resolve) => {
+      resolve3 = resolve;
+    });
+
+    const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO OperonKv VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      return rows[0].value!;
+    };
+    operon.registerTransaction(writeFunction, {});
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
+      await promise1;
+      const value = await workflowCtxt.transaction(writeFunction, id, name);
+      resolve3();  // Signal the execution has done.
+      await promise2;
+      return value;
+    };
+    operon.registerWorkflow(testWorkflow, {});
+
+    const workflowUUID = uuidv1();
+
+    const workflowHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
+
+    expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+
+    // Retrieve handle, should be null.
+    await expect(operon.retrieveWorkflow<string>(workflowUUID)).resolves.toBeNull();
+
+    resolve1!();
+    await promise3;
+
+    // Now should see the pending state.
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    expect(retrievedHandle!.getWorkflowUUID()).toBe(workflowUUID);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+
+    // Proceed to the end.
+    resolve2!();
+    await expect(workflowHandle.getResult()).resolves.toBe("hello");
+  
+    // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
+    await operon.flushWorkflowOutputBuffer();
+    await expect(retrievedHandle!.getResult()).resolves.toBe("hello");
+    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
   });
 });
 

@@ -7,9 +7,13 @@ const operonSystemDbSchema = `
     PRIMARY KEY (workflow_id, function_id)
   );
 
-  CREATE TABLE IF NOT EXISTS operon__WorkflowOutputs (
+  CREATE TABLE IF NOT EXISTS operon__WorkflowStatus (
     workflow_id VARCHAR(64) PRIMARY KEY,
-    output TEXT
+    workflow_name TEXT,
+    status VARCHAR(64),
+    output TEXT,
+    error TEXT,
+    last_update_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
   CREATE TABLE IF NOT EXISTS operon__Notifications (

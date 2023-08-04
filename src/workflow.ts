@@ -5,13 +5,15 @@ import {
   operon__Notifications,
   Operon,
   OperonNull,
-  operonNull
+  operonNull,
+  operon__WorkflowStatus
 } from './operon';
-import { PoolClient, DatabaseError } from 'pg';
+import { PoolClient, DatabaseError, Pool } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
-import { OperonError, OperonTopicPermissionDeniedError } from './error';
+import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
+import { sleep } from './utils';
 
 const defaultWorkflowReceiveTimeout = 60; // seconds
 
@@ -26,17 +28,26 @@ export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
 
+export const WorkflowStatus = {
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  ERROR: "ERROR",
+} as const;
+
 export class WorkflowContext {
   #functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
+  readonly isTempWorkflow: boolean;
 
   constructor(
     operon: Operon,
     readonly workflowUUID: string,
     readonly runAs: string,
-    readonly workflowConfig: WorkflowConfig) {
+    readonly workflowConfig: WorkflowConfig,
+    readonly workflowName: string) {
     this.#operon = operon;
+    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
   }
 
   functionIDGetIncrement() : number {
@@ -64,7 +75,8 @@ export class WorkflowContext {
   }
 
   /**
-   * Write all entries in the workflow result buffer to the database.  
+   * Write all entries in the workflow result buffer to the database.
+   * Also update workflow status to PENDING.
    * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
    */
   async flushResultBuffer(client: PoolClient): Promise<void> {
@@ -72,15 +84,20 @@ export class WorkflowContext {
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4)",
+        await client.query("INSERT INTO operon__FunctionOutputs (workflow_id, function_id, output, error) VALUES ($1, $2, $3, $4);",
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
-      } 
+      }
+      // Update workflow PENDING status.
+      if (!this.isTempWorkflow) {
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
+          [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
+      }
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
-        throw new OperonError("Conflicting UUIDs", 5); // TODO: Break out of the workflow.
+        throw new OperonWorkflowConflictUUIDError(); // TODO: Break out of the workflow.
       } else {
         throw err;
       }
@@ -98,8 +115,13 @@ export class WorkflowContext {
    * Write a guarded operation's output to the database.
    */
   async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+    const serialOutput = JSON.stringify(output);
     await client.query("UPDATE operon__FunctionOutputs SET output=$1 WHERE workflow_id=$2 AND function_id=$3;",
-      [JSON.stringify(output), this.workflowUUID, funcID]);
+      [serialOutput, this.workflowUUID, funcID]);
+    if (this.isTempWorkflow) {
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status, output) VALUES ($1, $2, $3, $4);",
+        [this.workflowUUID, this.workflowName, WorkflowStatus.SUCCESS, serialOutput]);
+    }
   }
 
   /**
@@ -109,6 +131,10 @@ export class WorkflowContext {
     const serialErr = JSON.stringify(serializeError(err));
     await client.query("UPDATE operon__FunctionOutputs SET error=$1 WHERE workflow_id=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
+    if (this.isTempWorkflow) {
+      await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status, error) VALUES ($1, $2, $3, $4);",
+        [this.workflowUUID, this.workflowName, WorkflowStatus.ERROR, serialErr]);
+    }
   }
 
   /**
@@ -158,7 +184,7 @@ export class WorkflowContext {
         if (err.code === '40001') { // serialization_failure in PostgreSQL
           // Retry serialization failures
           client.release();
-          await new Promise(resolve => setTimeout(resolve, retryWaitMillis));
+          await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
           continue;
         } else {
@@ -230,7 +256,7 @@ export class WorkflowContext {
         } catch (error) {
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
-            await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
+            await sleep(intervalSeconds);
             intervalSeconds *= ctxt.backoffRate;
           }
         }
@@ -330,8 +356,9 @@ export class WorkflowContext {
       resolveNotification = resolve;
     });
     this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
+    let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         resolve();
       }, timeoutSeconds * 1000);
     });
@@ -357,6 +384,7 @@ export class WorkflowContext {
 
     // Wait for the notification, then check if the key is in the DB, returning the message if it is and null if it isn't.
     await received;
+    clearTimeout(timer!);
     client = await this.#operon.pool.connect();
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
@@ -382,5 +410,65 @@ export class WorkflowContext {
       return true;
     }
     return topicAllowedRoles.includes(this.runAs);
+  }
+}
+
+export interface WorkflowHandle<R> {
+  getStatus(): Promise<string>;
+  getResult(): Promise<R>;
+  getWorkflowUUID(): string;
+}
+
+export class InvokedHandle<R> implements WorkflowHandle<R> {
+  constructor(readonly pool: Pool, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<string> {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+    if (rows.length === 0) {
+      return WorkflowStatus.PENDING;
+    }
+    return rows[0].status;
+  }
+
+  async getResult(): Promise<R> {
+    return this.workflowPromise;
+  }
+}
+
+export class RetrievedHandle<R> implements WorkflowHandle<R> {
+  constructor(readonly pool: Pool, readonly workflowUUID: string) {}
+
+  static readonly pollingIntervalMs: number = 1000;
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<string> {
+    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+    if (rows.length === 0) {
+      throw new OperonError("UNREACHABLE: Workflow does not exist");
+    }
+    return rows[0].status;
+  }
+
+  async getResult(): Promise<R> {
+    while(true) {
+      const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
+      if (rows.length === 0) { 
+        throw new OperonError("UNREACHABLE: Workflow does not exist");
+      }
+      const status = rows[0].status;
+      if (status === WorkflowStatus.SUCCESS) {
+        return JSON.parse(rows[0].output) as R;
+      } else if (status === WorkflowStatus.ERROR) {
+        throw deserializeError(JSON.parse(rows[0].error));
+      }
+      await sleep(RetrievedHandle.pollingIntervalMs);
+    }
   }
 }
