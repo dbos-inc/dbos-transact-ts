@@ -4,6 +4,7 @@ export { WorkflowContext, WorkflowConfig, WorkflowParams, WorkflowHandle } from 
 export { CommunicatorContext } from './communicator';
 export {
   OperonError,
-  OperonWorkflowPermissionDeniedError,
-  OperonInitializationError
+  OperonInitializationError,
+  OperonTopicPermissionDeniedError,
+  OperonWorkflowPermissionDeniedError
 } from './error';

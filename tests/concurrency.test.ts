@@ -123,14 +123,15 @@ describe('concurrency-tests', () => {
     
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
+    operon.registerTopic('testTopic', ['defaultRole']);
     const recvResPromise = Promise.allSettled([
-      operon.recv({workflowUUID: recvUUID}, "testmsg", 2),
-      operon.recv({workflowUUID: recvUUID}, "testmsg", 2)
+      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2),
+      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2)
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
-    await expect(operon.send({workflowUUID: sendUUID}, "testmsg", "hello")).resolves.toBe(true);
+    await expect(operon.send({workflowUUID: sendUUID}, "testTopic", "testmsg", "hello")).resolves.toBe(true);
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
     expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
