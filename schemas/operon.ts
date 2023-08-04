@@ -13,15 +13,18 @@ const operonSystemDbSchema = `
   );
 
   CREATE TABLE IF NOT EXISTS operon__Notifications (
-    key VARCHAR(255) PRIMARY KEY,
-    message TEXT NOT NULL
+    topic VARCHAR(255) NOT NULL,
+    key VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    PRIMARY KEY (topic, key)
   );
 
   CREATE OR REPLACE FUNCTION operon__NotificationsFunction() RETURNS TRIGGER AS $$
     DECLARE
+        topic_key text := NEW.topic || '::' || NEW.key;
     BEGIN
         -- Publish a notification for all keys
-        PERFORM pg_notify('operon__notificationschannel', NEW.key::text);
+        PERFORM pg_notify('operon__notificationschannel', topic_key);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;

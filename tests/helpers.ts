@@ -1,6 +1,8 @@
 import { OperonConfig } from 'src';
 import { Client } from 'pg';
 
+/* DB management helpers */
+
 export function generateOperonTestConfig(): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
@@ -33,4 +35,15 @@ export async function teardownOperonTestDb(config: OperonConfig) {
 
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
   await pgSystemClient.end();
+}
+
+/* Event helpers */
+
+export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+/* Common test types */
+
+export interface TestKvTable {
+  id?: number,
+  value?: string,
 }

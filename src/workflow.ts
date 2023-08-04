@@ -10,8 +10,10 @@ import {
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
-import { OperonError } from './error';
+import { OperonError, OperonTopicPermissionDeniedError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
+
+const defaultWorkflowReceiveTimeout = 60; // seconds
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -29,7 +31,11 @@ export class WorkflowContext {
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
 
-  constructor(operon: Operon, readonly workflowUUID: string, readonly workflowConfig: WorkflowConfig) {
+  constructor(
+    operon: Operon,
+    readonly workflowUUID: string,
+    readonly runAs: string,
+    readonly workflowConfig: WorkflowConfig) {
     this.#operon = operon;
   }
 
@@ -208,7 +214,7 @@ export class WorkflowContext {
     const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
     client.release();
     if (check !== operonNull) {
-      return check as R; 
+      return check as R;
     }
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
@@ -221,7 +227,7 @@ export class WorkflowContext {
       while (result === operonNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
-        } catch (error) { 
+        } catch (error) {
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             await new Promise(resolve => setTimeout(resolve, intervalSeconds * 1000));
@@ -238,6 +244,7 @@ export class WorkflowContext {
     }
 
     client = await this.#operon.pool.connect();
+    // `result` can only be operonNull when the communicator timed out
     if (result === operonNull) {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
@@ -265,10 +272,17 @@ export class WorkflowContext {
    * Send a message to a key, returning true if successful.
    * If a message is already associated with the key, do nothing and return false.
    */
-  async send<T extends NonNullable<any>>(key: string, message: T) : Promise<boolean> {
-    const client: PoolClient = await this.#operon.pool.connect();
+  async send<T extends NonNullable<any>>(topic: string, key: string, message: T) : Promise<boolean> {
     const functionID: number = this.functionIDGetIncrement();
-    
+
+    // Is this receiver permitted to read from this topic?
+    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
+    if (!hasTopicPermissions) {
+      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
+    }
+
+    const client: PoolClient = await this.#operon.pool.connect();
+
     await client.query("BEGIN");
     const check: boolean | OperonNull = await this.checkExecution<boolean>(client, functionID);
     if (check !== operonNull) {
@@ -278,8 +292,8 @@ export class WorkflowContext {
     }
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    const { rows }  = await client.query(`INSERT INTO operon__Notifications (key, message) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING RETURNING 'Success';`,
-      [key, JSON.stringify(message)])
+    const { rows } = await client.query(`INSERT INTO operon__Notifications (topic, key, message) VALUES ($1, $2, $3) ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
+      [topic, key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
     await this.recordGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
@@ -293,9 +307,16 @@ export class WorkflowContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  async recv<T extends NonNullable<any>>(key: string, timeoutSeconds: number) : Promise<T | null> {
-    let client = await this.#operon.pool.connect();
+  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultWorkflowReceiveTimeout) : Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
+
+    // Is this receiver permitted to read from this topic?
+    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
+    if (!hasTopicPermissions) {
+      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
+    }
+
+    let client = await this.#operon.pool.connect();
 
     const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
     if (check !== operonNull) {
@@ -308,7 +329,7 @@ export class WorkflowContext {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.#operon.listenerMap[key] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
+    this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
         resolve();
@@ -320,13 +341,14 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]);
+    let { rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]);
     if (rows.length > 0 ) {
       const message: T = JSON.parse(rows[0].message) as T;
       await this.recordGuardedOutput(client, functionID, message);
       await client.query(`COMMIT`);
       this.resultBuffer.clear();
       client.release();
+      delete this.#operon.listenerMap[`${topic}::${key}`];
       return message;
     } else {
       await client.query(`ROLLBACK`);
@@ -339,7 +361,7 @@ export class WorkflowContext {
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE key=$1 RETURNING message", [key]));
+    ({ rows } = await client.query<operon__Notifications>("DELETE FROM operon__Notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]));
     let message: T | null = null;
     if (rows.length > 0 ) {
       message = JSON.parse(rows[0].message) as T;
@@ -351,4 +373,14 @@ export class WorkflowContext {
     return message;
   }
 
+  hasTopicPermissions(requestedTopic: string): boolean {
+    const topicAllowedRoles = this.#operon.topicConfigMap.get(requestedTopic);
+    if (topicAllowedRoles === undefined) {
+      throw new OperonError(`unregistered topic: ${requestedTopic}`);
+    }
+    if (topicAllowedRoles.length === 0) {
+      return true;
+    }
+    return topicAllowedRoles.includes(this.runAs);
+  }
 }
