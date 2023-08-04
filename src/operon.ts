@@ -49,11 +49,11 @@ export interface OperonConfig {
   readonly poolConfig: PoolConfig;
 }
 
-interface operon__ConfigFile {
-  database: operon__DatabaseConfig;
+interface ConfigFile {
+  database: DatabaseConfig;
 }
 
-interface operon__DatabaseConfig {
+interface DatabaseConfig {
   hostname: string;
   port: number;
   username: string;
@@ -182,10 +182,10 @@ export class Operon {
 
   generateOperonConfig(): OperonConfig {
     // Load default configuration
-    let configuration: operon__ConfigFile | undefined;
+    let configuration: ConfigFile | undefined;
     try {
       const configContent = readFileSync(CONFIG_FILE);
-      configuration = YAML.parse(configContent) as operon__ConfigFile;
+      configuration = YAML.parse(configContent) as ConfigFile;
     } catch(error) {
       if (error instanceof Error) {
         throw(new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`));
@@ -201,7 +201,7 @@ export class Operon {
         `Operon configuration ${CONFIG_FILE} does not contain database config`
       ));
     }
-    const dbConfig: operon__DatabaseConfig = configuration.database;
+    const dbConfig: DatabaseConfig = configuration.database;
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
       throw(new OperonInitializationError(
