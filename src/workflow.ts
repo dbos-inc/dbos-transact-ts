@@ -89,15 +89,19 @@ export class WorkflowContext {
       }
       // Update workflow PENDING status.
       if (!this.isTempWorkflow) {
-        await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
-          [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
+        const { rows } = await client.query<workflow_status>(`INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
+        RETURNING (SELECT old.status FROM operon.workflow_status old WHERE old.workflow_uuid=operon.workflow_status.workflow_uuid) AS status;`,
+        [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
+        if ((rows[0].status === WorkflowStatus.ERROR) || (rows[0].status === WorkflowStatus.SUCCESS)) {
+          throw new OperonWorkflowConflictUUIDError();
+        }
       }
     } catch (error) {
       await client.query('ROLLBACK');
       client.release();
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError(); // TODO: Break out of the workflow.
+        throw new OperonWorkflowConflictUUIDError();
       } else {
         throw err;
       }

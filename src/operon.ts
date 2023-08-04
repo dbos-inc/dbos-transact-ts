@@ -251,6 +251,8 @@ export class Operon {
         await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+        // Garbage collect function outputs and workflow input.
+        await client.query(`DELETE FROM operon.function_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
       }
       await client.query("COMMIT");
       client.release();
@@ -344,7 +346,7 @@ export class Operon {
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
         await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
-        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
+        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
