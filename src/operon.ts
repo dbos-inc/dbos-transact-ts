@@ -3,7 +3,8 @@ import {
   OperonError,
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError,
-  OperonWorkflowConflictUUIDError
+  OperonWorkflowConflictUUIDError,
+  OperonWorkflowStatusError
 } from './error';
 import { WorkflowStatus, InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
@@ -237,9 +238,15 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
-         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+        const { rows } = await client.query<operon__WorkflowStatus>(`INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
+         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
+         RETURNING (SELECT tbl.status FROM operon__WorkflowStatus tbl WHERE tbl.workflow_id = operon__WorkflowStatus.workflow_id) AS status;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+
+        // Status should never have been ERROR.
+        if (rows[0].status === WorkflowStatus.ERROR) {
+          throw new OperonWorkflowStatusError("Succeeded workflow should never have been ERROR!");
+        }
       }
       await client.query("COMMIT");
       client.release();
@@ -328,9 +335,15 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
-        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
+        const { rows } = await this.pool.query<operon__WorkflowStatus>(`INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
+        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
+        RETURNING (SELECT tbl.status FROM operon__WorkflowStatus tbl WHERE tbl.workflow_id = operon__WorkflowStatus.workflow_id) AS status;`, 
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
+
+        // Status should never have been success.
+        if (rows[0].status === WorkflowStatus.SUCCESS) {
+          throw new OperonWorkflowStatusError("Errored workflow should never have been success!");
+        }
       }
 
       const checkWorkflowInput = async (input: T) => {

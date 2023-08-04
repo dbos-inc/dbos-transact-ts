@@ -36,3 +36,10 @@ export class OperonWorkflowConflictUUIDError extends OperonError {
     super("Conflicting UUIDs", ConflictingUUIDError);
   }
 }
+
+const WorkflowStatusError = 6;
+export class OperonWorkflowStatusError extends OperonError {
+  constructor(msg: string) {
+    super(msg, WorkflowStatusError);
+  }
+}
