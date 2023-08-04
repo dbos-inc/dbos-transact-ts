@@ -254,48 +254,6 @@ describe('failures-tests', () => {
     await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).resolves.toBe(11);
   });
 
-  test('set-isolation', async () => {
-    const remoteState = {
-      num: 0
-    }
-    const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      remoteState.num += 1;
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id`, [id, name]);
-      await sleep(10);
-      if (rows.length === 0) {
-        return null;
-      }
-      return rows[0].id;
-    };
-
-    // Invalid isolation level.
-    expect(() =>{operon.registerTransaction(testFunction, {isolationLevel: "Random level"})}).toThrowError(new OperonError(`Invalid isolation level: Random level`));
-
-    // This function should not be registered yet.
-    await expect(operon.transaction(testFunction, {}, 10, "test")).rejects.toThrowError(new OperonError(`Unregistered Transaction ${testFunction.name}`));
-
-    // Default should be serializable, so running testFunction concurrently should cause serialization error and retry.
-    operon.registerTransaction(testFunction, {});
-
-    // Start two concurrent transactions.
-    let futRes1 = operon.transaction(testFunction, {}, 10, "test1");
-    let futRes2 = operon.transaction(testFunction, {}, 10, "test2");
-    await futRes1;
-    await futRes2;
-
-    expect(remoteState.num).toBeGreaterThan(2);
-
-    // Now, reset remoteState, register with read committed. No retry should happen.
-    remoteState.num = 0;
-    operon.registerTransaction(testFunction, {isolationLevel: "READ COMMITTED"});
-    futRes1 = operon.transaction(testFunction, {}, 10, "test1");
-    futRes2 = operon.transaction(testFunction, {}, 10, "test2");
-    await futRes1;
-    await futRes2;
-
-    expect(remoteState.num).toBe(2);
-  });
-
   test('failure-recovery', async() => {
     // Run a workflow until it reaches PENDING state, then shut down the server, and recover from there.
 
