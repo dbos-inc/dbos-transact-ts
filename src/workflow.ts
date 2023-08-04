@@ -89,7 +89,8 @@ export class WorkflowContext {
       }
       // Update workflow PENDING status.
       if (!this.isTempWorkflow) {
-        const { rows } = await client.query<workflow_status>(`INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
+        const { rows } = await client.query<workflow_status>(`INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3)
+         ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
         RETURNING (SELECT old.status FROM operon.workflow_status old WHERE old.workflow_uuid=operon.workflow_status.workflow_uuid) AS status;`,
         [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
         if ((rows[0].status === WorkflowStatus.ERROR) || (rows[0].status === WorkflowStatus.SUCCESS)) {
@@ -322,8 +323,9 @@ export class WorkflowContext {
     }
     this.guardOperation(functionID);
     await this.flushResultBuffer(client);
-    const { rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
-      [topic, key, JSON.stringify(message)])
+    const { rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) 
+    ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
+    [topic, key, JSON.stringify(message)])
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
     await this.recordGuardedOutput(client, functionID, success);
     await client.query("COMMIT");
@@ -359,7 +361,7 @@ export class WorkflowContext {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
+    this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {

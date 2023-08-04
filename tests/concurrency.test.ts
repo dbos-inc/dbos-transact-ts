@@ -80,6 +80,50 @@ describe('concurrency-tests', () => {
     await expect(retrievedHandle!.getResult()).resolves.toBe(12);
   });
 
+  test('concurrent-gc',async () => {
+    clearInterval(operon.flushBufferID);
+
+    let resolve: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+
+    let resolve2: () => void;
+    const promise2 = new Promise<void>((r) => {
+      resolve2 = r;
+    });
+
+    let wfCounter = 0;
+    let funCounter = 0;
+
+    const testWorkflow = async(ctxt: WorkflowContext) => {
+      if (wfCounter++ === 1) {
+        resolve2!();
+        await promise;
+      }
+      await ctxt.transaction(testFunction);
+    }
+    operon.registerWorkflow(testWorkflow);
+
+    const testFunction = async (txnCtxt: TransactionContext) => {
+      await sleep(1);
+      funCounter++;
+      return;
+    };
+    operon.registerTransaction(testFunction);
+
+    const uuid = uuidv1();
+    await operon.workflow(testWorkflow, {workflowUUID: uuid}).getResult();
+    const handle = operon.workflow(testWorkflow, {workflowUUID: uuid});
+    await promise2;
+    await operon.flushWorkflowOutputBuffer();
+    resolve!();
+    await handle.getResult();
+
+    expect(funCounter).toBe(1);
+    expect(wfCounter).toBe(2);
+  });
+
   test('duplicate-communicator',async () => {
     // Run two communicators concurrently with the same UUID.
     // Since we only record the output after the function, it may cause more than once executions.
