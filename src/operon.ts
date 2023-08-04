@@ -214,7 +214,7 @@ export class Operon {
   /* BACKGROUND PROCESSES */
   /**
    * A background process that listens for notifications from Postgres then signals the appropriate
-   * workflow listener by resolving its promise.no
+   * workflow listener by resolving its promise.
    */
   async listenForNotifications() {
     await this.pgNotificationsClient.connect();
