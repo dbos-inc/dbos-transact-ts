@@ -425,6 +425,9 @@ export interface WorkflowHandle<R> {
   getWorkflowUUID(): string;
 }
 
+/**
+ * The handle returned when invoking a workflow with Operon.workflow
+ */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly pool: Pool, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
 
@@ -445,6 +448,9 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 }
 
+/**
+ * The handle returned when retrieving a workflow with Operon.retrieve
+ */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly pool: Pool, readonly workflowUUID: string) {}
 
