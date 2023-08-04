@@ -2,7 +2,7 @@ const operonSystemDbSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
   CREATE TABLE IF NOT EXISTS operon.function_outputs (
-    workflow_id VARCHAR(64) NOT NULL,
+    workflow_id TEXT NOT NULL,
     function_id INT NOT NULL,
     output TEXT,
     error TEXT,
@@ -10,17 +10,17 @@ const operonSystemDbSchema = `
   );
 
   CREATE TABLE IF NOT EXISTS operon.workflow_status (
-    workflow_id VARCHAR(64) PRIMARY KEY,
+    workflow_id TEXT PRIMARY KEY,
     workflow_name TEXT,
-    status VARCHAR(64),
+    status TEXT,
     output TEXT,
     error TEXT,
     last_update_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
   CREATE TABLE IF NOT EXISTS operon.notifications (
-    topic VARCHAR(255) NOT NULL,
-    key VARCHAR(255) NOT NULL,
+    topic TEXT NOT NULL,
+    key TEXT NOT NULL,
     message TEXT NOT NULL,
     PRIMARY KEY (topic, key)
   );
