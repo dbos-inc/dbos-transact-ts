@@ -29,7 +29,6 @@ export interface WorkflowConfig {
 }
 
 export const WorkflowStatus = {
-  NOTFOUND: "NOTFOUND",
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
@@ -452,7 +451,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<string> {
     const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
     if (rows.length === 0) {
-      throw new OperonError("Error: Workflow does not exist"); // Should be impossible.
+      throw new OperonError("UNREACHABLE: Workflow does not exist");
     }
     return rows[0].status;
   }
@@ -461,7 +460,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     while(true) {
       const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1", [this.workflowUUID]);
       if (rows.length === 0) { 
-        throw new OperonError("Error: Workflow does not exist"); // Should be impossible.
+        throw new OperonError("UNREACHABLE: Workflow does not exist");
       }
       const status = rows[0].status;
       if (status === WorkflowStatus.SUCCESS) {
