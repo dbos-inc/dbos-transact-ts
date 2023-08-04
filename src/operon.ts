@@ -249,7 +249,7 @@ export class Operon {
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
         await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
       }
       await client.query("COMMIT");
@@ -263,7 +263,7 @@ export class Operon {
    * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
-    const { rows } = await this.pool.query<workflow_status>("SELECT * FROM operon.workflow_status WHERE status=$1 AND last_update_epoch_ms<$2", 
+    const { rows } = await this.pool.query<workflow_status>("SELECT * FROM operon.workflow_status WHERE status=$1 AND updated_at_epoch_ms<$2", 
       [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
@@ -344,7 +344,7 @@ export class Operon {
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
         await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
-        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
+        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 

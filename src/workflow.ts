@@ -89,7 +89,7 @@ export class WorkflowContext {
       }
       // Update workflow PENDING status.
       if (!this.isTempWorkflow) {
-        await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
+        await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
           [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
       }
     } catch (error) {

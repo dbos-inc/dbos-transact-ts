@@ -19,7 +19,7 @@ import { WorkflowStatus } from "src/workflow";
 describe('failures-tests', () => {
   let operon: Operon;
 
-  const testTableName = 'OperonFailureTestKv';
+  const testTableName = 'operon_failure_test_kv';
   let config: OperonConfig;
 
   beforeAll(async () => {
@@ -97,7 +97,7 @@ describe('failures-tests', () => {
     let counter: number = 0;
     let succeedUUID: string = '';
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
       await sleep(10);
       counter += 1;
       succeedUUID = name;
@@ -218,7 +218,7 @@ describe('failures-tests', () => {
 
   test('no-registration',async () => {
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) RETURNING id`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
       if (rows.length === 0) {
         return null;
       }
@@ -268,7 +268,7 @@ describe('failures-tests', () => {
     });
 
     const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
       return rows[0].value!;
     };
     operon.registerTransaction(writeFunction, {});
