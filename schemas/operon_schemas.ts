@@ -30,7 +30,7 @@ const operonSystemDbSchema = `
         topic_key text := NEW.topic || '::' || NEW.key;
     BEGIN
         -- Publish a notification for all keys
-        PERFORM pg_notify('operon__notificationschannel', topic_key);
+        PERFORM pg_notify('operon_notifications_channel', topic_key);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;

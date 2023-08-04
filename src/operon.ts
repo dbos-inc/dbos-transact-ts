@@ -229,7 +229,7 @@ export class Operon {
    */
   async listenForNotifications() {
     await this.pgNotificationsClient.connect();
-    await this.pgNotificationsClient.query('LISTEN operon__notificationschannel;');
+    await this.pgNotificationsClient.query('LISTEN operon_notifications_channel;');
     const handler = (msg: Notification ) => {
       if (msg.payload && msg.payload in this.listenerMap) {
         this.listenerMap[msg.payload]();
