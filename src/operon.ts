@@ -24,7 +24,7 @@ export interface function_outputs {
   error: string;
 }
 
-export interface operon__WorkflowStatus {
+export interface workflow_status {
   workflow_id: string;
   workflow_name: string;
   status: string;
@@ -247,7 +247,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
+        await client.query(`INSERT INTO operon.workflow_status (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
       }
@@ -262,7 +262,7 @@ export class Operon {
    * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update_epoch_ms<$2", 
+    const { rows } = await this.pool.query<workflow_status>("SELECT * FROM operon.workflow_status WHERE status=$1 AND last_update_epoch_ms<$2", 
       [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
@@ -325,7 +325,7 @@ export class Operon {
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
       const checkWorkflowOutput = async () => {
-        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1",
+        const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_id=$1",
           [workflowUUID]);
         if ((rows.length === 0) || (rows[0].status === WorkflowStatus.PENDING)) {
           return operonNull;
@@ -342,7 +342,7 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
+        await this.pool.query(`INSERT INTO operon.workflow_status (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
         DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
@@ -413,7 +413,7 @@ export class Operon {
   }
 
   async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_id=$1", [workflowUUID]);
     if (rows.length === 0) {
       return null;
     }
