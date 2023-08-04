@@ -266,11 +266,11 @@ export class Operon {
       [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
-      const wf = this.workflowInfoMap.get(row.workflow_name)?.workflow;
-      if (wf === undefined) {
+      const wInfo = this.workflowInfoMap.get(row.workflow_name);
+      if (wInfo === undefined) {
         throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
       }
-      handlerArray.push(this.workflow(wf, {workflowUUID: row.workflow_id}));
+      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_id}));
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }
