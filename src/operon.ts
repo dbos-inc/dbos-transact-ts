@@ -10,6 +10,10 @@ import { OperonTransaction, TransactionConfig, validateTransactionConfig } from 
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
 import operonSystemDbSchema from '../schemas/operon';
+import {
+  TelemetryCollector,
+  ConsoleExporter,
+} from './telemetry';
 
 import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
@@ -99,6 +103,8 @@ export class Operon {
 
   readonly initialEpochTimeMs: number;
 
+  readonly telemetryCollector: TelemetryCollector;
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
     if (config) {
@@ -126,6 +132,8 @@ export class Operon {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
+
+    this.telemetryCollector = new TelemetryCollector([ConsoleExporter]);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
@@ -177,6 +185,7 @@ export class Operon {
     await this.flushWorkflowOutputBuffer();
     await this.pgNotificationsClient.removeAllListeners().end();
     await this.pool.end();
+    await this.telemetryCollector.destroy();
   }
 
   generateOperonConfig(): OperonConfig {
@@ -302,7 +311,7 @@ export class Operon {
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
-    
+    this.telemetryCollector.push(`Starting workflow ${wf.name}`);
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
