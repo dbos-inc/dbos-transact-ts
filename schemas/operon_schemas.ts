@@ -38,9 +38,9 @@ const operonSystemDbSchema = `
     DO
     $$
     BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon__notificationstrigger') THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_notifications_trigger') THEN
           EXECUTE '
-              CREATE TRIGGER operon__notificationstrigger
+              CREATE TRIGGER operon_notifications_trigger
               AFTER INSERT ON operon.notifications
               FOR EACH ROW EXECUTE FUNCTION operon.notifications_function()';
         END IF;
