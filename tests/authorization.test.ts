@@ -24,9 +24,7 @@ describe('authorization', () => {
   });
 
   afterEach(async () => {
-    console.log("destroying...")
     await operon.destroy();
-    console.log("finished")
   });
 
   describe('workflow authorization', () => {

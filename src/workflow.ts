@@ -357,8 +357,9 @@ export class WorkflowContext {
       resolveNotification = resolve;
     });
     this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously, so this is guaranteed to be defined.
+    let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         resolve();
       }, timeoutSeconds * 1000);
     });
@@ -384,6 +385,7 @@ export class WorkflowContext {
 
     // Wait for the notification, then check if the key is in the DB, returning the message if it is and null if it isn't.
     await received;
+    clearTimeout(timer!);
     client = await this.#operon.pool.connect();
     await client.query(`BEGIN`);
     this.guardOperation(functionID);
