@@ -11,7 +11,7 @@ import {
 import { PoolClient, DatabaseError, Pool } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
-import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError, OperonWorkflowStatusError } from './error';
+import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 
@@ -89,15 +89,8 @@ export class WorkflowContext {
       }
       // Update workflow PENDING status.
       if (!this.isTempWorkflow) {
-        const { rows } = await client.query<operon__WorkflowStatus>(`INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id)
-        DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
-        RETURNING (SELECT tbl.status FROM operon__WorkflowStatus tbl WHERE tbl.workflow_id = operon__WorkflowStatus.workflow_id) AS status;;`,
-        [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
-
-        // Status should never have been SUCCESS or ERROR.
-        if ((rows[0].status === WorkflowStatus.ERROR) || (rows[0].status === WorkflowStatus.SUCCESS)) {
-          throw new OperonWorkflowStatusError(`Pending workflow should never have been ${rows[0].status}!`);
-        }
+        await client.query("INSERT INTO operon__WorkflowStatus (workflow_id, workflow_name, status) VALUES ($1, $2, $3) ON CONFLICT (workflow_id) DO UPDATE SET last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;",
+          [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
       }
     } catch (error) {
       await client.query('ROLLBACK');
