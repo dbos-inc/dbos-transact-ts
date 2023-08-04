@@ -9,7 +9,7 @@ import { WorkflowStatus, InvokedHandle, OperonWorkflow, WorkflowConfig, Workflow
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
-import operonSystemDbSchema from '../schemas/operon';
+import operonSystemDbSchema from '../schemas/operon_schemas';
 
 import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
@@ -17,7 +17,7 @@ import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
 
 /* Interfaces for Operon system data structures */
-export interface operon__FunctionOutputs {
+export interface function_outputs {
   workflow_id: string;
   function_id: number;
   output: string;
@@ -348,8 +348,8 @@ export class Operon {
       }
 
       const checkWorkflowInput = async (input: T) => {
-      // The workflow input is always at function ID = 0 in the operon__FunctionOutputs table.
-        const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+      // The workflow input is always at function ID = 0 in the operon.function_outputs table.
+        const { rows } = await this.pool.query<function_outputs>("SELECT output FROM operon.function_outputs WHERE workflow_id=$1 AND function_id=$2",
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.

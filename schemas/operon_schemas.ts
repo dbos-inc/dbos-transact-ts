@@ -1,5 +1,7 @@
 const operonSystemDbSchema = `
-  CREATE TABLE IF NOT EXISTS operon__FunctionOutputs (
+  CREATE SCHEMA IF NOT EXISTS operon;
+
+  CREATE TABLE IF NOT EXISTS operon.function_outputs (
     workflow_id VARCHAR(64) NOT NULL,
     function_id INT NOT NULL,
     output TEXT,
