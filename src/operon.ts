@@ -13,6 +13,7 @@ import operonSystemDbSchema from '../schemas/operon';
 import {
   TelemetryCollector,
   ConsoleExporter,
+  PostgresExporter,
 } from './telemetry';
 
 import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
@@ -133,7 +134,7 @@ export class Operon {
     }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
 
-    this.telemetryCollector = new TelemetryCollector([ConsoleExporter]);
+    this.telemetryCollector = new TelemetryCollector([new ConsoleExporter(), new PostgresExporter(this)]);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
@@ -146,37 +147,36 @@ export class Operon {
     try {
       await this.loadOperonDatabase();
       await this.listenForNotifications();
+      await this.telemetryCollector.init();
     } catch (err) {
       if (err instanceof Error) {
         throw(new OperonInitializationError(err.message));
       }
+    } finally {
+      // The PG system client can be used by various sub-systems, at `init` time, to interact with the `postgres` database
+      await this.pgSystemClient.end();
     }
     this.initialized = true;
   }
 
   async loadOperonDatabase() {
     await this.pgSystemClient.connect();
-    try {
-      const databaseName: string = this.config.poolConfig.database as string;
-      // Validate the database name
-      const regex = /^[a-z0-9]+$/i;
-      if (!regex.test(databaseName)) {
-        throw(new Error(`invalid DB name: ${databaseName}`));
-      }
-      // Check whether the Operon system database exists, create it if needed
-      const dbExists = await this.pgSystemClient.query(
-        `SELECT FROM pg_database WHERE datname = '${databaseName}'`
-      );
-      if (dbExists.rows.length === 0) {
-        // Create the Operon system database
-        await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
-      }
-      // Load the Operon system schema
-      await this.pool.query(operonSystemDbSchema);
-    } finally {
-      // We want to close the client no matter what
-      await this.pgSystemClient.end();
+    const databaseName: string = this.config.poolConfig.database as string;
+    // Validate the database name
+    const regex = /^[a-z0-9]+$/i;
+    if (!regex.test(databaseName)) {
+      throw(new Error(`invalid DB name: ${databaseName}`));
     }
+    // Check whether the Operon system database exists, create it if needed
+    const dbExists = await this.pgSystemClient.query(
+      `SELECT FROM pg_database WHERE datname = '${databaseName}'`
+    );
+    if (dbExists.rows.length === 0) {
+      // Create the Operon system database
+      await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
+    }
+    // Load the Operon system schema
+    await this.pool.query(operonSystemDbSchema);
   }
 
   async destroy() {
