@@ -44,6 +44,8 @@ describe('operon-tests', () => {
   });
 
   test('simple-function', async() => {
+    clearInterval(operon.flushBufferID);  // Disable background flush output buffer task.
+
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       await sleep(10);
@@ -291,27 +293,27 @@ describe('operon-tests', () => {
 
 
   test('simple-communicator', async() => {
-    const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
-      const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
-      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', response1.data.data);
-      return JSON.stringify(response2.data);
+    let counter = 0;
+    const testCommunicator = async (commCtxt: CommunicatorContext) => {
+      void commCtxt;
+      return counter++;
     };
     operon.registerCommunicator(testCommunicator);
 
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult = await workflowCtxt.external(testCommunicator, name);
-      return funcResult ?? "error";
+    const testWorkflow = async (workflowCtxt: WorkflowContext) => {
+      const funcResult = await workflowCtxt.external(testCommunicator);
+      return funcResult ?? -1;
     };
     operon.registerWorkflow(testWorkflow);
 
     const workflowUUID: string = uuidv1();
 
-    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15').getResult();
-    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
+    let result: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult();
+    expect(result).toBe(0);
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter').getResult();
-    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
+    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult();
+    expect(result).toBe(0);
   });
 
   test('simple-workflow-notifications', async() => {
