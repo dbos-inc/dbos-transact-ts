@@ -29,12 +29,10 @@ describe('concurrency-tests', () => {
   test('duplicate-transaction',async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
-    const remoteState = {
-      cnt: 0
-    };
+    let cnt = 0;
     const testFunction = async (txnCtxt: TransactionContext, id: number) => {
       await sleep(10);
-      remoteState.cnt += 1;
+      cnt += 1;
       return id;
     };
     operon.registerTransaction(testFunction);
@@ -46,10 +44,10 @@ describe('concurrency-tests', () => {
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
-    expect(remoteState.cnt).toBe(1);
+    expect(cnt).toBe(1);
 
     // Read-only transactions would execute twice.
-    remoteState.cnt = 0;
+    cnt = 0;
     operon.registerTransaction(testFunction, {readOnly: true});
     const readUUID = uuidv1();
     results = await Promise.allSettled([
@@ -58,7 +56,7 @@ describe('concurrency-tests', () => {
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
-    expect(remoteState.cnt).toBe(2);
+    expect(cnt).toBe(2);
   });
 
   test('concurrent-gc',async () => {
@@ -77,6 +75,8 @@ describe('concurrency-tests', () => {
     let wfCounter = 0;
     let funCounter = 0;
 
+    // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
+    // The second transaction should get the correct recorded execution without being executed.
     const testWorkflow = async(ctxt: WorkflowContext) => {
       if (wfCounter++ === 1) {
         resolve2!();
@@ -122,8 +122,8 @@ describe('concurrency-tests', () => {
 
     const testFunction = async (ctxt: CommunicatorContext, id: number) => {
       if (counter++ === 1) {
-        await promise;
         resolve2();
+        await promise;
       } else {
         resolve();
         await promise2;
@@ -135,7 +135,7 @@ describe('concurrency-tests', () => {
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number) => {
       const funcResult = await workflowCtxt.external(testFunction, id);
-      return funcResult ?? "error";
+      return funcResult ?? -1;
     };
     operon.registerWorkflow(testWorkflow);
 

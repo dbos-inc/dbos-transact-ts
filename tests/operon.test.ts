@@ -373,9 +373,7 @@ describe('operon-tests', () => {
   });
 
   test('endtoend-oaoo', async () => {
-    const remoteState = {
-      num: 0
-    }
+    let num = 0;
   
     const testFunction = async (txnCtxt: TransactionContext, code: number) => {
       void txnCtxt;
@@ -385,7 +383,7 @@ describe('operon-tests', () => {
   
     const testWorkflow = async (workflowCtxt: WorkflowContext, code: number) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, code);
-      remoteState.num += 1;
+      num += 1;
       return funcResult;
     };
     operon.registerTransaction(testFunction, {readOnly: true});
@@ -393,27 +391,25 @@ describe('operon-tests', () => {
   
     const workflowUUID = uuidv1();
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
-    expect(remoteState.num).toBe(1);
+    expect(num).toBe(1);
   
     await operon.flushWorkflowOutputBuffer();
     // Run it again with the same UUID, should get the same output.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     // The workflow should not run at all.
-    expect(remoteState.num).toBe(1);
+    expect(num).toBe(1);
   });
 
   test('readonly-recording', async() => {
     // Disable flush workflow output background task for tests.
     clearInterval(operon.flushBufferID);
 
-    const remoteState = {
-      num: 0,
-      workflowCnt: 0
-    };
+    let num = 0;
+    let workflowCnt = 0;
 
     const readFunction = async (txnCtxt: TransactionContext, id: number) => {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
-      remoteState.num += 1;
+      num += 1;
       if (rows.length === 0) {
         return null;
       }
@@ -429,9 +425,9 @@ describe('operon-tests', () => {
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
       await workflowCtxt.transaction(readFunction, id);
-      remoteState.workflowCnt += 1;
+      workflowCnt += 1;
       await workflowCtxt.transaction(writeFunction, id, name);
-      remoteState.workflowCnt += 1; // Make sure the workflow actually runs.
+      workflowCnt += 1; // Make sure the workflow actually runs.
       throw Error("dumb test error");
     };
     operon.registerWorkflow(testWorkflow, {});
@@ -440,13 +436,13 @@ describe('operon-tests', () => {
 
     // Invoke the workflow, should get the error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
-    expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(2);
+    expect(num).toBe(1);
+    expect(workflowCnt).toBe(2);
 
     // Invoke it again, should return the recorded same error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
-    expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(2);
+    expect(num).toBe(1);
+    expect(workflowCnt).toBe(2);
   });
 
   test('retrieve-workflowstatus', async() => {

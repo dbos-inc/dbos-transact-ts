@@ -72,13 +72,12 @@ describe('failures-tests', () => {
   });
 
   test('readonly-error', async() => {
-    const remoteState = {
-      cnt: 0
-    }
+    let cnt = 0;
+
     const testFunction = async (txnCtxt: TransactionContext, id: number) => {
       await sleep(1);
       void txnCtxt;
-      remoteState.cnt += 1;
+      cnt += 1;
       throw new Error("test error");
       return id;
     };
@@ -86,11 +85,11 @@ describe('failures-tests', () => {
 
     const testUUID = uuidv1();
     await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
-    expect(remoteState.cnt).toBe(1);
+    expect(cnt).toBe(1);
 
     // The error should be recorded in the database, so the function shouldn't run again.
     await expect(operon.transaction(testFunction, {workflowUUID: testUUID}, 11)).rejects.toThrowError(new Error("test error"));
-    expect(remoteState.cnt).toBe(1);
+    expect(cnt).toBe(1);
   });
 
   test('simple-keyconflict', async() => {
@@ -98,7 +97,6 @@ describe('failures-tests', () => {
     let succeedUUID: string = '';
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
-      await sleep(10);
       counter += 1;
       succeedUUID = name;
       return rows[0];
@@ -135,14 +133,12 @@ describe('failures-tests', () => {
 
   test('serialization-error', async() => {
     // Just for testing, functions shouldn't share global state.
-    const remoteState = {
-      num: 0
-    }
+    let num = 0;
     const testFunction = async (txnCtxt: TransactionContext, maxRetry: number) => {
-      if (remoteState.num !== maxRetry) {
+      if (num !== maxRetry) {
         const err = new DatabaseError("serialization error", 10, "error");
         err.code = '40001';
-        remoteState.num += 1;
+        num += 1;
         throw err;
       }
       await sleep(1);
@@ -157,22 +153,19 @@ describe('failures-tests', () => {
 
     // Should succeed after retrying 10 times.
     await expect(operon.workflow(testWorkflow, {}, 10).getResult()).resolves.toBe(10);
-    expect(remoteState.num).toBe(10);
+    expect(num).toBe(10);
   });
 
   test('failing-communicator', async() => {
-
-    const remoteState = {
-      num: 0
-    }
+    let num = 0;
 
     const testCommunicator = async (ctxt: CommunicatorContext) => {
-      remoteState.num += 1;
-      if (remoteState.num !== ctxt.maxAttempts) {
+      num += 1;
+      if (num !== ctxt.maxAttempts) {
         throw new Error("bad number");
       }
-      await sleep(10);
-      return remoteState.num;
+      await sleep(1);
+      return num;
     };
     operon.registerCommunicator(testCommunicator, {intervalSeconds: 0, maxAttempts: 4});
 
@@ -181,11 +174,9 @@ describe('failures-tests', () => {
     };
     operon.registerWorkflow(testWorkflow);
   
-    const result = await operon.workflow(testWorkflow, {}).getResult();
-    expect(result).toEqual(4);
+    await expect(operon.workflow(testWorkflow, {}).getResult()).resolves.toBe(4);
 
     await expect(operon.workflow(testWorkflow, {}).getResult()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
-
   });
 
   test('nonretry-communicator', async () => {
