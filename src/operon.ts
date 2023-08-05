@@ -250,6 +250,7 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
+        console.log("flush", JSON.stringify(output));
         await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
@@ -337,11 +338,18 @@ export class Operon {
         } else if (rows[0].status === WorkflowStatus.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
         } else {
+          console.log("check workflow output ", JSON.parse(rows[0].output), rows[0].output);
+          if (rows[0].output === null) {
+            // This is the void return value.
+            // The actual null is serialized to "null".
+            return undefined;
+          }
           return JSON.parse(rows[0].output) as R;  // Could be null.
         }
       }
 
       const recordWorkflowOutput = (output: R) => {
+        console.log("record output", output);
         this.workflowOutputBuffer.set(workflowUUID, output);
       }
 
@@ -396,9 +404,13 @@ export class Operon {
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
-      return await ctxt.transaction(txn, ...args);
+      const res1 =  await ctxt.transaction(txn, ...args);
+      console.log("res1", res1);
+      return res1;
     };
-    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
+    const res = await this.workflow(operon_temp_workflow, params, ...args).getResult();
+    console.log(res);
+    return res;
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, message: T) : Promise<boolean> {

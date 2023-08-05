@@ -14,7 +14,6 @@ import {
   TestKvTable
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
-import axios, { AxiosResponse } from 'axios';
 import { sleep } from "src/utils";
 import { WorkflowConfig, WorkflowStatus } from "src/workflow";
 
@@ -81,15 +80,16 @@ describe('operon-tests', () => {
   });
 
   test('simple-function-permission-denied', async() => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
+    const testFunction = async (txnCtxt: TransactionContext) => {
+      void txnCtxt;
+      await sleep(1);
+      return;
     };
     operon.registerTransaction(testFunction);
 
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
-      return funcResult;
+    const testWorkflow = async (workflowCtxt: WorkflowContext) => {
+      await workflowCtxt.transaction(testFunction);
+      return;
     };
     // Register the workflow as runnable only by admin
     const testWorkflowConfig: WorkflowConfig = {
@@ -100,7 +100,7 @@ describe('operon-tests', () => {
     const params: WorkflowParams = {
       runAs: "operonAppUser",
     }
-    await expect(operon.workflow(testWorkflow, params, username).getResult()).rejects.toThrow(
+    await expect(operon.workflow(testWorkflow, params).getResult()).rejects.toThrow(
       OperonWorkflowPermissionDeniedError
     );
   });
@@ -135,20 +135,21 @@ describe('operon-tests', () => {
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
       void txnCtxt;
-      await sleep(10);
+      await sleep(1);
       return;
     };
     operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
   });
 
   test('tight-loop', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
+      void txnCtxt;
+      await sleep(1);
+      return name;
     };
     operon.registerTransaction(testFunction);
 
@@ -159,8 +160,7 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await operon.workflow(testWorkflow, {}, username).getResult();
-      expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
+      await expect(operon.workflow(testWorkflow, {}, username).getResult()).resolves.toBe(username);
     }
   });
   
@@ -194,13 +194,11 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await operon.workflow(testWorkflow, {}, username).getResult();
-      expect(workflowResult).toEqual(i + 1);
+      await expect(operon.workflow(testWorkflow, {}, username).getResult()).resolves.toBe(i + 1);
     }
     
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail").getResult();
-    expect(workflowResult).toEqual(-1);
+    await expect(operon.workflow(testWorkflow, {}, "fail").getResult()).resolves.toBe(-1);
   });
 
   test('multiple-aborts', async() => {
@@ -296,6 +294,7 @@ describe('operon-tests', () => {
     let counter = 0;
     const testCommunicator = async (commCtxt: CommunicatorContext) => {
       void commCtxt;
+      await sleep(1);
       return counter++;
     };
     operon.registerCommunicator(testCommunicator);
@@ -404,6 +403,9 @@ describe('operon-tests', () => {
   });
 
   test('readonly-recording', async() => {
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
+
     const remoteState = {
       num: 0,
       workflowCnt: 0

@@ -121,6 +121,7 @@ export class WorkflowContext {
    */
   async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
+    console.log(serialOutput);
     await client.query("UPDATE operon.function_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialOutput, this.workflowUUID, funcID]);
     if (this.isTempWorkflow) {
