@@ -9,6 +9,7 @@ import { Operon } from "../src/operon";
 import { generateOperonTestConfig } from "./helpers";
 import postgresLogBackendSchema from "schemas/postgresLogBackend";
 import { sleep } from "src/utils";
+import { QueryConfig } from "pg";
 
 describe("operon-telemetry", () => {
   test("Only configures requested exporters", async () => {
@@ -45,7 +46,8 @@ describe("operon-telemetry", () => {
       const collector = operon.telemetryCollector;
       expect(collector.exporters.length).toBe(1);
       expect(collector.exporters[0]).toBeInstanceOf(PostgresExporter);
-      const pgExporter = collector.exporters[0] as PostgresExporter;
+      const pgExporter: PostgresExporter = collector
+        .exporters[0] as PostgresExporter;
 
       // Then check PostgresExporter initialization
       const dbCheckSpy = jest.spyOn(operon.pgSystemClient, "query");
@@ -86,20 +88,16 @@ describe("operon-telemetry", () => {
       // Clean up the database XXX we need a test database
       const workflowInstanceIds = [
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[0].workflow_instance_id,
+        queryResult.rows[0].workflow_instance_id as number,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[1].workflow_instance_id,
+        queryResult.rows[1].workflow_instance_id as number,
       ];
-      const function_ids = [
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[0].function_id,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[1].function_id,
-      ];
-      await pgExporterPgClient.query(
-        "delete from log_signal where workflow_instance_id in ($1) and function_id in ($2)",
-        [workflowInstanceIds, function_ids]
-      );
+      const cleanUpQuery: QueryConfig = {
+        text: "delete from log_signal where workflow_instance_id=$1 or workflow_instance_id=$2",
+        // values: [workflowInstanceIds],
+        values: [workflowInstanceIds[0], workflowInstanceIds[1]],
+      };
+      await pgExporterPgClient.query(cleanUpQuery);
     });
   });
 });
