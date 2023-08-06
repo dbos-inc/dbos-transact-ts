@@ -12,7 +12,7 @@ import { sleep } from "src/utils";
 
 describe("operon-telemetry", () => {
   test("Only configures requested exporters", async () => {
-    let collector = new TelemetryCollector([new ConsoleExporter()]);
+    const collector = new TelemetryCollector([new ConsoleExporter()]);
     expect(collector.exporters.length).toBe(1);
     await collector.destroy();
   });
@@ -78,19 +78,28 @@ describe("operon-telemetry", () => {
         `select * from log_signal`
       );
       expect(queryResult.rows).toHaveLength(2);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(queryResult.rows[0].log_signal_raw).toBe("a");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(queryResult.rows[1].log_signal_raw).toBe("b");
 
       // Clean up the database XXX we need a test database
-      const workflowInstanceIds = queryResult.rows.map(
-        (row) => `'${row.workflow_instance_id}'`
+      const workflowInstanceIds = [
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        queryResult.rows[0].workflow_instance_id,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        queryResult.rows[1].workflow_instance_id,
+      ];
+      const function_ids = [
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        queryResult.rows[0].function_id,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        queryResult.rows[1].function_id,
+      ];
+      await pgExporterPgClient.query(
+        "delete from log_signal where workflow_instance_id in ($1) and function_id in ($2)",
+        [workflowInstanceIds, function_ids]
       );
-      const function_ids = queryResult.rows.map(
-        (row) => `'${row.function_id}'`
-      );
-
-      const cleanUpQuery = `delete from log_signal where workflow_instance_id in (${workflowInstanceIds}) and function_id in (${function_ids})`;
-      await pgExporterPgClient.query(cleanUpQuery);
     });
   });
 });
