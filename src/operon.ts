@@ -18,7 +18,7 @@ import {
   POSTGRES_EXPORTER,
 } from './telemetry';
 
-import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
+import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -80,6 +80,7 @@ export class Operon {
   // "Global" pool
   readonly pool: Pool;
   // PG client for interacting with the `postgres` database
+  readonly pgSystemClientConfig: ClientConfig;
   readonly pgSystemClient: Client;
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
@@ -118,13 +119,14 @@ export class Operon {
       this.config = this.generateOperonConfig();
     }
 
-    this.pgSystemClient = new Client({
+    this.pgSystemClientConfig = {
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
       host: this.config.poolConfig.host,
       password: this.config.poolConfig.password,
       database: 'postgres',
-    });
+    };
+    this.pgSystemClient = new Client(this.pgSystemClientConfig);
     this.pgNotificationsClient = new Client({
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,

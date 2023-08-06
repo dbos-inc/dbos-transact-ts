@@ -24,20 +24,15 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
   readonly pgClient: Client;
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
   constructor(private readonly operon: Operon) {
-    if (!process.env.PG_EXPORTER_CONNECTION_STRING) {
-      throw new OperonInitializationError(
-        "PG_EXPORTER_CONNECTION_STRING environment variable is not set"
-      );
-    }
-    const connectionString =
-      process.env.PG_EXPORTER_CONNECTION_STRING + "/" + this.pgLogsDbName;
-    this.pgClient = new Client(connectionString);
+    const pgClientConfig = operon.pgSystemClientConfig;
+    pgClientConfig.database = this.pgLogsDbName;
+    this.pgClient = new Client(pgClientConfig);
   }
 
   async init() {
