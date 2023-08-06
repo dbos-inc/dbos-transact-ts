@@ -61,7 +61,11 @@ export class PostgresExporter
       name: "insert-signal-log",
       text: "INSERT INTO log_signal (workflow_instance_id, function_id, log_signal_raw) VALUES ($1, $2, $3)",
       // TODO wire these values with the Signal data model
-      values: [Math.floor(Math.random() * 1000), Math.floor(Math.random() * 1000), signal],
+      values: [
+        Math.floor(Math.random() * 1000),
+        Math.floor(Math.random() * 1000),
+        signal,
+      ],
     };
   }
 
@@ -134,9 +138,6 @@ export class TelemetryCollector {
         break;
       }
       for (const exporter of this.exporters) {
-        if (exporter.process) {
-          exporter.process(signal);
-        }
         await exporter.export(signal);
       }
     }
