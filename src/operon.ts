@@ -13,7 +13,9 @@ import operonSystemDbSchema from '../schemas/operon';
 import {
   TelemetryCollector,
   ConsoleExporter,
+  CONSOLE_EXPORTER,
   PostgresExporter,
+  POSTGRES_EXPORTER,
 } from './telemetry';
 
 import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
@@ -51,10 +53,12 @@ const CONFIG_FILE: string = "operon-config.yaml";
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
+  readonly telemetryExporters?: string[];
 }
 
 interface operon__ConfigFile {
   database: operon__DatabaseConfig;
+  telemetryExporters?: string[];
 }
 
 interface operon__DatabaseConfig {
@@ -134,7 +138,18 @@ export class Operon {
     }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
 
-    this.telemetryCollector = new TelemetryCollector([new ConsoleExporter(), new PostgresExporter(this)]);
+    // Parse requested exporters
+    const telemetryExporters = [];
+    if (this.config.telemetryExporters) {
+      for (const exporter of this.config.telemetryExporters) {
+        if (exporter === CONSOLE_EXPORTER) {
+          telemetryExporters.push(new ConsoleExporter());
+        } else if (exporter === POSTGRES_EXPORTER) {
+          telemetryExporters.push(new PostgresExporter(this));
+        }
+      }
+    }
+    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
@@ -227,6 +242,7 @@ export class Operon {
 
     return {
       poolConfig,
+      telemetryExporters: configuration.telemetryExporters || [],
     };
   }
 

@@ -12,6 +12,7 @@ export interface ITelemetryExporter<T, U> {
   destroy?(): Promise<void>;
 }
 
+export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   async export(signal: string): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -21,6 +22,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   }
 }
 
+export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
 implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
