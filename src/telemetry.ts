@@ -87,6 +87,10 @@ class SignalsQueue {
   pop(): string | undefined {
     return this.data.shift();
   }
+
+  size(): number {
+    return this.data.length;
+  }
 }
 
 export class TelemetryCollector {
@@ -129,9 +133,9 @@ export class TelemetryCollector {
   }
 
   private async processAndExportSignals(): Promise<void> {
-    let signal: string | undefined;
     // eslint-disable-next-line no-cond-assign
-    while ((signal = this.pop())) {
+    while (this.signals.size() > 0) {
+      const signal = this.pop();
       // Because we are single threaded, we don't have to worry about concurrent shift() and push() to the buffer
       if (!signal) {
         break;
