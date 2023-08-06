@@ -64,8 +64,9 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
   process(signal: string): QueryConfig {
     return {
       name: "insert-signal-log",
-      text: "INSERT INTO log_entry (workflow_instance_id, function_id, log_entry_raw) VALUES ($1, $2, $3)",
-      values: [Math.floor(Math.random()), Math.floor(Math.random()), signal],
+      text: "INSERT INTO log_signal (workflow_instance_id, function_id, log_signal_raw) VALUES ($1, $2, $3)",
+      // TODO wire these values with the Signal data model
+      values: [Math.floor(Math.random() * 1000), Math.floor(Math.random() * 1000), signal],
     };
   }
 
@@ -125,7 +126,7 @@ export class TelemetryCollector {
     this.signals.push(signal);
   }
 
-  pop(): string | undefined {
+  private pop(): string | undefined {
     return this.signals.pop();
   }
 

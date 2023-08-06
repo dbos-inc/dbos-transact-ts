@@ -327,7 +327,7 @@ export class Operon {
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
-    this.telemetryCollector.push(`Starting workflow ${wf.name}`);
+    // this.telemetryCollector.push(`Starting workflow ${wf.name}`);
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
