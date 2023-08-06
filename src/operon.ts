@@ -342,7 +342,7 @@ export class Operon {
             // The actual null is serialized to "null".
             return undefined;
           }
-          return JSON.parse(rows[0].output) as R;  // Could be null.
+          return JSON.parse(rows[0].output) as R;  // The output column could be "null".
         }
       }
 

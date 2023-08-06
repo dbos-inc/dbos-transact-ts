@@ -91,7 +91,7 @@ export class WorkflowContext {
       if (!this.isTempWorkflow) {
         const { rows } = await client.query<workflow_status>(`INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3)
          ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
-        RETURNING (SELECT old.status FROM operon.workflow_status old WHERE old.workflow_uuid=operon.workflow_status.workflow_uuid) AS status;`,
+        RETURNING (SELECT old.status FROM operon.workflow_status old WHERE old.workflow_uuid=$1) AS status;`,
         [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
         if ((rows[0].status === WorkflowStatus.ERROR) || (rows[0].status === WorkflowStatus.SUCCESS)) {
           throw new OperonWorkflowConflictUUIDError();
