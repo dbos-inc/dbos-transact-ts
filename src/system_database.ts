@@ -2,7 +2,7 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs } from "./operon";
-import { DatabaseError, Pool } from 'pg';
+import { DatabaseError, Pool, PoolClient } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 
 export interface SystemDatabase {
@@ -75,11 +75,43 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  send<T extends unknown>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
-    throw new Error("Method not implemented.");
+  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
+    const client: PoolClient = await this.pool.connect();
+
+    await client.query("BEGIN");
+    let { rows } = await this.pool.query<function_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+      [workflowUUID, functionID]);
+    if (rows.length > 0) {
+      await client.query("ROLLBACK");
+      client.release();
+      if (JSON.parse(rows[0].error) !== null) {
+        throw deserializeError(JSON.parse(rows[0].error));
+      } else  {
+        return JSON.parse(rows[0].output) as boolean;
+      }
+    }
+    ({ rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) 
+      ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`, [topic, key, JSON.stringify(message)]));
+    const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
+    try {
+      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);",
+        [workflowUUID, functionID, JSON.stringify(success)]);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      client.release();
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
+        throw new OperonWorkflowConflictUUIDError();
+      } else {
+        throw err;
+      }
+    }
+    await client.query("COMMIT");
+    client.release();
+    return success;
   }
 
-  recv<T extends unknown>(workflowUUID: string, functionID: number, topic: string, key: string, timeout: number): Promise<T | null> {
+  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeout: number): Promise<T | null> {
     throw new Error("Method not implemented.");
   }
 }

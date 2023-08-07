@@ -160,6 +160,7 @@ describe('concurrency-tests', () => {
     expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
 
     // Make sure we retrieve results correctly.
+    await operon.flushWorkflowOutputBuffer();
     const sendHandle = await operon.retrieveWorkflow(sendUUID);
     await expect(sendHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
     await expect(sendHandle!.getResult()).resolves.toBe(true);

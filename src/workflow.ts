@@ -295,26 +295,14 @@ export class WorkflowContext {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
     }
 
-    const client: PoolClient = await this.#operon.pool.connect();
-
-    await client.query("BEGIN");
-    const check: boolean | OperonNull = await this.checkExecution<boolean>(client, functionID);
-    if (check !== operonNull) {
-      await client.query("ROLLBACK");
-      client.release();
-      return check as boolean;
-    }
-    this.guardOperation(functionID);
+    const client = await this.#operon.pool.connect();
+    await client.query('BEGIN');
     await this.flushResultBuffer(client);
-    const { rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) 
-    ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`,
-    [topic, key, JSON.stringify(message)])
-    const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
-    await this.recordGuardedOutput(client, functionID, success);
-    await client.query("COMMIT");
+    await client.query('COMMIT');
     this.resultBuffer.clear();
     client.release();
-    return success;
+
+    return this.#operon.systemDatabase.send(this.workflowUUID, functionID, topic, key, message);
   }
 
   /**
