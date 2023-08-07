@@ -139,10 +139,6 @@ describe('concurrency-tests', () => {
   test('duplicate-notifications',async () => {
     // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
-
-    // Disable flush workflow output background task for tests.
-    // Workflow output buffer should be updated in the same transaction with send/recv for temporary workflows.
-    clearInterval(operon.flushBufferID);
     
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
@@ -154,13 +150,14 @@ describe('concurrency-tests', () => {
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
+
     await expect(operon.send({workflowUUID: sendUUID}, "testTopic", "testmsg", "hello")).resolves.toBe(true);
+
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
     expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
 
     // Make sure we retrieve results correctly.
-    await operon.flushWorkflowOutputBuffer();
     const sendHandle = operon.retrieveWorkflow(sendUUID);
     await expect(sendHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
     await expect(sendHandle.getResult()).resolves.toBe(true);
