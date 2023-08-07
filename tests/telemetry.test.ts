@@ -1,6 +1,6 @@
 import {
   ConsoleExporter,
-  operon__TelemetrySignal,
+  TelemetrySignalLog,
   PostgresExporter,
   POSTGRES_EXPORTER,
   TelemetryCollector,
@@ -69,7 +69,7 @@ describe("operon-telemetry", () => {
       const pgExporter = collector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
       const queryResult =
-        await pgExporterPgClient.query<operon__TelemetrySignal>(
+        await pgExporterPgClient.query<TelemetrySignalLog>(
           `select * from log_signal`
         );
       expect(queryResult.rows).toHaveLength(2);

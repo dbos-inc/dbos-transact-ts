@@ -4,7 +4,7 @@ import { Operon } from "./operon";
 
 /*** SIGNALS ***/
 
-export interface operon__TelemetrySignal {
+export interface TelemetrySignalLog {
   workflow_uuid: string;
   function_id: string;
   log_signal_raw: string;
