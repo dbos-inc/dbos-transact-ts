@@ -239,11 +239,16 @@ export class WorkflowContext {
       throw new OperonError(`Unregistered External ${commFn.name}`)
     }
     const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
-    let client: PoolClient = await this.#operon.pool.connect();
+
+    const client = await this.#operon.pool.connect();
+    await client.query('BEGIN');
+    await this.flushResultBuffer(client);
+    await client.query('COMMIT');
+    this.resultBuffer.clear();
+    client.release();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | OperonNull = await this.checkExecution<R>(client, ctxt.functionID);
-    client.release();
+    const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== operonNull) {
       return check as R;
     }
@@ -274,27 +279,15 @@ export class WorkflowContext {
       }
     }
 
-    client = await this.#operon.pool.connect();
     // `result` can only be operonNull when the communicator timed out
     if (result === operonNull) {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
-      await client.query('BEGIN');
-      this.guardOperation(ctxt.functionID);
-      await this.flushResultBuffer(client);
-      await this.recordGuardedError(client, ctxt.functionID, err as Error);
-      await client.query('COMMIT');
-      this.resultBuffer.clear();
-      client.release();
+      await this.#operon.systemDatabase.recordCommunicatorError(this.workflowUUID, ctxt.functionID, err as Error);
       throw err;
     } else {
       // Record the execution and return.
-      await client.query('BEGIN');
-      this.resultBuffer.set(ctxt.functionID, result);
-      await this.flushResultBuffer(client);
-      await client.query('COMMIT');
-      this.resultBuffer.clear();
-      client.release();
+      await this.#operon.systemDatabase.recordCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
       return result as R;
     }
   }

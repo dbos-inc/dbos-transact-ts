@@ -19,6 +19,7 @@ import {
 import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
 import systemDBSchema from 'schemas/system_db_schema';
 import userDBSchema from 'schemas/user_db_schema';
+import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
 
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
@@ -86,6 +87,8 @@ export class Operon {
   readonly pgSystemClient: Client;
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
+  // System Database
+  readonly systemDatabase: SystemDatabase;
   
   // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
@@ -139,6 +142,7 @@ export class Operon {
       database: this.config.poolConfig.database,
     });
     this.pool = new Pool(this.config.poolConfig);
+    this.systemDatabase = new PostgresSystemDatabase(this.pool);
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
