@@ -17,7 +17,9 @@ import {
   POSTGRES_EXPORTER,
 } from './telemetry';
 import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
-import operonSystemDbSchema from '../schemas/operon_schemas';
+import systemDBSchema from 'schemas/system_db_schema';
+import userDBSchema from 'schemas/user_db_schema';
+
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -180,11 +182,27 @@ export class Operon {
 
   async loadOperonDatabase() {
     await this.pgSystemClient.connect();
-    const databaseName: string = this.config.poolConfig.database as string;
-    // Validate the database name
-    const regex = /^[a-z0-9]+$/i;
-    if (!regex.test(databaseName)) {
-      throw(new Error(`invalid DB name: ${databaseName}`));
+    try {
+      const databaseName: string = this.config.poolConfig.database as string;
+      // Validate the database name
+      const regex = /^[a-z0-9]+$/i;
+      if (!regex.test(databaseName)) {
+        throw(new Error(`invalid DB name: ${databaseName}`));
+      }
+      // Check whether the Operon system database exists, create it if needed
+      const dbExists = await this.pgSystemClient.query(
+        `SELECT FROM pg_database WHERE datname = '${databaseName}'`
+      );
+      if (dbExists.rows.length === 0) {
+        // Create the Operon system database
+        await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
+      }
+      // Load the Operon schemas.
+      await this.pool.query(userDBSchema);
+      await this.pool.query(systemDBSchema);
+    } finally {
+      // We want to close the client no matter what
+      await this.pgSystemClient.end();
     }
     // Check whether the Operon system database exists, create it if needed
     const dbExists = await this.pgSystemClient.query(
@@ -366,9 +384,9 @@ export class Operon {
           if (rows[0].output === null) {
             // This is the void return value.
             // The actual null is serialized to "null".
-            return undefined;
+            return undefined as R;
           }
-          return JSON.parse(rows[0].output) as R;  // The output column could be "null".
+          return JSON.parse(rows[0].output) as R;
         }
       }
 
