@@ -76,6 +76,7 @@ export class Operon {
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
   
+  // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
 
   readonly listenerMap: Record<string, () => void> = {};
@@ -87,6 +88,7 @@ export class Operon {
   readonly recoveryID: NodeJS.Timeout;
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
+    // We initialize the map with an entry for temporary workflows.
     [this.tempWorkflowName, 
       {
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -251,6 +253,8 @@ export class Operon {
         await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+        // Garbage collect function outputs and workflow input.
+        await client.query(`DELETE FROM operon.function_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
       }
       await client.query("COMMIT");
       client.release();
@@ -333,7 +337,12 @@ export class Operon {
         } else if (rows[0].status === WorkflowStatus.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
         } else {
-          return JSON.parse(rows[0].output) as R;  // Could be null.
+          if (rows[0].output === null) {
+            // This is the void return value.
+            // The actual null is serialized to "null".
+            return undefined;
+          }
+          return JSON.parse(rows[0].output) as R;  // The output column could be "null".
         }
       }
 
@@ -344,7 +353,7 @@ export class Operon {
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
         await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
-        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
+        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
