@@ -1,5 +1,6 @@
 import {
   ConsoleExporter,
+  operon__TelemetrySignal,
   PostgresExporter,
   POSTGRES_EXPORTER,
   TelemetryCollector,
@@ -8,21 +9,12 @@ import { Operon } from "../src/operon";
 
 import { generateOperonTestConfig } from "./helpers";
 import postgresLogBackendSchema from "schemas/postgresLogBackend";
-import { sleep } from "src/utils";
 import { QueryConfig } from "pg";
 
 describe("operon-telemetry", () => {
   test("Only configures requested exporters", async () => {
     const collector = new TelemetryCollector([new ConsoleExporter()]);
     expect(collector.exporters.length).toBe(1);
-    await collector.destroy();
-  });
-
-  test("Signal queue is functional", async () => {
-    // Note we don't test pop() because it is a private method
-    const collector = new TelemetryCollector([]);
-    expect(() => collector.push("a")).not.toThrow();
-    expect(() => collector.push("b")).not.toThrow();
     await collector.destroy();
   });
 
@@ -72,30 +64,25 @@ describe("operon-telemetry", () => {
       // Push to the signals queue and wait for one export interval
       collector.push("a");
       collector.push("b");
-      await sleep(1000); // Set to TelemetryCollector.processAndExportSignalsIntervalMs
+      await collector.processAndExportSignals();
 
       const pgExporter = collector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
-      const queryResult = await pgExporterPgClient.query(
-        `select * from log_signal`
-      );
+      const queryResult =
+        await pgExporterPgClient.query<operon__TelemetrySignal>(
+          `select * from log_signal`
+        );
       expect(queryResult.rows).toHaveLength(2);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(queryResult.rows[0].log_signal_raw).toBe("a");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(queryResult.rows[1].log_signal_raw).toBe("b");
 
       // Clean up the database XXX we need a test database
-      const workflowInstanceIds = [
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[0].workflow_instance_id as number,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        queryResult.rows[1].workflow_instance_id as number,
-      ];
       const cleanUpQuery: QueryConfig = {
-        text: "delete from log_signal where workflow_instance_id=$1 or workflow_instance_id=$2",
-        // values: [workflowInstanceIds],
-        values: [workflowInstanceIds[0], workflowInstanceIds[1]],
+        text: "delete from log_signal where workflow_uuid=$1 or workflow_uuid=$2",
+        values: [
+          queryResult.rows[0].workflow_uuid,
+          queryResult.rows[1].workflow_uuid,
+        ],
       };
       await pgExporterPgClient.query(cleanUpQuery);
     });

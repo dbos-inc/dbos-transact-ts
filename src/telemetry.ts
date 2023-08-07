@@ -2,6 +2,16 @@ import { Client, QueryConfig, QueryArrayResult } from "pg";
 import postgresLogBackendSchema from "../schemas/postgresLogBackend";
 import { Operon } from "./operon";
 
+/*** SIGNALS ***/
+
+export interface operon__TelemetrySignal {
+  workflow_uuid: string;
+  function_id: string;
+  log_signal_raw: string;
+  created_at: number;
+  updated_at: number;
+}
+
 /*** EXPORTERS ***/
 
 export interface ITelemetryExporter<T, U> {
@@ -23,7 +33,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
   readonly pgClient: Client;
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
@@ -58,7 +68,7 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
   process(signal: string): QueryConfig {
     return {
       name: "insert-signal-log",
-      text: "INSERT INTO log_signal (workflow_instance_id, function_id, log_signal_raw) VALUES ($1, $2, $3)",
+      text: "INSERT INTO log_signal (workflow_uuid, function_id, log_signal_raw) VALUES ($1, $2, $3)",
       // TODO wire these values with the Signal data model
       values: [
         Math.floor(Math.random() * 1000),
@@ -132,7 +142,7 @@ export class TelemetryCollector {
     return this.signals.pop();
   }
 
-  private async processAndExportSignals(): Promise<void> {
+  async processAndExportSignals(): Promise<void> {
     // eslint-disable-next-line no-cond-assign
     while (this.signals.size() > 0) {
       const signal = this.pop();

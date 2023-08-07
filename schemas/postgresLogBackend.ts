@@ -1,11 +1,11 @@
 const postgresLogBackendSchema = `
   CREATE TABLE IF NOT EXISTS log_signal (
-      workflow_instance_id VARCHAR(255) NOT NULL,
-      function_id VARCHAR(255) NOT NULL,
+      workflow_uuid TEXT NOT NULL,
+      function_id INT NOT NULL,
       log_signal_raw VARCHAR(255) NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (workflow_instance_id, function_id)
+      created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()))::bigint,
+      updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()))::bigint,
+      PRIMARY KEY (workflow_uuid, function_id)
   );
 `;
 
