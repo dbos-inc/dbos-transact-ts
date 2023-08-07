@@ -401,11 +401,9 @@ export class Operon {
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
-      const res1 =  await ctxt.transaction(txn, ...args);
-      return res1;
+      return await ctxt.transaction(txn, ...args);
     };
-    const res = await this.workflow(operon_temp_workflow, params, ...args).getResult();
-    return res;
+    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, message: T) : Promise<boolean> {
