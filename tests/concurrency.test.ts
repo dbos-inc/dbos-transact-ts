@@ -6,7 +6,7 @@ import { WorkflowStatus } from "src/workflow";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
-  const testTableName = 'OperonConcurrencyTestKv';
+  const testTableName = 'operon_concurrency_test_kv';
 
   let config: OperonConfig;
 
