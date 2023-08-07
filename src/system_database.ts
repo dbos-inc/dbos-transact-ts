@@ -2,9 +2,10 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs, notifications, workflow_status } from "./operon";
-import { DatabaseError, Pool, PoolClient, Notification } from 'pg';
+import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 import { WorkflowStatus } from "./workflow";
+import systemDBSchema from 'schemas/system_db_schema';
 
 export interface SystemDatabase {
   // TODO: Temp changes, remove later.
@@ -26,7 +27,9 @@ export interface SystemDatabase {
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
-
+  readonly pool: Pool;
+  readonly pgSystemClient: Client;
+  
   notificationsClient: PoolClient | null = null;
   readonly listenerMap: Record<string, () => void> = {};
 
@@ -34,9 +37,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly flushBufferIntervalMs: number = 1000;
   flushBufferID: NodeJS.Timeout | null = null;
 
-  constructor(readonly pool: Pool) {}
+  constructor(readonly sysPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
+    this.pgSystemClient = new Client(sysPoolConfig);
+    this.pool = new Pool({
+      user: sysPoolConfig.user,
+      port: sysPoolConfig.port,
+      host: sysPoolConfig.host,
+      password: sysPoolConfig.password,
+      database: systemDatabaseName,
+    })
+  }
 
   async init() {
+    // Create the system database and load tables.
+    const dbExists = await this.pgSystemClient.query(
+      `SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`
+    );
+    if (dbExists.rows.length === 0) {
+      // Create the Operon system database.
+      await this.pgSystemClient.query(`CREATE DATABASE ${this.systemDatabaseName}`);
+    }
+    // Load the Operon system schemas.
+    await this.pool.query(systemDBSchema);
     await this.listenForNotifications();
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();

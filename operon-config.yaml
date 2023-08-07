@@ -3,7 +3,8 @@ database:
   port: 5432
   username: 'postgres'
   connectionTimeoutMillis: 3000
-  database: 'operon'
+  user_database: 'operon'
+  system_database: 'operon_systemdb'
 telemetryExporters:
   - 'ConsoleExporter'
   - 'PostgresExporter'

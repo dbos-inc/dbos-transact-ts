@@ -17,7 +17,6 @@ import {
   POSTGRES_EXPORTER,
 } from './telemetry';
 import { Pool, PoolConfig, Client, ClientConfig } from 'pg';
-import systemDBSchema from 'schemas/system_db_schema';
 import userDBSchema from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
 import { v4 as uuidv4 } from 'uuid';
@@ -55,6 +54,7 @@ const CONFIG_FILE: string = "operon-config.yaml";
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
+  readonly system_database: string;
 }
 
 interface ConfigFile {
@@ -67,7 +67,8 @@ interface DatabaseConfig {
   port: number;
   username: string;
   connectionTimeoutMillis: number;
-  database: string;
+  user_database: string;
+  system_database: string;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -117,16 +118,16 @@ export class Operon {
       this.config = this.generateOperonConfig();
     }
 
-    this.pgSystemClientConfig = {
+    const systemPoolConfig: PoolConfig = {
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
       host: this.config.poolConfig.host,
       password: this.config.poolConfig.password,
       database: 'postgres',
     };
-    this.pgSystemClient = new Client(this.pgSystemClientConfig);
+    this.pgSystemClient = new Client(systemPoolConfig);
     this.pool = new Pool(this.config.poolConfig);
-    this.systemDatabase = new PostgresSystemDatabase(this.pool);
+    this.systemDatabase = new PostgresSystemDatabase(systemPoolConfig, this.config.system_database);
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
 
     // Parse requested exporters
@@ -174,17 +175,16 @@ export class Operon {
       if (!regex.test(databaseName)) {
         throw(new Error(`invalid DB name: ${databaseName}`));
       }
-      // Check whether the Operon system database exists, create it if needed
+      // Check whether the Operon user database exists, create it if needed
       const dbExists = await this.pgSystemClient.query(
         `SELECT FROM pg_database WHERE datname = '${databaseName}'`
       );
       if (dbExists.rows.length === 0) {
-        // Create the Operon system database
+        // Create the Operon user database
         await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
       }
       // Load the Operon schemas.
       await this.pool.query(userDBSchema);
-      await this.pool.query(systemDBSchema);
     } finally {
       // We want to close the client no matter what
       await this.pgSystemClient.end();
@@ -242,12 +242,13 @@ export class Operon {
       user: dbConfig.username,
       password: dbPassword,
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
-      database: dbConfig.database,
+      database: dbConfig.user_database,
     };
 
     return {
-      poolConfig,
+      poolConfig: poolConfig,
       telemetryExporters: configuration.telemetryExporters || [],
+      system_database: dbConfig.system_database ?? 'operon_systemdb'
     };
   }
 
