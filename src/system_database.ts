@@ -2,10 +2,14 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs } from "./operon";
-import { DatabaseError, Pool, PoolClient } from 'pg';
+import { DatabaseError, Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 
 export interface SystemDatabase {
+  init() : Promise<void>
+  destroy() : Promise<void>
+  listenerMap: Record<string, () => void>;
+
   checkWorkflowOutput<R>(workflowUUID: string) : Promise<OperonNull | R>;
   recordWorkflowOutput<R>(workflowUUID: string, output: R) : Promise<void>;
   recordWorkflowError(workflowUUID: string, error: Error) : Promise<void>;
@@ -20,7 +24,22 @@ export interface SystemDatabase {
 
 export class PostgresSystemDatabase implements SystemDatabase {
 
-  constructor(readonly pool: Pool) {}
+  notificationsClient: Promise<PoolClient>
+  readonly listenerMap: Record<string, () => void> = {};
+
+  constructor(readonly pool: Pool) {
+    this.notificationsClient = pool.connect();
+  }
+
+  async init() {
+    await this.listenForNotifications();
+  }
+
+  async destroy() {
+    (await this.notificationsClient).removeAllListeners();
+    (await this.notificationsClient).release();
+  }
+
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
     throw new Error("Method not implemented.");
   }
@@ -115,5 +134,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeout: number): Promise<T | null> {
     throw new Error("Method not implemented.");
+  }
+  
+  /* BACKGROUND PROCESSES */
+  /**
+   * A background process that listens for notifications from Postgres then signals the appropriate
+   * workflow listener by resolving its promise.
+   */
+  async listenForNotifications() {
+    const client = await this.notificationsClient;
+    await client.query('LISTEN operon_notifications_channel;');
+    const handler = (msg: Notification ) => {
+      if (msg.payload && msg.payload in this.listenerMap) {
+        this.listenerMap[msg.payload]();
+      }
+    };
+    client.on('notification', handler);
   }
 }

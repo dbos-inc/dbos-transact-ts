@@ -16,11 +16,10 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from './telemetry';
-import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
+import { Pool, PoolConfig, Client, PoolClient, ClientConfig } from 'pg';
 import systemDBSchema from 'schemas/system_db_schema';
 import userDBSchema from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
-
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -85,15 +84,11 @@ export class Operon {
   // PG client for interacting with the `postgres` database
   readonly pgSystemClientConfig: ClientConfig;
   readonly pgSystemClient: Client;
-  // PG client for listening to Operon notifications
-  readonly pgNotificationsClient: Client;
   // System Database
   readonly systemDatabase: SystemDatabase;
   
   // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
-
-  readonly listenerMap: Record<string, () => void> = {};
 
   readonly workflowOutputBuffer: Map<string, any> = new Map();
   readonly flushBufferIntervalMs: number = 1000;
@@ -134,13 +129,6 @@ export class Operon {
       database: 'postgres',
     };
     this.pgSystemClient = new Client(this.pgSystemClientConfig);
-    this.pgNotificationsClient = new Client({
-      user: this.config.poolConfig.user,
-      port: this.config.poolConfig.port,
-      host: this.config.poolConfig.host,
-      password: this.config.poolConfig.password,
-      database: this.config.poolConfig.database,
-    });
     this.pool = new Pool(this.config.poolConfig);
     this.systemDatabase = new PostgresSystemDatabase(this.pool);
     this.flushBufferID = setInterval(() => {
@@ -171,8 +159,8 @@ export class Operon {
     }
     try {
       await this.loadOperonDatabase();
-      await this.listenForNotifications();
       await this.telemetryCollector.init();
+      await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
         throw(new OperonInitializationError(err.message));
@@ -224,7 +212,7 @@ export class Operon {
     clearTimeout(this.recoveryID);
     clearInterval(this.flushBufferID);
     await this.flushWorkflowOutputBuffer();
-    await this.pgNotificationsClient.removeAllListeners().end();
+    await this.systemDatabase.destroy();
     await this.pool.end();
     await this.telemetryCollector.destroy();
   }
@@ -273,20 +261,6 @@ export class Operon {
   }
 
   /* BACKGROUND PROCESSES */
-  /**
-   * A background process that listens for notifications from Postgres then signals the appropriate
-   * workflow listener by resolving its promise.
-   */
-  async listenForNotifications() {
-    await this.pgNotificationsClient.connect();
-    await this.pgNotificationsClient.query('LISTEN operon_notifications_channel;');
-    const handler = (msg: Notification ) => {
-      if (msg.payload && msg.payload in this.listenerMap) {
-        this.listenerMap[msg.payload]();
-      }
-    };
-    this.pgNotificationsClient.on('notification', handler);
-  }
 
   /**
    * A background process that periodically flushes the workflow output buffer to the database.

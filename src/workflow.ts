@@ -332,7 +332,7 @@ export class WorkflowContext {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.#operon.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    this.#operon.systemDatabase.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
@@ -352,7 +352,7 @@ export class WorkflowContext {
       await client.query(`COMMIT`);
       this.resultBuffer.clear();
       client.release();
-      delete this.#operon.listenerMap[`${topic}::${key}`];
+      delete this.#operon.systemDatabase.listenerMap[`${topic}::${key}`];
       return message;
     } else {
       await client.query(`ROLLBACK`);
