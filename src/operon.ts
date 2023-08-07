@@ -9,7 +9,6 @@ import { WorkflowStatus, InvokedHandle, OperonWorkflow, WorkflowConfig, Workflow
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
-import operonSystemDbSchema from '../schemas/operon';
 import {
   TelemetryCollector,
   ConsoleExporter,
@@ -17,22 +16,22 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from './telemetry';
-
 import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
+import operonSystemDbSchema from '../schemas/operon_schemas';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
 
 /* Interfaces for Operon system data structures */
-export interface operon__FunctionOutputs {
-  workflow_id: string;
+export interface function_outputs {
+  workflow_uuid: string;
   function_id: number;
   output: string;
   error: string;
 }
 
-export interface operon__WorkflowStatus {
-  workflow_id: string;
+export interface workflow_status {
+  workflow_uuid: string;
   workflow_name: string;
   status: string;
   output: string;
@@ -40,7 +39,8 @@ export interface operon__WorkflowStatus {
   last_update: number;  // UNIX timestamp in seconds.
 }
 
-export interface operon__Notifications {
+export interface notifications {
+  topic: string;
   key: string;
   message: string;
 }
@@ -56,12 +56,12 @@ export interface OperonConfig {
   readonly telemetryExporters?: string[];
 }
 
-interface operon__ConfigFile {
-  database: operon__DatabaseConfig;
+interface ConfigFile {
+  database: DatabaseConfig;
   telemetryExporters?: string[];
 }
 
-interface operon__DatabaseConfig {
+interface DatabaseConfig {
   hostname: string;
   port: number;
   username: string;
@@ -85,6 +85,7 @@ export class Operon {
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
   
+  // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
 
   readonly listenerMap: Record<string, () => void> = {};
@@ -96,6 +97,7 @@ export class Operon {
   readonly recoveryID: NodeJS.Timeout;
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
+    // We initialize the map with an entry for temporary workflows.
     [this.tempWorkflowName, 
       {
         // eslint-disable-next-line @typescript-eslint/require-await
@@ -207,10 +209,10 @@ export class Operon {
 
   generateOperonConfig(): OperonConfig {
     // Load default configuration
-    let configuration: operon__ConfigFile | undefined;
+    let configuration: ConfigFile | undefined;
     try {
       const configContent = readFileSync(CONFIG_FILE);
-      configuration = YAML.parse(configContent) as operon__ConfigFile;
+      configuration = YAML.parse(configContent) as ConfigFile;
     } catch(error) {
       if (error instanceof Error) {
         throw(new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`));
@@ -226,7 +228,7 @@ export class Operon {
         `Operon configuration ${CONFIG_FILE} does not contain database config`
       ));
     }
-    const dbConfig: operon__DatabaseConfig = configuration.database;
+    const dbConfig: DatabaseConfig = configuration.database;
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
       throw(new OperonInitializationError(
@@ -255,7 +257,7 @@ export class Operon {
    */
   async listenForNotifications() {
     await this.pgNotificationsClient.connect();
-    await this.pgNotificationsClient.query('LISTEN operon__notificationschannel;');
+    await this.pgNotificationsClient.query('LISTEN operon_notifications_channel;');
     const handler = (msg: Notification ) => {
       if (msg.payload && msg.payload in this.listenerMap) {
         this.listenerMap[msg.payload]();
@@ -274,9 +276,11 @@ export class Operon {
       const client: PoolClient = await this.pool.connect();
       await client.query("BEGIN");
       for (const [workflowUUID, output] of localBuffer) {
-        await client.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_id)
-         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+        await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+        // Garbage collect function outputs and workflow input.
+        await client.query(`DELETE FROM operon.function_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
       }
       await client.query("COMMIT");
       client.release();
@@ -289,7 +293,7 @@ export class Operon {
    * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT * FROM operon__WorkflowStatus WHERE status=$1 AND last_update_epoch_ms<$2", 
+    const { rows } = await this.pool.query<workflow_status>("SELECT * FROM operon.workflow_status WHERE status=$1 AND updated_at_epoch_ms<$2", 
       [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const row of rows) {
@@ -297,7 +301,7 @@ export class Operon {
       if (wInfo === undefined) {
         throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
       }
-      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_id}));
+      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_uuid}));
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }
@@ -352,14 +356,19 @@ export class Operon {
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
       const checkWorkflowOutput = async () => {
-        const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status, output, error FROM operon__WorkflowStatus WHERE workflow_id=$1",
+        const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1",
           [workflowUUID]);
         if ((rows.length === 0) || (rows[0].status === WorkflowStatus.PENDING)) {
           return operonNull;
         } else if (rows[0].status === WorkflowStatus.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
         } else {
-          return JSON.parse(rows[0].output) as R;  // Could be null.
+          if (rows[0].output === null) {
+            // This is the void return value.
+            // The actual null is serialized to "null".
+            return undefined;
+          }
+          return JSON.parse(rows[0].output) as R;  // The output column could be "null".
         }
       }
 
@@ -369,14 +378,14 @@ export class Operon {
 
       const recordWorkflowError = async (err: Error) => {
         const serialErr = JSON.stringify(serializeError(err));
-        await this.pool.query(`INSERT INTO operon__WorkflowStatus (workflow_id, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_id) 
-        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, last_update_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`, 
+        await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
+        DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.ERROR, serialErr]);
       }
 
       const checkWorkflowInput = async (input: T) => {
-      // The workflow input is always at function ID = 0 in the operon__FunctionOutputs table.
-        const { rows } = await this.pool.query<operon__FunctionOutputs>("SELECT output FROM operon__FunctionOutputs WHERE workflow_id=$1 AND function_id=$2",
+      // The workflow input is always at function ID = 0 in the operon.function_outputs table.
+        const { rows } = await this.pool.query<function_outputs>("SELECT output FROM operon.function_outputs WHERE workflow_uuid=$1 AND function_id=$2",
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
@@ -440,7 +449,7 @@ export class Operon {
   }
 
   async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {
-    const { rows } = await this.pool.query<operon__WorkflowStatus>("SELECT status FROM operon__WorkflowStatus WHERE workflow_id=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
       return null;
     }

@@ -39,7 +39,7 @@ describe('operon-init', () => {
     const listenersQueryResult = await operon.pgNotificationsClient.query(`SELECT * from pg_listening_channels()`);
     expect(listenersQueryResult.rows).toHaveLength(1);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(listenersQueryResult.rows[0].pg_listening_channels).toBe('operon__notificationschannel');
+    expect(listenersQueryResult.rows[0].pg_listening_channels).toBe('operon_notifications_channel');
 
     // Test "global" pool
     expect(operon.pool).toBeDefined();

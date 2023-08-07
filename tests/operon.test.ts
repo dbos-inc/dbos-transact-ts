@@ -14,11 +14,12 @@ import {
   TestKvTable
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
-import axios, { AxiosResponse } from 'axios';
 import { sleep } from "src/utils";
 import { WorkflowConfig, WorkflowStatus } from "src/workflow";
 
 describe('operon-tests', () => {
+  const testTableName = 'operon_test_kv';
+
   let operon: Operon;
   let username: string;
   let config: OperonConfig;
@@ -33,8 +34,8 @@ describe('operon-tests', () => {
     operon = new Operon(config);
     await operon.init();
     operon.registerTopic("testTopic", ["defaultRole"]);
-    await operon.pool.query("DROP TABLE IF EXISTS OperonKv;");
-    await operon.pool.query("CREATE TABLE IF NOT EXISTS OperonKv (id SERIAL PRIMARY KEY, value TEXT);");
+    await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
@@ -42,6 +43,8 @@ describe('operon-tests', () => {
   });
 
   test('simple-function', async() => {
+    clearInterval(operon.flushBufferID);  // Disable background flush output buffer task.
+
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       await sleep(10);
@@ -77,15 +80,16 @@ describe('operon-tests', () => {
   });
 
   test('simple-function-permission-denied', async() => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
+    const testFunction = async (txnCtxt: TransactionContext) => {
+      void txnCtxt;
+      await sleep(1);
+      return;
     };
     operon.registerTransaction(testFunction);
 
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult: string = await workflowCtxt.transaction(testFunction, name);
-      return funcResult;
+    const testWorkflow = async (workflowCtxt: WorkflowContext) => {
+      await workflowCtxt.transaction(testFunction);
+      return;
     };
     // Register the workflow as runnable only by admin
     const testWorkflowConfig: WorkflowConfig = {
@@ -96,7 +100,7 @@ describe('operon-tests', () => {
     const params: WorkflowParams = {
       runAs: "operonAppUser",
     }
-    await expect(operon.workflow(testWorkflow, params, username).getResult()).rejects.toThrow(
+    await expect(operon.workflow(testWorkflow, params).getResult()).rejects.toThrow(
       OperonWorkflowPermissionDeniedError
     );
   });
@@ -131,20 +135,21 @@ describe('operon-tests', () => {
   test('return-void', async() => {
     const testFunction = async (txnCtxt: TransactionContext) => {
       void txnCtxt;
-      await sleep(10);
+      await sleep(1);
       return;
     };
     operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
-    await operon.transaction(testFunction, {workflowUUID: workflowUUID});
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
   });
 
   test('tight-loop', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      return JSON.stringify(rows[0]);
+      void txnCtxt;
+      await sleep(1);
+      return name;
     };
     operon.registerTransaction(testFunction);
 
@@ -155,15 +160,14 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 100; i++) {
-      const workflowResult: string = await operon.workflow(testWorkflow, {}, username).getResult();
-      expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
+      await expect(operon.workflow(testWorkflow, {}, username).getResult()).resolves.toBe(username);
     }
   });
   
 
   test('abort-function', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -172,7 +176,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -190,18 +194,16 @@ describe('operon-tests', () => {
     operon.registerWorkflow(testWorkflow);
 
     for (let i = 0; i < 10; i++) {
-      const workflowResult: number = await operon.workflow(testWorkflow, {}, username).getResult();
-      expect(workflowResult).toEqual(i + 1);
+      await expect(operon.workflow(testWorkflow, {}, username).getResult()).resolves.toBe(i + 1);
     }
     
     // Should not appear in the database.
-    const workflowResult: number = await operon.workflow(testWorkflow, {}, "fail").getResult();
-    expect(workflowResult).toEqual(-1);
+    await expect(operon.workflow(testWorkflow, {}, "fail").getResult()).resolves.toBe(-1);
   });
 
   test('multiple-aborts', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       if (name !== "fail") {
         // Recursively call itself so we have multiple rollbacks.
         await testFunction(txnCtxt, "fail");
@@ -212,7 +214,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -237,7 +239,7 @@ describe('operon-tests', () => {
 
   test('oaoo-simple', async() => {
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("INSERT INTO OperonKv(value) VALUES ($1) RETURNING id", [name]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       if (name === "fail") {
         await txnCtxt.rollback();
       }
@@ -246,7 +248,7 @@ describe('operon-tests', () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows }= await txnCtxt.client.query<TestKvTable>("SELECT id FROM OperonKv WHERE id=$1", [id]);
+      const { rows }= await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
         return Number(rows[0].id);
       } else {
@@ -289,27 +291,28 @@ describe('operon-tests', () => {
 
 
   test('simple-communicator', async() => {
-    const testCommunicator = async (commCtxt: CommunicatorContext, name: string) => {
-      const response1 = await axios.post<AxiosResponse>('https://postman-echo.com/post', {"name": name});
-      const response2 = await axios.post<AxiosResponse>('https://postman-echo.com/post', response1.data.data);
-      return JSON.stringify(response2.data);
+    let counter = 0;
+    const testCommunicator = async (commCtxt: CommunicatorContext) => {
+      void commCtxt;
+      await sleep(1);
+      return counter++;
     };
     operon.registerCommunicator(testCommunicator);
 
-    const testWorkflow = async (workflowCtxt: WorkflowContext, name: string) => {
-      const funcResult = await workflowCtxt.external(testCommunicator, name);
-      return funcResult ?? "error";
+    const testWorkflow = async (workflowCtxt: WorkflowContext) => {
+      const funcResult = await workflowCtxt.external(testCommunicator);
+      return funcResult ?? -1;
     };
     operon.registerWorkflow(testWorkflow);
 
     const workflowUUID: string = uuidv1();
 
-    let result: string = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'qianl15').getResult();
-    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
+    let result: number = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult();
+    expect(result).toBe(0);
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 'peter').getResult();
-    expect(JSON.parse(result)).toMatchObject({data: { "name" : "qianl15"}});
+    result = await operon.workflow(testWorkflow, {workflowUUID: workflowUUID}).getResult();
+    expect(result).toBe(0);
   });
 
   test('simple-workflow-notifications', async() => {
@@ -370,9 +373,7 @@ describe('operon-tests', () => {
   });
 
   test('endtoend-oaoo', async () => {
-    const remoteState = {
-      num: 0
-    }
+    let num = 0;
   
     const testFunction = async (txnCtxt: TransactionContext, code: number) => {
       void txnCtxt;
@@ -382,7 +383,7 @@ describe('operon-tests', () => {
   
     const testWorkflow = async (workflowCtxt: WorkflowContext, code: number) => {
       const funcResult: number = await workflowCtxt.transaction(testFunction, code);
-      remoteState.num += 1;
+      num += 1;
       return funcResult;
     };
     operon.registerTransaction(testFunction, {readOnly: true});
@@ -390,24 +391,25 @@ describe('operon-tests', () => {
   
     const workflowUUID = uuidv1();
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
-    expect(remoteState.num).toBe(1);
+    expect(num).toBe(1);
   
     await operon.flushWorkflowOutputBuffer();
     // Run it again with the same UUID, should get the same output.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     // The workflow should not run at all.
-    expect(remoteState.num).toBe(1);
+    expect(num).toBe(1);
   });
 
   test('readonly-recording', async() => {
-    const remoteState = {
-      num: 0,
-      workflowCnt: 0
-    };
+    // Disable flush workflow output background task for tests.
+    clearInterval(operon.flushBufferID);
+
+    let num = 0;
+    let workflowCnt = 0;
 
     const readFunction = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM OperonKv WHERE id=$1`, [id]);
-      remoteState.num += 1;
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
+      num += 1;
       if (rows.length === 0) {
         return null;
       }
@@ -416,16 +418,16 @@ describe('operon-tests', () => {
     operon.registerTransaction(readFunction, {readOnly: true});
 
     const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO OperonKv VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
       return rows[0].value;
     };
     operon.registerTransaction(writeFunction, {});
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
       await workflowCtxt.transaction(readFunction, id);
-      remoteState.workflowCnt += 1;
+      workflowCnt += 1;
       await workflowCtxt.transaction(writeFunction, id, name);
-      remoteState.workflowCnt += 1; // Make sure the workflow actually runs.
+      workflowCnt += 1; // Make sure the workflow actually runs.
       throw Error("dumb test error");
     };
     operon.registerWorkflow(testWorkflow, {});
@@ -434,13 +436,13 @@ describe('operon-tests', () => {
 
     // Invoke the workflow, should get the error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
-    expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(2);
+    expect(num).toBe(1);
+    expect(workflowCnt).toBe(2);
 
     // Invoke it again, should return the recorded same error.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 123, "test").getResult()).rejects.toThrowError(new Error("dumb test error"));
-    expect(remoteState.num).toBe(1);
-    expect(remoteState.workflowCnt).toBe(2);
+    expect(num).toBe(1);
+    expect(workflowCnt).toBe(2);
   });
 
   test('retrieve-workflowstatus', async() => {
@@ -464,7 +466,7 @@ describe('operon-tests', () => {
     });
 
     const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO OperonKv VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
       return rows[0].value!;
     };
     operon.registerTransaction(writeFunction, {});
