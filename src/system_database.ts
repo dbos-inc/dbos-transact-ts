@@ -1,14 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull, function_outputs, notifications } from "./operon";
+import { operonNull, OperonNull, function_outputs, notifications, workflow_status } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 import { WorkflowStatus } from "./workflow";
 
 export interface SystemDatabase {
   // TODO: Temp changes, remove later.
-  workflowOutputBuffer: Map<string, any>;
   flushWorkflowOutputBuffer(): Promise<void>;
 
   init() : Promise<void>;
@@ -55,16 +54,34 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
-    throw new Error("Method not implemented.");
+  async checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1",
+      [workflowUUID]);
+    // TODO: maybe add back pending state.
+    if (rows.length === 0) {
+      return operonNull;
+    } else if (rows[0].status === WorkflowStatus.ERROR) {
+      throw deserializeError(JSON.parse(rows[0].error));
+    } else {
+      if (rows[0].output === null) {
+        // This is the void return value.
+        // The actual null is serialized to "null".
+        return undefined as R;
+      }
+      return JSON.parse(rows[0].output) as R;
+    }
   }
 
-  recordWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
-    throw new Error("Method not implemented.");
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async recordWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
+    this.workflowOutputBuffer.set(workflowUUID, output);
   }
 
-  recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
-    throw new Error("Method not implemented.");
+  async recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
+    const serialErr = JSON.stringify(serializeError(error));
+    await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
+    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+    [workflowUUID, WorkflowStatus.ERROR, serialErr]);
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
