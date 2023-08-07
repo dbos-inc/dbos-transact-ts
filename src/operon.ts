@@ -16,7 +16,7 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from './telemetry';
-import { Pool, PoolConfig, Client, PoolClient, ClientConfig } from 'pg';
+import { Pool, PoolConfig, Client, ClientConfig } from 'pg';
 import systemDBSchema from 'schemas/system_db_schema';
 import userDBSchema from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
@@ -90,9 +90,6 @@ export class Operon {
   // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
 
-  readonly workflowOutputBuffer: Map<string, any> = new Map();
-  readonly flushBufferIntervalMs: number = 1000;
-  readonly flushBufferID: NodeJS.Timeout;
   readonly recoveryDelayMs: number = 20000;
   readonly recoveryID: NodeJS.Timeout;
 
@@ -131,9 +128,6 @@ export class Operon {
     this.pgSystemClient = new Client(this.pgSystemClientConfig);
     this.pool = new Pool(this.config.poolConfig);
     this.systemDatabase = new PostgresSystemDatabase(this.pool);
-    this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowOutputBuffer();
-    }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
 
     // Parse requested exporters
@@ -210,8 +204,6 @@ export class Operon {
 
   async destroy() {
     clearTimeout(this.recoveryID);
-    clearInterval(this.flushBufferID);
-    await this.flushWorkflowOutputBuffer();
     await this.systemDatabase.destroy();
     await this.pool.end();
     await this.telemetryCollector.destroy();
@@ -261,26 +253,6 @@ export class Operon {
   }
 
   /* BACKGROUND PROCESSES */
-
-  /**
-   * A background process that periodically flushes the workflow output buffer to the database.
-   * TODO: add back garbage collection.
-   */
-  async flushWorkflowOutputBuffer() {
-    if (this.initialized) {
-      const localBuffer = new Map(this.workflowOutputBuffer);
-      this.workflowOutputBuffer.clear();
-      const client: PoolClient = await this.pool.connect();
-      await client.query("BEGIN");
-      for (const [workflowUUID, output] of localBuffer) {
-        await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
-        [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
-      }
-      await client.query("COMMIT");
-      client.release();
-    }
-  }
 
   /**
    * A background process that runs once asynchronously a certain period after initialization.
@@ -359,7 +331,7 @@ export class Operon {
       }
 
       const recordWorkflowOutput = (output: R) => {
-        this.workflowOutputBuffer.set(workflowUUID, output);
+        this.systemDatabase.workflowOutputBuffer.set(workflowUUID, output);
       }
 
       const recordWorkflowError = async (err: Error) => {

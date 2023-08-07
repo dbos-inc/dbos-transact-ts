@@ -60,8 +60,6 @@ describe('concurrency-tests', () => {
   });
 
   test('concurrent-gc',async () => {
-    clearInterval(operon.flushBufferID);
-
     let resolve: () => void;
     const promise = new Promise<void>((r) => {
       resolve = r;
@@ -98,7 +96,7 @@ describe('concurrency-tests', () => {
     await operon.workflow(testWorkflow, {workflowUUID: uuid}).getResult();
     const handle = operon.workflow(testWorkflow, {workflowUUID: uuid});
     await promise2;
-    await operon.flushWorkflowOutputBuffer();
+    await operon.systemDatabase.flushWorkflowOutputBuffer();
     resolve!();
     await handle.getResult();
 

@@ -4,11 +4,15 @@ import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs, notifications } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
+import { WorkflowStatus } from "./workflow";
 
 export interface SystemDatabase {
-  init() : Promise<void>
-  destroy() : Promise<void>
-  listenerMap: Record<string, () => void>;
+  // TODO: Temp changes, remove later.
+  workflowOutputBuffer: Map<string, any>;
+  flushWorkflowOutputBuffer(): Promise<void>;
+
+  init() : Promise<void>;
+  destroy() : Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string) : Promise<OperonNull | R>;
   recordWorkflowOutput<R>(workflowUUID: string, output: R) : Promise<void>;
@@ -27,13 +31,24 @@ export class PostgresSystemDatabase implements SystemDatabase {
   notificationsClient: PoolClient | null = null;
   readonly listenerMap: Record<string, () => void> = {};
 
+  readonly workflowOutputBuffer: Map<string, any> = new Map();
+  readonly flushBufferIntervalMs: number = 1000;
+  flushBufferID: NodeJS.Timeout | null = null;
+
   constructor(readonly pool: Pool) {}
 
   async init() {
     await this.listenForNotifications();
+    this.flushBufferID = setInterval(() => {
+      void this.flushWorkflowOutputBuffer();
+    }, this.flushBufferIntervalMs) ;
   }
 
   async destroy() {
+    if (this.flushBufferID) {
+      clearInterval(this.flushBufferID);
+      await this.flushWorkflowOutputBuffer();
+    }
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
       this.notificationsClient.release();
@@ -215,5 +230,23 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     };
     this.notificationsClient.on('notification', handler);
+  }
+
+  /**
+   * A background process that periodically flushes the workflow output buffer to the database.
+   * TODO: add back garbage collection.
+   */
+  async flushWorkflowOutputBuffer() {
+    const localBuffer = new Map(this.workflowOutputBuffer);
+    this.workflowOutputBuffer.clear();
+    const client: PoolClient = await this.pool.connect();
+    await client.query("BEGIN");
+    for (const [workflowUUID, output] of localBuffer) {
+      await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+      [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+    }
+    await client.query("COMMIT");
+    client.release();
   }
 }
