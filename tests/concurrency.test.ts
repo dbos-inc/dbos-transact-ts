@@ -161,13 +161,13 @@ describe('concurrency-tests', () => {
 
     // Make sure we retrieve results correctly.
     await operon.flushWorkflowOutputBuffer();
-    const sendHandle = await operon.retrieveWorkflow(sendUUID);
-    await expect(sendHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    await expect(sendHandle!.getResult()).resolves.toBe(true);
+    const sendHandle = operon.retrieveWorkflow(sendUUID);
+    await expect(sendHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(sendHandle.getResult()).resolves.toBe(true);
 
-    const recvHandle = await operon.retrieveWorkflow(recvUUID);
-    await expect(recvHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    await expect(recvHandle!.getResult()).resolves.toBe("hello");
+    const recvHandle = operon.retrieveWorkflow(recvUUID);
+    await expect(recvHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(recvHandle.getResult()).resolves.toBe("hello");
   });
 
 });

@@ -422,8 +422,8 @@ export class Operon {
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
-          const retrievedHandle = await this.retrieveWorkflow<R>(workflowUUID);
-          result = await retrievedHandle!.getResult();
+          const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
+          result = await retrievedHandle.getResult();
         } else {
           // Record the error.
           await recordWorkflowError(err as Error);

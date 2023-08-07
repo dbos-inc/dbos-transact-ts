@@ -90,12 +90,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         return JSON.parse(rows[0].output) as boolean;
       }
     }
-    ({ rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3) 
-      ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`, [topic, key, JSON.stringify(message)]));
-    const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
-    try {
-      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);",
-        [workflowUUID, functionID, JSON.stringify(success)]);
+    try { // Guard the operation, throwing an error if a conflicting execution is detected.
+      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id) VALUES ($1, $2);",
+        [workflowUUID, functionID]);
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
@@ -106,6 +103,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw err;
       }
     }
+    ({ rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3)
+      ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`, [topic, key, JSON.stringify(message)]));
+    const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
+    await client.query("UPDATE operon.operation_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
+      [JSON.stringify(success), workflowUUID, functionID]);
     await client.query("COMMIT");
     client.release();
     return success;
