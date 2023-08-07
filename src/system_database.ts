@@ -2,7 +2,8 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs } from "./operon";
-import { Pool } from 'pg';
+import { DatabaseError, Pool } from 'pg';
+import { OperonWorkflowConflictUUIDError } from "./error";
 
 export interface SystemDatabase {
   checkWorkflowOutput<R>(workflowUUID: string) : Promise<OperonNull | R>;
@@ -46,14 +47,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
-      [workflowUUID, functionID, serialOutput, null]);
+    try {
+      await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+        [workflowUUID, functionID, serialOutput, null]);
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
+        throw new OperonWorkflowConflictUUIDError();
+      } else {
+        throw err;
+      }
+    }
   }
 
   async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
-    await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
-    [workflowUUID, functionID, null, serialErr]);
+    try {
+      await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+        [workflowUUID, functionID, null, serialErr]);
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
+        throw new OperonWorkflowConflictUUIDError();
+      } else {
+        throw err;
+      }
+    }
   }
 
   send<T extends unknown>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
