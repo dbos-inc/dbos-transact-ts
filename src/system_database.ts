@@ -24,20 +24,20 @@ export interface SystemDatabase {
 
 export class PostgresSystemDatabase implements SystemDatabase {
 
-  notificationsClient: Promise<PoolClient>
+  notificationsClient: PoolClient | null = null;
   readonly listenerMap: Record<string, () => void> = {};
 
-  constructor(readonly pool: Pool) {
-    this.notificationsClient = pool.connect();
-  }
+  constructor(readonly pool: Pool) {}
 
   async init() {
     await this.listenForNotifications();
   }
 
   async destroy() {
-    (await this.notificationsClient).removeAllListeners();
-    (await this.notificationsClient).release();
+    if (this.notificationsClient) {
+      this.notificationsClient.removeAllListeners();
+      this.notificationsClient.release();
+    }
   }
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
@@ -142,13 +142,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
    * workflow listener by resolving its promise.
    */
   async listenForNotifications() {
-    const client = await this.notificationsClient;
-    await client.query('LISTEN operon_notifications_channel;');
+    this.notificationsClient = await this.pool.connect();
+    await this.notificationsClient.query('LISTEN operon_notifications_channel;');
     const handler = (msg: Notification ) => {
       if (msg.payload && msg.payload in this.listenerMap) {
         this.listenerMap[msg.payload]();
       }
     };
-    client.on('notification', handler);
+    this.notificationsClient.on('notification', handler);
   }
 }
