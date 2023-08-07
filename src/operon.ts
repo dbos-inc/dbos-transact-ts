@@ -290,6 +290,7 @@ export class Operon {
 
   /**
    * A background process that periodically flushes the workflow output buffer to the database.
+   * TODO: add back garbage collection.
    */
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
@@ -301,8 +302,6 @@ export class Operon {
         await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
         [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
-        // Garbage collect function outputs and workflow input.
-        await client.query(`DELETE FROM operon.function_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
       }
       await client.query("COMMIT");
       client.release();
@@ -315,17 +314,7 @@ export class Operon {
    * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
-    const { rows } = await this.pool.query<workflow_status>("SELECT * FROM operon.workflow_status WHERE status=$1 AND updated_at_epoch_ms<$2", 
-      [WorkflowStatus.PENDING, this.initialEpochTimeMs]);
-    const handlerArray: WorkflowHandle<any>[] = [];
-    for (const row of rows) {
-      const wInfo = this.workflowInfoMap.get(row.workflow_name);
-      if (wInfo === undefined) {
-        throw new OperonError(`Workflow unregistered during recovery: ${row.workflow_name}`);
-      }
-      handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: row.workflow_uuid}));
-    }
-    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+    // TODO: re-implement this function.
   }
 
   /* WORKFLOW OPERATIONS */
@@ -380,7 +369,8 @@ export class Operon {
       const checkWorkflowOutput = async () => {
         const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1",
           [workflowUUID]);
-        if ((rows.length === 0) || (rows[0].status === WorkflowStatus.PENDING)) {
+        // TODO: maybe add back pending state.
+        if (rows.length === 0) {
           return operonNull;
         } else if (rows[0].status === WorkflowStatus.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
@@ -470,11 +460,7 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, topic, key, timeoutSeconds).getResult();
   }
 
-  async retrieveWorkflow<R>(workflowUUID: string) : Promise<WorkflowHandle<R> | null> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
-    if (rows.length === 0) {
-      return null;
-    }
+  retrieveWorkflow<R>(workflowUUID: string) : WorkflowHandle<R> {
     return new RetrievedHandle(this.pool, workflowUUID);
   }
 

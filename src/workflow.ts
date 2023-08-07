@@ -29,6 +29,7 @@ export interface WorkflowConfig {
 }
 
 export const WorkflowStatus = {
+  UNKNOWN: "UNKNOWN",
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
@@ -76,7 +77,6 @@ export class WorkflowContext {
 
   /**
    * Write all entries in the workflow result buffer to the database.
-   * Also update workflow status to PENDING.
    * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
    */
   async flushResultBuffer(client: PoolClient): Promise<void> {
@@ -86,16 +86,6 @@ export class WorkflowContext {
       for (const funcID of funcIDs) {
         await client.query("INSERT INTO operon.function_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
-      }
-      // Update workflow PENDING status.
-      if (!this.isTempWorkflow) {
-        const { rows } = await client.query<workflow_status>(`INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status) VALUES ($1, $2, $3)
-         ON CONFLICT (workflow_uuid) DO UPDATE SET updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint
-        RETURNING (SELECT old.status FROM operon.workflow_status old WHERE old.workflow_uuid=$1) AS status;`,
-        [this.workflowUUID, this.workflowName, WorkflowStatus.PENDING]);
-        if ((rows[0].status === WorkflowStatus.ERROR) || (rows[0].status === WorkflowStatus.SUCCESS)) {
-          throw new OperonWorkflowConflictUUIDError();
-        }
       }
     } catch (error) {
       await client.query('ROLLBACK');
@@ -456,7 +446,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<string> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
     if (rows.length === 0) {
-      throw new OperonError("UNREACHABLE: Workflow does not exist");
+      return WorkflowStatus.UNKNOWN;
     }
     return rows[0].status;
   }
@@ -464,14 +454,13 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   async getResult(): Promise<R> {
     while(true) {
       const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
-      if (rows.length === 0) { 
-        throw new OperonError("UNREACHABLE: Workflow does not exist");
-      }
-      const status = rows[0].status;
-      if (status === WorkflowStatus.SUCCESS) {
-        return JSON.parse(rows[0].output) as R;
-      } else if (status === WorkflowStatus.ERROR) {
-        throw deserializeError(JSON.parse(rows[0].error));
+      if (rows.length > 0) {
+        const status = rows[0].status;
+        if (status === WorkflowStatus.SUCCESS) {
+          return JSON.parse(rows[0].output) as R;
+        } else if (status === WorkflowStatus.ERROR) {
+          throw deserializeError(JSON.parse(rows[0].error));
+        }
       }
       await sleep(RetrievedHandle.pollingIntervalMs);
     }
