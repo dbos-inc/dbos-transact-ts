@@ -2,7 +2,6 @@
 /*eslint-disable no-constant-condition */
 import {
   function_outputs,
-  notifications,
   Operon,
   OperonNull,
   operonNull,
@@ -319,63 +318,14 @@ export class WorkflowContext {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
     }
 
-    let client = await this.#operon.pool.connect();
-
-    const check: T | OperonNull = await this.checkExecution<T>(client, functionID);
-    if (check !== operonNull) {
-      client.release();
-      return check as T;
-    }
-
-    // First, register the key with the global notifications listener.
-    let resolveNotification: () => void;
-    const messagePromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
-    });
-    this.#operon.systemDatabase.listenerMap[`${topic}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-    let timer: NodeJS.Timeout;
-    const timeoutPromise = new Promise<void>((resolve) => {
-      timer = setTimeout(() => {
-        resolve();
-      }, timeoutSeconds * 1000);
-    });
-    const received = Promise.race([messagePromise, timeoutPromise]);
-
-    // Then, check if the key is already in the DB, returning it if it is.
-    await client.query(`BEGIN`);
-    this.guardOperation(functionID);
+    const client = await this.#operon.pool.connect();
+    await client.query('BEGIN');
     await this.flushResultBuffer(client);
-    let { rows } = await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]);
-    if (rows.length > 0 ) {
-      const message: T = JSON.parse(rows[0].message) as T;
-      await this.recordGuardedOutput(client, functionID, message);
-      await client.query(`COMMIT`);
-      this.resultBuffer.clear();
-      client.release();
-      delete this.#operon.systemDatabase.listenerMap[`${topic}::${key}`];
-      return message;
-    } else {
-      await client.query(`ROLLBACK`);
-    }
-    client.release();
-
-    // Wait for the notification, then check if the key is in the DB, returning the message if it is and null if it isn't.
-    await received;
-    clearTimeout(timer!);
-    client = await this.#operon.pool.connect();
-    await client.query(`BEGIN`);
-    this.guardOperation(functionID);
-    await this.flushResultBuffer(client);
-    ({ rows } = await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key]));
-    let message: T | null = null;
-    if (rows.length > 0 ) {
-      message = JSON.parse(rows[0].message) as T;
-    }
-    await this.recordGuardedOutput(client, functionID, message);
-    await client.query(`COMMIT`);
+    await client.query('COMMIT');
     this.resultBuffer.clear();
     client.release();
-    return message;
+
+    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, key, timeoutSeconds);
   }
 
   hasTopicPermissions(requestedTopic: string): boolean {
