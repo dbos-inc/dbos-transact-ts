@@ -112,10 +112,6 @@ export class WorkflowContext {
     const serialOutput = JSON.stringify(output);
     await client.query("UPDATE operon.function_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialOutput, this.workflowUUID, funcID]);
-    if (this.isTempWorkflow) {
-      await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status, output) VALUES ($1, $2, $3, $4);",
-        [this.workflowUUID, this.workflowName, WorkflowStatus.SUCCESS, serialOutput]);
-    }
   }
 
   /**
@@ -125,10 +121,6 @@ export class WorkflowContext {
     const serialErr = JSON.stringify(serializeError(err));
     await client.query("UPDATE operon.function_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
-    if (this.isTempWorkflow) {
-      await client.query("INSERT INTO operon.workflow_status (workflow_uuid, workflow_name, status, error) VALUES ($1, $2, $3, $4);",
-        [this.workflowUUID, this.workflowName, WorkflowStatus.ERROR, serialErr]);
-    }
   }
 
   /**

@@ -26,7 +26,6 @@ describe('operon-tests', () => {
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
-    console.log(config);
     username = config.poolConfig.user || "postgres";
     await teardownOperonTestDb(config);
   });

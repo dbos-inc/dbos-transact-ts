@@ -49,6 +49,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init() {
+    await this.pgSystemClient.connect();
     // Create the system database and load tables.
     const dbExists = await this.pgSystemClient.query(
       `SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`
@@ -63,6 +64,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
+    await this.pgSystemClient.end();
   }
 
   async destroy() {
@@ -74,6 +76,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.notificationsClient.removeAllListeners();
       this.notificationsClient.release();
     }
+    await this.pool.end();
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
