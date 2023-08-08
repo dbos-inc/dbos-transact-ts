@@ -16,6 +16,7 @@ export interface SystemDatabase {
   bufferWorkflowOutput<R>(workflowUUID: string, output: R) : Promise<void>;
   flushWorkflowOutputBuffer(): Promise<Array<string>>
   recordWorkflowError(workflowUUID: string, error: Error) : Promise<void>;
+  garbageCollectWorkflow(workflowUUID: string): Promise<void>;
 
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number) : Promise<OperonNull | R>;
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R) : Promise<void>;
@@ -304,5 +305,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await client.query("COMMIT");
     client.release();
     return Array.from(localBuffer.keys());
+  }
+
+  async garbageCollectWorkflow(workflowUUID: string): Promise<void> {
+      await this.pool.query(`DELETE FROM operon.operation_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
   }
 }
