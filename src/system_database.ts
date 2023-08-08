@@ -1,21 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull, function_outputs, notifications } from "./operon";
+import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import systemDBSchema from 'schemas/system_db_schema';
+import { systemDBSchema, notifications, operation_outputs, workflow_status } from 'schemas/system_db_schema';
 import { sleep } from "./utils";
-
-interface workflow_status {
-  workflow_uuid: string;
-  workflow_name: string;
-  status: string;
-  output: string;
-  error: string;
-  updated_at_epoch_ms: number;
-}
 
 export interface SystemDatabase {
   init() : Promise<void>;
@@ -107,7 +98,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
-    const { rows } = await this.pool.query<function_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [workflowUUID, functionID]);
     if (rows.length === 0) {
       return operonNull;
@@ -171,7 +162,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN");
-    let { rows } = await client.query<function_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    let { rows } = await client.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
@@ -195,7 +186,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // First, check for previous executions.
-    const checkRows = (await this.pool.query<function_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    const checkRows = (await this.pool.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
       if (JSON.parse(checkRows[0].error) !== null) {

@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  function_outputs,
   Operon,
   OperonNull,
   operonNull,
 } from './operon';
+import { function_outputs } from 'schemas/user_db_schema';
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
@@ -13,7 +13,7 @@ import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
 
-const defaultWorkflowReceiveTimeout = 60; // seconds
+const defaultRecvTimeoutSec = 60;
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -307,7 +307,7 @@ export class WorkflowContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultWorkflowReceiveTimeout) : Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultRecvTimeoutSec) : Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Is this receiver permitted to read from this topic?

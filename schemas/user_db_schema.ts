@@ -1,4 +1,11 @@
-const userDBSchema = `
+export interface function_outputs {
+  workflow_uuid: string;
+  function_id: number;
+  output: string;
+  error: string;
+}
+
+export const userDBSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
   CREATE TABLE IF NOT EXISTS operon.function_outputs (
@@ -9,5 +16,3 @@ const userDBSchema = `
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;
-
-export default userDBSchema;

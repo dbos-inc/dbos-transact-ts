@@ -1,4 +1,26 @@
-const systemDBSchema = `
+export interface workflow_status {
+  workflow_uuid: string;
+  workflow_name: string;
+  status: string;
+  output: string;
+  error: string;
+  updated_at_epoch_ms: number;
+}
+
+export interface notifications {
+  topic: string;
+  key: string;
+  message: string;
+}
+
+export interface operation_outputs {
+  workflow_uuid: string;
+  function_id: number;
+  output: string;
+  error: string;
+}
+
+export const systemDBSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
   CREATE TABLE IF NOT EXISTS operon.operation_outputs (
@@ -47,5 +69,3 @@ const systemDBSchema = `
     END
     $$;
 `;
-
-export default systemDBSchema;

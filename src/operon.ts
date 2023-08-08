@@ -17,24 +17,11 @@ import {
   POSTGRES_EXPORTER,
 } from './telemetry';
 import { Pool, PoolConfig, Client, ClientConfig } from 'pg';
-import userDBSchema from 'schemas/user_db_schema';
+import { userDBSchema, function_outputs } from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 
-/* Interfaces for Operon system data structures */
-export interface function_outputs {
-  workflow_uuid: string;
-  function_id: number;
-  output: string;
-  error: string;
-}
-
-export interface notifications {
-  topic: string;
-  key: string;
-  message: string;
-}
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -261,19 +248,19 @@ export class Operon {
    */
   async recoverPendingWorkflows() {
     // Retrieve a list of workflow UUIDs from the function output table.
-    const wfUUIDrows = (await this.pool.query<function_outputs>("select workflow_uuid, output from operon.function_outputs WHERE function_id = 0;")).rows;
+    const workflows = (await this.pool.query<function_outputs>("select workflow_uuid, output from operon.function_outputs WHERE function_id = 0;")).rows;
     const handlerArray: WorkflowHandle<any>[] = [];
-    for (const wfUUIDrow of wfUUIDrows) {
+    for (const workflow of workflows) {
       // Check workflow status. If not success or error, then recover.
-      const status = await this.retrieveWorkflow(wfUUIDrow.workflow_uuid).getStatus();
+      const status = await this.retrieveWorkflow(workflow.workflow_uuid).getStatus();
       if ((status.status !== StatusString.SUCCESS) && (status.status !== StatusString.ERROR)) {
         // Retrieve workflow name from the recorded input.
-        const wfInput: WorkflowInput<any> = (JSON.parse(wfUUIDrow.output) as WorkflowInput<any>);
+        const wfInput: WorkflowInput<any> = (JSON.parse(workflow.output) as WorkflowInput<any>);
         const wInfo = this.workflowInfoMap.get(wfInput.workflow_name);
         if (wInfo === undefined) {
           throw new OperonError(`Workflow unregistered during recovery: ${status.workflow_name}`);
         }
-        handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: wfUUIDrow.workflow_uuid}));
+        handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: workflow.workflow_uuid}));
       }
     }
     // Wait until all workflows complete.
@@ -336,7 +323,6 @@ export class Operon {
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
           wCtxt.resultBuffer.set(workflowInputID, {workflow_name: wf.name, input: input});
-          // TODO: Also indicate this workflow is pending now.
         } else {
         // Return the old recorded input
           input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
