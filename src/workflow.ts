@@ -158,6 +158,8 @@ export class WorkflowContext {
       if (!fCtxt.readOnly) {
         await this.flushResultBuffer(client);
         if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
+          await client.query("ROLLBACK");
+          client.release();
           throw new OperonWorkflowConflictUUIDError();
         } 
       }
