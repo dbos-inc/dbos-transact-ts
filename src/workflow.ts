@@ -28,7 +28,8 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string,
-  updatedAtEpochMs: number
+  updatedAtEpochMs: number,
+  workflow_name: string
 }
 
 export const StatusString = {
@@ -347,7 +348,7 @@ export interface WorkflowHandle<R> {
  * The handle returned when invoking a workflow with Operon.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
@@ -356,7 +357,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return {status: StatusString.PENDING, updatedAtEpochMs: Date.now()};
+      return {status: StatusString.PENDING, updatedAtEpochMs: Date.now(), workflow_name: this.workflowName};
     } else {
       return status;
     }

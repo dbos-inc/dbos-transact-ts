@@ -5,7 +5,7 @@ import {
   OperonInitializationError,
   OperonWorkflowConflictUUIDError
 } from './error';
-import {InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle } from './workflow';
+import {InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle, StatusString } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
@@ -28,15 +28,6 @@ export interface function_outputs {
   function_id: number;
   output: string;
   error: string;
-}
-
-export interface workflow_status {
-  workflow_uuid: string;
-  workflow_name: string;
-  status: string;
-  output: string;
-  error: string;
-  updated_at_epoch_ms: number;
 }
 
 export interface notifications {
@@ -72,6 +63,11 @@ interface ConfigFile {
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
   config: WorkflowConfig;
+}
+
+interface WorkflowInput<T extends any[]> {
+  workflow_name: string;
+  input: T;
 }
 
 export class Operon {
@@ -264,7 +260,24 @@ export class Operon {
    * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
    */
   async recoverPendingWorkflows() {
-    // TODO: re-implement this function.
+    // Retrieve a list of workflow UUIDs from the function output table.
+    const wfUUIDrows = (await this.pool.query<function_outputs>("select workflow_uuid, output from operon.function_outputs WHERE function_id = 0;")).rows;
+    const handlerArray: WorkflowHandle<any>[] = [];
+    for (const wfUUIDrow of wfUUIDrows) {
+      // Check workflow status. If not success or error, then recover.
+      const status = await this.retrieveWorkflow(wfUUIDrow.workflow_uuid).getStatus();
+      if ((status.status !== StatusString.SUCCESS) && (status.status !== StatusString.ERROR)) {
+        // Retrieve workflow name from the recorded input.
+        const wfInput: WorkflowInput<any> = (JSON.parse(wfUUIDrow.output) as WorkflowInput<any>);
+        const wInfo = this.workflowInfoMap.get(wfInput.workflow_name);
+        if (wInfo === undefined) {
+          throw new OperonError(`Workflow unregistered during recovery: ${status.workflow_name}`);
+        }
+        handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: wfUUIDrow.workflow_uuid}));
+      }
+    }
+    // Wait until all workflows complete.
+    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }
 
   /* WORKFLOW OPERATIONS */
@@ -322,11 +335,11 @@ export class Operon {
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
-          wCtxt.resultBuffer.set(workflowInputID, input);
+          wCtxt.resultBuffer.set(workflowInputID, {workflow_name: wf.name, input: input});
           // TODO: Also indicate this workflow is pending now.
         } else {
         // Return the old recorded input
-          input = JSON.parse(rows[0].output) as T;
+          input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
         }
         return input;
       }
@@ -355,7 +368,7 @@ export class Operon {
       return result!;
     }
     const workflowPromise: Promise<R> = runWorkflow();
-    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID);
+    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {

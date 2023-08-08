@@ -245,5 +245,55 @@ describe('failures-tests', () => {
     await expect(operon.workflow(testWorkflow, {}, 10, "test").getResult()).resolves.toBe(11);
   });
 
-  // TODO: add back failure recovery test.
+  test('failure-recovery', async() => {
+    // Run a workflow until it reaches PENDING state, then shut down the server, and recover from there.
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let resolve2: () => void;
+    const promise2 = new Promise<void>((resolve) => {
+      resolve2 = resolve;
+    });
+
+    const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      return rows[0].value!;
+    };
+    operon.registerTransaction(writeFunction, {});
+
+    const testWorkflow = async (workflowCtxt: WorkflowContext, id: number, name: string) => {
+      const value = await workflowCtxt.transaction(writeFunction, id, name);
+      resolve1();  // Signal the execution has done.
+      await promise2;
+      return value;
+    };
+    operon.registerWorkflow(testWorkflow, {});
+
+    const workflowUUID = uuidv1();
+
+    const invokeHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
+
+    await promise1;
+
+    // Now should see the pending state.
+    await expect(invokeHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
+
+    // Shut down the server.
+    await operon.destroy();
+
+    await sleep(1000);
+
+    // Create a new operon and register everything
+    operon = new Operon(config);
+    await operon.init();
+    operon.registerTransaction(writeFunction, {});
+    operon.registerWorkflow(testWorkflow, {});
+
+    // Start the recovery.
+    resolve2!();
+    await operon.recoverPendingWorkflows();
+    await expect(operon.retrieveWorkflow<string>(workflowUUID).getResult()).resolves.toBe("hello");
+  });
 });

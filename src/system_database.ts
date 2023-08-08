@@ -1,12 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull, function_outputs, notifications, workflow_status } from "./operon";
+import { operonNull, OperonNull, function_outputs, notifications } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import systemDBSchema from 'schemas/system_db_schema';
 import { sleep } from "./utils";
+
+interface workflow_status {
+  workflow_uuid: string;
+  workflow_name: string;
+  status: string;
+  output: string;
+  error: string;
+  updated_at_epoch_ms: number;
+}
 
 export interface SystemDatabase {
   init() : Promise<void>;
@@ -248,11 +257,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms, workflow_name FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1};
+      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1, workflow_name: "unknown"};
     }
-    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms};
+    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms, workflow_name: rows[0].workflow_name};
   }
   
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
