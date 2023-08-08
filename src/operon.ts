@@ -58,17 +58,15 @@ export interface OperonConfig {
 }
 
 interface ConfigFile {
-  database: DatabaseConfig;
+  database: {
+    hostname: string;
+    port: number;
+    username: string;
+    connectionTimeoutMillis: number;
+    user_database: string;
+    system_database: string;
+  };
   telemetryExporters?: string[];
-}
-
-interface DatabaseConfig {
-  hostname: string;
-  port: number;
-  username: string;
-  connectionTimeoutMillis: number;
-  user_database: string;
-  system_database: string;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -210,26 +208,25 @@ export class Operon {
 
   generateOperonConfig(): OperonConfig {
     // Load default configuration
-    let configuration: ConfigFile | undefined;
+    let config: ConfigFile | undefined;
     try {
       const configContent = readFileSync(CONFIG_FILE);
-      configuration = YAML.parse(configContent) as ConfigFile;
+      config = YAML.parse(configContent) as ConfigFile;
     } catch(error) {
       if (error instanceof Error) {
         throw(new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`));
       }
     }
-    if (!configuration) {
+    if (!config) {
       throw(new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`));
     }
 
     // Handle "Global" pool config
-    if (!configuration.database) {
+    if (!config.database) {
       throw(new OperonInitializationError(
         `Operon configuration ${CONFIG_FILE} does not contain database config`
       ));
     }
-    const dbConfig: DatabaseConfig = configuration.database;
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
       throw(new OperonInitializationError(
@@ -237,18 +234,18 @@ export class Operon {
       ));
     }
     const poolConfig: PoolConfig = {
-      host: dbConfig.hostname,
-      port: dbConfig.port,
-      user: dbConfig.username,
+      host: config.database.hostname,
+      port: config.database.port,
+      user: config.database.username,
       password: dbPassword,
-      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
-      database: dbConfig.user_database,
+      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
+      database: config.database.user_database,
     };
 
     return {
       poolConfig: poolConfig,
       telemetryExporters: configuration.telemetryExporters || [],
-      system_database: dbConfig.system_database ?? 'operon_systemdb'
+      system_database: config.database.system_database ?? 'operon_systemdb'
     };
   }
 
