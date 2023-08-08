@@ -26,7 +26,12 @@ export interface WorkflowConfig {
   rolesThatCanRun?: string[];
 }
 
-export const WorkflowStatus = {
+export interface WorkflowStatus {
+  status: string,
+  updatedAtEpochMs: number
+}
+
+export const StatusString = {
   UNKNOWN: "UNKNOWN",
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
@@ -157,11 +162,6 @@ export class WorkflowContext {
       this.guardOperation(funcId);
       if (!fCtxt.readOnly) {
         await this.flushResultBuffer(client);
-        if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
-          await client.query("ROLLBACK");
-          client.release();
-          throw new OperonWorkflowConflictUUIDError();
-        } 
       }
 
       let result: R;
@@ -238,9 +238,6 @@ export class WorkflowContext {
     if (check !== operonNull) {
       return check as R;
     }
-    if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
-      throw new OperonWorkflowConflictUUIDError();
-    } 
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an OperonError.
@@ -267,10 +264,6 @@ export class WorkflowContext {
         err = error as Error;
       }
     }
-
-    if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
-      throw new OperonWorkflowConflictUUIDError();
-    } 
 
     // `result` can only be operonNull when the communicator timed out
     if (result === operonNull) {
@@ -345,7 +338,7 @@ export class WorkflowContext {
 }
 
 export interface WorkflowHandle<R> {
-  getStatus(): Promise<string>;
+  getStatus(): Promise<WorkflowStatus>;
   getResult(): Promise<R>;
   getWorkflowUUID(): string;
 }
@@ -360,10 +353,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<string> {
-    const status: string = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    if (status === WorkflowStatus.UNKNOWN) {
-      return WorkflowStatus.PENDING;
+  async getStatus(): Promise<WorkflowStatus> {
+    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    if (status.status === StatusString.UNKNOWN) {
+      return {status: StatusString.PENDING, updatedAtEpochMs: Date.now()};
     } else {
       return status;
     }
@@ -386,7 +379,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<string> {
+  async getStatus(): Promise<WorkflowStatus> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 

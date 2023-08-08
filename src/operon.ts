@@ -36,7 +36,7 @@ export interface workflow_status {
   status: string;
   output: string;
   error: string;
-  last_update: number;  // UNIX timestamp in seconds.
+  updated_at_epoch_ms: number;
 }
 
 export interface notifications {

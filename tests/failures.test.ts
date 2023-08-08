@@ -14,7 +14,7 @@ import {
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
-import { WorkflowStatus } from "src/workflow";
+import { StatusString } from "src/workflow";
 
 describe('failures-tests', () => {
   let operon: Operon;
@@ -57,10 +57,10 @@ describe('failures-tests', () => {
 
     const codeHandle = operon.workflow(testWorkflow, {}, 11);
     await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
-    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    await expect((await codeHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
     const retrievedHandle = operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    await expect((await retrievedHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
     await expect(retrievedHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
@@ -68,7 +68,7 @@ describe('failures-tests', () => {
     const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
     await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
     expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
-    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    await expect((await noCodeHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
   });
 
   test('readonly-error', async() => {

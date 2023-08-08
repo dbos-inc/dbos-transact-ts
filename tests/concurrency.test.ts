@@ -2,7 +2,7 @@ import { CommunicatorContext, Operon, OperonConfig, TransactionContext, Workflow
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
-import { WorkflowStatus } from "src/workflow";
+import { StatusString } from "src/workflow";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
@@ -157,11 +157,11 @@ describe('concurrency-tests', () => {
 
     // Make sure we retrieve results correctly.
     const sendHandle = operon.retrieveWorkflow(sendUUID);
-    await expect(sendHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(sendHandle.getStatus()).resolves.toBe(StatusString.SUCCESS);
     await expect(sendHandle.getResult()).resolves.toBe(true);
 
     const recvHandle = operon.retrieveWorkflow(recvUUID);
-    await expect(recvHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    await expect(recvHandle.getStatus()).resolves.toBe(StatusString.SUCCESS);
     await expect(recvHandle.getResult()).resolves.toBe("hello");
   });
 

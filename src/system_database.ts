@@ -4,7 +4,7 @@ import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs, notifications, workflow_status } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
-import { WorkflowStatus } from "./workflow";
+import { StatusString, WorkflowStatus } from "./workflow";
 import systemDBSchema from 'schemas/system_db_schema';
 import { sleep } from "./utils";
 
@@ -22,7 +22,7 @@ export interface SystemDatabase {
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R) : Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string) : Promise<string>;
+  getWorkflowStatus(workflowUUID: string) : Promise<WorkflowStatus>;
   getWorkflowResult<R>(workflowUUID: string) : Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, message: T) : Promise<boolean>;
@@ -79,7 +79,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // TODO: maybe add back pending state.
     if (rows.length === 0) {
       return operonNull;
-    } else if (rows[0].status === WorkflowStatus.ERROR) {
+    } else if (rows[0].status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(rows[0].error));
     } else {
       return JSON.parse(rows[0].output) as R;
@@ -95,7 +95,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const serialErr = JSON.stringify(serializeError(error));
     await this.pool.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) 
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
-    [workflowUUID, WorkflowStatus.ERROR, serialErr]);
+    [workflowUUID, StatusString.ERROR, serialErr]);
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
@@ -147,9 +147,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id) VALUES ($1, $2);",
         [workflowUUID, functionID]);
-      if (await this.getWorkflowStatus(workflowUUID) !== WorkflowStatus.UNKNOWN) {
-        throw new OperonWorkflowConflictUUIDError();
-      } 
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
@@ -251,12 +248,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<string> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return WorkflowStatus.UNKNOWN;
+      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1};
     }
-    return rows[0].status;
+    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms};
   }
   
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
@@ -266,9 +263,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
       if (rows.length > 0) {
         const status = rows[0].status;
-        if (status === WorkflowStatus.SUCCESS) {
+        if (status === StatusString.SUCCESS) {
           return JSON.parse(rows[0].output) as R;
-        } else if (status === WorkflowStatus.ERROR) {
+        } else if (status === StatusString.ERROR) {
           throw deserializeError(JSON.parse(rows[0].error));
         }
       }
@@ -303,7 +300,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     for (const [workflowUUID, output] of localBuffer) {
       await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
-      [workflowUUID, WorkflowStatus.SUCCESS, JSON.stringify(output)]);
+      [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]);
     }
     await client.query("COMMIT");
     client.release();
