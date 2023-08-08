@@ -1,13 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/*eslint-disable no-constant-condition */
 import {
   function_outputs,
   Operon,
   OperonNull,
   operonNull,
-  workflow_status
 } from './operon';
-import { PoolClient, DatabaseError, Pool } from 'pg';
+import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
@@ -143,6 +141,7 @@ export class WorkflowContext {
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
+    // eslint-disable-next-line no-constant-condition
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
       const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
