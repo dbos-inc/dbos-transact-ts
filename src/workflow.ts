@@ -13,6 +13,7 @@ import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
 import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
+import { SystemDatabase } from './system_database';
 
 const defaultWorkflowReceiveTimeout = 60; // seconds
 
@@ -347,18 +348,19 @@ export interface WorkflowHandle<R> {
  * The handle returned when invoking a workflow with Operon.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly pool: Pool, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<string> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
-    if (rows.length === 0) {
+    const status: string = await this.systemDatabase.getStatus(this.workflowUUID);
+    if (status === WorkflowStatus.UNKNOWN) {
       return WorkflowStatus.PENDING;
+    } else {
+      return status;
     }
-    return rows[0].status;
   }
 
   async getResult(): Promise<R> {
@@ -370,7 +372,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
  * The handle returned when retrieving a workflow with Operon.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly pool: Pool, readonly workflowUUID: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string) {}
 
   static readonly pollingIntervalMs: number = 1000;
 
@@ -379,25 +381,10 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<string> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
-    if (rows.length === 0) {
-      return WorkflowStatus.UNKNOWN;
-    }
-    return rows[0].status;
+    return await this.systemDatabase.getStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
-    while(true) {
-      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [this.workflowUUID]);
-      if (rows.length > 0) {
-        const status = rows[0].status;
-        if (status === WorkflowStatus.SUCCESS) {
-          return JSON.parse(rows[0].output) as R;
-        } else if (status === WorkflowStatus.ERROR) {
-          throw deserializeError(JSON.parse(rows[0].error));
-        }
-      }
-      await sleep(RetrievedHandle.pollingIntervalMs);
-    }
+    return await this.systemDatabase.getResult<R>(this.workflowUUID);
   }
 }

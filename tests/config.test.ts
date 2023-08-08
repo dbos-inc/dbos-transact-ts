@@ -14,7 +14,7 @@ describe('operon-config', () => {
         port: 1234
         username: 'some user'
         connectionTimeoutMillis: 3000
-        database: 'some DB'
+        user_database: 'some DB'
       `;
 
   afterEach(() => {

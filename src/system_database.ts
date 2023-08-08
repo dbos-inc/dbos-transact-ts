@@ -4,8 +4,9 @@ import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull, function_outputs, notifications, workflow_status } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
-import { WorkflowStatus } from "./workflow";
+import { RetrievedHandle, WorkflowStatus } from "./workflow";
 import systemDBSchema from 'schemas/system_db_schema';
+import { sleep } from "./utils";
 
 export interface SystemDatabase {
   // TODO: Temp changes, remove later.
@@ -21,6 +22,9 @@ export interface SystemDatabase {
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number) : Promise<OperonNull | R>;
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R) : Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
+
+  getStatus(workflowUUID: string) : Promise<string>;
+  getResult<R>(workflowUUID: string) : Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, message: T) : Promise<boolean>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeout: number) : Promise<T | null>;
@@ -256,6 +260,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await client.query(`COMMIT`);
     client.release();
     return message;
+  }
+
+  async getStatus(workflowUUID: string): Promise<string> {
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    if (rows.length === 0) {
+      return WorkflowStatus.UNKNOWN;
+    }
+    return rows[0].status;
+  }
+  
+  async getResult<R>(workflowUUID: string): Promise<R> {
+    const pollingIntervalMs: number = 1000;
+    while(true) {
+      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+      if (rows.length > 0) {
+        const status = rows[0].status;
+        if (status === WorkflowStatus.SUCCESS) {
+          return JSON.parse(rows[0].output) as R;
+        } else if (status === WorkflowStatus.ERROR) {
+          throw deserializeError(JSON.parse(rows[0].error));
+        }
+      }
+      await sleep(pollingIntervalMs);
+    }
   }
   
   /* BACKGROUND PROCESSES */

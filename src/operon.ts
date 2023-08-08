@@ -350,7 +350,7 @@ export class Operon {
       return result!;
     }
     const workflowPromise: Promise<R> = runWorkflow();
-    return new InvokedHandle(this.pool, workflowPromise, workflowUUID);
+    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -378,7 +378,7 @@ export class Operon {
   }
 
   retrieveWorkflow<R>(workflowUUID: string) : WorkflowHandle<R> {
-    return new RetrievedHandle(this.pool, workflowUUID);
+    return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
 
   /* INTERNAL HELPERS */
