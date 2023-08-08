@@ -157,11 +157,11 @@ describe('concurrency-tests', () => {
 
     // Make sure we retrieve results correctly.
     const sendHandle = operon.retrieveWorkflow(sendUUID);
-    await expect(sendHandle.getStatus()).resolves.toBe(StatusString.SUCCESS);
+    await expect(sendHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
     await expect(sendHandle.getResult()).resolves.toBe(true);
 
     const recvHandle = operon.retrieveWorkflow(recvUUID);
-    await expect(recvHandle.getStatus()).resolves.toBe(StatusString.SUCCESS);
+    await expect(recvHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
     await expect(recvHandle.getResult()).resolves.toBe("hello");
   });
 

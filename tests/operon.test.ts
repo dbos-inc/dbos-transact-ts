@@ -65,15 +65,15 @@ describe('operon-tests', () => {
     }
     const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
     expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
-    await expect((await workflowHandle.getStatus()).status).resolves.toBe(StatusString.PENDING);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     
     await operon.flushWorkflowOutputBuffer();
-    await expect((await workflowHandle.getStatus()).status).resolves.toBe(StatusString.SUCCESS);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
     const retrievedHandle = operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
-    await expect((await retrievedHandle.getStatus()).status).resolves.toBe(StatusString.SUCCESS);
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
     expect(JSON.parse(await retrievedHandle.getResult())).toEqual({"current_user": username});
   });
 
@@ -477,10 +477,10 @@ describe('operon-tests', () => {
     const workflowHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
-    await expect((await workflowHandle.getStatus()).status).resolves.toBe(StatusString.PENDING);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
 
     // Retrieve handle, should get the unknown status.
-    await expect((await operon.retrieveWorkflow<string>(workflowUUID).getStatus()).status).resolves.toBe(StatusString.UNKNOWN);
+    await expect(operon.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     resolve1!();
     await promise3;
@@ -497,8 +497,8 @@ describe('operon-tests', () => {
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(retrievedHandle.getResult()).resolves.toBe("hello");
-    await expect((await workflowHandle.getStatus()).status).resolves.toBe(StatusString.SUCCESS);
-    await expect((await retrievedHandle.getStatus()).status).resolves.toBe(StatusString.SUCCESS);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
   });
 });
 

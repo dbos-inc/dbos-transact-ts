@@ -57,10 +57,10 @@ describe('failures-tests', () => {
 
     const codeHandle = operon.workflow(testWorkflow, {}, 11);
     await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
-    await expect((await codeHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
+    await expect(codeHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
     const retrievedHandle = operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
-    await expect((await retrievedHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
     await expect(retrievedHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
@@ -68,7 +68,7 @@ describe('failures-tests', () => {
     const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
     await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
     expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
-    await expect((await noCodeHandle.getStatus()).status).resolves.toBe(StatusString.ERROR);
+    await expect(noCodeHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
   });
 
   test('readonly-error', async() => {
