@@ -411,17 +411,9 @@ export class Operon {
     return false;
   }
 
-  async garbageCollectWorkflow(workflowUUID: string) {
-    await this.pool.query(`DELETE FROM operon.function_outputs WHERE workflow_uuid=$1`, [workflowUUID]);
-  }
-
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
-      const workflowUUIDs = await this.systemDatabase.flushWorkflowOutputBuffer();
-      for (const workflowUUID of workflowUUIDs) {
-        await this.systemDatabase.garbageCollectWorkflow(workflowUUID);
-        await this.garbageCollectWorkflow(workflowUUID);
-      }
+      await this.systemDatabase.flushWorkflowOutputBuffer();
     }
   }
 }
