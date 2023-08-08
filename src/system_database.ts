@@ -271,6 +271,24 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await sleep(pollingIntervalMs);
     }
   }
+
+  /**
+  * Flush the workflow output buffer to the database.
+  */
+  async flushWorkflowOutputBuffer() {
+    const localBuffer = new Map(this.workflowOutputBuffer);
+    this.workflowOutputBuffer.clear();
+    const client: PoolClient = await this.pool.connect();
+    await client.query("BEGIN");
+    for (const [workflowUUID, output] of localBuffer) {
+      await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+      [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]);
+    }
+    await client.query("COMMIT");
+    client.release();
+    return Array.from(localBuffer.keys());
+  }
   
   /* BACKGROUND PROCESSES */
   /**
@@ -286,23 +304,5 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     };
     this.notificationsClient.on('notification', handler);
-  }
-
-  /**
-   * A background process that periodically flushes the workflow output buffer to the database.
-   */
-  async flushWorkflowOutputBuffer() {
-    const localBuffer = new Map(this.workflowOutputBuffer);
-    this.workflowOutputBuffer.clear();
-    const client: PoolClient = await this.pool.connect();
-    await client.query("BEGIN");
-    for (const [workflowUUID, output] of localBuffer) {
-      await client.query(`INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
-      [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]);
-    }
-    await client.query("COMMIT");
-    client.release();
-    return Array.from(localBuffer.keys());
   }
 }

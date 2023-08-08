@@ -410,6 +410,10 @@ export class Operon {
     return false;
   }
 
+  /* BACKGROUND PROCESSES */
+  /**
+   * Periodically flush the workflow output buffer to the system database.
+   */
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
       await this.systemDatabase.flushWorkflowOutputBuffer();
