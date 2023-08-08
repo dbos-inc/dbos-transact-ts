@@ -419,8 +419,8 @@ export class Operon {
     if (this.initialized) {
       const workflowUUIDs = await this.systemDatabase.flushWorkflowOutputBuffer();
       for (const workflowUUID of workflowUUIDs) {
-        this.systemDatabase.garbageCollectWorkflow(workflowUUID);
-        this.garbageCollectWorkflow(workflowUUID);
+        await this.systemDatabase.garbageCollectWorkflow(workflowUUID);
+        await this.garbageCollectWorkflow(workflowUUID);
       }
     }
   }

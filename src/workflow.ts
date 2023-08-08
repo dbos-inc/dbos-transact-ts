@@ -157,6 +157,9 @@ export class WorkflowContext {
       this.guardOperation(funcId);
       if (!fCtxt.readOnly) {
         await this.flushResultBuffer(client);
+        if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
+          throw new OperonWorkflowConflictUUIDError();
+        } 
       }
 
       let result: R;
@@ -233,6 +236,9 @@ export class WorkflowContext {
     if (check !== operonNull) {
       return check as R;
     }
+    if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
+      throw new OperonWorkflowConflictUUIDError();
+    } 
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an OperonError.
@@ -259,6 +265,10 @@ export class WorkflowContext {
         err = error as Error;
       }
     }
+
+    if (await this.#operon.systemDatabase.getWorkflowStatus(this.workflowUUID) !== WorkflowStatus.UNKNOWN) {
+      throw new OperonWorkflowConflictUUIDError();
+    } 
 
     // `result` can only be operonNull when the communicator timed out
     if (result === operonNull) {

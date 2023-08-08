@@ -147,6 +147,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id) VALUES ($1, $2);",
         [workflowUUID, functionID]);
+      if (await this.getWorkflowStatus(workflowUUID) !== WorkflowStatus.UNKNOWN) {
+        throw new OperonWorkflowConflictUUIDError();
+      } 
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
