@@ -331,7 +331,8 @@ export class Operon {
       if (previousOutput !== operonNull) {
         return previousOutput as R;
       }
-      const input = await checkWorkflowInput(args);
+      // Record inputs for OAOO. Not needed for temporary workflows.
+      const input = wCtxt.isTempWorkflow ? args: await checkWorkflowInput(args);
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
