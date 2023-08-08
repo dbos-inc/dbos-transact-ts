@@ -238,6 +238,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(`COMMIT`);
       client.release();
       delete this.listenerMap[`${topic}::${key}`];
+      clearTimeout(timer!);
       return message;
     } else {
       await client.query(`ROLLBACK`);
