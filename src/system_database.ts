@@ -23,8 +23,8 @@ export interface SystemDatabase {
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R) : Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getStatus(workflowUUID: string) : Promise<string>;
-  getResult<R>(workflowUUID: string) : Promise<R>;
+  getWorkflowStatus(workflowUUID: string) : Promise<string>;
+  getWorkflowResult<R>(workflowUUID: string) : Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, message: T) : Promise<boolean>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeout: number) : Promise<T | null>;
@@ -258,7 +258,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async getStatus(workflowUUID: string): Promise<string> {
+  async getWorkflowStatus(workflowUUID: string): Promise<string> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
       return WorkflowStatus.UNKNOWN;
@@ -266,7 +266,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows[0].status;
   }
   
-  async getResult<R>(workflowUUID: string): Promise<R> {
+  async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
     const pollingIntervalMs: number = 1000;
     // eslint-disable-next-line no-constant-condition
     while(true) {

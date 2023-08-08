@@ -349,7 +349,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<string> {
-    const status: string = await this.systemDatabase.getStatus(this.workflowUUID);
+    const status: string = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status === WorkflowStatus.UNKNOWN) {
       return WorkflowStatus.PENDING;
     } else {
@@ -375,10 +375,10 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<string> {
-    return await this.systemDatabase.getStatus(this.workflowUUID);
+    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
-    return await this.systemDatabase.getResult<R>(this.workflowUUID);
+    return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
   }
 }
