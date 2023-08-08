@@ -138,9 +138,9 @@ describe('operon-tests', () => {
     };
     operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
   });
 
   test('tight-loop', async() => {

@@ -92,11 +92,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else if (rows[0].status === WorkflowStatus.ERROR) {
       throw deserializeError(JSON.parse(rows[0].error));
     } else {
-      if (rows[0].output === null) {
-        // This is the void return value.
-        // The actual null is serialized to "null".
-        return undefined as R;
-      }
       return JSON.parse(rows[0].output) as R;
     }
   }
