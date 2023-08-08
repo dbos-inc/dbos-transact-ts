@@ -9,14 +9,12 @@ import systemDBSchema from 'schemas/system_db_schema';
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
-  // TODO: Temp changes, remove later.
-  flushWorkflowOutputBuffer(): Promise<void>;
-
   init() : Promise<void>;
   destroy() : Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string) : Promise<OperonNull | R>;
-  recordWorkflowOutput<R>(workflowUUID: string, output: R) : Promise<void>;
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R) : Promise<void>;
+  flushWorkflowOutputBuffer(): Promise<Array<string>>
   recordWorkflowError(workflowUUID: string, error: Error) : Promise<void>;
 
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number) : Promise<OperonNull | R>;
@@ -38,8 +36,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly listenerMap: Record<string, () => void> = {};
 
   readonly workflowOutputBuffer: Map<string, any> = new Map();
-  readonly flushBufferIntervalMs: number = 1000;
-  flushBufferID: NodeJS.Timeout | null = null;
 
   constructor(readonly sysPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
     this.pgSystemClient = new Client(sysPoolConfig);
@@ -65,17 +61,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Load the Operon system schemas.
     await this.pool.query(systemDBSchema);
     await this.listenForNotifications();
-    this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowOutputBuffer();
-    }, this.flushBufferIntervalMs) ;
     await this.pgSystemClient.end();
   }
 
   async destroy() {
-    if (this.flushBufferID) {
-      clearInterval(this.flushBufferID);
-      await this.flushWorkflowOutputBuffer();
-    }
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
       this.notificationsClient.release();
@@ -97,7 +86,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async recordWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
+  async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
     this.workflowOutputBuffer.set(workflowUUID, output);
   }
 
@@ -301,7 +290,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   /**
    * A background process that periodically flushes the workflow output buffer to the database.
-   * TODO: add back garbage collection.
    */
   async flushWorkflowOutputBuffer() {
     const localBuffer = new Map(this.workflowOutputBuffer);
@@ -315,5 +303,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     await client.query("COMMIT");
     client.release();
+    return Array.from(localBuffer.keys());
   }
 }

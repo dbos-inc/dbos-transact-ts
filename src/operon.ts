@@ -107,6 +107,8 @@ export class Operon {
   readonly initialEpochTimeMs: number;
 
   readonly telemetryCollector: TelemetryCollector;
+  readonly flushBufferIntervalMs: number = 1000;
+  readonly flushBufferID: NodeJS.Timeout;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -126,6 +128,9 @@ export class Operon {
     this.pgSystemClient = new Client(systemPoolConfig);
     this.pool = new Pool(this.config.poolConfig);
     this.systemDatabase = new PostgresSystemDatabase(systemPoolConfig, this.config.system_database);
+    this.flushBufferID = setInterval(() => {
+      void this.flushWorkflowOutputBuffer();
+    }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
 
     // Parse requested exporters
@@ -200,6 +205,8 @@ export class Operon {
   }
 
   async destroy() {
+    clearInterval(this.flushBufferID);
+    await this.flushWorkflowOutputBuffer();
     clearTimeout(this.recoveryID);
     await this.systemDatabase.destroy();
     await this.pool.end();
@@ -333,7 +340,7 @@ export class Operon {
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
-        await this.systemDatabase.recordWorkflowOutput(workflowUUID, result);
+        await this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
@@ -402,5 +409,11 @@ export class Operon {
     }
     // Reject by default
     return false;
+  }
+
+  async flushWorkflowOutputBuffer() {
+    if (this.initialized) {
+      await this.systemDatabase.flushWorkflowOutputBuffer();
+    }
   }
 }

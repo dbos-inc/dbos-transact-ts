@@ -69,7 +69,7 @@ describe('operon-tests', () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     
-    await operon.systemDatabase.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowOutputBuffer();
     await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
     const retrievedHandle = operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
@@ -391,7 +391,7 @@ describe('operon-tests', () => {
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     expect(num).toBe(1);
   
-    await operon.systemDatabase.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowOutputBuffer();
     // Run it again with the same UUID, should get the same output.
     await expect(operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 10).getResult()).resolves.toBe(11);
     // The workflow should not run at all.
@@ -492,7 +492,7 @@ describe('operon-tests', () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
   
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    await operon.systemDatabase.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowOutputBuffer();
     const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);

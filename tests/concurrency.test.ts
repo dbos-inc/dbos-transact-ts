@@ -96,7 +96,7 @@ describe('concurrency-tests', () => {
     await operon.workflow(testWorkflow, {workflowUUID: uuid}).getResult();
     const handle = operon.workflow(testWorkflow, {workflowUUID: uuid});
     await promise2;
-    await operon.systemDatabase.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowOutputBuffer();
     resolve!();
     await handle.getResult();
 
