@@ -16,7 +16,7 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from './telemetry';
-import { Pool, PoolConfig, Client, ClientConfig } from 'pg';
+import { Pool, PoolConfig, Client } from 'pg';
 import { userDBSchema, transaction_outputs } from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
 import { v4 as uuidv4 } from 'uuid';
