@@ -63,7 +63,7 @@ export class Operon {
   // "Global" pool
   readonly pool: Pool;
   // PG client for interacting with the `postgres` database
-  readonly pgSystemClientConfig: ClientConfig;
+  readonly pgSystemClientConfig: PoolConfig;
   readonly pgSystemClient: Client;
   // System Database
   readonly systemDatabase: SystemDatabase;
@@ -101,16 +101,16 @@ export class Operon {
       this.config = this.generateOperonConfig();
     }
 
-    const systemPoolConfig: PoolConfig = {
+    this.pgSystemClientConfig = {
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
       host: this.config.poolConfig.host,
       password: this.config.poolConfig.password,
       database: 'postgres',
     };
-    this.pgSystemClient = new Client(systemPoolConfig);
+    this.pgSystemClient = new Client(this.pgSystemClientConfig);
     this.pool = new Pool(this.config.poolConfig);
-    this.systemDatabase = new PostgresSystemDatabase(systemPoolConfig, this.config.system_database);
+    this.systemDatabase = new PostgresSystemDatabase(this.pgSystemClientConfig, this.config.system_database);
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
@@ -175,16 +175,6 @@ export class Operon {
       // We want to close the client no matter what
       await this.pgSystemClient.end();
     }
-    // Check whether the Operon system database exists, create it if needed
-    const dbExists = await this.pgSystemClient.query(
-      `SELECT FROM pg_database WHERE datname = '${databaseName}'`
-    );
-    if (dbExists.rows.length === 0) {
-      // Create the Operon system database
-      await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
-    }
-    // Load the Operon system schema
-    await this.pool.query(operonSystemDbSchema);
   }
 
   async destroy() {
@@ -234,7 +224,7 @@ export class Operon {
 
     return {
       poolConfig: poolConfig,
-      telemetryExporters: configuration.telemetryExporters || [],
+      telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? 'operon_systemdb'
     };
   }
