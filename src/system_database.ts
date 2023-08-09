@@ -5,7 +5,7 @@ import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import { OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status } from 'schemas/system_db_schema';
+import { systemDBSchema, notifications, operation_outputs, workflow_status } from '../schemas/system_db_schema';
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
