@@ -39,23 +39,26 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
   constructor(private readonly operon: Operon) {
-    const pgClientConfig = operon.pgSystemClientConfig;
+    const pgClientConfig = { ...operon.pgSystemClientConfig};
     pgClientConfig.database = this.pgLogsDbName;
     this.pgClient = new Client(pgClientConfig);
   }
 
   async init() {
+    const pgSystemClient: Client = new Client(this.operon.pgSystemClientConfig);
+    await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
     // We assume this.operon.pgSystemClient is already connected.
-    const dbExists = await this.operon.pgSystemClient.query(
+    const dbExists = await pgSystemClient.query(
       `SELECT FROM pg_database WHERE datname = '${this.pgLogsDbName}'`
     );
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
-      await this.operon.pgSystemClient.query(
+      await pgSystemClient.query(
         `CREATE DATABASE ${this.pgLogsDbName}`
       );
     }
+    await pgSystemClient.end();
     // Connect the exporter client and load the schema no matter what
     await this.pgClient.connect();
     await this.pgClient.query(postgresLogBackendSchema);

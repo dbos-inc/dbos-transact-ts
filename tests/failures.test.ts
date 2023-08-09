@@ -14,7 +14,7 @@ import {
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
-import { WorkflowStatus } from "src/workflow";
+import { StatusString } from "src/workflow";
 
 describe('failures-tests', () => {
   let operon: Operon;
@@ -57,18 +57,18 @@ describe('failures-tests', () => {
 
     const codeHandle = operon.workflow(testWorkflow, {}, 11);
     await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
-    await expect(codeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
-    const retrievedHandle = await operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
+    await expect(codeHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
+    const retrievedHandle = operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
-    await expect(retrievedHandle!.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
+    await expect(retrievedHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
     // Test without code.
     const wfUUID = uuidv1();
     const noCodeHandle = operon.workflow(testWorkflow, {workflowUUID: wfUUID});
     await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
     expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
-    await expect(noCodeHandle.getStatus()).resolves.toBe(WorkflowStatus.ERROR);
+    await expect(noCodeHandle.getStatus()).resolves.toMatchObject({status: StatusString.ERROR});
   });
 
   test('readonly-error', async() => {
@@ -246,8 +246,7 @@ describe('failures-tests', () => {
   });
 
   test('failure-recovery', async() => {
-    // Run a workflow until it reaches PENDING state, then shut down the server, and recover from there.
-
+    // Run a workflow until a mid point, then shut down the server, and recover from there.
     let resolve1: () => void;
     const promise1 = new Promise<void>((resolve) => {
       resolve1 = resolve;
@@ -274,13 +273,11 @@ describe('failures-tests', () => {
 
     const workflowUUID = uuidv1();
 
-    operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
+    const invokeHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
 
     await promise1;
 
-    // Now should see the pending state.
-    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowUUID);
-    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    await expect(invokeHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     // Shut down the server.
     await operon.destroy();
@@ -296,7 +293,6 @@ describe('failures-tests', () => {
     // Start the recovery.
     resolve2!();
     await operon.recoverPendingWorkflows();
-    const recoverHandle = await operon.retrieveWorkflow<string>(workflowUUID);
-    await expect(recoverHandle!.getResult()).resolves.toBe("hello");
+    await expect(operon.retrieveWorkflow<string>(workflowUUID).getResult()).resolves.toBe("hello");
   });
 });

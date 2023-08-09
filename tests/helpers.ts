@@ -18,6 +18,7 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
       database: "operontest",
     },
     telemetryExporters: exporters || [],
+    system_database: 'operontest_systemdb'
   }
 
   return operonTestConfig;
@@ -32,8 +33,8 @@ export async function teardownOperonTestDb(config: OperonConfig) {
     database: 'postgres',
   });
   await pgSystemClient.connect();
-
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
   await pgSystemClient.end();
 }
 

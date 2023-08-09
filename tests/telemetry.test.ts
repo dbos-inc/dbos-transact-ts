@@ -21,16 +21,13 @@ describe("operon-telemetry", () => {
   describe("Postgres exporter", () => {
     let operon: Operon;
 
-    beforeEach(async () => {
+    beforeEach(() => {
       const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
-      // Operon PG system's client is normally connected during operon.init()
-      await operon.pgSystemClient.connect();
     });
 
     afterEach(async () => {
       await operon.destroy();
-      await operon.pgSystemClient.end();
     });
 
     test("Configures and initializes", async () => {
@@ -42,12 +39,8 @@ describe("operon-telemetry", () => {
         .exporters[0] as PostgresExporter;
 
       // Then check PostgresExporter initialization
-      const dbCheckSpy = jest.spyOn(operon.pgSystemClient, "query");
       const loadSchemaSpy = jest.spyOn(pgExporter.pgClient, "query");
       await collector.init();
-      expect(dbCheckSpy).toHaveBeenCalledWith(
-        "SELECT FROM pg_database WHERE datname = 'pglogsbackend'"
-      );
       expect(loadSchemaSpy).toHaveBeenCalledWith(postgresLogBackendSchema);
 
       // Check the exporter's PG client is functional

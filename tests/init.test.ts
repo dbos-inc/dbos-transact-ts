@@ -26,21 +26,6 @@ describe('operon-init', () => {
 
     expect(operon.initialized).toBe(true);
 
-    // Check pgSystemClient has been shutdown
-    expect(operon.pgSystemClient).toBeDefined();
-    expect(operon.pgSystemClient).toBeInstanceOf(Client);
-    await expect(
-      operon.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = 'postgres';`)
-    ).rejects.toThrow('Client was closed and is not queryable');
-
-    // Test notification client is set and has registered a listener
-    expect(operon.pgNotificationsClient).toBeDefined();
-    expect(operon.pgNotificationsClient).toBeInstanceOf(Client);
-    const listenersQueryResult = await operon.pgNotificationsClient.query(`SELECT * from pg_listening_channels()`);
-    expect(listenersQueryResult.rows).toHaveLength(1);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(listenersQueryResult.rows[0].pg_listening_channels).toBe('operon_notifications_channel');
-
     // Test "global" pool
     expect(operon.pool).toBeDefined();
     expect(operon.pool).toBeInstanceOf(Pool);
@@ -62,11 +47,9 @@ describe('operon-init', () => {
   test('init can only be called once', async() => {
     const operon = new Operon(config);
     const loadOperonDatabaseSpy = jest.spyOn(operon, 'loadOperonDatabase');
-    const listenForNotificationsSpy = jest.spyOn(operon, 'listenForNotifications');
     await operon.init();
     await operon.init();
     expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
-    expect(listenForNotificationsSpy).toHaveBeenCalledTimes(1);
     await operon.destroy();
   });
 

@@ -36,3 +36,12 @@ export class OperonWorkflowConflictUUIDError extends OperonError {
     super("Conflicting UUIDs", ConflictingUUIDError);
   }
 }
+
+const WorkflowUnknownError = 6;
+export class OperonWorkflowUnknownError extends OperonError {
+  constructor(workflowUUID: string, workflowname: string) {
+    const msg =
+      `Workflow (UUID: ${workflowUUID} Name: ${workflowname}) unknown during recovery`;
+    super(msg, WorkflowUnknownError);
+  }
+}

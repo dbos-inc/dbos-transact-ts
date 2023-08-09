@@ -15,7 +15,7 @@ import {
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
-import { WorkflowConfig, WorkflowStatus } from "src/workflow";
+import { WorkflowConfig, StatusString } from "src/workflow";
 
 describe('operon-tests', () => {
   const testTableName = 'operon_test_kv';
@@ -43,8 +43,6 @@ describe('operon-tests', () => {
   });
 
   test('simple-function', async() => {
-    clearInterval(operon.flushBufferID);  // Disable background flush output buffer task.
-
     const testFunction = async (txnCtxt: TransactionContext, name: string) => {
       const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
       await sleep(10);
@@ -67,16 +65,16 @@ describe('operon-tests', () => {
     }
     const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
     expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
-    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     
     await operon.flushWorkflowOutputBuffer();
-    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    expect(JSON.parse(await retrievedHandle!.getResult())).toEqual({"current_user": username});
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
+    expect(JSON.parse(await retrievedHandle.getResult())).toEqual({"current_user": username});
   });
 
   test('simple-function-permission-denied', async() => {
@@ -140,9 +138,9 @@ describe('operon-tests', () => {
     };
     operon.registerTransaction(testFunction);
     const workflowUUID = uuidv1();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
-    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeUndefined();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
+    await expect(operon.transaction(testFunction, {workflowUUID: workflowUUID})).resolves.toBeFalsy();
   });
 
   test('tight-loop', async() => {
@@ -401,9 +399,6 @@ describe('operon-tests', () => {
   });
 
   test('readonly-recording', async() => {
-    // Disable flush workflow output background task for tests.
-    clearInterval(operon.flushBufferID);
-
     let num = 0;
     let workflowCnt = 0;
 
@@ -446,9 +441,6 @@ describe('operon-tests', () => {
   });
 
   test('retrieve-workflowstatus', async() => {
-    // Disable flush workflow output background task for tests.
-    clearInterval(operon.flushBufferID);
-  
     // Test workflow status changes correctly.
     let resolve1: () => void;
     const promise1 = new Promise<void>((resolve) => {
@@ -485,20 +477,13 @@ describe('operon-tests', () => {
     const workflowHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
-    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
-    // Retrieve handle, should be null.
-    await expect(operon.retrieveWorkflow<string>(workflowUUID)).resolves.toBeNull();
+    // Retrieve handle, should get the unknown status.
+    await expect(operon.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     resolve1!();
     await promise3;
-
-    // Now should see the pending state.
-    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
-    const retrievedHandle = await operon.retrieveWorkflow<string>(workflowUUID);
-    expect(retrievedHandle).not.toBeNull();
-    expect(retrievedHandle!.getWorkflowUUID()).toBe(workflowUUID);
-    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.PENDING);
 
     // Proceed to the end.
     resolve2!();
@@ -506,9 +491,12 @@ describe('operon-tests', () => {
   
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
     await operon.flushWorkflowOutputBuffer();
-    await expect(retrievedHandle!.getResult()).resolves.toBe("hello");
-    await expect(workflowHandle.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
-    await expect(retrievedHandle!.getStatus()).resolves.toBe(WorkflowStatus.SUCCESS);
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello");
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({status: StatusString.SUCCESS});
   });
 });
 
