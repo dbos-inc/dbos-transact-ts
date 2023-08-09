@@ -26,13 +26,6 @@ describe('operon-init', () => {
 
     expect(operon.initialized).toBe(true);
 
-    // Check pgSystemClient has been shutdown
-    expect(operon.pgSystemClient).toBeDefined();
-    expect(operon.pgSystemClient).toBeInstanceOf(Client);
-    await expect(
-      operon.pgSystemClient.query(`SELECT FROM pg_database WHERE datname = 'postgres';`)
-    ).rejects.toThrow('Client was closed and is not queryable');
-
     // Test "global" pool
     expect(operon.pool).toBeDefined();
     expect(operon.pool).toBeInstanceOf(Pool);

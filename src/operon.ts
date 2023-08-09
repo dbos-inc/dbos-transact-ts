@@ -65,7 +65,6 @@ export class Operon {
   readonly pool: Pool;
   // PG client for interacting with the `postgres` database
   readonly pgSystemClientConfig: PoolConfig;
-  readonly pgSystemClient: Client;
   // System Database
   readonly systemDatabase: SystemDatabase;
   
@@ -109,7 +108,6 @@ export class Operon {
       password: this.config.poolConfig.password,
       database: 'postgres',
     };
-    this.pgSystemClient = new Client(this.pgSystemClientConfig);
     this.pool = new Pool(this.config.poolConfig);
     this.systemDatabase = new PostgresSystemDatabase(this.pgSystemClientConfig, this.config.system_database);
     this.flushBufferID = setInterval(() => {
@@ -146,15 +144,13 @@ export class Operon {
       if (err instanceof Error) {
         throw(new OperonInitializationError(err.message));
       }
-    } finally {
-      // The PG system client can be used by various sub-systems, at `init` time, to interact with the `postgres` database
-      await this.pgSystemClient.end();
     }
     this.initialized = true;
   }
 
   async loadOperonDatabase() {
-    await this.pgSystemClient.connect();
+    const pgSystemClient: Client = new Client(this.pgSystemClientConfig);
+    await pgSystemClient.connect();
     try {
       const databaseName: string = this.config.poolConfig.database as string;
       // Validate the database name
@@ -163,18 +159,18 @@ export class Operon {
         throw(new Error(`invalid DB name: ${databaseName}`));
       }
       // Check whether the Operon user database exists, create it if needed
-      const dbExists = await this.pgSystemClient.query(
+      const dbExists = await pgSystemClient.query(
         `SELECT FROM pg_database WHERE datname = '${databaseName}'`
       );
       if (dbExists.rows.length === 0) {
         // Create the Operon user database
-        await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
+        await pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
       }
       // Load the Operon schemas.
       await this.pool.query(userDBSchema);
     } finally {
       // We want to close the client no matter what
-      await this.pgSystemClient.end();
+      await pgSystemClient.end();
     }
   }
 
