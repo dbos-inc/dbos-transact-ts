@@ -9,9 +9,15 @@ import { WorkflowStatus, InvokedHandle, OperonWorkflow, WorkflowConfig, Workflow
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
+import {
+  TelemetryCollector,
+  ConsoleExporter,
+  CONSOLE_EXPORTER,
+  PostgresExporter,
+  POSTGRES_EXPORTER,
+} from './telemetry';
+import { Pool, PoolConfig, Client, Notification, PoolClient, ClientConfig } from 'pg';
 import operonSystemDbSchema from '../schemas/operon_schemas';
-
-import { Pool, PoolConfig, Client, Notification, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -47,10 +53,12 @@ const CONFIG_FILE: string = "operon-config.yaml";
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
+  readonly telemetryExporters?: string[];
 }
 
 interface ConfigFile {
   database: DatabaseConfig;
+  telemetryExporters?: string[];
 }
 
 interface DatabaseConfig {
@@ -72,6 +80,7 @@ export class Operon {
   // "Global" pool
   readonly pool: Pool;
   // PG client for interacting with the `postgres` database
+  readonly pgSystemClientConfig: ClientConfig;
   readonly pgSystemClient: Client;
   // PG client for listening to Operon notifications
   readonly pgNotificationsClient: Client;
@@ -102,6 +111,8 @@ export class Operon {
 
   readonly initialEpochTimeMs: number;
 
+  readonly telemetryCollector: TelemetryCollector;
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
     if (config) {
@@ -110,13 +121,14 @@ export class Operon {
       this.config = this.generateOperonConfig();
     }
 
-    this.pgSystemClient = new Client({
+    this.pgSystemClientConfig = {
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
       host: this.config.poolConfig.host,
       password: this.config.poolConfig.password,
       database: 'postgres',
-    });
+    };
+    this.pgSystemClient = new Client(this.pgSystemClientConfig);
     this.pgNotificationsClient = new Client({
       user: this.config.poolConfig.user,
       port: this.config.poolConfig.port,
@@ -129,6 +141,19 @@ export class Operon {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
     this.recoveryID = setTimeout(() => {void this.recoverPendingWorkflows()}, this.recoveryDelayMs);
+
+    // Parse requested exporters
+    const telemetryExporters = [];
+    if (this.config.telemetryExporters) {
+      for (const exporter of this.config.telemetryExporters) {
+        if (exporter === CONSOLE_EXPORTER) {
+          telemetryExporters.push(new ConsoleExporter());
+        } else if (exporter === POSTGRES_EXPORTER) {
+          telemetryExporters.push(new PostgresExporter(this));
+        }
+      }
+    }
+    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
@@ -141,37 +166,36 @@ export class Operon {
     try {
       await this.loadOperonDatabase();
       await this.listenForNotifications();
+      await this.telemetryCollector.init();
     } catch (err) {
       if (err instanceof Error) {
         throw(new OperonInitializationError(err.message));
       }
+    } finally {
+      // The PG system client can be used by various sub-systems, at `init` time, to interact with the `postgres` database
+      await this.pgSystemClient.end();
     }
     this.initialized = true;
   }
 
   async loadOperonDatabase() {
     await this.pgSystemClient.connect();
-    try {
-      const databaseName: string = this.config.poolConfig.database as string;
-      // Validate the database name
-      const regex = /^[a-z0-9]+$/i;
-      if (!regex.test(databaseName)) {
-        throw(new Error(`invalid DB name: ${databaseName}`));
-      }
-      // Check whether the Operon system database exists, create it if needed
-      const dbExists = await this.pgSystemClient.query(
-        `SELECT FROM pg_database WHERE datname = '${databaseName}'`
-      );
-      if (dbExists.rows.length === 0) {
-        // Create the Operon system database
-        await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
-      }
-      // Load the Operon system schema
-      await this.pool.query(operonSystemDbSchema);
-    } finally {
-      // We want to close the client no matter what
-      await this.pgSystemClient.end();
+    const databaseName: string = this.config.poolConfig.database as string;
+    // Validate the database name
+    const regex = /^[a-z0-9]+$/i;
+    if (!regex.test(databaseName)) {
+      throw(new Error(`invalid DB name: ${databaseName}`));
     }
+    // Check whether the Operon system database exists, create it if needed
+    const dbExists = await this.pgSystemClient.query(
+      `SELECT FROM pg_database WHERE datname = '${databaseName}'`
+    );
+    if (dbExists.rows.length === 0) {
+      // Create the Operon system database
+      await this.pgSystemClient.query(`CREATE DATABASE ${databaseName}`);
+    }
+    // Load the Operon system schema
+    await this.pool.query(operonSystemDbSchema);
   }
 
   async destroy() {
@@ -180,6 +204,7 @@ export class Operon {
     await this.flushWorkflowOutputBuffer();
     await this.pgNotificationsClient.removeAllListeners().end();
     await this.pool.end();
+    await this.telemetryCollector.destroy();
   }
 
   generateOperonConfig(): OperonConfig {
@@ -221,6 +246,7 @@ export class Operon {
 
     return {
       poolConfig,
+      telemetryExporters: configuration.telemetryExporters || [],
     };
   }
 
@@ -307,7 +333,7 @@ export class Operon {
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
-    
+    // this.telemetryCollector.push(`Starting workflow ${wf.name}`);
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {

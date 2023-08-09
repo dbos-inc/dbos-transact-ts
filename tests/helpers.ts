@@ -2,7 +2,7 @@ import { OperonConfig } from 'src';
 import { Client } from 'pg';
 
 /* DB management helpers */
-export function generateOperonTestConfig(): OperonConfig {
+export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw(new Error('DB_PASSWORD or PGPASSWORD environment variable not set'));
@@ -17,6 +17,7 @@ export function generateOperonTestConfig(): OperonConfig {
       // We can use another way of randomizing the DB name if needed
       database: "operontest",
     },
+    telemetryExporters: exporters || [],
   }
 
   return operonTestConfig;
