@@ -3,7 +3,8 @@ import {
   OperonError,
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError,
-  OperonWorkflowConflictUUIDError
+  OperonWorkflowConflictUUIDError,
+  OperonWorkflowUnknownError
 } from './error';
 import {InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle, StatusString } from './workflow';
 import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
@@ -248,7 +249,7 @@ export class Operon {
         const wfInput: WorkflowInput<any> = (JSON.parse(workflow.output) as WorkflowInput<any>);
         const wInfo = this.workflowInfoMap.get(wfInput.workflow_name);
         if (wInfo === undefined) {
-          throw new OperonError(`Workflow unregistered during recovery: ${status.workflow_name}`);
+          throw new OperonWorkflowUnknownError(workflow.workflow_uuid, wfInput.workflow_name);
         }
         handlerArray.push(this.workflow(wInfo.workflow, {workflowUUID: workflow.workflow_uuid}));
       }
