@@ -17,7 +17,7 @@ import {
   POSTGRES_EXPORTER,
 } from './telemetry';
 import { Pool, PoolConfig, Client, ClientConfig } from 'pg';
-import { userDBSchema, function_outputs } from 'schemas/user_db_schema';
+import { userDBSchema, transaction_outputs } from 'schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from 'src/system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
@@ -248,7 +248,7 @@ export class Operon {
    */
   async recoverPendingWorkflows() {
     // Retrieve a list of workflow UUIDs from the function output table.
-    const workflows = (await this.pool.query<function_outputs>("select workflow_uuid, output from operon.function_outputs WHERE function_id = 0;")).rows;
+    const workflows = (await this.pool.query<transaction_outputs>("select workflow_uuid, output from operon.transaction_outputs WHERE function_id = 0;")).rows;
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflow of workflows) {
       // Check workflow status. If not success or error, then recover.
@@ -317,8 +317,8 @@ export class Operon {
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
       const checkWorkflowInput = async (input: T) => {
-      // The workflow input is always at function ID = 0 in the operon.function_outputs table.
-        const { rows } = await this.pool.query<function_outputs>("SELECT output FROM operon.function_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+      // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
+        const { rows } = await this.pool.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
           [workflowUUID, workflowInputID]);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.

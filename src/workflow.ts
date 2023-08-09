@@ -4,7 +4,7 @@ import {
   OperonNull,
   operonNull,
 } from './operon';
-import { function_outputs } from 'schemas/user_db_schema';
+import { transaction_outputs } from 'schemas/user_db_schema';
 import { PoolClient, DatabaseError } from 'pg';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
@@ -65,7 +65,7 @@ export class WorkflowContext {
    * Otherwise, return OperonNull.
    */
   async checkExecution<R>(client: PoolClient, funcID: number): Promise<R | OperonNull> {
-    const { rows } = await client.query<function_outputs>("SELECT output, error FROM operon.function_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    const { rows } = await client.query<transaction_outputs>("SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [this.workflowUUID, funcID]);
     if (rows.length === 0) {
       return operonNull;
@@ -87,7 +87,7 @@ export class WorkflowContext {
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await client.query("INSERT INTO operon.function_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+        await client.query("INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
           [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
       }
     } catch (error) {
@@ -114,7 +114,7 @@ export class WorkflowContext {
    */
   async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await client.query("UPDATE operon.function_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
+    await client.query("UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialOutput, this.workflowUUID, funcID]);
   }
 
@@ -123,7 +123,7 @@ export class WorkflowContext {
    */
   async recordGuardedError(client: PoolClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await client.query("UPDATE operon.function_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
+    await client.query("UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
       [serialErr, this.workflowUUID, funcID]);
   }
 

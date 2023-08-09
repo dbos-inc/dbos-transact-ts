@@ -1,4 +1,4 @@
-export interface function_outputs {
+export interface transaction_outputs {
   workflow_uuid: string;
   function_id: number;
   output: string;
@@ -8,7 +8,7 @@ export interface function_outputs {
 export const userDBSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
-  CREATE TABLE IF NOT EXISTS operon.function_outputs (
+  CREATE TABLE IF NOT EXISTS operon.transaction_outputs (
     workflow_uuid TEXT NOT NULL,
     function_id INT NOT NULL,
     output TEXT,
