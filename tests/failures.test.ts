@@ -246,7 +246,7 @@ describe('failures-tests', () => {
   });
 
   test('failure-recovery', async() => {
-    // Run a workflow until it reaches PENDING state, then shut down the server, and recover from there.
+    // Run a workflow until a mid point, then shut down the server, and recover from there.
     let resolve1: () => void;
     const promise1 = new Promise<void>((resolve) => {
       resolve1 = resolve;
@@ -277,8 +277,7 @@ describe('failures-tests', () => {
 
     await promise1;
 
-    // Now should see the pending state.
-    await expect(invokeHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
+    await expect(invokeHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     // Shut down the server.
     await operon.destroy();

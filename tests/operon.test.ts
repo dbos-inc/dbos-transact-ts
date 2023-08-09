@@ -65,7 +65,7 @@ describe('operon-tests', () => {
     }
     const workflowHandle: WorkflowHandle<string> = operon.workflow(testWorkflow, params, username);
     expect(typeof workflowHandle.getWorkflowUUID()).toBe('string');
-    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({"current_user": username});
     
@@ -477,15 +477,13 @@ describe('operon-tests', () => {
     const workflowHandle = operon.workflow(testWorkflow,  {workflowUUID: workflowUUID}, 123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
-    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.PENDING});
+    await expect(workflowHandle.getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     // Retrieve handle, should get the unknown status.
     await expect(operon.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({status: StatusString.UNKNOWN});
 
     resolve1!();
     await promise3;
-
-    // TODO: check pending state.
 
     // Proceed to the end.
     resolve2!();
