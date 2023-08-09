@@ -30,7 +30,6 @@ export interface SystemDatabase {
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
-  readonly pgSystemClient: Client;
   
   notificationsClient: PoolClient | null = null;
   readonly listenerMap: Record<string, () => void> = {};
@@ -38,7 +37,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowOutputBuffer: Map<string, any> = new Map();
 
   constructor(readonly sysPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
-    this.pgSystemClient = new Client(sysPoolConfig);
     this.pool = new Pool({
       user: sysPoolConfig.user,
       port: sysPoolConfig.port,
@@ -49,19 +47,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init() {
-    await this.pgSystemClient.connect();
+    const pgSystemClient = new Client(this.sysPoolConfig);
+    await pgSystemClient.connect();
     // Create the system database and load tables.
-    const dbExists = await this.pgSystemClient.query(
+    const dbExists = await pgSystemClient.query(
       `SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`
     );
     if (dbExists.rows.length === 0) {
       // Create the Operon system database.
-      await this.pgSystemClient.query(`CREATE DATABASE ${this.systemDatabaseName}`);
+      await pgSystemClient.query(`CREATE DATABASE ${this.systemDatabaseName}`);
     }
     // Load the Operon system schemas.
     await this.pool.query(systemDBSchema);
     await this.listenForNotifications();
-    await this.pgSystemClient.end();
+    await pgSystemClient.end();
   }
 
   async destroy() {
