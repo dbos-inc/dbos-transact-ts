@@ -39,7 +39,7 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
   constructor(private readonly operon: Operon) {
-    const pgClientConfig = operon.pgSystemClientConfig;
+    const pgClientConfig = { ...operon.pgSystemClientConfig};
     pgClientConfig.database = this.pgLogsDbName;
     this.pgClient = new Client(pgClientConfig);
   }
