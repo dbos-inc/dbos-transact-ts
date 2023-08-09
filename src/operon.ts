@@ -23,6 +23,14 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 
+import { OperonMethodRegistrationBase } from './datatypes';
+
+// XXX TEMPORARY: decorators will fill this array (it will probably be global, too)
+export const registeredOperations: OperonMethodRegistrationBase[] = [
+  new OperonMethodRegistrationBase('create_user', ['username', 'age']),
+  new OperonMethodRegistrationBase('get_user_info', ['username']),
+];
+
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
 

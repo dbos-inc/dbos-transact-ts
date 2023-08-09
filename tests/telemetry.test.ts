@@ -8,7 +8,7 @@ import {
 import { Operon } from "../src/operon";
 
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import postgresLogBackendSchema from "schemas/postgresLogBackend";
+import { observabilityDBSchema } from "schemas/observability_db_schema";
 import { QueryConfig } from "pg";
 
 describe("operon-telemetry", () => {
@@ -42,7 +42,7 @@ describe("operon-telemetry", () => {
       // Then check PostgresExporter initialization
       const loadSchemaSpy = jest.spyOn(pgExporter.pgClient, "query");
       await collector.init();
-      expect(loadSchemaSpy).toHaveBeenCalledWith(postgresLogBackendSchema);
+      expect(loadSchemaSpy).toHaveBeenCalledWith(observabilityDBSchema);
 
       // Check the exporter's PG client is functional
       const queryResult = await pgExporter.pgClient.query(

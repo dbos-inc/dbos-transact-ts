@@ -1,6 +1,6 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
-import postgresLogBackendSchema from "../schemas/postgresLogBackend";
-import { Operon } from "./operon";
+import { observabilityDBSchema } from "../schemas/observability_db_schema";
+import { Operon, registeredOperations } from "./operon";
 
 /*** SIGNALS ***/
 
@@ -33,7 +33,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
   readonly pgClient: Client;
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
@@ -48,20 +48,56 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
     const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
-    // We assume this.operon.pgSystemClient is already connected.
     const dbExists = await pgSystemClient.query(
       `SELECT FROM pg_database WHERE datname = '${this.pgLogsDbName}'`
     );
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
-      await pgSystemClient.query(
-        `CREATE DATABASE ${this.pgLogsDbName}`
-      );
+      await pgSystemClient.query(`CREATE DATABASE ${this.pgLogsDbName}`);
     }
     await pgSystemClient.end();
-    // Connect the exporter client and load the schema no matter what
+
+    // Connect the exporter client
     await this.pgClient.connect();
-    await this.pgClient.query(postgresLogBackendSchema);
+
+    // Load the base schema
+    await this.pgClient.query(observabilityDBSchema);
+
+    // Now check for registered workflows
+    // XXX we could have this object be re-ported to Operon (rather than using the global one
+    for (const registeredOperation of registeredOperations) {
+      const tableName = `signal_${registeredOperation.name}`;
+      let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+   workflow_name TEXT NOT NULL,
+   workflow_uuid TEXT NOT NULL,
+   function_id INT NOT NULL,
+   function_name TEXT NOT NULL,
+   runAs TEXT NOT NULL,
+   timestamp BIGINT NOT NULL,
+   type TEXT NOT NULL,
+   severity TEXT DEFAULT NULL,
+   log_message TEXT DEFAULT NULL`;
+
+      let parameterRows: string[] = [];
+      for (let i = 0; i < registeredOperation.args.length; i++) {
+        const arg = registeredOperation.args[i];
+        let row = `${arg.name} ${arg.dataType.formatAsString()} DEFAULT NULL`;
+        if (i < registeredOperation.args.length - 1) {
+          row = row.concat(",");
+        }
+        row = row.concat("\n");
+        parameterRows.push(row);
+      }
+      if (parameterRows.length > 0) {
+        createSignalTableQuery = createSignalTableQuery.concat(",\n");
+        createSignalTableQuery = createSignalTableQuery.concat(
+          parameterRows.join("")
+        );
+      }
+      createSignalTableQuery = createSignalTableQuery.concat("\n);");
+      console.log(createSignalTableQuery);
+      await this.pgClient.query(createSignalTableQuery);
+    }
   }
 
   async destroy(): Promise<void> {

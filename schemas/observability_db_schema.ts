@@ -1,12 +1,10 @@
-const postgresLogBackendSchema = `
-  CREATE TABLE IF NOT EXISTS log_signal (
-      workflow_uuid TEXT NOT NULL,
-      function_id INT NOT NULL,
-      log_signal_raw VARCHAR(255) NOT NULL,
-      created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()))::bigint,
-      updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()))::bigint,
-      PRIMARY KEY (workflow_uuid, function_id)
+export const observabilityDBSchema = `
+  CREATE TABLE IF NOT EXISTS operations (
+    workflow_name TEXT NOT NULL,
+    function_name TEXT NOT NULL,
+    authorized_roles TEXT[] default '{}',
+    created_at_epoch_us BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()))::bigint,
+    params TEXT[] default '{}',
+    param_types TEXT[] default '{}'
   );
 `;
-
-export default postgresLogBackendSchema;
