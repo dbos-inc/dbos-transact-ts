@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from 'pg';
 import { OperonError } from './error';
+import { OperationContext } from './context';
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -17,12 +18,23 @@ export function validateTransactionConfig (params: TransactionConfig){
   }
 }
 
-export class TransactionContext {
+export class TransactionContext extends OperationContext {
+  readonly _contextType = 'TransactionContext';
   #functionAborted: boolean = false;
   readonly readOnly : boolean;
   readonly isolationLevel;
 
-  constructor(readonly client: PoolClient, readonly functionID: number, config: TransactionConfig) {
+  constructor(
+      workflowName: string,
+      rolesThatCanRun: string[],
+      workflowUUID: string,
+      runAs: string,
+      readonly client: PoolClient,
+      readonly functionID: number,
+      readonly functionName: string,
+      config: TransactionConfig) {
+
+    super(workflowName, rolesThatCanRun, workflowUUID, runAs);
     if (config.readOnly) {
       this.readOnly = config.readOnly;
     } else {

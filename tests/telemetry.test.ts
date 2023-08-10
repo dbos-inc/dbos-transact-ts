@@ -1,6 +1,6 @@
 import {
   ConsoleExporter,
-  TelemetrySignalLog,
+  TelemetrySignal,
   PostgresExporter,
   POSTGRES_EXPORTER,
   TelemetryCollector,
@@ -56,26 +56,39 @@ describe("operon-telemetry", () => {
       await collector.init();
 
       // Push to the signals queue and wait for one export interval
-      collector.push("a");
-      collector.push("b");
+      // XXX this is a hack: the test will now have to expose registered operations for the collector init() to insert the tables
+      const signal1: TelemetrySignal = {
+          workflowName: "test",
+          workflowUUID: "test",
+          functionName: "create_user",
+          functionID: 0,
+          runAs: "test",
+          timestamp: Date.now(),
+          severity: "INFO",
+          log_message: "test",
+      };
+      const signal2 = { ...signal1 } ;
+      signal2.log_message = "test2";
+      collector.push(signal1);
+      collector.push(signal2);
       await collector.processAndExportSignals();
 
       const pgExporter = collector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
       const queryResult =
-        await pgExporterPgClient.query<TelemetrySignalLog>(
-          `select * from log_signal`
+        await pgExporterPgClient.query<TelemetrySignal>(
+          `select * from signal_create_user` // XXX hacked table name
         );
       expect(queryResult.rows).toHaveLength(2);
-      expect(queryResult.rows[0].log_signal_raw).toBe("a");
-      expect(queryResult.rows[1].log_signal_raw).toBe("b");
+      expect(queryResult.rows[0].log_message).toBe("test");
+      expect(queryResult.rows[1].log_message).toBe("test2");
 
       // Clean up the database XXX we need a test database
       const cleanUpQuery: QueryConfig = {
         text: "delete from log_signal where workflow_uuid=$1 or workflow_uuid=$2",
         values: [
-          queryResult.rows[0].workflow_uuid,
-          queryResult.rows[1].workflow_uuid,
+          queryResult.rows[0].workflowUUID,
+          queryResult.rows[1].workflowUUID,
         ],
       };
       await pgExporterPgClient.query(cleanUpQuery);

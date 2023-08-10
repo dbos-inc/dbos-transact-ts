@@ -4,28 +4,31 @@ import { Operon, registeredOperations } from "./operon";
 
 /*** SIGNALS ***/
 
-export interface TelemetrySignalLog {
-  workflow_uuid: string;
-  function_id: string;
-  log_signal_raw: string;
-  created_at: number;
-  updated_at: number;
+export interface TelemetrySignal {
+  workflowName: string;
+  workflowUUID: string;
+  functionID: number;
+  functionName: string;
+  runAs: string;
+  timestamp: number;
+  severity: string;
+  log_message: string;
 }
 
 /*** EXPORTERS ***/
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: string): Promise<T>;
-  process?(signal: string): U;
+  export(signal: TelemetrySignal): Promise<T>;
+  process?(signal: TelemetrySignal): U;
   init?(): Promise<void>;
   destroy?(): Promise<void>;
 }
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
-  async export(signal: string): Promise<void> {
+  async export(signal: TelemetrySignal): Promise<void> {
     return new Promise<void>((resolve) => {
-      console.log(signal);
+      console.log(`[${signal.severity}] ${signal.log_message}`);
       resolve();
     });
   }
@@ -64,7 +67,6 @@ export class PostgresExporter
     await this.pgClient.query(observabilityDBSchema);
 
     // Now check for registered workflows
-    // XXX we could have this object be re-ported to Operon (rather than using the global one
     for (const registeredOperation of registeredOperations) {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
@@ -74,7 +76,6 @@ export class PostgresExporter
    function_name TEXT NOT NULL,
    runAs TEXT NOT NULL,
    timestamp BIGINT NOT NULL,
-   type TEXT NOT NULL,
    severity TEXT DEFAULT NULL,
    log_message TEXT DEFAULT NULL`;
 
@@ -95,7 +96,6 @@ export class PostgresExporter
         );
       }
       createSignalTableQuery = createSignalTableQuery.concat("\n);");
-      console.log(createSignalTableQuery);
       await this.pgClient.query(createSignalTableQuery);
     }
   }
@@ -104,20 +104,28 @@ export class PostgresExporter
     await this.pgClient.end();
   }
 
-  process(signal: string): QueryConfig {
+  process(signal: TelemetrySignal): QueryConfig {
+    const tableName: string = `signal_${signal.functionName}`;
     return {
-      name: "insert-signal-log",
-      text: "INSERT INTO log_signal (workflow_uuid, function_id, log_signal_raw) VALUES ($1, $2, $3)",
-      // TODO wire these values with the Signal data model
+      name: "insert-signal",
+      text: `INSERT INTO ${tableName}
+        (workflow_name, workflow_uuid, function_id, function_name, runAs, timestamp, severity, log_message)
+        VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8)`,
       values: [
-        Math.floor(Math.random() * 1000),
-        Math.floor(Math.random() * 1000),
-        signal,
+        signal.workflowName,
+        signal.workflowUUID,
+        signal.functionID,
+        signal.functionName,
+        signal.runAs,
+        signal.timestamp,
+        signal.severity,
+        signal.log_message,
       ],
     };
   }
 
-  async export(signal: string): Promise<QueryArrayResult> {
+  async export(signal: TelemetrySignal): Promise<QueryArrayResult> {
     const query = this.process(signal);
     return this.pgClient.query(query);
   }
@@ -127,13 +135,13 @@ export class PostgresExporter
 
 // For now use strings. Eventually define a Signal class for the telemetry data model
 class SignalsQueue {
-  data: string[] = [];
+  data: TelemetrySignal[] = [];
 
-  push(signal: string): void {
+  push(signal: TelemetrySignal): void {
     this.data.push(signal);
   }
 
-  pop(): string | undefined {
+  pop(): TelemetrySignal | undefined {
     return this.data.shift();
   }
 
@@ -173,11 +181,11 @@ export class TelemetryCollector {
     }
   }
 
-  push(signal: string) {
+  push(signal: TelemetrySignal) {
     this.signals.push(signal);
   }
 
-  private pop(): string | undefined {
+  private pop(): TelemetrySignal | undefined {
     return this.signals.pop();
   }
 
