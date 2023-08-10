@@ -34,6 +34,56 @@ describe("operon-telemetry", () => {
     await operon.destroy();
   });
 
+  describe("Console exporter", () => {
+    let operon: Operon;
+    const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    let collector: TelemetryCollector;
+
+    beforeEach(() => {
+      operon = new Operon(operonConfig);
+    });
+
+    afterEach(async () => {
+      await collector.destroy();
+      await operon.destroy();
+    });
+
+    test("console.log is called with the correct messages", async () => {
+      collector = operon.telemetryCollector;
+      expect(collector.exporters.length).toBe(1);
+      expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
+
+      await collector.init();
+      const logSpy = jest.spyOn(global.console, "log");
+
+      // XXX this is a hack: the test will now have to expose registered operations for the collector init() to insert the tables
+      const signal1: TelemetrySignal = {
+        workflowName: "test",
+        workflowUUID: "test",
+        functionName: "create_user",
+        functionID: 0,
+        runAs: "test",
+        timestamp: Date.now(),
+        severity: "INFO",
+        logMessage: "test",
+      };
+      const signal2 = { ...signal1 };
+      signal2.logMessage = "test2";
+      collector.push(signal1);
+      collector.push(signal2);
+      await collector.processAndExportSignals();
+      expect(logSpy).toHaveBeenCalledTimes(2);
+      expect(logSpy).toHaveBeenNthCalledWith(
+        1,
+        `[${signal1.severity}] ${signal1.logMessage}`
+      );
+      expect(logSpy).toHaveBeenNthCalledWith(
+        2,
+        `[${signal1.severity}] ${signal2.logMessage}`
+      );
+    });
+  });
+
   describe("Postgres exporter", () => {
     let operon: Operon;
     const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
@@ -46,6 +96,7 @@ describe("operon-telemetry", () => {
     afterEach(async () => {
       await collector.destroy();
       await operon.destroy();
+      // This attempts to clear all our DBs, including the observability one
       await teardownOperonTestDb(operonConfig);
     });
 
