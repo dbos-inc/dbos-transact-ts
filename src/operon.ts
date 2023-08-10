@@ -29,6 +29,7 @@ import { OperonMethodRegistrationBase } from './datatypes';
 export const registeredOperations: OperonMethodRegistrationBase[] = [
   new OperonMethodRegistrationBase('create_user', ['username', 'age']),
   new OperonMethodRegistrationBase('get_user_info', ['username']),
+  new OperonMethodRegistrationBase('helloWorkflow', ['name']),
 ];
 
 export interface OperonNull {}

@@ -117,30 +117,30 @@ export class PostgresExporter
 
     for (const [functionName, signals] of groupByFunctionName) {
       const tableName: string = `signal_${functionName}`;
-      let baseQueryText = `
-            INSERT INTO ${tableName}
-            (workflow_name, workflow_uuid, function_id, function_name, run_as, timestamp, severity, log_message)
-            VALUES
-            `;
-      for (const signal of signals) {
-        baseQueryText = baseQueryText.concat(`(
-            '${signal.workflowName}',
-            '${signal.workflowUUID}',
-            '${signal.functionID}',
-            '${signal.functionName}',
-            '${signal.runAs}',
-            '${signal.timestamp}',
-            '${signal.severity}',
-            '${signal.logMessage}'
-        ),`);
-      }
+      const query = `
+        INSERT INTO ${tableName}
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_name text, workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
+      `;
 
-      // Remove the last ','
-      baseQueryText = baseQueryText.slice(0, -1);
+      const values: string = JSON.stringify(
+        signals.map((signal) => {
+          return {
+            workflow_name: signal.workflowName,
+            workflow_uuid: signal.workflowUUID,
+            function_id: signal.functionID,
+            function_name: signal.functionName,
+            run_as: signal.runAs,
+            timestamp: signal.timestamp,
+            severity: signal.severity,
+            log_message: signal.logMessage,
+          };
+        })
+      );
 
       queries.push({
         name: "insert-signal",
-        text: baseQueryText,
+        text: query,
+        values: [values],
       });
     }
     return queries;
