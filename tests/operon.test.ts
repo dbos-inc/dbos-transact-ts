@@ -10,7 +10,7 @@ import {
 } from "src/";
 import {
   generateOperonTestConfig,
-  teardownOperonTestDb,
+  setupOperonTestDb,
   TestKvTable
 } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
@@ -27,7 +27,7 @@ describe('operon-tests', () => {
   beforeAll(async () => {
     config = generateOperonTestConfig();
     username = config.poolConfig.user || "postgres";
-    await teardownOperonTestDb(config);
+    await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {

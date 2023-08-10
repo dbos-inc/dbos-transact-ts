@@ -8,7 +8,7 @@ import {
 } from "src/";
 import {
   generateOperonTestConfig,
-  teardownOperonTestDb,
+  setupOperonTestDb,
   TestKvTable
 } from './helpers';
 import { DatabaseError } from "pg";
@@ -24,7 +24,7 @@ describe('failures-tests', () => {
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
-    await teardownOperonTestDb(config);
+    await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
