@@ -36,14 +36,16 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
   readonly pgClient: Client;
-  private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
-  constructor(private readonly operon: Operon) {
+  constructor(
+    private readonly operon: Operon,
+    readonly observabilityDBName: string = "operon_observability"
+  ) {
     const pgClientConfig = { ...operon.config.poolConfig};
-    pgClientConfig.database = this.pgLogsDbName;
+    pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
   }
 
@@ -52,11 +54,11 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
     const dbExists = await pgSystemClient.query(
-      `SELECT FROM pg_database WHERE datname = '${this.pgLogsDbName}'`
+      `SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`
     );
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
-      await pgSystemClient.query(`CREATE DATABASE ${this.pgLogsDbName}`);
+      await pgSystemClient.query(`CREATE DATABASE ${this.observabilityDBName}`);
     }
     await pgSystemClient.end();
 

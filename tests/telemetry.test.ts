@@ -104,16 +104,6 @@ describe("operon-telemetry", () => {
       expect(queryResult.rows).toHaveLength(2);
       expect(queryResult.rows[0].log_message).toBe("test");
       expect(queryResult.rows[1].log_message).toBe("test2");
-
-      // Clean up the database XXX we need a test database
-      const cleanUpQuery: QueryConfig = {
-        text: "delete from signal_create_user where workflow_uuid=$1 or workflow_uuid=$2",
-        values: [
-          queryResult.rows[0].workflow_uuid,
-          queryResult.rows[1].workflow_uuid,
-        ],
-      };
-      await pgExporterPgClient.query(cleanUpQuery);
     });
   });
 });
