@@ -1,6 +1,7 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
-import { Operon, registeredOperations } from "./operon";
+import { Operon } from "./operon";
 import { groupBy } from "lodash";
+import { forEachMethod } from "./decorators";
 
 /*** SIGNALS ***/
 
@@ -46,7 +47,7 @@ export class PostgresExporter
     private readonly operon: Operon,
     readonly observabilityDBName: string = "operon_observability"
   ) {
-    const pgClientConfig = { ...operon.config.poolConfig};
+    const pgClientConfig = { ...operon.config.poolConfig };
     pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
   }
@@ -68,17 +69,17 @@ export class PostgresExporter
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    for (const registeredOperation of registeredOperations) {
+    forEachMethod(async (registeredOperation) => {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
-   workflow_name TEXT NOT NULL,
-   workflow_uuid TEXT NOT NULL,
-   function_id INT NOT NULL,
-   function_name TEXT NOT NULL,
-   run_as TEXT NOT NULL,
-   timestamp BIGINT NOT NULL,
-   severity TEXT DEFAULT NULL,
-   log_message TEXT DEFAULT NULL`;
+        workflow_name TEXT NOT NULL,
+        workflow_uuid TEXT NOT NULL,
+        function_id INT NOT NULL,
+        function_name TEXT NOT NULL,
+        run_as TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        severity TEXT DEFAULT NULL,
+        log_message TEXT DEFAULT NULL`;
 
       const parameterRows: string[] = [];
       for (let i = 0; i < registeredOperation.args.length; i++) {
@@ -98,7 +99,7 @@ export class PostgresExporter
       }
       createSignalTableQuery = createSignalTableQuery.concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
-    }
+    });
   }
 
   async destroy(): Promise<void> {

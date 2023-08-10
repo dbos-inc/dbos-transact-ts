@@ -6,10 +6,9 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { Operon, OperonConfig } from "../src/operon";
-
+import { Operon } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Client } from "pg";
+import { logged } from "../src/decorators";
 
 type TelemetrySignalDbFields = {
   workflow_name: string;
@@ -21,6 +20,13 @@ type TelemetrySignalDbFields = {
   severity: string;
   log_message: string;
 };
+
+class TestClass {
+    @logged
+    static create_user(name: string): Promise<boolean> {
+        return Promise.resolve(true);
+    }
+}
 
 describe("operon-telemetry", () => {
   test("Operon init works with all exporters", async () => {
