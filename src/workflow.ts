@@ -71,7 +71,7 @@ export class WorkflowContext extends OperationContext {
       runAs: this.runAs,
       timestamp: Date.now(),
       severity: severity,
-      log_message: message,
+      logMessage: message,
     };
     this.#operon.telemetryCollector.push(signal);
   }

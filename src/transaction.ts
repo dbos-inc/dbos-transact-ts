@@ -25,10 +25,10 @@ export class TransactionContext extends OperationContext {
   readonly isolationLevel;
 
   constructor(
-      workflowName: string,
-      rolesThatCanRun: string[],
-      workflowUUID: string,
-      runAs: string,
+    workflowName: string,
+    rolesThatCanRun: string[],
+    workflowUUID: string,
+    runAs: string,
       readonly client: PoolClient,
       readonly functionID: number,
       readonly functionName: string,

@@ -12,7 +12,7 @@ export interface TelemetrySignal {
   runAs: string;
   timestamp: number;
   severity: string;
-  log_message: string;
+  logMessage: string;
 }
 
 /*** EXPORTERS ***/
@@ -28,7 +28,7 @@ export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   async export(signal: TelemetrySignal): Promise<void> {
     return new Promise<void>((resolve) => {
-      console.log(`[${signal.severity}] ${signal.log_message}`);
+      console.log(`[${signal.severity}] ${signal.logMessage}`);
       resolve();
     });
   }
@@ -36,7 +36,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 {
   readonly pgClient: Client;
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
@@ -74,12 +74,12 @@ export class PostgresExporter
    workflow_uuid TEXT NOT NULL,
    function_id INT NOT NULL,
    function_name TEXT NOT NULL,
-   runAs TEXT NOT NULL,
+   run_as TEXT NOT NULL,
    timestamp BIGINT NOT NULL,
    severity TEXT DEFAULT NULL,
    log_message TEXT DEFAULT NULL`;
 
-      let parameterRows: string[] = [];
+      const parameterRows: string[] = [];
       for (let i = 0; i < registeredOperation.args.length; i++) {
         const arg = registeredOperation.args[i];
         let row = `${arg.name} ${arg.dataType.formatAsString()} DEFAULT NULL`;
@@ -109,7 +109,7 @@ export class PostgresExporter
     return {
       name: "insert-signal",
       text: `INSERT INTO ${tableName}
-        (workflow_name, workflow_uuid, function_id, function_name, runAs, timestamp, severity, log_message)
+        (workflow_name, workflow_uuid, function_id, function_name, run_as, timestamp, severity, log_message)
         VALUES
         ($1, $2, $3, $4, $5, $6, $7, $8)`,
       values: [
@@ -120,7 +120,7 @@ export class PostgresExporter
         signal.runAs,
         signal.timestamp,
         signal.severity,
-        signal.log_message,
+        signal.logMessage,
       ],
     };
   }

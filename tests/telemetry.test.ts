@@ -4,6 +4,7 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
   TelemetryCollector,
+  CONSOLE_EXPORTER,
 } from "../src/telemetry";
 import { Operon } from "../src/operon";
 
@@ -11,7 +12,28 @@ import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { observabilityDBSchema } from "schemas/observability_db_schema";
 import { QueryConfig } from "pg";
 
+type TelemetrySignalDbFields = {
+  workflow_name: string;
+  workflow_uuid: string;
+  function_id: number;
+  function_name: string;
+  run_as: string;
+  timestamp: bigint;
+  severity: string;
+  log_message: string;
+};
+
 describe("operon-telemetry", () => {
+  test("Operon init works with exporters", async () => {
+    const operonConfig = generateOperonTestConfig([
+      CONSOLE_EXPORTER,
+      POSTGRES_EXPORTER,
+    ]);
+    const operon = new Operon(operonConfig);
+    await operon.init();
+    await operon.destroy();
+  });
+
   test("Only configures requested exporters", async () => {
     const collector = new TelemetryCollector([new ConsoleExporter()]);
     expect(collector.exporters.length).toBe(1);
@@ -58,17 +80,17 @@ describe("operon-telemetry", () => {
       // Push to the signals queue and wait for one export interval
       // XXX this is a hack: the test will now have to expose registered operations for the collector init() to insert the tables
       const signal1: TelemetrySignal = {
-          workflowName: "test",
-          workflowUUID: "test",
-          functionName: "create_user",
-          functionID: 0,
-          runAs: "test",
-          timestamp: Date.now(),
-          severity: "INFO",
-          log_message: "test",
+        workflowName: "test",
+        workflowUUID: "test",
+        functionName: "create_user",
+        functionID: 0,
+        runAs: "test",
+        timestamp: Date.now(),
+        severity: "INFO",
+        logMessage: "test",
       };
-      const signal2 = { ...signal1 } ;
-      signal2.log_message = "test2";
+      const signal2 = { ...signal1 };
+      signal2.logMessage = "test2";
       collector.push(signal1);
       collector.push(signal2);
       await collector.processAndExportSignals();
@@ -76,7 +98,7 @@ describe("operon-telemetry", () => {
       const pgExporter = collector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
       const queryResult =
-        await pgExporterPgClient.query<TelemetrySignal>(
+        await pgExporterPgClient.query<TelemetrySignalDbFields>(
           `select * from signal_create_user` // XXX hacked table name
         );
       expect(queryResult.rows).toHaveLength(2);
@@ -85,10 +107,10 @@ describe("operon-telemetry", () => {
 
       // Clean up the database XXX we need a test database
       const cleanUpQuery: QueryConfig = {
-        text: "delete from log_signal where workflow_uuid=$1 or workflow_uuid=$2",
+        text: "delete from signal_create_user where workflow_uuid=$1 or workflow_uuid=$2",
         values: [
-          queryResult.rows[0].workflowUUID,
-          queryResult.rows[1].workflowUUID,
+          queryResult.rows[0].workflow_uuid,
+          queryResult.rows[1].workflow_uuid,
         ],
       };
       await pgExporterPgClient.query(cleanUpQuery);
