@@ -19,6 +19,8 @@
     "ts-jest": "^29.1.1"
   },
   "dependencies": {
+    "@types/lodash": "^4.14.197",
+    "lodash": "^4.17.21",
     "pg": "^8.11.1",
     "reflect-metadata": "^0.1.13",
     "serialize-error": "8.1.0",

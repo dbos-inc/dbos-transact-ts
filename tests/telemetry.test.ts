@@ -6,11 +6,11 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { Operon } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
 import { observabilityDBSchema } from "schemas/observability_db_schema";
-import { QueryConfig } from "pg";
+import { Client } from "pg";
 
 type TelemetrySignalDbFields = {
   workflow_name: string;
@@ -24,7 +24,7 @@ type TelemetrySignalDbFields = {
 };
 
 describe("operon-telemetry", () => {
-  test("Operon init works with exporters", async () => {
+  test("Operon init works with all exporters", async () => {
     const operonConfig = generateOperonTestConfig([
       CONSOLE_EXPORTER,
       POSTGRES_EXPORTER,
@@ -34,28 +34,24 @@ describe("operon-telemetry", () => {
     await operon.destroy();
   });
 
-  test("Only configures requested exporters", async () => {
-    const collector = new TelemetryCollector([new ConsoleExporter()]);
-    expect(collector.exporters.length).toBe(1);
-    await collector.destroy();
-  });
-
   describe("Postgres exporter", () => {
     let operon: Operon;
+    const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+    let collector: TelemetryCollector;
 
-    beforeEach(async () => {
-      const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
-      await setupOperonTestDb(operonConfig);
+    beforeEach(() => {
       operon = new Operon(operonConfig);
     });
 
     afterEach(async () => {
+      await collector.destroy();
       await operon.destroy();
+      await teardownOperonTestDb(operonConfig);
     });
 
     test("Configures and initializes", async () => {
       // First check that the Telemetry Collector is properly initialized with a valid PostgresExporter
-      const collector = operon.telemetryCollector;
+      collector = operon.telemetryCollector;
       expect(collector.exporters.length).toBe(1);
       expect(collector.exporters[0]).toBeInstanceOf(PostgresExporter);
       const pgExporter: PostgresExporter = collector
@@ -71,10 +67,12 @@ describe("operon-telemetry", () => {
         `select current_user from current_user`
       );
       expect(queryResult.rows).toHaveLength(1);
+
+      await collector.destroy();
     });
 
     test("Signals are correctly exported", async () => {
-      const collector = operon.telemetryCollector;
+      collector = operon.telemetryCollector;
       await collector.init();
 
       // Push to the signals queue and wait for one export interval

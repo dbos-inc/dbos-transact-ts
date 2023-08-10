@@ -1,6 +1,7 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
 import { observabilityDBSchema } from "../schemas/observability_db_schema";
 import { Operon, registeredOperations } from "./operon";
+import { groupBy } from "lodash";
 
 /*** SIGNALS ***/
 
@@ -18,17 +19,19 @@ export interface TelemetrySignal {
 /*** EXPORTERS ***/
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: TelemetrySignal): Promise<T>;
-  process?(signal: TelemetrySignal): U;
+  export(signal: TelemetrySignal[]): Promise<T>;
+  process?(signal: TelemetrySignal[]): U;
   init?(): Promise<void>;
   destroy?(): Promise<void>;
 }
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
-  async export(signal: TelemetrySignal): Promise<void> {
+  async export(signals: TelemetrySignal[]): Promise<void> {
     return new Promise<void>((resolve) => {
-      console.log(`[${signal.severity}] ${signal.logMessage}`);
+      for (const signal of signals) {
+        console.log(`[${signal.severity}] ${signal.logMessage}`);
+      }
       resolve();
     });
   }
@@ -36,7 +39,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-  implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+  implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
 {
   readonly pgClient: Client;
 
@@ -106,30 +109,50 @@ export class PostgresExporter
     await this.pgClient.end();
   }
 
-  process(signal: TelemetrySignal): QueryConfig {
-    const tableName: string = `signal_${signal.functionName}`;
-    return {
-      name: "insert-signal",
-      text: `INSERT INTO ${tableName}
-        (workflow_name, workflow_uuid, function_id, function_name, run_as, timestamp, severity, log_message)
-        VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      values: [
-        signal.workflowName,
-        signal.workflowUUID,
-        signal.functionID,
-        signal.functionName,
-        signal.runAs,
-        signal.timestamp,
-        signal.severity,
-        signal.logMessage,
-      ],
-    };
+  process(signals: TelemetrySignal[]): QueryConfig[] {
+    const groupByFunctionName: Map<string, TelemetrySignal[]> = new Map(
+      Object.entries(groupBy(signals, ({ functionName }) => functionName))
+    );
+    const queries: QueryConfig[] = [];
+
+    for (const [functionName, signals] of groupByFunctionName) {
+      const tableName: string = `signal_${functionName}`;
+      let baseQueryText = `
+            INSERT INTO ${tableName}
+            (workflow_name, workflow_uuid, function_id, function_name, run_as, timestamp, severity, log_message)
+            VALUES
+            `;
+      for (const signal of signals) {
+        baseQueryText = baseQueryText.concat(`(
+            '${signal.workflowName}',
+            '${signal.workflowUUID}',
+            '${signal.functionID}',
+            '${signal.functionName}',
+            '${signal.runAs}',
+            '${signal.timestamp}',
+            '${signal.severity}',
+            '${signal.logMessage}'
+        ),`);
+      }
+
+      // Remove the last ','
+      baseQueryText = baseQueryText.slice(0, -1);
+
+      queries.push({
+        name: "insert-signal",
+        text: baseQueryText,
+      });
+    }
+    return queries;
   }
 
-  async export(signal: TelemetrySignal): Promise<QueryArrayResult> {
-    const query = this.process(signal);
-    return this.pgClient.query(query);
+  async export(signals: TelemetrySignal[]): Promise<QueryArrayResult[]> {
+    const queries = this.process(signals);
+    const results: Promise<QueryArrayResult>[] = [];
+    for (const query of queries) {
+      results.push(this.pgClient.query(query));
+    }
+    return Promise.all<QueryArrayResult>(results);
   }
 }
 
@@ -157,6 +180,7 @@ export class TelemetryCollector {
   private readonly signals: SignalsQueue = new SignalsQueue();
   private readonly signalBufferID: NodeJS.Timeout;
   private readonly processAndExportSignalsIntervalMs = 1000;
+  private readonly processAndExportSignalsMaxBatchSize = 10;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
@@ -192,16 +216,19 @@ export class TelemetryCollector {
   }
 
   async processAndExportSignals(): Promise<void> {
-    // eslint-disable-next-line no-cond-assign
-    while (this.signals.size() > 0) {
+    const batch: TelemetrySignal[] = [];
+    while (
+      this.signals.size() > 0 &&
+      batch.length < this.processAndExportSignalsMaxBatchSize
+    ) {
       const signal = this.pop();
-      // Because we are single threaded, we don't have to worry about concurrent shift() and push() to the buffer
       if (!signal) {
         break;
       }
-      for (const exporter of this.exporters) {
-        await exporter.export(signal);
-      }
+      batch.push(signal);
+    }
+    for (const exporter of this.exporters) {
+      await exporter.export(batch);
     }
   }
 }
