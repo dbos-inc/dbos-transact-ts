@@ -2,7 +2,6 @@ import { CommunicatorContext, Operon, OperonConfig, TransactionContext, Workflow
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
-import { StatusString } from "src/workflow";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
