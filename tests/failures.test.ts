@@ -29,9 +29,10 @@ describe('failures-tests', () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
+    operon.useNodePostgres();
     await operon.init();
-    await operon.pool.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.pool.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
@@ -96,7 +97,7 @@ describe('failures-tests', () => {
     let counter: number = 0;
     let succeedUUID: string = '';
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
+      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
       counter += 1;
       succeedUUID = name;
       return rows[0];
@@ -209,7 +210,7 @@ describe('failures-tests', () => {
 
   test('no-registration',async () => {
     const testFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
+      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
       if (rows.length === 0) {
         return null;
       }
@@ -258,7 +259,7 @@ describe('failures-tests', () => {
     });
 
     const writeFunction = async (txnCtxt: TransactionContext, id: number, name: string) => {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
+      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [id, name]);
       return rows[0].value!;
     };
     operon.registerTransaction(writeFunction, {});
@@ -286,6 +287,7 @@ describe('failures-tests', () => {
 
     // Create a new operon and register everything
     operon = new Operon(config);
+    operon.useNodePostgres();
     await operon.init();
     operon.registerTransaction(writeFunction, {});
     operon.registerWorkflow(testWorkflow, {});

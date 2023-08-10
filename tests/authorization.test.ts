@@ -20,6 +20,7 @@ describe('authorization', () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
+    operon.useNodePostgres();
     await operon.init();
   });
 
