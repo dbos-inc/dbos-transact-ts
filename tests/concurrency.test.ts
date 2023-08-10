@@ -1,7 +1,7 @@
 import { CommunicatorContext, Operon, OperonConfig, TransactionContext, WorkflowContext } from "src/";
 import { v1 as uuidv1 } from 'uuid';
 import { sleep } from "src/utils";
-import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 
 describe('concurrency-tests', () => {
   let operon: Operon;
@@ -11,7 +11,7 @@ describe('concurrency-tests', () => {
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
-    await teardownOperonTestDb(config);
+    await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {

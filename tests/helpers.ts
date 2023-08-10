@@ -24,7 +24,7 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
   return operonTestConfig;
 }
 
-export async function teardownOperonTestDb(config: OperonConfig) {
+export async function setupOperonTestDb(config: OperonConfig) {
   const pgSystemClient = new Client({
     user: config.poolConfig.user,
     port: config.poolConfig.port,
@@ -34,6 +34,7 @@ export async function teardownOperonTestDb(config: OperonConfig) {
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+  await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
   await pgSystemClient.end();
 }

@@ -36,18 +36,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly workflowOutputBuffer: Map<string, any> = new Map();
 
-  constructor(readonly sysPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
-    this.pool = new Pool({
-      user: sysPoolConfig.user,
-      port: sysPoolConfig.port,
-      host: sysPoolConfig.host,
-      password: sysPoolConfig.password,
-      database: systemDatabaseName,
-    })
+  constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
+    const poolConfig = { ...pgPoolConfig};
+    poolConfig.database = systemDatabaseName;
+    this.pool = new Pool(poolConfig);
   }
 
   async init() {
-    const pgSystemClient = new Client(this.sysPoolConfig);
+    const pgSystemClient = new Client(this.pgPoolConfig);
     await pgSystemClient.connect();
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query(

@@ -39,13 +39,13 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
   private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
   constructor(private readonly operon: Operon) {
-    const pgClientConfig = { ...operon.pgSystemClientConfig};
+    const pgClientConfig = { ...operon.config.poolConfig};
     pgClientConfig.database = this.pgLogsDbName;
     this.pgClient = new Client(pgClientConfig);
   }
 
   async init() {
-    const pgSystemClient: Client = new Client(this.operon.pgSystemClientConfig);
+    const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
     // We assume this.operon.pgSystemClient is already connected.

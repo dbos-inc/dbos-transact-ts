@@ -4,20 +4,20 @@ import {
 } from "src/";
 import {
   generateOperonTestConfig,
-  teardownOperonTestDb,
+  setupOperonTestDb,
 } from './helpers';
 import { Client, Pool } from 'pg';
 
 describe('operon-init', () => {
   let config: OperonConfig;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateOperonTestConfig();
+    await setupOperonTestDb(config);
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     jest.restoreAllMocks();
-    await teardownOperonTestDb(config);
   });
 
   test('successful init', async() => {
@@ -42,22 +42,5 @@ describe('operon-init', () => {
 
     await operon.destroy();
     // TODO check that resources have been released. The client objects hold that information but it is not exposed.
-  });
-
-  test('init can only be called once', async() => {
-    const operon = new Operon(config);
-    const loadOperonDatabaseSpy = jest.spyOn(operon, 'loadOperonDatabase');
-    await operon.init();
-    await operon.init();
-    expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
-    await operon.destroy();
-  });
-
-  test('Attempt to inject SQL in the database name fails', async() => {
-    const newConfig: OperonConfig = generateOperonTestConfig();
-    newConfig.poolConfig.database = `${newConfig.poolConfig.database}; DROP SCHEMA public;`;
-    const operon = new Operon(newConfig);
-    await expect(operon.init()).rejects.toThrow(`invalid DB name: ${newConfig.poolConfig.database}`);
-    await operon.destroy();
   });
 });

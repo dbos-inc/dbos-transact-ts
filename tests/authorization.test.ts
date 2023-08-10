@@ -7,7 +7,7 @@ import {
   WorkflowConfig,
   WorkflowParams
 } from "src/";
-import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 
 describe('authorization', () => {
   let operon: Operon;
@@ -15,7 +15,7 @@ describe('authorization', () => {
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
-    await teardownOperonTestDb(config);
+    await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {

@@ -7,7 +7,7 @@ import {
 } from "../src/telemetry";
 import { Operon } from "../src/operon";
 
-import { generateOperonTestConfig } from "./helpers";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import postgresLogBackendSchema from "schemas/postgresLogBackend";
 import { QueryConfig } from "pg";
 
@@ -21,8 +21,9 @@ describe("operon-telemetry", () => {
   describe("Postgres exporter", () => {
     let operon: Operon;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+      await setupOperonTestDb(operonConfig);
       operon = new Operon(operonConfig);
     });
 
