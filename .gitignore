@@ -30,3 +30,6 @@ node_modules/
 
 # Output of 'npm pack'
 *.tgz
+
+# Editor temp files
+*.swp
