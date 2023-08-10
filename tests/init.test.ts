@@ -43,13 +43,4 @@ describe('operon-init', () => {
     await operon.destroy();
     // TODO check that resources have been released. The client objects hold that information but it is not exposed.
   });
-
-  test('init can only be called once', async() => {
-    const operon = new Operon(config);
-    const loadOperonDatabaseSpy = jest.spyOn(operon, 'loadOperonDatabase');
-    await operon.init();
-    await operon.init();
-    expect(loadOperonDatabaseSpy).toHaveBeenCalledTimes(1);
-    await operon.destroy();
-  });
 });

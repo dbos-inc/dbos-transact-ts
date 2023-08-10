@@ -37,13 +37,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowOutputBuffer: Map<string, any> = new Map();
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
-    this.pool = new Pool({
-      user: pgPoolConfig.user,
-      port: pgPoolConfig.port,
-      host: pgPoolConfig.host,
-      password: pgPoolConfig.password,
-      database: systemDatabaseName,
-    })
+    const poolConfig = { ...pgPoolConfig};
+    poolConfig.database = systemDatabaseName;
+    this.pool = new Pool(poolConfig);
   }
 
   async init() {
