@@ -127,7 +127,7 @@ export class Operon {
       return;
     }
     try {
-      await this.loadOperonDatabase();
+      await this.pool.query(userDBSchema);
       await this.telemetryCollector.init();
       await this.systemDatabase.init();
     } catch (err) {
@@ -136,11 +136,6 @@ export class Operon {
       }
     }
     this.initialized = true;
-  }
-
-  async loadOperonDatabase() {
-    // Load the Operon user database schemas.
-    await this.pool.query(userDBSchema);
   }
 
   async destroy() {
