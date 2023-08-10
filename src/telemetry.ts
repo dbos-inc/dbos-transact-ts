@@ -1,5 +1,4 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
-import { observabilityDBSchema } from "../schemas/observability_db_schema";
 import { Operon, registeredOperations } from "./operon";
 import { groupBy } from "lodash";
 
@@ -68,10 +67,7 @@ export class PostgresExporter
     // Connect the exporter client
     await this.pgClient.connect();
 
-    // Load the base schema
-    await this.pgClient.query(observabilityDBSchema);
-
-    // Now check for registered workflows
+    // Configure tables for registered workflows
     for (const registeredOperation of registeredOperations) {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (

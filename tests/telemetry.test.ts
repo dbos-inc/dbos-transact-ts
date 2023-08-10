@@ -8,8 +8,7 @@ import {
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 
-import { generateOperonTestConfig, teardownOperonTestDb } from "./helpers";
-import { observabilityDBSchema } from "schemas/observability_db_schema";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Client } from "pg";
 
 type TelemetrySignalDbFields = {
@@ -97,7 +96,7 @@ describe("operon-telemetry", () => {
       await collector.destroy();
       await operon.destroy();
       // This attempts to clear all our DBs, including the observability one
-      await teardownOperonTestDb(operonConfig);
+      await setupOperonTestDb(operonConfig);
     });
 
     test("Configures and initializes", async () => {
@@ -109,9 +108,9 @@ describe("operon-telemetry", () => {
         .exporters[0] as PostgresExporter;
 
       // Then check PostgresExporter initialization
-      const loadSchemaSpy = jest.spyOn(pgExporter.pgClient, "query");
+      jest.spyOn(pgExporter.pgClient, "query");
       await collector.init();
-      expect(loadSchemaSpy).toHaveBeenCalledWith(observabilityDBSchema);
+      // TODO test registered operations have been created
 
       // Check the exporter's PG client is functional
       const queryResult = await pgExporter.pgClient.query(
