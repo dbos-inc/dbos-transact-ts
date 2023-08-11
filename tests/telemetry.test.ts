@@ -94,7 +94,6 @@ describe("operon-telemetry", () => {
       await collector.init();
       const logSpy = jest.spyOn(global.console, "log");
 
-      // XXX this is a hack: the test will now have to expose registered operations for the collector init() to insert the tables
       const signal1: TelemetrySignal = {
         workflowName: "test",
         workflowUUID: "test",
@@ -165,7 +164,6 @@ describe("operon-telemetry", () => {
       await collector.init();
 
       // Push to the signals queue and wait for one export interval
-      // XXX this is a hack: the test will now have to expose registered operations for the collector init() to insert the tables
       const signal1: TelemetrySignal = {
         workflowName: "test",
         workflowUUID: "test",
@@ -186,7 +184,7 @@ describe("operon-telemetry", () => {
       const pgExporterPgClient = pgExporter.pgClient;
       const queryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `select * from signal_create_user` // XXX hacked table name
+          `select * from signal_create_user`
         );
       expect(queryResult.rows).toHaveLength(2);
       expect(queryResult.rows[0].log_message).toBe("test");
