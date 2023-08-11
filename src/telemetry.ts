@@ -84,7 +84,8 @@ export class PostgresExporter
       const parameterRows: string[] = [];
       for (let i = 0; i < registeredOperation.args.length; i++) {
         const arg = registeredOperation.args[i];
-        let row = `${arg.name} ${arg.dataType.formatAsString()} DEFAULT NULL`;
+        const argName = arg.name.replace('(', ''); //XXX bug with parameter name parsing from toString()
+        let row = `${argName} ${arg.dataType.formatAsString()} DEFAULT NULL`;
         if (i < registeredOperation.args.length - 1) {
           row = row.concat(",");
         }
