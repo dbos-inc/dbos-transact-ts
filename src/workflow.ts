@@ -12,7 +12,6 @@ import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUU
 import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
-import { OperationContext } from './context';
 import { TelemetrySignal } from './telemetry';
 
 const defaultRecvTimeoutSec = 60;
@@ -40,8 +39,7 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperationContext {
-  readonly _contextType = "WorkflowContext";
+export class WorkflowContext {
   #functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
@@ -49,13 +47,12 @@ export class WorkflowContext extends OperationContext {
 
   constructor(
     operon: Operon,
-    workflowUUID: string,
-    runAs: string,
-    workflowConfig: WorkflowConfig,
-    workflowName: string) {
-    super(workflowName, workflowConfig.rolesThatCanRun, workflowUUID, runAs);
-    this.#operon = operon;
-    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
+    readonly workflowUUID: string,
+    readonly runAs: string,
+    readonly workflowConfig: WorkflowConfig,
+    readonly workflowName: string) {
+      this.#operon = operon;
+      this.isTempWorkflow = operon.tempWorkflowName === workflowName;
   }
 
   functionIDGetIncrement() : number {
@@ -163,9 +160,8 @@ export class WorkflowContext extends OperationContext {
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
       const fCtxt: TransactionContext = new TransactionContext(
-        this.#operon,
-        this.workflowName, this.rolesThatCanRun, this.workflowUUID,
-        this.runAs, client, funcId, txn.name, txnConfig
+        this, this.#operon.telemetryCollector,
+        client, funcId, txn.name, txnConfig
       );
 
       await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);

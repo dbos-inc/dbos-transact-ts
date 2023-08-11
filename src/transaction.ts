@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
 import { OperonError } from "./error";
-import { OperationContext } from "./context";
-import {TelemetrySignal} from "./telemetry";
-import {Operon} from "./operon";
+import { TelemetryCollector, TelemetrySignal} from "./telemetry";
+import { WorkflowContext} from "./workflow";
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -20,24 +19,19 @@ export function validateTransactionConfig (params: TransactionConfig){
   }
 }
 
-export class TransactionContext extends OperationContext {
-  readonly _contextType = 'TransactionContext';
+export class TransactionContext {
   #functionAborted: boolean = false;
-  readonly readOnly : boolean;
+  readonly readOnly: boolean;
   readonly isolationLevel;
 
   constructor(
-    private readonly operon: Operon,
-    workflowName: string,
-    rolesThatCanRun: string[],
-    workflowUUID: string,
-    runAs: string,
-      readonly client: PoolClient,
-      readonly functionID: number,
-      readonly functionName: string,
-      config: TransactionConfig) {
-
-    super(workflowName, rolesThatCanRun, workflowUUID, runAs);
+    private readonly workflowContext: WorkflowContext,
+    private readonly telemetryCollector: TelemetryCollector,
+    readonly client: PoolClient,
+    readonly functionID: number,
+    readonly functionName: string,
+    config: TransactionConfig
+  ) {
     if (config.readOnly) {
       this.readOnly = config.readOnly;
     } else {
@@ -47,22 +41,23 @@ export class TransactionContext extends OperationContext {
       // We already validated the isolation level during config time.
       this.isolationLevel = config.isolationLevel;
     } else {
-      this.isolationLevel = 'SERIALIZABLE';
+      this.isolationLevel = "SERIALIZABLE";
     }
   }
 
   log(severity: string, message: string): void {
+    const workflowContext = this.workflowContext;
     const signal: TelemetrySignal = {
-      workflowName: this.workflowName,
-      workflowUUID: this.workflowUUID,
+      workflowName: workflowContext.workflowName,
+      workflowUUID: workflowContext.workflowUUID,
       functionID: this.functionID,
-      functionName: this.workflowName,
-      runAs: this.runAs,
+      functionName: this.functionName,
+      runAs: workflowContext.runAs,
       timestamp: Date.now(),
       severity: severity,
       logMessage: message,
     };
-    this.operon.telemetryCollector.push(signal);
+    this.telemetryCollector.push(signal);
   }
 
   async rollback() {
@@ -75,7 +70,7 @@ export class TransactionContext extends OperationContext {
     this.client.release();
   }
 
-  isAborted() : boolean {
+  isAborted(): boolean {
     return this.#functionAborted;
   }
 }
