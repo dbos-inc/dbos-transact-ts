@@ -59,7 +59,7 @@ class TestClass {
     name: string
   ): Promise<string> {
     const funcResult: string = await workflowCtxt.transaction(
-      TestClass.test_function,
+      TestClass.test_function.bind(TestClass),
       name
     );
     workflowCtxt.log("INFO", `workflow result: ${funcResult}`);
@@ -298,17 +298,20 @@ describe("operon-telemetry", () => {
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
-      operon.registerTransaction(TestClass.test_function);
+      operon.registerTransaction(TestClass.test_function.bind(TestClass));
       const testWorkflowConfig: WorkflowConfig = {
         rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
       };
-      operon.registerWorkflow(TestClass.test_workflow, testWorkflowConfig);
+      operon.registerWorkflow(
+        TestClass.test_workflow.bind(TestClass),
+        testWorkflowConfig
+      );
       const params: WorkflowParams = {
         runAs: "operonAppAdmin",
       };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
-        TestClass.test_workflow,
+        TestClass.test_workflow.bind(TestClass),
         params,
         username
       );
