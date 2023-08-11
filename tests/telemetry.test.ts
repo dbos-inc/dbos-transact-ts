@@ -15,6 +15,7 @@ import {
   WorkflowContext,
   WorkflowParams,
 } from "src";
+import { WorkflowHandle } from "src/workflow";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -121,82 +122,9 @@ describe("operon-telemetry", () => {
 
   describe("Postgres exporter", () => {
     let operon: Operon;
-    const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
-    let collector: TelemetryCollector;
-
-    beforeEach(() => {
-      operon = new Operon(operonConfig);
-    });
-
-    afterEach(async () => {
-      await collector.destroy();
-      await operon.destroy();
-      // This attempts to clear all our DBs, including the observability one
-      await setupOperonTestDb(operonConfig);
-    });
-
-    test("Configures and initializes", async () => {
-      // First check that the Telemetry Collector is properly initialized with a valid PostgresExporter
-      collector = operon.telemetryCollector;
-      expect(collector.exporters.length).toBe(1);
-      expect(collector.exporters[0]).toBeInstanceOf(PostgresExporter);
-      const pgExporter: PostgresExporter = collector
-        .exporters[0] as PostgresExporter;
-
-      // Then check PostgresExporter initialization
-      jest.spyOn(pgExporter.pgClient, "query");
-      await collector.init();
-      // TODO test registered operations have been created
-
-      // Check the exporter's PG client is functional
-      const queryResult = await pgExporter.pgClient.query(
-        `select current_user from current_user`
-      );
-      expect(queryResult.rows).toHaveLength(1);
-
-      await collector.destroy();
-    });
-
-    test("Signals are correctly exported", async () => {
-      collector = operon.telemetryCollector;
-      await collector.init();
-
-      // Push to the signals queue and wait for one export interval
-      const signal1: TelemetrySignal = {
-        workflowUUID: "test",
-        functionName: "create_user",
-        functionID: 0,
-        runAs: "test",
-        timestamp: Date.now(),
-        severity: "INFO",
-        logMessage: "test",
-      };
-      const signal2 = { ...signal1 };
-      signal2.logMessage = "test2";
-      collector.push(signal1);
-      collector.push(signal2);
-      await collector.processAndExportSignals();
-
-      const pgExporter = collector.exporters[0] as PostgresExporter;
-      const pgExporterPgClient = pgExporter.pgClient;
-      const queryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `select * from signal_create_user`
-        );
-      expect(queryResult.rows).toHaveLength(2);
-      expect(queryResult.rows[0].log_message).toBe("test");
-      expect(queryResult.rows[1].log_message).toBe("test2");
-    });
-  });
-
-  describe("end to end signal collection", () => {
-    let operon: Operon;
     let operonConfig: OperonConfig;
     beforeAll(async () => {
-      operonConfig = generateOperonTestConfig([
-        CONSOLE_EXPORTER,
-        POSTGRES_EXPORTER,
-      ]);
+      operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
       await operon.init();
     });
@@ -215,10 +143,64 @@ describe("operon-telemetry", () => {
         runAs: "operonAppAdmin",
       };
       const username = operonConfig.poolConfig.user as string;
-      const result: string = await operon
-        .workflow(TestClass.test_workflow, params, username)
-        .getResult();
+      const workflowHandle: WorkflowHandle<string> = operon.workflow(
+        TestClass.test_workflow,
+        params,
+        username
+      );
+      const workflowUUID = workflowHandle.getWorkflowUUID();
+      const result: string = await workflowHandle.getResult();
+
+      // Workflow should have executed correctly
       expect(JSON.parse(result)).toEqual({ current_user: username });
+
+      // Exporter should have registered the correct tables
+      expect(operon.telemetryCollector.exporters.length).toBe(1);
+      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
+        PostgresExporter
+      );
+      const pgExporter = operon.telemetryCollector
+        .exporters[0] as PostgresExporter;
+      const pgExporterPgClient = pgExporter.pgClient;
+      const tableQueryResult = await pgExporterPgClient.query(
+        `SELECT tablename FROM pg_catalog.pg_tables where tablename like 'signal_%'`
+      );
+      expect(tableQueryResult.rows).toHaveLength(3);
+      expect(tableQueryResult.rows).toContainEqual({
+        tablename: "signal_test_function",
+      });
+      expect(tableQueryResult.rows).toContainEqual({
+        tablename: "signal_test_workflow",
+      });
+
+      // Exporter should export the log entries
+      await operon.telemetryCollector.processAndExportSignals();
+
+      const txnLogQueryResult =
+        await pgExporterPgClient.query<TelemetrySignalDbFields>(
+          `SELECT * FROM signal_test_function`
+        );
+      expect(txnLogQueryResult.rows).toHaveLength(1);
+      const txnLogEntry = txnLogQueryResult.rows[0];
+      expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
+      expect(txnLogEntry.function_id).toBe(1);
+      expect(txnLogEntry.function_name).toBe("test_function");
+      expect(txnLogEntry.run_as).toBe(params.runAs);
+      expect(txnLogEntry.severity).toBe("INFO");
+      expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
+
+      const wfLogQueryResult =
+        await pgExporterPgClient.query<TelemetrySignalDbFields>(
+          `SELECT * FROM signal_test_workflow`
+        );
+      expect(wfLogQueryResult.rows).toHaveLength(1);
+      const wfLogEntry = wfLogQueryResult.rows[0];
+      expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
+      expect(wfLogEntry.function_id).toBe(2);
+      expect(wfLogEntry.function_name).toBe("test_workflow");
+      expect(wfLogEntry.run_as).toBe(params.runAs);
+      expect(wfLogEntry.severity).toBe("INFO");
+      expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
     });
   });
 });
