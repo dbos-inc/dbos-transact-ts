@@ -2,52 +2,52 @@ import {DatabaseError} from "pg";
 
 function formatPgDatabaseError(err: DatabaseError): string {
   let msg = '';
-   if (err.severity) {
-     msg = msg.concat(`severity: ${err.severity} \n`);
-   }
-   if (err.code) {
-     msg = msg.concat(`code: ${err.code} \n`);
-   }
-   if (err.detail) {
-     msg = msg.concat(`detail: ${err.detail} \n`);
-   }
-   if (err.hint) {
-     msg = msg.concat(`hint: ${err.hint} \n`);
-   }
-   if (err.position) {
-     msg = msg.concat(`position: ${err.position} \n`);
-   }
-   if (err.internalPosition) {
-     msg = msg.concat(`internalPosition: ${err.internalPosition} \n`);
-   }
-   if (err.internalQuery) {
-     msg = msg.concat(`internalQuery: ${err.internalQuery} \n`);
-   }
-   if (err.where) {
-     msg = msg.concat(`where: ${err.where} \n`);
-   }
-   if (err.schema) {
-     msg = msg.concat(`schema: ${err.schema} \n`);
-   }
-   if (err.table) {
-     msg = msg.concat(`table: ${err.table} \n`);
-   }
-   if (err.column) {
-     msg = msg.concat(`column: ${err.column} \n`);
-   }
-   if (err.dataType) {
-     msg = msg.concat(`dataType: ${err.dataType} \n`);
-   }
-   if (err.constraint) {
-     msg = msg.concat(`constraint: ${err.constraint} \n`);
-   }
-   if (err.file) {
-     msg = msg.concat(`file: ${err.file} \n`);
-   }
-   if (err.line) {
-     msg = msg.concat(`line: ${err.line} \n`);
-   }
-   return msg;
+  if (err.severity) {
+    msg = msg.concat(`severity: ${err.severity} \n`);
+  }
+  if (err.code) {
+    msg = msg.concat(`code: ${err.code} \n`);
+  }
+  if (err.detail) {
+    msg = msg.concat(`detail: ${err.detail} \n`);
+  }
+  if (err.hint) {
+    msg = msg.concat(`hint: ${err.hint} \n`);
+  }
+  if (err.position) {
+    msg = msg.concat(`position: ${err.position} \n`);
+  }
+  if (err.internalPosition) {
+    msg = msg.concat(`internalPosition: ${err.internalPosition} \n`);
+  }
+  if (err.internalQuery) {
+    msg = msg.concat(`internalQuery: ${err.internalQuery} \n`);
+  }
+  if (err.where) {
+    msg = msg.concat(`where: ${err.where} \n`);
+  }
+  if (err.schema) {
+    msg = msg.concat(`schema: ${err.schema} \n`);
+  }
+  if (err.table) {
+    msg = msg.concat(`table: ${err.table} \n`);
+  }
+  if (err.column) {
+    msg = msg.concat(`column: ${err.column} \n`);
+  }
+  if (err.dataType) {
+    msg = msg.concat(`dataType: ${err.dataType} \n`);
+  }
+  if (err.constraint) {
+    msg = msg.concat(`constraint: ${err.constraint} \n`);
+  }
+  if (err.file) {
+    msg = msg.concat(`file: ${err.file} \n`);
+  }
+  if (err.line) {
+    msg = msg.concat(`line: ${err.line} \n`);
+  }
+  return msg;
 }
 
 
