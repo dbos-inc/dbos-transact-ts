@@ -80,25 +80,16 @@ export class PostgresExporter
         run_as TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
         severity TEXT DEFAULT NULL,
-        log_message TEXT DEFAULT NULL`;
+        log_message TEXT DEFAULT NULL,`;
 
       const parameterRows: string[] = [];
-      for (let i = 0; i < registeredOperation.args.length; i++) {
-        const arg = registeredOperation.args[i];
-        const argName = arg.name.replace('(', ''); //XXX bug with parameter name parsing from toString()
-        let row = `${argName} ${arg.dataType.formatAsString()} DEFAULT NULL`;
-        if (i < registeredOperation.args.length - 1) {
-          row = row.concat(",");
-        }
-        row = row.concat("\n");
-        parameterRows.push(row);
+      for (const arg of registeredOperation.args) {
+        const argName = arg.name.replace("(", ""); //XXX bug with parameter name parsing from toString()
+        let row = `${argName} ${arg.dataType.formatAsString()} DEFAULT NULL,`;
+        createSignalTableQuery = createSignalTableQuery.concat(row);
       }
-      if (parameterRows.length > 0) {
-        createSignalTableQuery = createSignalTableQuery.concat(",\n");
-        createSignalTableQuery = createSignalTableQuery.concat(
-          parameterRows.join("")
-        );
-      }
+      // Trim last comma
+      createSignalTableQuery = createSignalTableQuery.slice(0, -1);
       createSignalTableQuery = createSignalTableQuery.concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
     });
