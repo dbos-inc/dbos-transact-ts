@@ -2,6 +2,7 @@ import { Client, QueryConfig, QueryArrayResult } from "pg";
 import { Operon } from "./operon";
 import { groupBy } from "lodash";
 import { forEachMethod } from "./decorators";
+import { OperonPostgresExporterError } from "./error";
 
 /*** SIGNALS ***/
 
@@ -150,7 +151,12 @@ export class PostgresExporter
     for (const query of queries) {
       results.push(this.pgClient.query(query));
     }
-    return Promise.all<QueryArrayResult>(results);
+    try {
+      // We do await here so we can catch and format PostgresExporter specific errors
+      return await Promise.all<QueryArrayResult>(results);
+    } catch (err) {
+      throw(new OperonPostgresExporterError(err as Error));
+    }
   }
 }
 
@@ -226,7 +232,11 @@ export class TelemetryCollector {
       batch.push(signal);
     }
     for (const exporter of this.exporters) {
-      await exporter.export(batch);
+      try {
+        await exporter.export(batch);
+      } catch (e) {
+        console.error((e as Error).message);
+      }
     }
   }
 }
