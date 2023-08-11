@@ -29,7 +29,13 @@ type TelemetrySignalDbFields = {
 
 class TestClass {
   @logged
-  static create_user(name: string): Promise<string> {
+  static create_user(
+    name: string,
+    age: number,
+    isNice: boolean,
+    udfParam: TelemetrySignalDbFields
+  ): Promise<string> {
+    console.log(name, age, isNice, udfParam);
     return Promise.resolve(name);
   }
 
@@ -127,13 +133,153 @@ describe("operon-telemetry", () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
       await operon.init();
+      expect(operon.telemetryCollector.exporters.length).toBe(1);
+      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
+        PostgresExporter
+      );
     });
 
     afterAll(async () => {
       await operon.destroy();
+      // This attempts to clear all our DBs, including the observability one
+      await setupOperonTestDb(operonConfig);
     });
 
-    test("single workflow single operation", async () => {
+    test("signal tables are correctly created", async () => {
+      const pgExporter = operon.telemetryCollector
+        .exporters[0] as PostgresExporter;
+      const pgExporterPgClient = pgExporter.pgClient;
+      const stfQueryResult = await pgExporterPgClient.query(
+        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`
+      );
+      const expectedStfColumns = [
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
+        },
+        {
+          column_name: "function_id",
+          data_type: "integer",
+        },
+        {
+          column_name: "run_as",
+          data_type: "text",
+        },
+        {
+          column_name: "severity",
+          data_type: "text",
+        },
+        {
+          column_name: "log_message",
+          data_type: "text",
+        },
+        {
+          column_name: "workflow_uuid",
+          data_type: "text",
+        },
+        {
+          column_name: "name",
+          data_type: "text",
+        },
+        {
+          column_name: "function_name",
+          data_type: "text",
+        },
+      ];
+      expect(stfQueryResult.rows).toEqual(expectedStfColumns);
+
+      const stwQueryResult = await pgExporterPgClient.query(
+        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`
+      );
+      const expectedStwColumns = [
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
+        },
+        {
+          column_name: "function_id",
+          data_type: "integer",
+        },
+        {
+          column_name: "run_as",
+          data_type: "text",
+        },
+        {
+          column_name: "severity",
+          data_type: "text",
+        },
+        {
+          column_name: "log_message",
+          data_type: "text",
+        },
+        {
+          column_name: "workflow_uuid",
+          data_type: "text",
+        },
+        {
+          column_name: "name",
+          data_type: "text",
+        },
+        {
+          column_name: "function_name",
+          data_type: "text",
+        },
+      ];
+      expect(stwQueryResult.rows).toEqual(expectedStwColumns);
+
+      const scuQueryResult = await pgExporterPgClient.query(
+        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
+      );
+      const expectedScuColumns = [
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
+        },
+        {
+          column_name: "function_id",
+          data_type: "integer",
+        },
+        {
+          column_name: "age",
+          data_type: "double precision",
+        },
+        {
+          column_name: "isnice",
+          data_type: "boolean",
+        },
+        {
+          column_name: "udfparam",
+          data_type: "json",
+        },
+        {
+          column_name: "name",
+          data_type: "text",
+        },
+        {
+          column_name: "severity",
+          data_type: "text",
+        },
+        {
+          column_name: "function_name",
+          data_type: "text",
+        },
+        {
+          column_name: "run_as",
+          data_type: "text",
+        },
+        {
+          column_name: "workflow_uuid",
+          data_type: "text",
+        },
+        {
+          column_name: "log_message",
+          data_type: "text",
+        },
+      ];
+      expect(scuQueryResult.rows).toEqual(expectedScuColumns);
+    });
+
+    test("correctly exports log entries with single workflow single operation", async () => {
       operon.registerTransaction(TestClass.test_function);
       const testWorkflowConfig: WorkflowConfig = {
         rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
@@ -154,27 +300,12 @@ describe("operon-telemetry", () => {
       // Workflow should have executed correctly
       expect(JSON.parse(result)).toEqual({ current_user: username });
 
-      // Exporter should have registered the correct tables
-      expect(operon.telemetryCollector.exporters.length).toBe(1);
-      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
-        PostgresExporter
-      );
+      // Exporter should export the log entries
+      await operon.telemetryCollector.processAndExportSignals();
+
       const pgExporter = operon.telemetryCollector
         .exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
-      const tableQueryResult = await pgExporterPgClient.query(
-        `SELECT tablename FROM pg_catalog.pg_tables where tablename like 'signal_%'`
-      );
-      expect(tableQueryResult.rows).toHaveLength(3);
-      expect(tableQueryResult.rows).toContainEqual({
-        tablename: "signal_test_function",
-      });
-      expect(tableQueryResult.rows).toContainEqual({
-        tablename: "signal_test_workflow",
-      });
-
-      // Exporter should export the log entries
-      await operon.telemetryCollector.processAndExportSignals();
 
       const txnLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
