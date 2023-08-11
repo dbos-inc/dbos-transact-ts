@@ -6,9 +6,15 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { Operon } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { logged } from "../src/decorators";
+import {
+  TransactionContext,
+  WorkflowConfig,
+  WorkflowContext,
+  WorkflowParams,
+} from "src";
 
 type TelemetrySignalDbFields = {
   workflow_name: string;
@@ -22,10 +28,37 @@ type TelemetrySignalDbFields = {
 };
 
 class TestClass {
-    @logged
-    static create_user(name: string): Promise<boolean> {
-        return Promise.resolve(true);
-    }
+  @logged
+  static create_user(name: string): Promise<string> {
+    return Promise.resolve(name);
+  }
+
+  @logged
+  static async test_function(
+    txnCtxt: TransactionContext,
+    name: string
+  ): Promise<string> {
+    const { rows } = await txnCtxt.client.query(
+      `select current_user from current_user where current_user=$1;`,
+      [name]
+    );
+    const result = JSON.stringify(rows[0]);
+    txnCtxt.log("INFO", `transaction result: ${result}`);
+    return result;
+  }
+
+  @logged
+  static async test_workflow(
+    workflowCtxt: WorkflowContext,
+    name: string
+  ): Promise<string> {
+    const funcResult: string = await workflowCtxt.transaction(
+      TestClass.test_function,
+      name
+    );
+    workflowCtxt.log("INFO", `workflow result: ${funcResult}`);
+    return funcResult;
+  }
 }
 
 describe("operon-telemetry", () => {
@@ -158,6 +191,39 @@ describe("operon-telemetry", () => {
       expect(queryResult.rows).toHaveLength(2);
       expect(queryResult.rows[0].log_message).toBe("test");
       expect(queryResult.rows[1].log_message).toBe("test2");
+    });
+  });
+
+  describe("end to end signal collection", () => {
+    let operon: Operon;
+    let operonConfig: OperonConfig;
+    beforeAll(async () => {
+      operonConfig = generateOperonTestConfig([
+        CONSOLE_EXPORTER,
+        POSTGRES_EXPORTER,
+      ]);
+      operon = new Operon(operonConfig);
+      await operon.init();
+    });
+
+    afterAll(async () => {
+      await operon.destroy();
+    });
+
+    test("single workflow single operation", async () => {
+      operon.registerTransaction(TestClass.test_function);
+      const testWorkflowConfig: WorkflowConfig = {
+        rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
+      };
+      operon.registerWorkflow(TestClass.test_workflow, testWorkflowConfig);
+      const params: WorkflowParams = {
+        runAs: "operonAppAdmin",
+      };
+      const username = operonConfig.poolConfig.user as string;
+      const result: string = await operon
+        .workflow(TestClass.test_workflow, params, username)
+        .getResult();
+      expect(JSON.parse(result)).toEqual({ current_user: username });
     });
   });
 });
