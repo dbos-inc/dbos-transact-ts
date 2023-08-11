@@ -201,9 +201,12 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
     const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function [];
-
-    // Infer data types - can override with decorators
-    mParameters = designParamTypes.map((value, index) => new OperonParameter(index, value));
+    for (let i = 0; i < designParamTypes.length; i++) {
+      const designParamType = designParamTypes[i];
+      if (designParamType.name !== 'WorkflowContext' && designParamType.name !== 'TransactionContext') {
+        mParameters.push(new OperonParameter(i, designParamType));
+      }
+    };
 
     Reflect.defineMetadata(operonParamMetadataKey, mParameters, target, propertyKey);
   }
