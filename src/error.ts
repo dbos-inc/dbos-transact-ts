@@ -101,12 +101,12 @@ export class OperonWorkflowUnknownError extends OperonError {
 
 const PostgresExporterError = 7;
 export class OperonPostgresExporterError extends OperonError {
-    constructor(err: Error) {
-        let msg = `PostgresExporter error: ${err.message} \n`;
-        if (err instanceof DatabaseError) {
-          msg = msg.concat(formatPgDatabaseError(err));
-        }
-        super(msg, PostgresExporterError);
+  constructor(err: Error) {
+    let msg = `PostgresExporter error: ${err.message} \n`;
+    if (err instanceof DatabaseError) {
+      msg = msg.concat(formatPgDatabaseError(err));
     }
+    super(msg, PostgresExporterError);
+  }
 }
 

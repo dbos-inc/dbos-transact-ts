@@ -29,7 +29,7 @@ export interface ITelemetryExporter<T, U> {
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   async export(signals: TelemetrySignal[]): Promise<void> {
-    return new Promise<void>((resolve) => {
+    return await new Promise<void>((resolve) => {
       for (const signal of signals) {
         console.log(`[${signal.severity}] ${signal.logMessage}`);
       }
@@ -83,12 +83,22 @@ export class PostgresExporter
         log_message TEXT DEFAULT NULL,\n`;
 
       for (const arg of registeredOperation.args) {
-        const argName = arg.name.replace("(", ""); //XXX bug with parameter name parsing from toString()
-        let row = `${argName} ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
+        if (
+          arg.argType.name === "WorkflowContext" ||
+          arg.argType.name === "TransactionContext" ||
+          arg.argType.name === "CommunicatorContext"
+        ) {
+          continue;
+        }
+        const row = `${
+          arg.name
+        } ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
         createSignalTableQuery = createSignalTableQuery.concat(row);
       }
       // Trim last comma and line feed
-      createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
+      createSignalTableQuery = createSignalTableQuery
+        .slice(0, -2)
+        .concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
     });
   }
@@ -144,7 +154,7 @@ export class PostgresExporter
       // We do await here so we can catch and format PostgresExporter specific errors
       return await Promise.all<QueryArrayResult>(results);
     } catch (err) {
-      throw(new OperonPostgresExporterError(err as Error));
+      throw new OperonPostgresExporterError(err as Error);
     }
   }
 }

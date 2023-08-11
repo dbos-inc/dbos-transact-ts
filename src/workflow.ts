@@ -51,8 +51,8 @@ export class WorkflowContext {
     readonly runAs: string,
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string) {
-      this.#operon = operon;
-      this.isTempWorkflow = operon.tempWorkflowName === workflowName;
+    this.#operon = operon;
+    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
   }
 
   functionIDGetIncrement() : number {

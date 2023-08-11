@@ -201,12 +201,7 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
     const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function [];
-    for (let i = 0; i < designParamTypes.length; i++) {
-      const designParamType = designParamTypes[i];
-      if (designParamType.name !== 'WorkflowContext' && designParamType.name !== 'TransactionContext') {
-        mParameters.push(new OperonParameter(i, designParamType));
-      }
-    };
+    mParameters = designParamTypes.map((value, index) => new OperonParameter(index, value));
 
     Reflect.defineMetadata(operonParamMetadataKey, mParameters, target, propertyKey);
   }
@@ -230,7 +225,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
-        }   
+        }
+        // TODO else warn/log something
       }
     });
 
