@@ -147,7 +147,16 @@ class BaseLogEvent {
   namedArgs: {[x: string]: unknown} = {};
 
   toString(): string {
-    return JSON.stringify(this);
+    return `
+    eventType: ${this.eventType}
+    eventComponent: ${this.eventComponent}
+    eventLevel: ${this.eventLevel}
+    eventTime: ${this.eventTime}
+    authorizedUser: ${this.authorizedUser}
+    authorizedRole: ${this.authorizedRole}
+    positionalArgs: ${this.positionalArgs}
+    namedArgs: ${this.namedArgs}
+    `;
   }
 }
 
