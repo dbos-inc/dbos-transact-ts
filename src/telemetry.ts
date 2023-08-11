@@ -39,7 +39,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-  implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
+implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
 {
   readonly pgClient: Client;
 
@@ -69,9 +69,10 @@ export class PostgresExporter
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    forEachMethod(async (registeredOperation) => {
-      const tableName = `signal_${registeredOperation.name}`;
-      let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+    forEachMethod((registeredOperation) => {
+      void (async () => {
+        const tableName = `signal_${registeredOperation.name}`;
+        let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
         workflow_uuid TEXT NOT NULL,
         function_id INT NOT NULL,
         function_name TEXT NOT NULL,
@@ -80,24 +81,25 @@ export class PostgresExporter
         severity TEXT DEFAULT NULL,
         log_message TEXT DEFAULT NULL,\n`;
 
-      for (const arg of registeredOperation.args) {
-        if (
-          arg.argType.name === "WorkflowContext" ||
-          arg.argType.name === "TransactionContext" ||
-          arg.argType.name === "CommunicatorContext"
-        ) {
-          continue;
+        for (const arg of registeredOperation.args) {
+          if (
+            arg.argType.name === "WorkflowContext" ||
+            arg.argType.name === "TransactionContext" ||
+            arg.argType.name === "CommunicatorContext"
+          ) {
+            continue;
+          }
+          const row = `${
+            arg.name
+          } ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
+          createSignalTableQuery = createSignalTableQuery.concat(row);
         }
-        const row = `${
-          arg.name
-        } ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
-        createSignalTableQuery = createSignalTableQuery.concat(row);
-      }
-      // Trim last comma and line feed
-      createSignalTableQuery = createSignalTableQuery
-        .slice(0, -2)
-        .concat("\n);");
-      await this.pgClient.query(createSignalTableQuery);
+        // Trim last comma and line feed
+        createSignalTableQuery = createSignalTableQuery
+          .slice(0, -2)
+          .concat("\n);");
+        await this.pgClient.query(createSignalTableQuery);
+      })();
     });
   }
 
