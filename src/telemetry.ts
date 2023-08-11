@@ -136,7 +136,7 @@ export class PostgresExporter
       );
 
       queries.push({
-        name: "insert-signal",
+        name: `insert-${tableName}`,
         text: query,
         values: [values],
       });
