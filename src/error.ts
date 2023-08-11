@@ -105,8 +105,6 @@ export class OperonPostgresExporterError extends OperonError {
         let msg = `PostgresExporter error: ${err.message} \n`;
         if (err instanceof DatabaseError) {
           msg = msg.concat(formatPgDatabaseError(err));
-        } else {
-          msg = msg.concat(err.message);
         }
         super(msg, PostgresExporterError);
     }
