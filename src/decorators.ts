@@ -26,7 +26,7 @@ import "reflect-metadata";
  */
 export type OperonFieldType =
     | 'integer'
-    | 'double'
+    | 'double precision'
     | 'decimal'
     | 'timestamp'
     | 'text'
@@ -72,7 +72,7 @@ class OperonDataType {
       dt.dataType = 'timestamp';
     }
     else if (arg === Number) {
-      dt.dataType = 'double';
+      dt.dataType = 'double precision';
     }
     else if (arg === Boolean) {
       dt.dataType = 'boolean';
