@@ -78,6 +78,24 @@ describe("operon-telemetry", () => {
     await operon.destroy();
   });
 
+  test("collector handles errors gracefully", async () => {
+    const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+    const operon = new Operon(operonConfig);
+    await operon.init();
+
+    const collector = operon.telemetryCollector
+      .exporters[0] as PostgresExporter;
+    jest.spyOn(collector, "process").mockImplementation(() => {
+      throw new Error("exporter crashed");
+    });
+
+    await expect(
+      operon.telemetryCollector.processAndExportSignals()
+    ).resolves.not.toThrow();
+
+    await operon.destroy();
+  });
+
   describe("Console exporter", () => {
     let operon: Operon;
     const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
