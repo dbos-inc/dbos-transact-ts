@@ -104,18 +104,17 @@ class OperonDataType {
 const operonParamMetadataKey = Symbol("operon:parameter");
 const operonMethodMetadataKey = Symbol("operon:method");
 
+/* Arguments parsing heuristic:
+ * - Convert the function to a string
+ * - Minify the function
+ * - Remove everything before the first open parenthesis and after the first closed parenthesis
+ **/
 // eslint-disable-next-line @typescript-eslint/ban-types
 function getArgNames(func: Function): string[] {
-  // Convert the function to a string and extract the arguments using a regular expression
-  const fn = func.toString();
-
-  // Match various function and method declarations including constructors
-  // If this RE is wrong, complain to ChatGPT that it's 5th try at least gave an answer, but was still wrong :-D
-  const rematch = fn.match(/(?:function\s+[a-zA-Z_$][0-9a-zA-Z_$]*|function\s*|class\s+.*?extends.*?constructor|class\s+.*?constructor|constructor|[a-zA-Z_$][0-9a-zA-Z_$]*\s*\()?([^)]*)\)/);
-  const args = rematch ? rematch[1] : '';
-
-  // Split the arguments string into an array and remove whitespace
-  return args ? args.split(',').map(arg => arg.replace(/\s+/g, '')) : [];
+  let fn = func.toString();
+  fn = fn.replace(/\s/g, "");
+  fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
+  return fn.split(",");
 }
 
 export enum LogLevel {
