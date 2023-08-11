@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PoolClient } from 'pg';
-import { OperonError } from './error';
-import { OperationContext } from './context';
+import { PoolClient } from "pg";
+import { OperonError } from "./error";
+import { OperationContext } from "./context";
+import {TelemetrySignal} from "./telemetry";
+import {Operon} from "./operon";
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -25,6 +27,7 @@ export class TransactionContext extends OperationContext {
   readonly isolationLevel;
 
   constructor(
+    private readonly operon: Operon,
     workflowName: string,
     rolesThatCanRun: string[],
     workflowUUID: string,
@@ -46,6 +49,20 @@ export class TransactionContext extends OperationContext {
     } else {
       this.isolationLevel = 'SERIALIZABLE';
     }
+  }
+
+  log(severity: string, message: string): void {
+    const signal: TelemetrySignal = {
+      workflowName: this.workflowName,
+      workflowUUID: this.workflowUUID,
+      functionID: this.functionID,
+      functionName: this.workflowName,
+      runAs: this.runAs,
+      timestamp: Date.now(),
+      severity: severity,
+      logMessage: message,
+    };
+    this.operon.telemetryCollector.push(signal);
   }
 
   async rollback() {

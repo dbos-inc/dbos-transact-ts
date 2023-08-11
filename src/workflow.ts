@@ -163,6 +163,7 @@ export class WorkflowContext extends OperationContext {
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
       const fCtxt: TransactionContext = new TransactionContext(
+        this.#operon,
         this.workflowName, this.rolesThatCanRun, this.workflowUUID,
         this.runAs, client, funcId, txn.name, txnConfig
       );
