@@ -82,15 +82,13 @@ export class PostgresExporter
         severity TEXT DEFAULT NULL,
         log_message TEXT DEFAULT NULL,\n`;
 
-      const parameterRows: string[] = [];
       for (const arg of registeredOperation.args) {
         const argName = arg.name.replace("(", ""); //XXX bug with parameter name parsing from toString()
         let row = `${argName} ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
         createSignalTableQuery = createSignalTableQuery.concat(row);
       }
-      // Trim last comma
-      createSignalTableQuery = createSignalTableQuery.slice(0, -2);
-      createSignalTableQuery = createSignalTableQuery.concat("\n);");
+      // Trim last comma and line feed
+      createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
     });
   }
