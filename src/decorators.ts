@@ -259,11 +259,13 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-     // console.log(`${methReg.logLevel}: ${mn}: Invoked - `+JSON.stringify(sLogRec));
+      // FIXME: This now throws "TypeError: Converting circular structure to JSON"
+      // console.log(`${methReg.logLevel}: ${mn}: Invoked - `+JSON.stringify(sLogRec));
+      console.log(`${methReg.logLevel}: ${mn}: Invoked - `+sLogRec);
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
-        // console.log(`${methReg.logLevel}: ${mn}: Returned`);
+        console.log(`${methReg.logLevel}: ${mn}: Returned`);
         return result;
       }
       catch (e) {
