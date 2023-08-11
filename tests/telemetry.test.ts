@@ -17,7 +17,6 @@ import {
 } from "src";
 
 type TelemetrySignalDbFields = {
-  workflow_name: string;
   workflow_uuid: string;
   function_id: number;
   function_name: string;
@@ -95,7 +94,6 @@ describe("operon-telemetry", () => {
       const logSpy = jest.spyOn(global.console, "log");
 
       const signal1: TelemetrySignal = {
-        workflowName: "test",
         workflowUUID: "test",
         functionName: "create_user",
         functionID: 0,
@@ -165,7 +163,6 @@ describe("operon-telemetry", () => {
 
       // Push to the signals queue and wait for one export interval
       const signal1: TelemetrySignal = {
-        workflowName: "test",
         workflowUUID: "test",
         functionName: "create_user",
         functionID: 0,

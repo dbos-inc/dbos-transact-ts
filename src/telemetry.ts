@@ -7,7 +7,6 @@ import { OperonPostgresExporterError } from "./error";
 /*** SIGNALS ***/
 
 export interface TelemetrySignal {
-  workflowName: string;
   workflowUUID: string;
   functionID: number;
   functionName: string;
@@ -73,7 +72,6 @@ export class PostgresExporter
     forEachMethod(async (registeredOperation) => {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
-        workflow_name TEXT NOT NULL,
         workflow_uuid TEXT NOT NULL,
         function_id INT NOT NULL,
         function_name TEXT NOT NULL,
@@ -117,13 +115,12 @@ export class PostgresExporter
       const tableName: string = `signal_${functionName}`;
       const query = `
         INSERT INTO ${tableName}
-        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_name text, workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
       `;
 
       const values: string = JSON.stringify(
         signals.map((signal) => {
           return {
-            workflow_name: signal.workflowName,
             workflow_uuid: signal.workflowUUID,
             function_id: signal.functionID,
             function_name: signal.functionName,

@@ -48,7 +48,6 @@ export class TransactionContext {
   log(severity: string, message: string): void {
     const workflowContext = this.workflowContext;
     const signal: TelemetrySignal = {
-      workflowName: workflowContext.workflowName,
       workflowUUID: workflowContext.workflowUUID,
       functionID: this.functionID,
       functionName: this.functionName,
