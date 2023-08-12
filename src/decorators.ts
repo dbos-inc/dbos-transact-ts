@@ -151,7 +151,7 @@ class BaseLogEvent {
     eventType: ${this.eventType}
     eventComponent: ${this.eventComponent}
     eventLevel: ${this.eventLevel}
-    eventTime: ${this.eventTime}
+    eventTime: ${this.eventTime.toString()}
     authorizedUser: ${this.authorizedUser}
     authorizedRole: ${this.authorizedRole}
     positionalArgs: ${this.positionalArgs}
