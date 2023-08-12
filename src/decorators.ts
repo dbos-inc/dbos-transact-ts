@@ -20,6 +20,8 @@
 //   Mask parameters
 
 import "reflect-metadata";
+import { TransactionContext } from "./transaction";
+import { WorkflowContext } from "./workflow";
 
 /**
  * Any column type column can be.
@@ -240,6 +242,9 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
+        }
+        if (e.argType === TransactionContext || e.argType == WorkflowContext) {
+            e.skipLogging = true;
         }
         // TODO else warn/log something
       }
