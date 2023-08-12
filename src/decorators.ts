@@ -244,7 +244,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           e.name = argNames[e.index];
         }
         if (e.argType === TransactionContext || e.argType == WorkflowContext) {
-            e.skipLogging = true;
+          e.skipLogging = true;
         }
         // TODO else warn/log something
       }
