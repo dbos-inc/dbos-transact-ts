@@ -8,7 +8,7 @@ import {
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { logged } from "../src/decorators";
+import { logged, skipLogging } from "../src/decorators";
 import {
   TransactionContext,
   WorkflowConfig,

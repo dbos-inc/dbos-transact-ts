@@ -26,7 +26,7 @@ import "reflect-metadata";
  */
 export type OperonFieldType =
     | 'integer'
-    | 'double precision'
+    | 'double'
     | 'decimal'
     | 'timestamp'
     | 'text'
@@ -36,7 +36,7 @@ export type OperonFieldType =
     | 'json'
 ;
 
-class OperonDataType {
+export class OperonDataType {
   dataType : OperonFieldType = 'text';
   length : number = -1;
   precision : number = -1;
@@ -72,7 +72,7 @@ class OperonDataType {
       dt.dataType = 'timestamp';
     }
     else if (arg === Number) {
-      dt.dataType = 'double precision';
+      dt.dataType = 'double';
     }
     else if (arg === Boolean) {
       dt.dataType = 'boolean';
@@ -108,6 +108,8 @@ const operonMethodMetadataKey = Symbol("operon:method");
  * - Convert the function to a string
  * - Minify the function
  * - Remove everything before the first open parenthesis and after the first closed parenthesis
+ * This will obviously not work on code that has been obfuscated or optimized as the names get
+ *   changed to be really small and useless.
  **/
 // eslint-disable-next-line @typescript-eslint/ban-types
 function getArgNames(func: Function): string[] {
@@ -154,8 +156,8 @@ class BaseLogEvent {
     eventTime: ${this.eventTime.toString()}
     authorizedUser: ${this.authorizedUser}
     authorizedRole: ${this.authorizedRole}
-    positionalArgs: ${this.positionalArgs}
-    namedArgs: ${this.namedArgs}
+    positionalArgs: ${JSON.stringify(this.positionalArgs)}
+    namedArgs: ${JSON.stringify(this.namedArgs)}
     `;
   }
 }

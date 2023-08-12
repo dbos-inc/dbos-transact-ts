@@ -1,7 +1,7 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
 import { Operon } from "./operon";
 import { groupBy } from "lodash";
-import { forEachMethod } from "./decorators";
+import { forEachMethod, OperonDataType } from "./decorators";
 import { OperonPostgresExporterError } from "./error";
 
 /*** SIGNALS ***/
@@ -52,6 +52,13 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
     this.pgClient = new Client(pgClientConfig);
   }
 
+  static getPGDataType(t: OperonDataType) : string {
+    if (t.dataType === 'double') {
+      return "double precision"; // aka "float8"
+    }
+    return t.formatAsString();
+  }
+
   async init() {
     const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
     await pgSystemClient.connect();
@@ -91,7 +98,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
           }
           const row = `${
             arg.name
-          } ${arg.dataType.formatAsString()} DEFAULT NULL,\n`;
+          } ${PostgresExporter.getPGDataType(arg.dataType)} DEFAULT NULL,\n`;
           createSignalTableQuery = createSignalTableQuery.concat(row);
         }
         // Trim last comma and line feed
