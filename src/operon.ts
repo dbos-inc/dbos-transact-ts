@@ -263,7 +263,7 @@ export class Operon {
     this.topicConfigMap.set(topic, rolesThatCanPubSub);
   }
 
-  registerWorkflow<T extends unknown[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
+  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`)
     }
