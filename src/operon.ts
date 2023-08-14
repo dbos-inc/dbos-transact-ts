@@ -7,7 +7,7 @@ import {
   OperonWorkflowUnknownError
 } from './error';
 import {InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle, StatusString } from './workflow';
-import { OperonTransaction, TransactionConfig, validateTransactionConfig } from './transaction';
+import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
 import {
@@ -17,11 +17,12 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from './telemetry';
-import { Pool, PoolConfig } from 'pg';
-import { userDBSchema, transaction_outputs } from '../schemas/user_db_schema';
+import { PoolConfig } from 'pg';
+import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -61,8 +62,8 @@ interface WorkflowInput<T extends any[]> {
 export class Operon {
   initialized: boolean;
   readonly config: OperonConfig;
-  // "Global" pool
-  readonly pool: Pool;
+  // User Database
+  userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
   readonly systemDatabase: SystemDatabase;
   
@@ -98,8 +99,6 @@ export class Operon {
     } else {
       this.config = this.generateOperonConfig();
     }
-
-    this.pool = new Pool(this.config.poolConfig);
     this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
@@ -122,13 +121,30 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
+  useNodePostgres() {
+    if (this.userDatabase) {
+      throw new OperonInitializationError("Data source already initialized!");
+    }
+    this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+  }
+
+  usePrisma(client: PrismaClient) {
+    if (this.userDatabase) {
+      throw new OperonInitializationError("Data source already initialized!");
+    }
+    this.userDatabase = new PrismaUserDatabase(client);
+  }
+
   async init(): Promise<void> {
+    if (!this.userDatabase) {
+      throw new OperonInitializationError("No data source!");
+    }
     if (this.initialized) {
       // TODO add logging when we have a logger
       return;
     }
     try {
-      await this.pool.query(userDBSchema);
+      await this.userDatabase.init();
       await this.telemetryCollector.init();
       await this.systemDatabase.init();
     } catch (err) {
@@ -144,7 +160,7 @@ export class Operon {
     await this.flushWorkflowOutputBuffer();
     clearTimeout(this.recoveryID);
     await this.systemDatabase.destroy();
-    await this.pool.end();
+    await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
   }
 
@@ -200,7 +216,7 @@ export class Operon {
    */
   async recoverPendingWorkflows() {
     // Retrieve a list of workflow UUIDs from the function output table.
-    const workflows = (await this.pool.query<transaction_outputs>("select workflow_uuid, output from operon.transaction_outputs WHERE function_id = 0;")).rows;
+    const workflows = await this.userDatabase.query<transaction_outputs>("select workflow_uuid, output from operon.transaction_outputs WHERE function_id = 0;");
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflow of workflows) {
       // Check workflow status. If not success or error, then recover.
@@ -237,7 +253,6 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
-    validateTransactionConfig(params);
     this.transactionConfigMap.set(txn, params);
   }
 
@@ -269,9 +284,9 @@ export class Operon {
       const workflowInputID = wCtxt.functionIDGetIncrement();
 
       const checkWorkflowInput = async (input: T) => {
-      // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
-        const { rows } = await this.pool.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
-          [workflowUUID, workflowInputID]);
+        // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
+        const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+          workflowUUID, workflowInputID);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
           wCtxt.resultBuffer.set(workflowInputID, {workflow_name: wf.name, input: input});

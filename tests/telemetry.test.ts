@@ -44,7 +44,7 @@ class TestClass {
     txnCtxt: TransactionContext,
     name: string
   ): Promise<string> {
-    const { rows } = await txnCtxt.client.query(
+    const { rows } = await txnCtxt.pgClient.query(
       `select current_user from current_user where current_user=$1;`,
       [name]
     );
@@ -74,6 +74,7 @@ describe("operon-telemetry", () => {
       POSTGRES_EXPORTER,
     ]);
     const operon = new Operon(operonConfig);
+    operon.useNodePostgres();
     await operon.init();
     await operon.destroy();
   });
@@ -81,6 +82,7 @@ describe("operon-telemetry", () => {
   test("collector handles errors gracefully", async () => {
     const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
     const operon = new Operon(operonConfig);
+    operon.useNodePostgres();
     await operon.init();
 
     const collector = operon.telemetryCollector
@@ -103,6 +105,7 @@ describe("operon-telemetry", () => {
 
     beforeEach(() => {
       operon = new Operon(operonConfig);
+      operon.useNodePostgres();
     });
 
     afterEach(async () => {
@@ -150,6 +153,7 @@ describe("operon-telemetry", () => {
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
+      operon.useNodePostgres();
       await operon.init();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(

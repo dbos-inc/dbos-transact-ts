@@ -4,8 +4,7 @@ import {
   OperonNull,
   operonNull,
 } from './operon';
-import { transaction_outputs } from 'schemas/user_db_schema';
-import { PoolClient, DatabaseError } from 'pg';
+import { transaction_outputs } from '../schemas/user_db_schema';
 import { OperonTransaction, TransactionContext } from './transaction';
 import { OperonCommunicator, CommunicatorContext } from './communicator';
 import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
@@ -13,6 +12,7 @@ import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
 import { TelemetrySignal } from './telemetry';
+import { UserDatabaseClient } from './user_database';
 
 const defaultRecvTimeoutSec = 60;
 
@@ -78,14 +78,12 @@ export class WorkflowContext {
    * If it previously executed and threw an error, throw that error.
    * Otherwise, return OperonNull.
    */
-  async checkExecution<R>(client: PoolClient, funcID: number): Promise<R | OperonNull> {
-    const { rows } = await client.query<transaction_outputs>("SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
-      [this.workflowUUID, funcID]);
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<R | OperonNull> {
+    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(client, "SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+      this.workflowUUID, funcID);
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
-      await client.query("ROLLBACK");
-      client.release();
       throw deserializeError(JSON.parse(rows[0].error));
     } else {
       return JSON.parse(rows[0].output) as R;
@@ -96,22 +94,20 @@ export class WorkflowContext {
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
    */
-  async flushResultBuffer(client: PoolClient): Promise<void> {
+  async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await client.query("INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
-          [this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null)]);
+        await this.#operon.userDatabase.queryWithClient(client, "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+          this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null));
       }
     } catch (error) {
-      await client.query('ROLLBACK');
-      client.release();
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') { // Serialization and primary key conflict (Postgres).
+      const code = this.#operon.userDatabase.getPostgresErrorCode(error);
+      if (code === '40001' || code === '23505') { // Serialization and primary key conflict (Postgres).
         throw new OperonWorkflowConflictUUIDError();
       } else {
-        throw err;
+        throw error;
       }
     }
   }
@@ -126,19 +122,19 @@ export class WorkflowContext {
   /**
    * Write a guarded operation's output to the database.
    */
-  async recordGuardedOutput<R>(client: PoolClient, funcID: number, output: R): Promise<void> {
+  async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await client.query("UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      [serialOutput, this.workflowUUID, funcID]);
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
+      serialOutput, this.workflowUUID, funcID);
   }
 
   /**
    * Record an error in a guarded operation to the database.
    */
-  async recordGuardedError(client: PoolClient, funcID: number, err: Error) {
+  async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await client.query("UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      [serialErr, this.workflowUUID, funcID]);
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
+      serialErr, this.workflowUUID, funcID);
   }
 
   /**
@@ -148,86 +144,66 @@ export class WorkflowContext {
    * If it encounters any other error, throw it.
    */
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
-    const txnConfig = this.#operon.transactionConfigMap.get(txn);
-    if (txnConfig === undefined) {
+    const config = this.#operon.transactionConfigMap.get(txn);
+    if (config === undefined) {
       throw new OperonError(`Unregistered Transaction ${txn.name}`)
     }
+    const readOnly = config.readOnly ?? false;
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
     // eslint-disable-next-line no-constant-condition
     while(true) {
-      let client: PoolClient = await this.#operon.pool.connect();
-      const fCtxt: TransactionContext = new TransactionContext(
-        this, this.#operon.telemetryCollector,
-        client, funcId, txn.name, txnConfig
-      );
+      const wrappedTransaction = async(client: UserDatabaseClient): Promise<R> => {
+        // Check if this execution previously happened, returning its original result if it did.
+        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.telemetryCollector, funcId, txn.name);
+        const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
+        if (check !== operonNull) {
+          return check as R;
+        }
 
-      await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
-      if (fCtxt.readOnly) {
-        await client.query(`SET TRANSACTION READ ONLY`);
-      }
-        
-      // Check if this execution previously happened, returning its original result if it did.
-      const check: R | OperonNull = await this.checkExecution<R>(client, fCtxt.functionID);
-      if (check !== operonNull) {
-        await client.query("ROLLBACK");
-        client.release();
-        return check as R;
-      }
-      // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
-      this.guardOperation(funcId);
-      if (!fCtxt.readOnly) {
-        await this.flushResultBuffer(client);
+        // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
+        this.guardOperation(funcId);
+        if (!readOnly) {
+          await this.flushResultBuffer(client);
+        }
+
+        // Execute the user's transaction.
+        const result = await txn(tCtxt, ...args);
+
+        // Record the execution, commit, and return.
+        if (readOnly) {
+          // Buffer the output of read-only transactions instead of synchronously writing it.
+          this.resultBuffer.set(funcId, result);
+        } else {
+          // Synchronously record the output of write transactions.
+          await this.recordGuardedOutput<R>(client, funcId, result);
+          this.resultBuffer.clear();
+        }
+
+        return result;
       }
 
-      let result: R;
       try {
-        // Execute the function.
-        result = await txn(fCtxt, ...args);
-      } catch (error) {
-        const err: DatabaseError = error as DatabaseError;
-        // If the error is a serialization failure, rollback and retry with exponential backoff.
-        await client.query('ROLLBACK');
-        if (err.code === '40001') { // serialization_failure in PostgreSQL
-          // Retry serialization failures
-          client.release();
+        const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
+        return result;
+      } catch (err) {
+        const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
+        if (errCode === '40001') { // serialization_failure in PostgreSQL
+          // Retry serialization failures.
           await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
           continue;
         } else {
-          // Record and throw other errors
-          await client.query('BEGIN');
-          await this.flushResultBuffer(client);
-          await this.recordGuardedError(client, funcId, error as Error);
-          await client.query('COMMIT');
-          this.resultBuffer.clear();
-          client.release();
-          throw error;
+          // Record and throw other errors.
+          await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+            await this.flushResultBuffer(client);
+            await this.recordGuardedError(client, funcId, err as Error);
+            this.resultBuffer.clear();
+          }, {});
+          throw err;
         }
       }
-
-      // Record the execution, commit, and return.
-      if (fCtxt.readOnly) {
-        // Buffer the output of read-only transactions instead of synchronously writing it.
-        this.resultBuffer.set(funcId, result);
-        if (!fCtxt.isAborted()) {
-          await client.query("COMMIT");
-          client.release();
-        }
-      } else {
-        if (fCtxt.isAborted()) {
-          client = await this.#operon.pool.connect();
-          await client.query("BEGIN");
-          await this.flushResultBuffer(client);
-        }
-        // Synchronously record the output of write transactions.
-        await this.recordGuardedOutput<R>(client, funcId, result);
-        await client.query("COMMIT");
-        this.resultBuffer.clear();
-        client.release();
-      }
-      return result;
     }
   }
 
@@ -243,12 +219,10 @@ export class WorkflowContext {
     }
     const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
 
-    const client = await this.#operon.pool.connect();
-    await client.query('BEGIN');
-    await this.flushResultBuffer(client);
-    await client.query('COMMIT');
-    this.resultBuffer.clear();
-    client.release();
+    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await this.flushResultBuffer(client);
+      this.resultBuffer.clear();
+    }, {});
 
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
@@ -308,12 +282,10 @@ export class WorkflowContext {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
     }
 
-    const client = await this.#operon.pool.connect();
-    await client.query('BEGIN');
-    await this.flushResultBuffer(client);
-    await client.query('COMMIT');
-    this.resultBuffer.clear();
-    client.release();
+    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await this.flushResultBuffer(client);
+      this.resultBuffer.clear();
+    }, {});
 
     return this.#operon.systemDatabase.send(this.workflowUUID, functionID, topic, key, message);
   }
@@ -332,12 +304,10 @@ export class WorkflowContext {
       throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
     }
 
-    const client = await this.#operon.pool.connect();
-    await client.query('BEGIN');
-    await this.flushResultBuffer(client);
-    await client.query('COMMIT');
-    this.resultBuffer.clear();
-    client.release();
+    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await this.flushResultBuffer(client);
+      this.resultBuffer.clear();
+    }, {});
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, key, timeoutSeconds);
   }

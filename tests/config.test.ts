@@ -26,6 +26,7 @@ describe('operon-config', () => {
     jest.spyOn(utils, 'readFileSync').mockReturnValueOnce("SQL STATEMENTS");
 
     const operon: Operon = new Operon();
+    operon.useNodePostgres();
     expect(operon.initialized).toBe(false);
     const operonConfig: OperonConfig = operon.config;
 
@@ -44,7 +45,8 @@ describe('operon-config', () => {
     // We use readFileSync as a proxy for checking the config was not read from the default location
     const readFileSpy = jest.spyOn(utils, 'readFileSync');
     const config: OperonConfig = generateOperonTestConfig();
-    const operon: Operon = new Operon(config);
+    const operon = new Operon(config);
+    operon.useNodePostgres();
     expect(operon.initialized).toBe(false);
     expect(operon.config).toBe(config);
     expect(readFileSpy).toHaveBeenCalledTimes(0);

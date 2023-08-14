@@ -1,47 +1,41 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PoolClient } from "pg";
-import { OperonError } from "./error";
+import { PoolClient } from 'pg';
+import { PrismaClient, UserDatabaseName, UserDatabaseClient } from './user_database';
 import { TelemetryCollector, TelemetrySignal} from "./telemetry";
+import { ValuesOf } from './utils';
 import { WorkflowContext} from "./workflow";
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
-  isolationLevel?: string;
+  isolationLevel?: IsolationLevel;
   readOnly?: boolean;
 }
 
-const isolationLevels = ['READ UNCOMMITTED', 'READ COMMITTED', 'REPEATABLE READ', 'SERIALIZABLE'];
-
-export function validateTransactionConfig (params: TransactionConfig){
-  if (params.isolationLevel && !isolationLevels.includes(params.isolationLevel.toUpperCase())) {
-    throw(new OperonError(`Invalid isolation level: ${params.isolationLevel}`));
-  }
-}
+export const IsolationLevel = {
+  ReadUncommitted: "READ UNCOMMITTED",
+  ReadCommitted: "READ COMMITTED",
+  RepeatableRead: "REPEATABLE READ",
+  Serializable: "SERIALIZABLE"
+} as const;
+export type IsolationLevel = ValuesOf<typeof IsolationLevel>
 
 export class TransactionContext {
-  #functionAborted: boolean = false;
-  readonly readOnly: boolean;
-  readonly isolationLevel;
+  readonly pgClient: PoolClient = null as unknown as PoolClient;
+  readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 
-  constructor(
+  constructor(userDatabaseName: UserDatabaseName,
+    client: UserDatabaseClient,
+    config: TransactionConfig,
     private readonly workflowContext: WorkflowContext,
     private readonly telemetryCollector: TelemetryCollector,
-    readonly client: PoolClient,
     readonly functionID: number,
-    readonly functionName: string,
-    config: TransactionConfig
-  ) {
-    if (config.readOnly) {
-      this.readOnly = config.readOnly;
-    } else {
-      this.readOnly = false;
-    }
-    if (config.isolationLevel) {
-      // We already validated the isolation level during config time.
-      this.isolationLevel = config.isolationLevel;
-    } else {
-      this.isolationLevel = "SERIALIZABLE";
+    readonly functionName: string) {
+    void config;
+    if (userDatabaseName === UserDatabaseName.PGNODE) {
+      this.pgClient = client as PoolClient;
+    } else if (userDatabaseName === UserDatabaseName.PRISMA) {
+      this.prismaClient = client as PrismaClient;
     }
   }
 
@@ -57,19 +51,5 @@ export class TransactionContext {
       logMessage: message,
     };
     this.telemetryCollector.push(signal);
-  }
-
-  async rollback() {
-    // If this function has already rolled back, we no longer have the client, so just return.
-    if (this.#functionAborted) {
-      return;
-    }
-    await this.client.query("ROLLBACK");
-    this.#functionAborted = true;
-    this.client.release();
-  }
-
-  isAborted(): boolean {
-    return this.#functionAborted;
   }
 }
