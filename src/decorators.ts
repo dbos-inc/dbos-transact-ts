@@ -20,6 +20,8 @@
 //   Mask parameters
 
 import "reflect-metadata";
+import { TransactionContext } from "./transaction";
+import { WorkflowContext } from "./workflow";
 
 /**
  * Any column type column can be.
@@ -36,7 +38,7 @@ export type OperonFieldType =
     | 'json'
 ;
 
-class OperonDataType {
+export class OperonDataType {
   dataType : OperonFieldType = 'text';
   length : number = -1;
   precision : number = -1;
@@ -104,18 +106,19 @@ class OperonDataType {
 const operonParamMetadataKey = Symbol("operon:parameter");
 const operonMethodMetadataKey = Symbol("operon:method");
 
+/* Arguments parsing heuristic:
+ * - Convert the function to a string
+ * - Minify the function
+ * - Remove everything before the first open parenthesis and after the first closed parenthesis
+ * This will obviously not work on code that has been obfuscated or optimized as the names get
+ *   changed to be really small and useless.
+ **/
 // eslint-disable-next-line @typescript-eslint/ban-types
 function getArgNames(func: Function): string[] {
-  // Convert the function to a string and extract the arguments using a regular expression
-  const fn = func.toString();
-
-  // Match various function and method declarations including constructors
-  // If this RE is wrong, complain to ChatGPT that it's 5th try at least gave an answer, but was still wrong :-D
-  const rematch = fn.match(/(?:function\s+[a-zA-Z_$][0-9a-zA-Z_$]*|function\s*|class\s+.*?extends.*?constructor|class\s+.*?constructor|constructor|[a-zA-Z_$][0-9a-zA-Z_$]*\s*\()?([^)]*)\)/);
-  const args = rematch ? rematch[1] : '';
-
-  // Split the arguments string into an array and remove whitespace
-  return args ? args.split(',').map(arg => arg.replace(/\s+/g, '')) : [];
+  let fn = func.toString();
+  fn = fn.replace(/\s/g, "");
+  fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
+  return fn.split(",");
 }
 
 export enum LogLevel {
@@ -146,6 +149,19 @@ class BaseLogEvent {
   authorizedRole: string = '';
   positionalArgs: unknown[] = [];
   namedArgs: {[x: string]: unknown} = {};
+
+  toString(): string {
+    return `
+    eventType: ${this.eventType}
+    eventComponent: ${this.eventComponent}
+    eventLevel: ${this.eventLevel}
+    eventTime: ${this.eventTime.toString()}
+    authorizedUser: ${this.authorizedUser}
+    authorizedRole: ${this.authorizedRole}
+    positionalArgs: ${JSON.stringify(this.positionalArgs)}
+    namedArgs: ${JSON.stringify(this.namedArgs)}
+    `;
+  }
 }
 
 class OperonParameter {
@@ -168,7 +184,7 @@ class OperonParameter {
   }
 }
 
-class OperonMethodRegistrationBase {
+export class OperonMethodRegistrationBase {
   name: string = "";
   logLevel : LogLevel = LogLevel.INFO;
   args : OperonParameter[] = [];
@@ -202,8 +218,6 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
     const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function [];
-
-    // Infer data types - can override with decorators
     mParameters = designParamTypes.map((value, index) => new OperonParameter(index, value));
 
     Reflect.defineMetadata(operonParamMetadataKey, mParameters, target, propertyKey);
@@ -228,7 +242,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
-        }   
+        }
+        if (e.argType === TransactionContext || e.argType == WorkflowContext) {
+          e.skipLogging = true;
+        }
+        // TODO else warn/log something
       }
     });
 
@@ -261,7 +279,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-      console.log(`${methReg.logLevel}: ${mn}: Invoked - `+JSON.stringify(sLogRec));
+      console.log(`${methReg.logLevel}: ${mn}: Invoked - `+ sLogRec.toString());
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
@@ -273,6 +291,10 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         throw e;
       }
     };
+    Object.defineProperty(nmethod, 'name', {
+      value: methReg.name,
+    })
+
     descriptor.value = nmethod;
 
     methReg.needInitialized = false;

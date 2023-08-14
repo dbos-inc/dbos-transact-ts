@@ -1,31 +1,41 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
-import postgresLogBackendSchema from "../schemas/postgresLogBackend";
 import { Operon } from "./operon";
+import { groupBy } from "lodash";
+import {
+  forEachMethod,
+  OperonDataType,
+  OperonMethodRegistrationBase,
+} from "./decorators";
+import { OperonPostgresExporterError } from "./error";
 
 /*** SIGNALS ***/
 
-export interface TelemetrySignalLog {
-  workflow_uuid: string;
-  function_id: string;
-  log_signal_raw: string;
-  created_at: number;
-  updated_at: number;
+export interface TelemetrySignal {
+  workflowUUID: string;
+  functionID: number;
+  functionName: string;
+  runAs: string;
+  timestamp: number;
+  severity: string;
+  logMessage: string;
 }
 
 /*** EXPORTERS ***/
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: string): Promise<T>;
-  process?(signal: string): U;
+  export(signal: TelemetrySignal[]): Promise<T>;
+  process?(signal: TelemetrySignal[]): U;
   init?(): Promise<void>;
   destroy?(): Promise<void>;
 }
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
-  async export(signal: string): Promise<void> {
-    return new Promise<void>((resolve) => {
-      console.log(signal);
+  async export(signals: TelemetrySignal[]): Promise<void> {
+    return await new Promise<void>((resolve) => {
+      for (const signal of signals) {
+        console.log(`[${signal.severity}] ${signal.logMessage}`);
+      }
       resolve();
     });
   }
@@ -33,57 +43,131 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult, QueryConfig>
+implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
 {
   readonly pgClient: Client;
-  private readonly pgLogsDbName: string = "pglogsbackend"; // XXX we could make this DB name configurable for tests?
 
-  constructor(private readonly operon: Operon) {
-    const pgClientConfig = { ...operon.config.poolConfig};
-    pgClientConfig.database = this.pgLogsDbName;
+  constructor(
+    private readonly operon: Operon,
+    readonly observabilityDBName: string = "operon_observability"
+  ) {
+    const pgClientConfig = { ...operon.config.poolConfig };
+    pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
+  }
+
+  static getPGDataType(t: OperonDataType): string {
+    if (t.dataType === "double") {
+      return "double precision"; // aka "float8"
+    }
+    return t.formatAsString();
   }
 
   async init() {
     const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
-    // We assume this.operon.pgSystemClient is already connected.
     const dbExists = await pgSystemClient.query(
-      `SELECT FROM pg_database WHERE datname = '${this.pgLogsDbName}'`
+      `SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`
     );
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
-      await pgSystemClient.query(
-        `CREATE DATABASE ${this.pgLogsDbName}`
-      );
+      await pgSystemClient.query(`CREATE DATABASE ${this.observabilityDBName}`);
     }
     await pgSystemClient.end();
-    // Connect the exporter client and load the schema no matter what
+
+    // Connect the exporter client
     await this.pgClient.connect();
-    await this.pgClient.query(postgresLogBackendSchema);
+
+    // Configure tables for registered workflows
+    const registeredOperations: OperonMethodRegistrationBase[] = [];
+    forEachMethod((o) => {
+      registeredOperations.push(o);
+    });
+    for (const registeredOperation of registeredOperations) {
+      const tableName = `signal_${registeredOperation.name}`;
+      let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+        workflow_uuid TEXT NOT NULL,
+        function_id INT NOT NULL,
+        function_name TEXT NOT NULL,
+        run_as TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        severity TEXT DEFAULT NULL,
+        log_message TEXT DEFAULT NULL,\n`;
+
+      for (const arg of registeredOperation.args) {
+        if (
+          arg.argType.name === "WorkflowContext" ||
+          arg.argType.name === "TransactionContext" ||
+          arg.argType.name === "CommunicatorContext"
+        ) {
+          continue;
+        }
+        const row = `${arg.name} ${PostgresExporter.getPGDataType(
+          arg.dataType
+        )} DEFAULT NULL,\n`;
+        createSignalTableQuery = createSignalTableQuery.concat(row);
+      }
+      // Trim last comma and line feed
+      createSignalTableQuery = createSignalTableQuery
+        .slice(0, -2)
+        .concat("\n);");
+      await this.pgClient.query(createSignalTableQuery);
+    }
   }
 
   async destroy(): Promise<void> {
     await this.pgClient.end();
   }
 
-  process(signal: string): QueryConfig {
-    return {
-      name: "insert-signal-log",
-      text: "INSERT INTO log_signal (workflow_uuid, function_id, log_signal_raw) VALUES ($1, $2, $3)",
-      // TODO wire these values with the Signal data model
-      values: [
-        Math.floor(Math.random() * 1000),
-        Math.floor(Math.random() * 1000),
-        signal,
-      ],
-    };
+  process(signals: TelemetrySignal[]): QueryConfig[] {
+    const groupByFunctionName: Map<string, TelemetrySignal[]> = new Map(
+      Object.entries(groupBy(signals, ({ functionName }) => functionName))
+    );
+    const queries: QueryConfig[] = [];
+
+    for (const [functionName, signals] of groupByFunctionName) {
+      const tableName: string = `signal_${functionName}`;
+      const query = `
+        INSERT INTO ${tableName}
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
+      `;
+
+      const values: string = JSON.stringify(
+        signals.map((signal) => {
+          return {
+            workflow_uuid: signal.workflowUUID,
+            function_id: signal.functionID,
+            function_name: signal.functionName,
+            run_as: signal.runAs,
+            timestamp: signal.timestamp,
+            severity: signal.severity,
+            log_message: signal.logMessage,
+          };
+        })
+      );
+
+      queries.push({
+        name: `insert-${tableName}`,
+        text: query,
+        values: [values],
+      });
+    }
+    return queries;
   }
 
-  async export(signal: string): Promise<QueryArrayResult> {
-    const query = this.process(signal);
-    return this.pgClient.query(query);
+  async export(signals: TelemetrySignal[]): Promise<QueryArrayResult[]> {
+    const queries = this.process(signals);
+    const results: Promise<QueryArrayResult>[] = [];
+    for (const query of queries) {
+      results.push(this.pgClient.query(query));
+    }
+    try {
+      // We do await here so we can catch and format PostgresExporter specific errors
+      return await Promise.all<QueryArrayResult>(results);
+    } catch (err) {
+      throw new OperonPostgresExporterError(err as Error);
+    }
   }
 }
 
@@ -91,13 +175,13 @@ implements ITelemetryExporter<QueryArrayResult, QueryConfig>
 
 // For now use strings. Eventually define a Signal class for the telemetry data model
 class SignalsQueue {
-  data: string[] = [];
+  data: TelemetrySignal[] = [];
 
-  push(signal: string): void {
+  push(signal: TelemetrySignal): void {
     this.data.push(signal);
   }
 
-  pop(): string | undefined {
+  pop(): TelemetrySignal | undefined {
     return this.data.shift();
   }
 
@@ -111,6 +195,7 @@ export class TelemetryCollector {
   private readonly signals: SignalsQueue = new SignalsQueue();
   private readonly signalBufferID: NodeJS.Timeout;
   private readonly processAndExportSignalsIntervalMs = 1000;
+  private readonly processAndExportSignalsMaxBatchSize = 10;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
@@ -137,24 +222,31 @@ export class TelemetryCollector {
     }
   }
 
-  push(signal: string) {
+  push(signal: TelemetrySignal) {
     this.signals.push(signal);
   }
 
-  private pop(): string | undefined {
+  private pop(): TelemetrySignal | undefined {
     return this.signals.pop();
   }
 
   async processAndExportSignals(): Promise<void> {
-    // eslint-disable-next-line no-cond-assign
-    while (this.signals.size() > 0) {
+    const batch: TelemetrySignal[] = [];
+    while (
+      this.signals.size() > 0 &&
+      batch.length < this.processAndExportSignalsMaxBatchSize
+    ) {
       const signal = this.pop();
-      // Because we are single threaded, we don't have to worry about concurrent shift() and push() to the buffer
       if (!signal) {
         break;
       }
-      for (const exporter of this.exporters) {
-        await exporter.export(signal);
+      batch.push(signal);
+    }
+    for (const exporter of this.exporters) {
+      try {
+        await exporter.export(batch);
+      } catch (e) {
+        console.error((e as Error).message);
       }
     }
   }

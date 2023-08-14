@@ -12,6 +12,7 @@ import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUU
 import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
+import { TelemetrySignal } from './telemetry';
 
 const defaultRecvTimeoutSec = 60;
 
@@ -56,6 +57,19 @@ export class WorkflowContext {
 
   functionIDGetIncrement() : number {
     return this.#functionID++;
+  }
+
+  log(severity: string, message: string): void {
+    const signal: TelemetrySignal = {
+      workflowUUID: this.workflowUUID,
+      functionID: this.#functionID,
+      functionName: this.workflowName,
+      runAs: this.runAs,
+      timestamp: Date.now(),
+      severity: severity,
+      logMessage: message,
+    };
+    this.#operon.telemetryCollector.push(signal);
   }
 
   /**
@@ -144,7 +158,10 @@ export class WorkflowContext {
     // eslint-disable-next-line no-constant-condition
     while(true) {
       let client: PoolClient = await this.#operon.pool.connect();
-      const fCtxt: TransactionContext = new TransactionContext(client, funcId, txnConfig);
+      const fCtxt: TransactionContext = new TransactionContext(
+        this, this.#operon.telemetryCollector,
+        client, funcId, txn.name, txnConfig
+      );
 
       await client.query(`BEGIN ISOLATION LEVEL ${fCtxt.isolationLevel}`);
       if (fCtxt.readOnly) {

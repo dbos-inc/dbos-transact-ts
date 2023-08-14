@@ -18,7 +18,8 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
       database: "operontest",
     },
     telemetryExporters: exporters || [],
-    system_database: 'operontest_systemdb'
+    system_database: 'operontest_systemdb',
+    observability_database: 'operontest_observabilitydb'
   }
 
   return operonTestConfig;
@@ -36,6 +37,7 @@ export async function setupOperonTestDb(config: OperonConfig) {
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
   await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.observability_database};`);
   await pgSystemClient.end();
 }
 

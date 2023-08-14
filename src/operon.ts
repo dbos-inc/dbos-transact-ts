@@ -33,6 +33,7 @@ export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
+  readonly observability_database?: string;
 }
 
 interface ConfigFile {
@@ -112,7 +113,7 @@ export class Operon {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
         } else if (exporter === POSTGRES_EXPORTER) {
-          telemetryExporters.push(new PostgresExporter(this));
+          telemetryExporters.push(new PostgresExporter(this, config?.observability_database));
         }
       }
     }

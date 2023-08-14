@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PoolClient } from 'pg';
-import { OperonError } from './error';
+import { PoolClient } from "pg";
+import { OperonError } from "./error";
+import { TelemetryCollector, TelemetrySignal} from "./telemetry";
+import { WorkflowContext} from "./workflow";
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -19,10 +21,17 @@ export function validateTransactionConfig (params: TransactionConfig){
 
 export class TransactionContext {
   #functionAborted: boolean = false;
-  readonly readOnly : boolean;
+  readonly readOnly: boolean;
   readonly isolationLevel;
 
-  constructor(readonly client: PoolClient, readonly functionID: number, config: TransactionConfig) {
+  constructor(
+    private readonly workflowContext: WorkflowContext,
+    private readonly telemetryCollector: TelemetryCollector,
+    readonly client: PoolClient,
+    readonly functionID: number,
+    readonly functionName: string,
+    config: TransactionConfig
+  ) {
     if (config.readOnly) {
       this.readOnly = config.readOnly;
     } else {
@@ -32,8 +41,22 @@ export class TransactionContext {
       // We already validated the isolation level during config time.
       this.isolationLevel = config.isolationLevel;
     } else {
-      this.isolationLevel = 'SERIALIZABLE';
+      this.isolationLevel = "SERIALIZABLE";
     }
+  }
+
+  log(severity: string, message: string): void {
+    const workflowContext = this.workflowContext;
+    const signal: TelemetrySignal = {
+      workflowUUID: workflowContext.workflowUUID,
+      functionID: this.functionID,
+      functionName: this.functionName,
+      runAs: workflowContext.runAs,
+      timestamp: Date.now(),
+      severity: severity,
+      logMessage: message,
+    };
+    this.telemetryCollector.push(signal);
   }
 
   async rollback() {
@@ -46,7 +69,7 @@ export class TransactionContext {
     this.client.release();
   }
 
-  isAborted() : boolean {
+  isAborted(): boolean {
     return this.#functionAborted;
   }
 }
