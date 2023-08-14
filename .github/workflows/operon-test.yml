@@ -43,9 +43,9 @@ jobs:
         working-directory: ./
         run: |
           npm install .
-          npm run lint
           npm run build
           npm test
+          npm run lint
         env:
           DB_PASSWORD: dbos
           DB_USER: postgres
