@@ -190,7 +190,7 @@ export class OperonMethodRegistrationBase {
   args : OperonParameter[] = [];
 }
 
-class OperonMethodRegistration <This, Args extends unknown[], Return>
+export class OperonMethodRegistration <This, Args extends unknown[], Return>
   extends OperonMethodRegistrationBase
 {
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {

@@ -25,6 +25,7 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
+import { OperonMethodRegistration, forEachMethod } from './decorators';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -84,7 +85,7 @@ export class Operon {
         config: {}
       }]
   ]);
-  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+  readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
   readonly topicConfigMap: Map<string, string[]> = new Map();
 
@@ -124,6 +125,22 @@ export class Operon {
     this.logger = new Logger(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
+
+    // Register user declared operations
+    forEachMethod((registeredOperation) => {
+        const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+        for (const arg of ro.args) {
+            if (arg.argType.name === 'WorkflowContext') {
+                const wf = ro.origFunction as OperonWorkflow<any, any>;
+                this.registerWorkflow(wf, {});
+                break;
+            } else if (arg.argType.name === 'TransactionContext') {
+                const tx = ro.origFunction as OperonTransaction<any, any>;
+                this.registerTransaction(tx, {});
+                break;
+            }
+        }
+    });
   }
 
   useNodePostgres() {
@@ -246,7 +263,7 @@ export class Operon {
     this.topicConfigMap.set(topic, rolesThatCanPubSub);
   }
 
-  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
+  registerWorkflow<T extends unknown[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig={}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`)
     }
@@ -258,7 +275,7 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
-    this.transactionConfigMap.set(txn, params);
+    this.transactionConfigMap.set(txn.name, params);
   }
 
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {

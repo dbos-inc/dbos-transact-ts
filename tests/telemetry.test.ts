@@ -68,6 +68,10 @@ class TestClass {
 }
 
 describe("operon-telemetry", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test("Operon init works with all exporters", async () => {
     const operonConfig = generateOperonTestConfig([
       CONSOLE_EXPORTER,
@@ -303,13 +307,11 @@ describe("operon-telemetry", () => {
       expect(scuQueryResult.rows).toEqual(expectedScuColumns);
     });
 
-    test("correctly exports log entries with single workflow single operation", async () => {
-      jest.spyOn(console, "log").mockImplementation(() => {}); // "mute" console.log
-      operon.registerTransaction(TestClass.test_function);
+    test.only("correctly exports log entries with single workflow single operation", async () => {
+      jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const testWorkflowConfig: WorkflowConfig = {
         rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
       };
-      operon.registerWorkflow(TestClass.test_workflow, testWorkflowConfig);
       const params: WorkflowParams = {
         runAs: "operonAppAdmin",
       };

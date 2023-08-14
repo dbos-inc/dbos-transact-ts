@@ -15,7 +15,7 @@ import { UserDatabaseClient } from './user_database';
 
 const defaultRecvTimeoutSec = 60;
 
-export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type OperonWorkflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -136,7 +136,7 @@ export class WorkflowContext {
    * If it encounters any other error, throw it.
    */
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#operon.transactionConfigMap.get(txn);
+    const config = this.#operon.transactionConfigMap.get(txn.name);
     if (config === undefined) {
       throw new OperonError(`Unregistered Transaction ${txn.name}`)
     }
