@@ -5,10 +5,10 @@
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --project tsconfig.build.json",
     "lint": "eslint --ext .ts .",
     "lint-fix": "eslint --fix --ext .ts .",
-    "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --detectOpenHandles"
+    "test": "npx prisma generate --schema tests/prisma/schema.prisma && tsc && jest --coverage --detectOpenHandles"
   },
   "devDependencies": {
     "@prisma/client": "^5.1.1",

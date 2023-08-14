@@ -43,7 +43,6 @@ jobs:
         working-directory: ./
         run: |
           npm install .
-          npx prisma generate --schema tests/prisma/schema.prisma
           npm run lint
           npm run build
           npm test
