@@ -8,7 +8,7 @@ import {
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { logged } from "../src/decorators";
+import { logged, operonTransaction, operonWorkflow } from "../src/decorators";
 import {
   TransactionContext,
   WorkflowConfig,
@@ -39,7 +39,7 @@ class TestClass {
     return Promise.resolve(name);
   }
 
-  @logged
+  @operonTransaction({ readOnly: false })
   static async test_function(
     txnCtxt: TransactionContext,
     name: string
@@ -53,7 +53,7 @@ class TestClass {
     return result;
   }
 
-  @logged
+  @operonWorkflow({ rolesThatCanRun: ["operonAppAdmin", "operonAppUser"] })
   static async test_workflow(
     workflowCtxt: WorkflowContext,
     name: string
@@ -307,11 +307,8 @@ describe("operon-telemetry", () => {
       expect(scuQueryResult.rows).toEqual(expectedScuColumns);
     });
 
-    test.only("correctly exports log entries with single workflow single operation", async () => {
+    test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const testWorkflowConfig: WorkflowConfig = {
-        rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-      };
       const params: WorkflowParams = {
         runAs: "operonAppAdmin",
       };
