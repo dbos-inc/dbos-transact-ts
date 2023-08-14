@@ -1,26 +1,13 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
-import { Operon } from "./operon";
+import { Operon } from "./../operon";
 import { groupBy } from "lodash";
 import {
   forEachMethod,
   OperonDataType,
   OperonMethodRegistrationBase,
-} from "./decorators";
-import { OperonPostgresExporterError } from "./error";
-
-/*** SIGNALS ***/
-
-export interface TelemetrySignal {
-  workflowUUID: string;
-  functionID: number;
-  functionName: string;
-  runAs: string;
-  timestamp: number;
-  severity: string;
-  logMessage: string;
-}
-
-/*** EXPORTERS ***/
+} from "./../decorators";
+import { OperonPostgresExporterError } from "./../error";
+import { TelemetrySignal } from "./signals";
 
 export interface ITelemetryExporter<T, U> {
   export(signal: TelemetrySignal[]): Promise<T>;
@@ -122,12 +109,12 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
 
   process(signals: TelemetrySignal[]): QueryConfig[] {
     const groupByFunctionName: Map<string, TelemetrySignal[]> = new Map(
-      Object.entries(groupBy(signals, ({ functionName }) => functionName))
+      Object.entries(groupBy(signals, ({ operationName }) => operationName))
     );
     const queries: QueryConfig[] = [];
 
-    for (const [functionName, signals] of groupByFunctionName) {
-      const tableName: string = `signal_${functionName}`;
+    for (const [operationName, signals] of groupByFunctionName) {
+      const tableName: string = `signal_${operationName}`;
       const query = `
         INSERT INTO ${tableName}
         SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
@@ -138,7 +125,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
           return {
             workflow_uuid: signal.workflowUUID,
             function_id: signal.functionID,
-            function_name: signal.functionName,
+            function_name: signal.operationName,
             run_as: signal.runAs,
             timestamp: signal.timestamp,
             severity: signal.severity,
@@ -167,87 +154,6 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
       return await Promise.all<QueryArrayResult>(results);
     } catch (err) {
       throw new OperonPostgresExporterError(err as Error);
-    }
-  }
-}
-
-/*** COLLECTOR ***/
-
-// For now use strings. Eventually define a Signal class for the telemetry data model
-class SignalsQueue {
-  data: TelemetrySignal[] = [];
-
-  push(signal: TelemetrySignal): void {
-    this.data.push(signal);
-  }
-
-  pop(): TelemetrySignal | undefined {
-    return this.data.shift();
-  }
-
-  size(): number {
-    return this.data.length;
-  }
-}
-
-export class TelemetryCollector {
-  // Signals buffer management
-  private readonly signals: SignalsQueue = new SignalsQueue();
-  private readonly signalBufferID: NodeJS.Timeout;
-  private readonly processAndExportSignalsIntervalMs = 1000;
-  private readonly processAndExportSignalsMaxBatchSize = 10;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
-    this.signalBufferID = setInterval(() => {
-      void this.processAndExportSignals();
-    }, this.processAndExportSignalsIntervalMs);
-  }
-
-  async init() {
-    for (const exporter of this.exporters) {
-      if (exporter.init) {
-        await exporter.init();
-      }
-    }
-  }
-
-  async destroy() {
-    clearInterval(this.signalBufferID);
-    await this.processAndExportSignals();
-    for (const exporter of this.exporters) {
-      if (exporter.destroy) {
-        await exporter.destroy();
-      }
-    }
-  }
-
-  push(signal: TelemetrySignal) {
-    this.signals.push(signal);
-  }
-
-  private pop(): TelemetrySignal | undefined {
-    return this.signals.pop();
-  }
-
-  async processAndExportSignals(): Promise<void> {
-    const batch: TelemetrySignal[] = [];
-    while (
-      this.signals.size() > 0 &&
-      batch.length < this.processAndExportSignalsMaxBatchSize
-    ) {
-      const signal = this.pop();
-      if (!signal) {
-        break;
-      }
-      batch.push(signal);
-    }
-    for (const exporter of this.exporters) {
-      try {
-        await exporter.export(batch);
-      } catch (e) {
-        console.error((e as Error).message);
-      }
     }
   }
 }

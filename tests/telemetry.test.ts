@@ -123,7 +123,7 @@ describe("operon-telemetry", () => {
 
       const signal1: TelemetrySignal = {
         workflowUUID: "test",
-        functionName: "create_user",
+        operationName: "create_user",
         functionID: 0,
         runAs: "test",
         timestamp: Date.now(),

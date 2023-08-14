@@ -1,0 +1,80 @@
+import { ITelemetryExporter } from "./exporters";
+import { TelemetrySignal } from "./signals";
+
+class SignalsQueue {
+  data: TelemetrySignal[] = [];
+
+  push(signal: TelemetrySignal): void {
+    this.data.push(signal);
+  }
+
+  pop(): TelemetrySignal | undefined {
+    return this.data.shift();
+  }
+
+  size(): number {
+    return this.data.length;
+  }
+}
+
+export class TelemetryCollector {
+  // Signals buffer management
+  private readonly signals: SignalsQueue = new SignalsQueue();
+  private readonly signalBufferID: NodeJS.Timeout;
+  private readonly processAndExportSignalsIntervalMs = 1000;
+  private readonly processAndExportSignalsMaxBatchSize = 10;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
+    this.signalBufferID = setInterval(() => {
+      void this.processAndExportSignals();
+    }, this.processAndExportSignalsIntervalMs);
+  }
+
+  async init() {
+    for (const exporter of this.exporters) {
+      if (exporter.init) {
+        await exporter.init();
+      }
+    }
+  }
+
+  async destroy() {
+    clearInterval(this.signalBufferID);
+    await this.processAndExportSignals();
+    for (const exporter of this.exporters) {
+      if (exporter.destroy) {
+        await exporter.destroy();
+      }
+    }
+  }
+
+  push(signal: TelemetrySignal) {
+    this.signals.push(signal);
+  }
+
+  private pop(): TelemetrySignal | undefined {
+    return this.signals.pop();
+  }
+
+  async processAndExportSignals(): Promise<void> {
+    const batch: TelemetrySignal[] = [];
+    while (
+      this.signals.size() > 0 &&
+      batch.length < this.processAndExportSignalsMaxBatchSize
+    ) {
+      const signal = this.pop();
+      if (!signal) {
+        break;
+      }
+      batch.push(signal);
+    }
+    for (const exporter of this.exporters) {
+      try {
+        await exporter.export(batch);
+      } catch (e) {
+        console.error((e as Error).message);
+      }
+    }
+  }
+}

@@ -11,7 +11,6 @@ import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUU
 import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
-import { TelemetrySignal } from './telemetry';
 import { UserDatabaseClient } from './user_database';
 
 const defaultRecvTimeoutSec = 60;
@@ -40,10 +39,11 @@ export const StatusString = {
 } as const;
 
 export class WorkflowContext {
-  #functionID: number = 0;
+  functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
+  readonly operationName: string;
 
   constructor(
     operon: Operon,
@@ -51,25 +51,17 @@ export class WorkflowContext {
     readonly runAs: string,
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string) {
+    this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
   }
 
   functionIDGetIncrement() : number {
-    return this.#functionID++;
+    return this.functionID++;
   }
 
   log(severity: string, message: string): void {
-    const signal: TelemetrySignal = {
-      workflowUUID: this.workflowUUID,
-      functionID: this.#functionID,
-      functionName: this.workflowName,
-      runAs: this.runAs,
-      timestamp: Date.now(),
-      severity: severity,
-      logMessage: message,
-    };
-    this.#operon.telemetryCollector.push(signal);
+    this.#operon.logger.log(this, severity, message);
   }
 
   /**
@@ -156,7 +148,10 @@ export class WorkflowContext {
     while(true) {
       const wrappedTransaction = async(client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
-        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.telemetryCollector, funcId, txn.name);
+        const tCtxt = new TransactionContext(
+          this.#operon.userDatabase.getName(), client, config,
+          this, this.#operon.logger, funcId, txn.name,
+        );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           return check as R;

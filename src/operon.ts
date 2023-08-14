@@ -16,7 +16,9 @@ import {
   CONSOLE_EXPORTER,
   PostgresExporter,
   POSTGRES_EXPORTER,
+  Logger,
 } from './telemetry';
+
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
@@ -92,6 +94,8 @@ export class Operon {
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
+  readonly logger: Logger;
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
     if (config) {
@@ -117,6 +121,7 @@ export class Operon {
       }
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
+    this.logger = new Logger(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
   }
