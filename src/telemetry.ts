@@ -1,7 +1,11 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
 import { Operon } from "./operon";
 import { groupBy } from "lodash";
-import { forEachMethod, OperonDataType } from "./decorators";
+import {
+  forEachMethod,
+  OperonDataType,
+  OperonMethodRegistrationBase,
+} from "./decorators";
 import { OperonPostgresExporterError } from "./error";
 
 /*** SIGNALS ***/
@@ -52,8 +56,8 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
     this.pgClient = new Client(pgClientConfig);
   }
 
-  static getPGDataType(t: OperonDataType) : string {
-    if (t.dataType === 'double') {
+  static getPGDataType(t: OperonDataType): string {
+    if (t.dataType === "double") {
       return "double precision"; // aka "float8"
     }
     return t.formatAsString();
@@ -76,10 +80,13 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    forEachMethod((registeredOperation) => {
-      void (async () => {
-        const tableName = `signal_${registeredOperation.name}`;
-        let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+    const registeredOperations: OperonMethodRegistrationBase[] = [];
+    forEachMethod((o) => {
+      registeredOperations.push(o);
+    });
+    for (const registeredOperation of registeredOperations) {
+      const tableName = `signal_${registeredOperation.name}`;
+      let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
         workflow_uuid TEXT NOT NULL,
         function_id INT NOT NULL,
         function_name TEXT NOT NULL,
@@ -88,26 +95,25 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
         severity TEXT DEFAULT NULL,
         log_message TEXT DEFAULT NULL,\n`;
 
-        for (const arg of registeredOperation.args) {
-          if (
-            arg.argType.name === "WorkflowContext" ||
-            arg.argType.name === "TransactionContext" ||
-            arg.argType.name === "CommunicatorContext"
-          ) {
-            continue;
-          }
-          const row = `${
-            arg.name
-          } ${PostgresExporter.getPGDataType(arg.dataType)} DEFAULT NULL,\n`;
-          createSignalTableQuery = createSignalTableQuery.concat(row);
+      for (const arg of registeredOperation.args) {
+        if (
+          arg.argType.name === "WorkflowContext" ||
+          arg.argType.name === "TransactionContext" ||
+          arg.argType.name === "CommunicatorContext"
+        ) {
+          continue;
         }
-        // Trim last comma and line feed
-        createSignalTableQuery = createSignalTableQuery
-          .slice(0, -2)
-          .concat("\n);");
-        await this.pgClient.query(createSignalTableQuery);
-      })();
-    });
+        const row = `${arg.name} ${PostgresExporter.getPGDataType(
+          arg.dataType
+        )} DEFAULT NULL,\n`;
+        createSignalTableQuery = createSignalTableQuery.concat(row);
+      }
+      // Trim last comma and line feed
+      createSignalTableQuery = createSignalTableQuery
+        .slice(0, -2)
+        .concat("\n);");
+      await this.pgClient.query(createSignalTableQuery);
+    }
   }
 
   async destroy(): Promise<void> {

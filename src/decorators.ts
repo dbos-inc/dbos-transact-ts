@@ -184,7 +184,7 @@ class OperonParameter {
   }
 }
 
-class OperonMethodRegistrationBase {
+export class OperonMethodRegistrationBase {
   name: string = "";
   logLevel : LogLevel = LogLevel.INFO;
   args : OperonParameter[] = [];
