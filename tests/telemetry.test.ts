@@ -121,7 +121,7 @@ describe("operon-telemetry", () => {
       expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
 
       await collector.init();
-      const logSpy = jest.spyOn(global.console, "log");
+      const logSpy = jest.spyOn(global.console, "log").mockImplementation(); // "mute" console.log
 
       const signal1: TelemetrySignal = {
         workflowUUID: "test",
