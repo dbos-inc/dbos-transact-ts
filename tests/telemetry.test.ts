@@ -90,6 +90,8 @@ describe("operon-telemetry", () => {
     jest.spyOn(collector, "process").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
       operon.telemetryCollector.processAndExportSignals()
@@ -302,6 +304,7 @@ describe("operon-telemetry", () => {
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
+      jest.spyOn(console, "log").mockImplementation(() => {}); // "mute" console.log
       operon.registerTransaction(TestClass.test_function);
       const testWorkflowConfig: WorkflowConfig = {
         rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
