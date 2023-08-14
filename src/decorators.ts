@@ -376,7 +376,7 @@ export function logged<This, Args extends unknown[], Return>(
 }
 
 export function operonWorkflow(config: WorkflowConfig={}) {
-  function workflowDecorator<This, Args extends unknown[], Return>(
+  function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
@@ -385,11 +385,11 @@ export function operonWorkflow(config: WorkflowConfig={}) {
     registration.workflowConfig = config;
     return descriptor;
   }
-  return workflowDecorator;
+  return decorator;
 }
 
 export function operonTransaction(config: TransactionConfig = {}) {
-  function workflowDecorator<This, Args extends unknown[], Return>(
+  function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
@@ -398,6 +398,6 @@ export function operonTransaction(config: TransactionConfig = {}) {
     registration.txnConfig = config;
     return descriptor;
   }
-  return workflowDecorator;
+  return decorator;
 }
 
