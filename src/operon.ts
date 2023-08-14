@@ -128,18 +128,18 @@ export class Operon {
 
     // Register user declared operations
     forEachMethod((registeredOperation) => {
-        const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
-        for (const arg of ro.args) {
-            if (arg.argType.name === 'WorkflowContext') {
-                const wf = ro.origFunction as OperonWorkflow<any, any>;
-                this.registerWorkflow(wf, ro.workflowConfig);
-                break;
-            } else if (arg.argType.name === 'TransactionContext') {
-                const tx = ro.origFunction as OperonTransaction<any, any>;
-                this.registerTransaction(tx, ro.txnConfig);
-                break;
-            }
+      const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+      for (const arg of ro.args) {
+        if (arg.argType.name === 'WorkflowContext') {
+          const wf = ro.origFunction as OperonWorkflow<any, any>;
+          this.registerWorkflow(wf, ro.workflowConfig);
+          break;
+        } else if (arg.argType.name === 'TransactionContext') {
+          const tx = ro.origFunction as OperonTransaction<any, any>;
+          this.registerTransaction(tx, ro.txnConfig);
+          break;
         }
+      }
     });
   }
 

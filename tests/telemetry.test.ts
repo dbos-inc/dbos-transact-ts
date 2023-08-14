@@ -11,7 +11,6 @@ import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { logged, operonTransaction, operonWorkflow } from "../src/decorators";
 import {
   TransactionContext,
-  WorkflowConfig,
   WorkflowContext,
   WorkflowParams,
 } from "src";

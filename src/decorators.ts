@@ -388,7 +388,7 @@ export function operonWorkflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function operonTransaction(config: TransactionConfig = {}) {
+export function operonTransaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
