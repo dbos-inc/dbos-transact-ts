@@ -26,8 +26,6 @@ export {
 
   TraceLevel,
   Traced,
-  GetApi,
-  PostApi,
 
   forEachMethod,
 } from './decorators';

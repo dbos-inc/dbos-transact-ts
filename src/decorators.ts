@@ -142,18 +142,6 @@ export enum TraceEventTypes {
     METHOD_ERROR = 'METHOD_ERROR',
 }
 
-export enum APITypes {
-    GET = 'GET',
-    POST = 'POST',
-}
-
-export enum ArgTypes {
-  DEFAULT = 'DEFAULT',
-  BODY = 'BODY',
-  QUERY = 'QUERY',
-  URL = 'URL',
-}
-
 class BaseTraceEvent {
   eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
   eventComponent: string = '';
@@ -201,9 +189,6 @@ export class OperonMethodRegistrationBase {
   name: string = "";
   traceLevel : TraceLevels = TraceLevels.INFO;
   args : OperonParameter[] = [];
-
-  apiType : APITypes = APITypes.GET;
-  apiURL : string = '';
 }
 
 export class OperonMethodRegistration <This, Args extends unknown[], Return>
@@ -418,34 +403,6 @@ export function Traced<This, Args extends unknown[], Return>(
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
-}
-
-export function GetApi(url: string) {
-  function apidec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.GET;
-    return descriptor;
-  }
-  return apidec;
-}
-
-export function PostApi(url: string) {
-  function apidec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.POST;
-    return descriptor;
-  }
-  return apidec;
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {
