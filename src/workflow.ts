@@ -15,7 +15,7 @@ import { UserDatabaseClient } from './user_database';
 
 const defaultRecvTimeoutSec = 60;
 
-export type OperonWorkflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
   workflowUUID?: string;

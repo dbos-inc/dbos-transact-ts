@@ -18,7 +18,6 @@ import {
   POSTGRES_EXPORTER,
   Logger,
 } from './telemetry';
-
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
