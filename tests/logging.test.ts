@@ -1,10 +1,10 @@
-import { LogLevel, forEachMethod, logged, logLevel, argName, skipLogging } from "src/decorators";
+import { LogLevel, LogMask, forEachMethod, logged, logLevel, argName, skipLogging, logMask } from "src/decorators";
 
 class TestFunctions
 {
     @logged
     @logLevel(LogLevel.INFO)
-  static foo(arg1: string, arg2: Date, @skipLogging arg3: boolean, @argName('arg4') arg_should_be_4: number): Promise<string> {
+  static foo(@logMask(LogMask.HASH) arg1: string, arg2: Date, @skipLogging arg3: boolean, @argName('arg4') arg_should_be_4: number): Promise<string> {
     return Promise.resolve('stringvalue'+arg1+arg2.toDateString()+arg3+arg_should_be_4);
   }
 }
@@ -39,7 +39,11 @@ describe("operon-logging", () => {
           return;
         }
         // NB not all types here may match the SQL string
-        cts += '  '+quoteSqlIdentifier(element.name)+' '+element.dataType.formatAsString()+',\n';
+        let ctype = element.dataType.formatAsString();
+        if (element.logMask === LogMask.HASH) {
+            ctype = 'VARCHAR(64)'
+        }
+        cts += '  '+quoteSqlIdentifier(element.name)+' '+ctype+',\n';
       });
     
       // Generic fields

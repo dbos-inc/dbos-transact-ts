@@ -6,6 +6,7 @@
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
 //   Integrate with API registration
+//   Integrate with Operon workflows
 //   Integrate parameter validation
 //   Integrate with Authentication
 //   Integrate with error handling
@@ -13,11 +14,8 @@
 //     Or is it easier once there is a real log collector?
 //
 // Logging
-//   Collect a SQL-Like schema
-//   Log a structured line (to console)
 //   Integrate with Logger setup
 //   Integrate with Logger buffer
-//   Mask parameters
 
 import "reflect-metadata";
 import { TransactionContext } from "./transaction";
