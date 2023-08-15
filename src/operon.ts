@@ -97,13 +97,17 @@ export class Operon {
   readonly logger: Logger;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(config?: OperonConfig) {
+  constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
     if (config) {
       this.config = config;
     } else {
       this.config = this.generateOperonConfig();
     }
-    this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
+    if (systemDatabase) {
+      this.systemDatabase = systemDatabase;
+    } else {
+      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
+    }
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs) ;
