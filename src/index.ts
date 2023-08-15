@@ -24,8 +24,12 @@ export {
   LogMask,
   ArgName,
 
+
   TraceLevel,
   Traced,
+
+  GetApi,
+  PostApi,
 
   forEachMethod,
 } from './decorators';

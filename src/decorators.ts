@@ -136,6 +136,18 @@ export enum LogMasks {
     SKIP = "SKIP",
 }
 
+export enum APITypes {
+  GET = 'GET',
+  POST = 'POST',
+}
+
+export enum ArgSources {
+  DEFAULT = 'DEFAULT',
+  BODY = 'BODY',
+  QUERY = 'QUERY',
+  URL = 'URL',
+}
+
 export enum TraceEventTypes {
     METHOD_ENTER = 'METHOD_ENTER',
     METHOD_EXIT = 'METHOD_EXIT',
@@ -171,10 +183,11 @@ class OperonParameter {
   required: boolean = false;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
+  argSource: ArgSources = ArgSources.DEFAULT;
+
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
   dataType: OperonDataType;
-  // TODO: If we override the logging behavior (say to mask/hash it), where do we record that?
   index:number = -1;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -188,6 +201,10 @@ class OperonParameter {
 export class OperonMethodRegistrationBase {
   name: string = "";
   traceLevel : TraceLevels = TraceLevels.INFO;
+
+  apiType : APITypes = APITypes.GET;
+  apiURL : string = '';
+
   args : OperonParameter[] = [];
 }
 
@@ -356,6 +373,15 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
   curParam.logMask = LogMasks.SKIP;
 }
 
+export function LogMask(mask: LogMasks) {
+  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.logMask = mask;
+  };
+}
+
 export function ArgName(name: string) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
@@ -365,12 +391,12 @@ export function ArgName(name: string) {
   };
 }
 
-export function LogMask(mask: LogMasks) {
+export function ArgSource(source: ArgSources) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
-    curParam.logMask = mask;
+    curParam.argSource = source;
   };
 }
 
@@ -403,6 +429,34 @@ export function Traced<This, Args extends unknown[], Return>(
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
+}
+
+export function GetApi(url: string) {
+  function apidec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APITypes.GET;
+    return descriptor;
+  }
+  return apidec;
+}
+
+export function PostApi(url: string) {
+  function apidec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APITypes.POST;
+    return descriptor;
+  }
+  return apidec;
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {
