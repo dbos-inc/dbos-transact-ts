@@ -41,7 +41,7 @@ describe("operon-logging", () => {
         // NB not all types here may match the SQL string
         let ctype = element.dataType.formatAsString();
         if (element.logMask === LogMasks.HASH) {
-            ctype = 'VARCHAR(64)'
+          ctype = 'VARCHAR(64)'
         }
         cts += '  '+quoteSqlIdentifier(element.name)+' '+ctype+',\n';
       });
