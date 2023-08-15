@@ -1,10 +1,10 @@
-import { LogLevel, forEachMethod, logged, loglevel, paramName, skipLogging } from "src/decorators";
+import { LogLevel, forEachMethod, logged, logLevel, argName, skipLogging } from "src/decorators";
 
 class TestFunctions
 {
     @logged
-    @loglevel(LogLevel.INFO)
-  static foo(arg1: string, arg2: Date, @skipLogging arg3: boolean, @paramName('arg4') arg_should_be_4: number): Promise<string> {
+    @logLevel(LogLevel.INFO)
+  static foo(arg1: string, arg2: Date, @skipLogging arg3: boolean, @argName('arg4') arg_should_be_4: number): Promise<string> {
     return Promise.resolve('stringvalue'+arg1+arg2.toDateString()+arg3+arg_should_be_4);
   }
 }

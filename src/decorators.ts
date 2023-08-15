@@ -22,6 +22,7 @@
 import "reflect-metadata";
 import { TransactionContext } from "./transaction";
 import { WorkflowContext } from "./workflow";
+import * as crypto from 'crypto';
 
 /**
  * Any column type column can be.
@@ -140,6 +141,18 @@ export enum LogEventType {
     METHOD_ERROR = 'METHOD_ERROR',
 }
 
+export enum APIType {
+    GET = 'GET',
+    POST = 'POST',
+}
+
+export enum ArgType {
+  DEFAULT = 'DEFAULT',
+  BODY = 'BODY',
+  QUERY = 'QUERY',
+  URL = 'URL',
+}
+
 class BaseLogEvent {
   eventType: LogEventType = LogEventType.METHOD_ENTER;
   eventComponent: string = '';
@@ -188,6 +201,9 @@ export class OperonMethodRegistrationBase {
   name: string = "";
   logLevel : LogLevel = LogLevel.INFO;
   args : OperonParameter[] = [];
+
+  apiType : APIType = APIType.GET;
+  apiURL : string = '';
 }
 
 class OperonMethodRegistration <This, Args extends unknown[], Return>
@@ -224,6 +240,12 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
   }
 
   return mParameters;
+}
+
+function generateSaltedHash(data: string, salt: string): string {
+  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
+  hash.update(data + salt);
+  return hash.digest('hex');
 }
 
 function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Return>(target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
@@ -270,12 +292,24 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       sLogRec.eventLevel = methReg.logLevel;
 
       args.forEach((v, idx) => {
+        let lv = v;
         if (methReg.args[idx].skipLogging) {
           return;
         }
         else {
-          sLogRec.positionalArgs.push(v);
-          sLogRec.namedArgs[methReg.args[idx].name] = v;
+          if (methReg.args[idx].logMask !== LogMask.NONE) {
+            // For now this means hash
+            if (methReg.args[idx].dataType.dataType === 'json') {
+              lv = generateSaltedHash(JSON.stringify(v), 'JSONSALT');
+            }
+            else {
+              // Yes, we are doing the same as above for now.
+              //  It can be better if we have verified the type of the data
+              lv = generateSaltedHash(JSON.stringify(v), 'OPERONSALT');
+            }
+          }
+          sLogRec.positionalArgs.push(lv);
+          sLogRec.namedArgs[methReg.args[idx].name] = lv;
         }
       });
 
@@ -332,12 +366,21 @@ export function skipLogging(target: object, propertyKey: string | symbol, parame
   curParam.skipLogging = true;
 }
 
-export function paramName(name: string) {
+export function argName(name: string) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
+  };
+}
+
+export function logMask(mask: LogMask) {
+  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.logMask = mask;
   };
 }
 
@@ -350,7 +393,7 @@ type MethodDecorator = <T>(
 */
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
-export function loglevel(level: LogLevel) {
+export function logLevel(level: LogLevel) {
   // This is the decorator that will get applied to the decorator item
   function logdec<This, Args extends unknown[], Return>(
     target: object,
@@ -364,11 +407,39 @@ export function loglevel(level: LogLevel) {
   return logdec;
 }
 
-
 export function logged<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
-  return loglevel(LogLevel.INFO)(target, propertyKey, descriptor);
+  return logLevel(LogLevel.INFO)(target, propertyKey, descriptor);
 }
+
+export function getApi(url: string) {
+  function apidec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APIType.GET;
+    return descriptor;
+  }
+  return apidec;
+}
+
+export function postApi(url: string) {
+  function apidec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APIType.POST;
+    return descriptor;
+  }
+  return apidec;
+}
+
