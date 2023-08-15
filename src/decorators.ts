@@ -22,6 +22,7 @@ import "reflect-metadata";
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
+import { CommunicatorContext } from "./communicator";
 
 /**
  * Any column type column can be.
@@ -121,7 +122,7 @@ function getArgNames(func: Function): string[] {
   return fn.split(",");
 }
 
-export enum LogLevel {
+export enum TraceLevels {
     DEBUG = "DEBUG",
     INFO = "INFO",
     WARN = "WARN",
@@ -129,33 +130,34 @@ export enum LogLevel {
     CRITICAL = "CRITICAL"
 }
 
-export enum LogMask {
+export enum LogMasks {
     NONE = "NONE",
     HASH = "HASH",
+    SKIP = "SKIP",
 }
 
-export enum LogEventType {
+export enum TraceEventTypes {
     METHOD_ENTER = 'METHOD_ENTER',
     METHOD_EXIT = 'METHOD_EXIT',
     METHOD_ERROR = 'METHOD_ERROR',
 }
 
-export enum APIType {
+export enum APITypes {
     GET = 'GET',
     POST = 'POST',
 }
 
-export enum ArgType {
+export enum ArgTypes {
   DEFAULT = 'DEFAULT',
   BODY = 'BODY',
   QUERY = 'QUERY',
   URL = 'URL',
 }
 
-class BaseLogEvent {
-  eventType: LogEventType = LogEventType.METHOD_ENTER;
+class BaseTraceEvent {
+  eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
   eventComponent: string = '';
-  eventLevel: LogLevel = LogLevel.DEBUG;
+  eventLevel: TraceLevels = TraceLevels.DEBUG;
   eventTime: Date = new Date();
   authorizedUser: string = '';
   authorizedRole: string = '';
@@ -180,8 +182,7 @@ class OperonParameter {
   name: string = "";
   required: boolean = false;
   validate: boolean = true;
-  skipLogging: boolean = false;
-  logMask: LogMask = LogMask.NONE;
+  logMask: LogMasks = LogMasks.NONE;
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
   dataType: OperonDataType;
@@ -198,10 +199,10 @@ class OperonParameter {
 
 export class OperonMethodRegistrationBase {
   name: string = "";
-  logLevel : LogLevel = LogLevel.INFO;
+  traceLevel : TraceLevels = TraceLevels.INFO;
   args : OperonParameter[] = [];
 
-  apiType : APIType = APIType.GET;
+  apiType : APITypes = APITypes.GET;
   apiURL : string = '';
 }
 
@@ -268,8 +269,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.argType === TransactionContext || e.argType == WorkflowContext) {
-          e.skipLogging = true;
+        if (e.argType === TransactionContext || e.argType == WorkflowContext || e.argType == CommunicatorContext) {
+          e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
       }
@@ -287,20 +288,20 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       //        And skip/mask arguments
 
       // Here let's log the structured record
-      const sLogRec = new BaseLogEvent();
+      const sLogRec = new BaseTraceEvent();
       sLogRec.authorizedUser = "Get user from middleware arg 0?";
       sLogRec.authorizedRole = "Get role from middleware arg 0?";
-      sLogRec.eventType = LogEventType.METHOD_ENTER;
+      sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
-      sLogRec.eventLevel = methReg.logLevel;
+      sLogRec.eventLevel = methReg.traceLevel;
 
       args.forEach((v, idx) => {
         let lv = v;
-        if (methReg.args[idx].skipLogging) {
+        if (methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
         }
         else {
-          if (methReg.args[idx].logMask !== LogMask.NONE) {
+          if (methReg.args[idx].logMask !== LogMasks.NONE) {
             // For now this means hash
             if (methReg.args[idx].dataType.dataType === 'json') {
               lv = generateSaltedHash(JSON.stringify(v), 'JSONSALT');
@@ -316,15 +317,15 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-      console.log(`${methReg.logLevel}: ${mn}: Invoked - `+ sLogRec.toString());
+      console.log(`${methReg.traceLevel}: ${mn}: Invoked - `+ sLogRec.toString());
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
-        console.log(`${methReg.logLevel}: ${mn}: Returned`);
+        console.log(`${methReg.traceLevel}: ${mn}: Returned`);
         return result;
       }
       catch (e) {
-        console.log(`${methReg.logLevel}: ${mn}: Threw`, e);
+        console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
         throw e;
       }
     };
@@ -356,21 +357,21 @@ function registerAndWrapFunction<This, Args extends unknown[], Return>(
   return {descriptor, registration};
 }
 
-export function required(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = true;
 }
 
-export function skipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
-  curParam.skipLogging = true;
+  curParam.logMask = LogMasks.SKIP;
 }
 
-export function argName(name: string) {
+export function ArgName(name: string) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
@@ -379,7 +380,7 @@ export function argName(name: string) {
   };
 }
 
-export function logMask(mask: LogMask) {
+export function LogMask(mask: LogMasks) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
@@ -397,7 +398,7 @@ type MethodDecorator = <T>(
 */
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
-export function logLevel(level: LogLevel) {
+export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
   function logdec<This, Args extends unknown[], Return>(
     target: object,
@@ -405,21 +406,21 @@ export function logLevel(level: LogLevel) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.logLevel = level;    
+    registration.traceLevel = level;    
     return descriptor;
   }
   return logdec;
 }
 
-export function logged<This, Args extends unknown[], Return>(
+export function Traced<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
-  return logLevel(LogLevel.INFO)(target, propertyKey, descriptor);
+  return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-export function getApi(url: string) {
+export function GetApi(url: string) {
   function apidec<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -427,13 +428,13 @@ export function getApi(url: string) {
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.apiURL = url;
-    registration.apiType = APIType.GET;
+    registration.apiType = APITypes.GET;
     return descriptor;
   }
   return apidec;
 }
 
-export function postApi(url: string) {
+export function PostApi(url: string) {
   function apidec<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -441,13 +442,13 @@ export function postApi(url: string) {
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.apiURL = url;
-    registration.apiType = APIType.POST;
+    registration.apiType = APITypes.POST;
     return descriptor;
   }
   return apidec;
 }
 
-export function operonWorkflow(config: WorkflowConfig={}) {
+export function OperonWorkflow(config: WorkflowConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -460,7 +461,7 @@ export function operonWorkflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function operonTransaction(config: TransactionConfig={}) {
+export function OperonTransaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,

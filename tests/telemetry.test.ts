@@ -8,7 +8,7 @@ import {
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { logged, operonTransaction, operonWorkflow } from "../src/decorators";
+import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
 import {
   TransactionContext,
   WorkflowContext,
@@ -27,7 +27,7 @@ type TelemetrySignalDbFields = {
 };
 
 class TestClass {
-  @logged
+  @Traced
   static create_user(
     name: string,
     age: number,
@@ -38,7 +38,7 @@ class TestClass {
     return Promise.resolve(name);
   }
 
-  @operonTransaction({ readOnly: false })
+  @OperonTransaction({ readOnly: false })
   static async test_function(
     txnCtxt: TransactionContext,
     name: string
@@ -52,7 +52,7 @@ class TestClass {
     return result;
   }
 
-  @operonWorkflow({ rolesThatCanRun: ["operonAppAdmin", "operonAppUser"] })
+  @OperonWorkflow({ rolesThatCanRun: ["operonAppAdmin", "operonAppUser"] })
   static async test_workflow(
     workflowCtxt: WorkflowContext,
     name: string

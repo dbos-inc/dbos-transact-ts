@@ -13,21 +13,21 @@ export {
   OperonDataType,
   OperonMethodRegistrationBase,
 
-  LogLevel,
-  LogMask,
-  LogEventType,
+  TraceLevels,
+  LogMasks,
+  TraceEventTypes,
 
   // BaseLogEvent, // Would be OK to export for some uses I think?
 
-  required,
-  skipLogging,
-  logMask,
-  argName,
+  Required,
+  SkipLogging,
+  LogMask,
+  ArgName,
 
-  logLevel,
-  logged,
-  getApi,
-  postApi,
+  TraceLevel,
+  Traced,
+  GetApi,
+  PostApi,
 
   forEachMethod,
 } from './decorators';

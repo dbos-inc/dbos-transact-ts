@@ -3,6 +3,7 @@ import { Operon } from "./../operon";
 import { groupBy } from "lodash";
 import {
   forEachMethod,
+  LogMasks,
   OperonDataType,
   OperonMethodRegistrationBase,
 } from "./../decorators";
@@ -83,17 +84,19 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
         log_message TEXT DEFAULT NULL,\n`;
 
       for (const arg of registeredOperation.args) {
-        if (
-          arg.argType.name === "WorkflowContext" ||
-          arg.argType.name === "TransactionContext" ||
-          arg.argType.name === "CommunicatorContext"
-        ) {
+        if (arg.logMask === LogMasks.SKIP) {
           continue;
         }
-        const row = `${arg.name} ${PostgresExporter.getPGDataType(
-          arg.dataType
-        )} DEFAULT NULL,\n`;
-        createSignalTableQuery = createSignalTableQuery.concat(row);
+        else if (arg.logMask === LogMasks.HASH) {
+          const row = `${arg.name} VARCHAR(64) DEFAULT NULL,\n`;
+          createSignalTableQuery = createSignalTableQuery.concat(row);
+        }
+        else {
+          const row = `${arg.name} ${PostgresExporter.getPGDataType(
+            arg.dataType
+          )} DEFAULT NULL,\n`;
+          createSignalTableQuery = createSignalTableQuery.concat(row);
+        }
       }
       // Trim last comma and line feed
       createSignalTableQuery = createSignalTableQuery
