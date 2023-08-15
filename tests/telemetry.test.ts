@@ -8,10 +8,9 @@ import {
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { logged } from "../src/decorators";
+import { logged, operonTransaction, operonWorkflow } from "../src/decorators";
 import {
   TransactionContext,
-  WorkflowConfig,
   WorkflowContext,
   WorkflowParams,
 } from "src";
@@ -39,7 +38,7 @@ class TestClass {
     return Promise.resolve(name);
   }
 
-  @logged
+  @operonTransaction({ readOnly: false })
   static async test_function(
     txnCtxt: TransactionContext,
     name: string
@@ -53,7 +52,7 @@ class TestClass {
     return result;
   }
 
-  @logged
+  @operonWorkflow({ rolesThatCanRun: ["operonAppAdmin", "operonAppUser"] })
   static async test_workflow(
     workflowCtxt: WorkflowContext,
     name: string
@@ -68,6 +67,10 @@ class TestClass {
 }
 
 describe("operon-telemetry", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test("Operon init works with all exporters", async () => {
     const operonConfig = generateOperonTestConfig([
       CONSOLE_EXPORTER,
@@ -90,6 +93,8 @@ describe("operon-telemetry", () => {
     jest.spyOn(collector, "process").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
       operon.telemetryCollector.processAndExportSignals()
@@ -119,11 +124,11 @@ describe("operon-telemetry", () => {
       expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
 
       await collector.init();
-      const logSpy = jest.spyOn(global.console, "log");
+      const logSpy = jest.spyOn(global.console, "log").mockImplementation(); // "mute" console.log
 
       const signal1: TelemetrySignal = {
         workflowUUID: "test",
-        functionName: "create_user",
+        operationName: "create_user",
         functionID: 0,
         runAs: "test",
         timestamp: Date.now(),
@@ -302,11 +307,7 @@ describe("operon-telemetry", () => {
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
-      operon.registerTransaction(TestClass.test_function);
-      const testWorkflowConfig: WorkflowConfig = {
-        rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-      };
-      operon.registerWorkflow(TestClass.test_workflow, testWorkflowConfig);
+      jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const params: WorkflowParams = {
         runAs: "operonAppAdmin",
       };

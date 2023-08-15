@@ -18,9 +18,10 @@
 //   Integrate with Logger buffer
 
 import "reflect-metadata";
-import { TransactionContext } from "./transaction";
-import { WorkflowContext } from "./workflow";
+
 import * as crypto from 'crypto';
+import { TransactionConfig, TransactionContext } from "./transaction";
+import { WorkflowConfig, WorkflowContext } from "./workflow";
 
 /**
  * Any column type column can be.
@@ -204,7 +205,7 @@ export class OperonMethodRegistrationBase {
   apiURL : string = '';
 }
 
-class OperonMethodRegistration <This, Args extends unknown[], Return>
+export class OperonMethodRegistration <This, Args extends unknown[], Return>
   extends OperonMethodRegistrationBase
 {
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
@@ -215,6 +216,8 @@ class OperonMethodRegistration <This, Args extends unknown[], Return>
   needInitialized: boolean = true;
   origFunction : ((this: This, ...args: Args) => Promise<Return>);
   replacementFunction : ((this: This, ...args: Args) => Promise<Return>) | undefined;
+  workflowConfig?: WorkflowConfig;
+  txnConfig?: TransactionConfig;
 
   // TODO: Permissions, attachment point, error handling, etc.
 }
@@ -444,3 +447,28 @@ export function postApi(url: string) {
   return apidec;
 }
 
+export function operonWorkflow(config: WorkflowConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.workflowConfig = config;
+    return descriptor;
+  }
+  return decorator;
+}
+
+export function operonTransaction(config: TransactionConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.txnConfig = config;
+    return descriptor;
+  }
+  return decorator;
+}
