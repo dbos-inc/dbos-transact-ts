@@ -16,6 +16,7 @@ import {
   CONSOLE_EXPORTER,
   PostgresExporter,
   POSTGRES_EXPORTER,
+  Logger,
 } from './telemetry';
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
@@ -23,6 +24,7 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
+import { OperonMethodRegistration, forEachMethod } from './decorators';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -82,7 +84,7 @@ export class Operon {
         config: {}
       }]
   ]);
-  readonly transactionConfigMap: WeakMap<OperonTransaction<any, any>, TransactionConfig> = new WeakMap();
+  readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
   readonly topicConfigMap: Map<string, string[]> = new Map();
 
@@ -91,6 +93,8 @@ export class Operon {
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
+
+  readonly logger: Logger;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -117,8 +121,25 @@ export class Operon {
       }
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
+    this.logger = new Logger(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
+
+    // Register user declared operations
+    forEachMethod((registeredOperation) => {
+      const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+      for (const arg of ro.args) {
+        if (arg.argType.name === 'WorkflowContext') {
+          const wf = ro.origFunction as OperonWorkflow<any, any>;
+          this.registerWorkflow(wf, ro.workflowConfig);
+          break;
+        } else if (arg.argType.name === 'TransactionContext') {
+          const tx = ro.origFunction as OperonTransaction<any, any>;
+          this.registerTransaction(tx, ro.txnConfig);
+          break;
+        }
+      }
+    });
   }
 
   useNodePostgres() {
@@ -253,7 +274,7 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig={}) {
-    this.transactionConfigMap.set(txn, params);
+    this.transactionConfigMap.set(txn.name, params);
   }
 
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig={}) {

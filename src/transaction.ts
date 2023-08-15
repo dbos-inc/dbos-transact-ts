@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from 'pg';
 import { PrismaClient, UserDatabaseName, UserDatabaseClient } from './user_database';
-import { TelemetryCollector, TelemetrySignal} from "./telemetry";
+import { Logger } from "./telemetry";
 import { ValuesOf } from './utils';
 import { WorkflowContext} from "./workflow";
 
@@ -24,32 +24,27 @@ export class TransactionContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 
+  readonly workflowUUID: string;
+  readonly runAs: string;
+
   constructor(userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
     config: TransactionConfig,
-    private readonly workflowContext: WorkflowContext,
-    private readonly telemetryCollector: TelemetryCollector,
+    workflowContext: WorkflowContext,
+    private readonly logger: Logger,
     readonly functionID: number,
-    readonly functionName: string) {
+    readonly operationName: string) {
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
     } else if (userDatabaseName === UserDatabaseName.PRISMA) {
       this.prismaClient = client as PrismaClient;
     }
+    this.workflowUUID = workflowContext.workflowUUID;
+    this.runAs = workflowContext.runAs;
   }
 
   log(severity: string, message: string): void {
-    const workflowContext = this.workflowContext;
-    const signal: TelemetrySignal = {
-      workflowUUID: workflowContext.workflowUUID,
-      functionID: this.functionID,
-      functionName: this.functionName,
-      runAs: workflowContext.runAs,
-      timestamp: Date.now(),
-      severity: severity,
-      logMessage: message,
-    };
-    this.telemetryCollector.push(signal);
+    this.logger.log(this, severity, message);
   }
 }
