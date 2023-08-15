@@ -209,12 +209,14 @@ export class OperonMethodRegistrationBase {
 class OperonMethodRegistration <This, Args extends unknown[], Return>
   extends OperonMethodRegistrationBase
 {
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
+  {
     super();
     this.origFunction = origFunc;
   }
   needInitialized: boolean = true;
   origFunction : ((this: This, ...args: Args) => Promise<Return>);
+  replacementFunction : ((this: This, ...args: Args) => Promise<Return>) | undefined;
 
   // TODO: Permissions, attachment point, error handling, etc.
 }
@@ -330,6 +332,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     })
 
     descriptor.value = nmethod;
+    methReg.replacementFunction = nmethod;
 
     methReg.needInitialized = false;
     methodRegistry.push(methReg);
