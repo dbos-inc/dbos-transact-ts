@@ -1,10 +1,10 @@
-import { LogLevel, forEachMethod, logged, loglevel, paramName, skipLogging } from "src/decorators";
+import { TraceLevels, LogMasks, forEachMethod, Traced, TraceLevel, ArgName, SkipLogging, LogMask } from "src/decorators";
 
 class TestFunctions
 {
-    @logged
-    @loglevel(LogLevel.INFO)
-  static foo(arg1: string, arg2: Date, @skipLogging arg3: boolean, @paramName('arg4') arg_should_be_4: number): Promise<string> {
+    @Traced
+    @TraceLevel(TraceLevels.INFO)
+  static foo(@LogMask(LogMasks.HASH) arg1: string, arg2: Date, @SkipLogging arg3: boolean, @ArgName('arg4') arg_should_be_4: number): Promise<string> {
     return Promise.resolve('stringvalue'+arg1+arg2.toDateString()+arg3+arg_should_be_4);
   }
 }
@@ -35,11 +35,15 @@ describe("operon-logging", () => {
       let cts = `CREATE PGTABLEISH ${quoteSqlIdentifier('operon_log_'+m.name)} (\n`;
       // Method-specific fields
       m.args.forEach(element => {
-        if (element.skipLogging) {
+        if (element.logMask === LogMasks.SKIP) {
           return;
         }
         // NB not all types here may match the SQL string
-        cts += '  '+quoteSqlIdentifier(element.name)+' '+element.dataType.formatAsString()+',\n';
+        let ctype = element.dataType.formatAsString();
+        if (element.logMask === LogMasks.HASH) {
+          ctype = 'VARCHAR(64)'
+        }
+        cts += '  '+quoteSqlIdentifier(element.name)+' '+ctype+',\n';
       });
     
       // Generic fields

@@ -6,6 +6,7 @@
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
 //   Integrate with API registration
+//   Integrate with Operon workflows
 //   Integrate parameter validation
 //   Integrate with Authentication
 //   Integrate with error handling
@@ -13,15 +14,15 @@
 //     Or is it easier once there is a real log collector?
 //
 // Logging
-//   Collect a SQL-Like schema
-//   Log a structured line (to console)
 //   Integrate with Logger setup
 //   Integrate with Logger buffer
-//   Mask parameters
 
 import "reflect-metadata";
+
+import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
+import { CommunicatorContext } from "./communicator";
 
 /**
  * Any column type column can be.
@@ -121,7 +122,7 @@ function getArgNames(func: Function): string[] {
   return fn.split(",");
 }
 
-export enum LogLevel {
+export enum TraceLevels {
     DEBUG = "DEBUG",
     INFO = "INFO",
     WARN = "WARN",
@@ -129,21 +130,22 @@ export enum LogLevel {
     CRITICAL = "CRITICAL"
 }
 
-export enum LogMask {
+export enum LogMasks {
     NONE = "NONE",
     HASH = "HASH",
+    SKIP = "SKIP",
 }
 
-export enum LogEventType {
+export enum TraceEventTypes {
     METHOD_ENTER = 'METHOD_ENTER',
     METHOD_EXIT = 'METHOD_EXIT',
     METHOD_ERROR = 'METHOD_ERROR',
 }
 
-class BaseLogEvent {
-  eventType: LogEventType = LogEventType.METHOD_ENTER;
+class BaseTraceEvent {
+  eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
   eventComponent: string = '';
-  eventLevel: LogLevel = LogLevel.DEBUG;
+  eventLevel: TraceLevels = TraceLevels.DEBUG;
   eventTime: Date = new Date();
   authorizedUser: string = '';
   authorizedRole: string = '';
@@ -168,8 +170,7 @@ class OperonParameter {
   name: string = "";
   required: boolean = false;
   validate: boolean = true;
-  skipLogging: boolean = false;
-  logMask: LogMask = LogMask.NONE;
+  logMask: LogMasks = LogMasks.NONE;
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
   dataType: OperonDataType;
@@ -186,19 +187,21 @@ class OperonParameter {
 
 export class OperonMethodRegistrationBase {
   name: string = "";
-  logLevel : LogLevel = LogLevel.INFO;
+  traceLevel : TraceLevels = TraceLevels.INFO;
   args : OperonParameter[] = [];
 }
 
 export class OperonMethodRegistration <This, Args extends unknown[], Return>
   extends OperonMethodRegistrationBase
 {
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
+  {
     super();
     this.origFunction = origFunc;
   }
   needInitialized: boolean = true;
   origFunction : ((this: This, ...args: Args) => Promise<Return>);
+  replacementFunction : ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
 
@@ -228,6 +231,12 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
   return mParameters;
 }
 
+function generateSaltedHash(data: string, salt: string): string {
+  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
+  hash.update(data + salt);
+  return hash.digest('hex');
+}
+
 function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Return>(target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
   const methReg : OperonMethodRegistration<This, Args, Return> = 
@@ -245,8 +254,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.argType === TransactionContext || e.argType == WorkflowContext) {
-          e.skipLogging = true;
+        if (e.argType === TransactionContext || e.argType == WorkflowContext || e.argType == CommunicatorContext) {
+          e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
       }
@@ -264,32 +273,44 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       //        And skip/mask arguments
 
       // Here let's log the structured record
-      const sLogRec = new BaseLogEvent();
+      const sLogRec = new BaseTraceEvent();
       sLogRec.authorizedUser = "Get user from middleware arg 0?";
       sLogRec.authorizedRole = "Get role from middleware arg 0?";
-      sLogRec.eventType = LogEventType.METHOD_ENTER;
+      sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
-      sLogRec.eventLevel = methReg.logLevel;
+      sLogRec.eventLevel = methReg.traceLevel;
 
       args.forEach((v, idx) => {
-        if (methReg.args[idx].skipLogging) {
+        let lv = v;
+        if (methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
         }
         else {
-          sLogRec.positionalArgs.push(v);
-          sLogRec.namedArgs[methReg.args[idx].name] = v;
+          if (methReg.args[idx].logMask !== LogMasks.NONE) {
+            // For now this means hash
+            if (methReg.args[idx].dataType.dataType === 'json') {
+              lv = generateSaltedHash(JSON.stringify(v), 'JSONSALT');
+            }
+            else {
+              // Yes, we are doing the same as above for now.
+              //  It can be better if we have verified the type of the data
+              lv = generateSaltedHash(JSON.stringify(v), 'OPERONSALT');
+            }
+          }
+          sLogRec.positionalArgs.push(lv);
+          sLogRec.namedArgs[methReg.args[idx].name] = lv;
         }
       });
 
-      console.log(`${methReg.logLevel}: ${mn}: Invoked - `+ sLogRec.toString());
+      console.log(`${methReg.traceLevel}: ${mn}: Invoked - `+ sLogRec.toString());
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
-        console.log(`${methReg.logLevel}: ${mn}: Returned`);
+        console.log(`${methReg.traceLevel}: ${mn}: Returned`);
         return result;
       }
       catch (e) {
-        console.log(`${methReg.logLevel}: ${mn}: Threw`, e);
+        console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
         throw e;
       }
     };
@@ -298,6 +319,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     })
 
     descriptor.value = nmethod;
+    methReg.replacementFunction = nmethod;
 
     methReg.needInitialized = false;
     methodRegistry.push(methReg);
@@ -320,26 +342,35 @@ function registerAndWrapFunction<This, Args extends unknown[], Return>(
   return {descriptor, registration};
 }
 
-export function required(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = true;
 }
 
-export function skipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
-  curParam.skipLogging = true;
+  curParam.logMask = LogMasks.SKIP;
 }
 
-export function paramName(name: string) {
+export function ArgName(name: string) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
+  };
+}
+
+export function LogMask(mask: LogMasks) {
+  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.logMask = mask;
   };
 }
 
@@ -352,7 +383,7 @@ type MethodDecorator = <T>(
 */
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
-export function loglevel(level: LogLevel) {
+export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
   function logdec<This, Args extends unknown[], Return>(
     target: object,
@@ -360,22 +391,21 @@ export function loglevel(level: LogLevel) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.logLevel = level;    
+    registration.traceLevel = level;    
     return descriptor;
   }
   return logdec;
 }
 
-
-export function logged<This, Args extends unknown[], Return>(
+export function Traced<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
-  return loglevel(LogLevel.INFO)(target, propertyKey, descriptor);
+  return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-export function operonWorkflow(config: WorkflowConfig={}) {
+export function OperonWorkflow(config: WorkflowConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -388,7 +418,7 @@ export function operonWorkflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function operonTransaction(config: TransactionConfig={}) {
+export function OperonTransaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -400,4 +430,3 @@ export function operonTransaction(config: TransactionConfig={}) {
   }
   return decorator;
 }
-
