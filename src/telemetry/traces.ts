@@ -1,22 +1,45 @@
-import { BasicTracerProvider, Span } from "@opentelemetry/sdk-trace-base";
-import opentelemetry, { HrTime } from "@opentelemetry/api";
+import {
+  BasicTracerProvider,
+  ReadableSpan,
+  Span,
+} from "@opentelemetry/sdk-trace-base";
+import { Resource } from "@opentelemetry/resources";
+import opentelemetry from "@opentelemetry/api";
+import { hrTimeToMicroseconds } from "@opentelemetry/core";
+import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { TelemetryCollector } from "./collector";
 import { TelemetrySignal } from "./signals";
 
-// https://github.com/open-telemetry/opentelemetry-js/blob/853a7b6edeb584e800499dbb65a3b42aa45c87e8/packages/opentelemetry-core/src/common/time.ts#L139
-function hrTimeToMicroseconds(time: HrTime): number {
-  return time[0] * 1e6 + time[1] / 1e3;
+export function spanToString(span: ReadableSpan): string {
+  return JSON.stringify({
+    name: span.name,
+    kind: span.kind,
+    traceId: span.spanContext().traceId,
+    spanId: span.spanContext().spanId,
+    traceFlags: span.spanContext().traceFlags,
+    traceState: span.spanContext().traceState?.serialize(),
+    parentSpanId: span.parentSpanId,
+    start: hrTimeToMicroseconds(span.startTime),
+    duration: hrTimeToMicroseconds(span.duration),
+    attributes: span.attributes,
+    status: span.status,
+    events: span.events,
+  });
 }
 
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
-    this.tracer = new BasicTracerProvider();
+    this.tracer = new BasicTracerProvider({
+      resource: new Resource({
+        [SemanticResourceAttributes.SERVICE_NAME]: "operon",
+      }),
+    });
     this.tracer.register();
   }
 
   startSpan(name: string, parentSpan?: Span): Span {
-    const tracer = opentelemetry.trace.getTracer("default");
+    const tracer = opentelemetry.trace.getTracer("operon-tracer");
     if (parentSpan) {
       const ctx = opentelemetry.trace.setSpan(
         opentelemetry.context.active(),
@@ -30,19 +53,24 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(Date.now());
-    const readableSpan = {
-      kind: span.kind,
-      traceId: span.spanContext().traceId,
-      spanId: span.spanContext().spanId,
-      traceFlags: span.spanContext().traceFlags,
-      traceState: span.spanContext().traceState?.serialize(),
-      parentSpanId: span.parentSpanId,
+    const readableSpan: ReadableSpan = {
       name: span.name,
-      start: hrTimeToMicroseconds(span.startTime),
-      duration: hrTimeToMicroseconds(span.duration),
-      attributes: span.attributes,
+      kind: span.kind,
+      spanContext: () => span.spanContext(), // need to capture `this` from `span`
+      parentSpanId: span.parentSpanId,
+      startTime: span.startTime,
+      endTime: span.endTime,
       status: span.status,
+      attributes: span.attributes,
+      links: span.links,
       events: span.events,
+      duration: span.duration,
+      ended: span.ended,
+      resource: span.resource,
+      instrumentationLibrary: span.instrumentationLibrary,
+      droppedAttributesCount: span.droppedAttributesCount,
+      droppedEventsCount: span.droppedEventsCount,
+      droppedLinksCount: span.droppedLinksCount,
     };
 
     const workflowUUID = span.attributes.workflowUUID as string;
@@ -58,10 +86,9 @@ export class Tracer {
       runAs,
       timestamp: Date.now(),
       traceID,
-      traceSpan: JSON.stringify(readableSpan),
+      traceSpan: readableSpan,
     };
 
-    console.log(signal);
     this.telemetryCollector.push(signal);
   }
 }

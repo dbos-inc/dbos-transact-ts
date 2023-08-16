@@ -5,15 +5,12 @@ import {
   POSTGRES_EXPORTER,
   TelemetryCollector,
   CONSOLE_EXPORTER,
+  JAEGER_EXPORTER,
 } from "../src/telemetry";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
-import {
-  TransactionContext,
-  WorkflowContext,
-  WorkflowParams,
-} from "src";
+import { TransactionContext, WorkflowContext, WorkflowParams } from "src";
 import { WorkflowHandle } from "src/workflow";
 
 type TelemetrySignalDbFields = {

@@ -69,11 +69,13 @@ export class TelemetryCollector {
       }
       batch.push(signal);
     }
-    for (const exporter of this.exporters) {
-      try {
-        await exporter.export(batch);
-      } catch (e) {
-        console.error((e as Error).message);
+    if (batch.length > 0) {
+      for (const exporter of this.exporters) {
+        try {
+          await exporter.export(batch);
+        } catch (e) {
+          console.error((e as Error).message);
+        }
       }
     }
   }

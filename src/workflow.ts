@@ -148,19 +148,19 @@ export class WorkflowContext {
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#operon.tracer.startSpan(this.operationName, this.span);
+    const span: Span = this.#operon.tracer.startSpan(txn.name, this.span);
     span.setAttributes({
       'workflowUUID': this.workflowUUID,
       'operationName': txn.name,
       'runAs': this.runAs,
       'functionID': funcId,
       'readOnly': readOnly,
+      'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
     // eslint-disable-next-line no-constant-condition
     while(true) {
       const wrappedTransaction = async(client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
-        span.addEvent('TXN START');
 
         const tCtxt = new TransactionContext(
           this.#operon.userDatabase.getName(), client, config,
@@ -168,7 +168,8 @@ export class WorkflowContext {
         );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
-          tCtxt.span.addEvent('TXN CACHE HIT');
+          tCtxt.span.setAttribute('cached', true);
+          tCtxt.span.setStatus({ code: SpanStatusCode.OK });
           this.#operon.tracer.endSpan(tCtxt.span);
           return check as R;
         }
@@ -197,7 +198,7 @@ export class WorkflowContext {
 
       try {
         const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
-        span.addEvent('TXN END');
+        span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
         const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
@@ -215,7 +216,6 @@ export class WorkflowContext {
             await this.recordGuardedError(client, funcId, e);
             this.resultBuffer.clear();
           }, {});
-          span.addEvent('TXN ERROR');
           span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -235,7 +235,18 @@ export class WorkflowContext {
     if (commConfig === undefined) {
       throw new OperonError(`Unregistered External ${commFn.name}`)
     }
-    const ctxt: CommunicatorContext = new CommunicatorContext(this.functionIDGetIncrement(), commConfig);
+
+    const funcID = this.functionIDGetIncrement();
+
+    const span: Span = this.#operon.tracer.startSpan(commFn.name, this.span);
+    span.setAttributes({
+      'workflowUUID': this.workflowUUID,
+      'operationName': commFn.name,
+      'runAs': this.runAs,
+      'functionID': funcID,
+      'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
+    });
+    const ctxt: CommunicatorContext = new CommunicatorContext(funcID, span, commConfig);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
@@ -245,6 +256,9 @@ export class WorkflowContext {
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== operonNull) {
+      ctxt.span.setAttribute('cached', true);
+      ctxt.span.setStatus({ code: SpanStatusCode.OK });
+      this.#operon.tracer.endSpan(ctxt.span);
       return check as R;
     }
 
@@ -264,6 +278,8 @@ export class WorkflowContext {
             await sleep(intervalSeconds);
             intervalSeconds *= ctxt.backoffRate;
           }
+          ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+          this.#operon.tracer.endSpan(ctxt.span);
         }
       }
     } else {
@@ -271,6 +287,8 @@ export class WorkflowContext {
         result = await commFn(ctxt, ...args);
       } catch (error) {
         err = error as Error;
+        ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
+        this.#operon.tracer.endSpan(ctxt.span);
       }
     }
 
@@ -279,10 +297,14 @@ export class WorkflowContext {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
       await this.#operon.systemDatabase.recordCommunicatorError(this.workflowUUID, ctxt.functionID, err as Error);
+      ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      this.#operon.tracer.endSpan(ctxt.span);
       throw err;
     } else {
       // Record the execution and return.
       await this.#operon.systemDatabase.recordCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
+      ctxt.span.setStatus({ code: SpanStatusCode.OK });
+      this.#operon.tracer.endSpan(ctxt.span);
       return result as R;
     }
   }

@@ -16,6 +16,8 @@ import {
   CONSOLE_EXPORTER,
   PostgresExporter,
   POSTGRES_EXPORTER,
+  JAEGER_EXPORTER,
+  JaegerExporter,
   Logger,
 } from './telemetry';
 import { PoolConfig } from 'pg';
@@ -121,6 +123,8 @@ export class Operon {
           telemetryExporters.push(new ConsoleExporter());
         } else if (exporter === POSTGRES_EXPORTER) {
           telemetryExporters.push(new PostgresExporter(this, config?.observability_database));
+        } else if (exporter === JAEGER_EXPORTER) {
+          telemetryExporters.push(new JaegerExporter());
         }
       }
     }
@@ -313,8 +317,8 @@ export class Operon {
         'operationName': wf.name,
         'runAs': params.runAs,
         'functionID': wCtxt.functionID,
+        'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
       });
-      wCtxt.span.addEvent('WORKFLOW START');
 
       const checkWorkflowInput = async (input: T) => {
         // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
@@ -332,8 +336,8 @@ export class Operon {
 
       const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
       if (previousOutput !== operonNull) {
-        wCtxt.span.addEvent('WORKFLOW CACHE HIT');
-        span.setStatus({ code: SpanStatusCode.OK });
+        wCtxt.span.setAttribute('cached', true);
+        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         this.tracer.endSpan(span);
         return previousOutput as R;
       }
@@ -343,25 +347,22 @@ export class Operon {
       try {
         result = await wf(wCtxt, ...input);
         await this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
-        wCtxt.span.addEvent('WORKFLOW END');
-        span.setStatus({ code: SpanStatusCode.OK });
+        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
           result = await retrievedHandle.getResult();
-          wCtxt.span.addEvent('WORKFLOW END');
-          span.setStatus({ code: SpanStatusCode.OK });
+          wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
           const e: Error = err as Error;
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
-          wCtxt.span.addEvent('WORKFLOW ERROR');
-          span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+          wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
       } finally {
-        this.tracer.endSpan(span);
+        this.tracer.endSpan(wCtxt.span);
       }
       return result!;
     }
