@@ -7,8 +7,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "build-fdb": "tsc --project tsconfig.build-fdb.json",
-    "lint": "eslint --ext .ts .",
-    "lint-fix": "eslint --fix --ext .ts .",
+    "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
+    "lint-fdb": "eslint --fix --ext .ts .",
     "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --coverage"
   },
