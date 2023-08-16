@@ -364,6 +364,8 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.run_as).toBe(params.runAs);
       expect(txnLogEntry.severity).toBe("INFO");
       expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
+      expect(txnLogEntry.trace_id).toBe(null);
+      expect(txnLogEntry.trace_span).toBe(null);
 
       const wfLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
@@ -377,6 +379,8 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.run_as).toBe(params.runAs);
       expect(wfLogEntry.severity).toBe("INFO");
       expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
+      expect(wfLogEntry.trace_id).toBe(null);
+      expect(wfLogEntry.trace_span).toBe(null);
 
       // Exporter should export traces
       const txnTraceQueryResult =
