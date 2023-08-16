@@ -81,7 +81,9 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
         run_as TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
         severity TEXT DEFAULT NULL,
-        log_message TEXT DEFAULT NULL,\n`;
+        log_message TEXT DEFAULT NULL,
+        trace_id TEXT DEFAULT NULL,
+        trace_span JSONB DEFAULT NULL,\n`;
 
       for (const arg of registeredOperation.args) {
         if (arg.logMask === LogMasks.SKIP) {
@@ -120,7 +122,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
       const tableName: string = `signal_${operationName}`;
       const query = `
         INSERT INTO ${tableName}
-        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text, trace_id text, trace_span json)
       `;
 
       const values: string = JSON.stringify(
@@ -133,6 +135,8 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
             timestamp: signal.timestamp,
             severity: signal.severity,
             log_message: signal.logMessage,
+            trace_id: signal.traceID,
+            trace_span: signal.traceSpan,
           };
         })
       );

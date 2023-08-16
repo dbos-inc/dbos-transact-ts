@@ -12,6 +12,8 @@ import { serializeError, deserializeError } from 'serialize-error';
 import { sleep } from './utils';
 import { SystemDatabase } from './system_database';
 import { UserDatabaseClient } from './user_database';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { Span } from "@opentelemetry/sdk-trace-base";
 
 const defaultRecvTimeoutSec = 60;
 
@@ -20,6 +22,7 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export interface WorkflowParams {
   workflowUUID?: string;
   runAs?: string;
+  parentSpan?: Span;
 }
 
 export interface WorkflowConfig {
@@ -47,6 +50,7 @@ export class WorkflowContext {
 
   constructor(
     operon: Operon,
+    readonly span: Span,
     readonly workflowUUID: string,
     readonly runAs: string,
     readonly workflowConfig: WorkflowConfig,
@@ -144,16 +148,28 @@ export class WorkflowContext {
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#operon.tracer.startSpan(this.operationName, this.span);
+    span.setAttributes({
+      'workflowUUID': this.workflowUUID,
+      'operationName': txn.name,
+      'runAs': this.runAs,
+      'functionID': funcId,
+      'readOnly': readOnly,
+    });
     // eslint-disable-next-line no-constant-condition
     while(true) {
       const wrappedTransaction = async(client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
+        span.addEvent('TXN START');
+
         const tCtxt = new TransactionContext(
           this.#operon.userDatabase.getName(), client, config,
-          this, this.#operon.logger, funcId, txn.name,
+          this, this.#operon.logger, span, funcId, txn.name,
         );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
+          tCtxt.span.addEvent('TXN CACHE HIT');
+          this.#operon.tracer.endSpan(tCtxt.span);
           return check as R;
         }
 
@@ -181,23 +197,30 @@ export class WorkflowContext {
 
       try {
         const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
+        span.addEvent('TXN END');
         return result;
       } catch (err) {
         const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
         if (errCode === '40001') { // serialization_failure in PostgreSQL
+          span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis });
           // Retry serialization failures.
           await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
           continue;
         } else {
           // Record and throw other errors.
+          const e: Error = err as Error;
           await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
             await this.flushResultBuffer(client);
-            await this.recordGuardedError(client, funcId, err as Error);
+            await this.recordGuardedError(client, funcId, e);
             this.resultBuffer.clear();
           }, {});
+          span.addEvent('TXN ERROR');
+          span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
+      } finally {
+        this.#operon.tracer.endSpan(span);
       }
     }
   }

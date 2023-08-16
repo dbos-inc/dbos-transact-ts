@@ -332,7 +332,7 @@ describe("operon-telemetry", () => {
 
       const txnLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_function`
+          `SELECT * FROM signal_test_function WHERE log_message IS NOT NULL`
         );
       expect(txnLogQueryResult.rows).toHaveLength(1);
       const txnLogEntry = txnLogQueryResult.rows[0];
@@ -345,7 +345,7 @@ describe("operon-telemetry", () => {
 
       const wfLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_workflow`
+          `SELECT * FROM signal_test_workflow WHERE log_message IS NOT NULL`
         );
       expect(wfLogQueryResult.rows).toHaveLength(1);
       const wfLogEntry = wfLogQueryResult.rows[0];
