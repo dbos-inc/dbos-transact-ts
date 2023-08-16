@@ -70,12 +70,14 @@ export class TelemetryCollector {
       batch.push(signal);
     }
     if (batch.length > 0) {
+      const exports: Promise<void>[] = [];
       for (const exporter of this.exporters) {
-        try {
-          await exporter.export(batch);
-        } catch (e) {
-          console.error((e as Error).message);
-        }
+        exports.push(exporter.export(batch));
+      }
+      try {
+        await Promise.all(exports);
+      } catch (e) {
+        console.error((e as Error).message);
       }
     }
   }
