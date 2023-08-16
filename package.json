@@ -21,6 +21,8 @@
     "ts-jest": "^29.1.1"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.4.1",
+    "@opentelemetry/sdk-trace-base": "^1.15.2",
     "@types/lodash": "^4.14.197",
     "lodash": "^4.17.21",
     "pg": "^8.11.1",
