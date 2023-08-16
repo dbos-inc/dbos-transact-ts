@@ -35,17 +35,20 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
   }
 
   async export(signals: TelemetrySignal[]): Promise<void> {
-    const exportSpans: ReadableSpan[] = [];
-    signals.forEach((signal) => {
-      if (signal.traceSpan) {
-        exportSpans.push(signal.traceSpan);
-      }
-    });
-    this.exporter.export(exportSpans, (results: ExportResult) => {
-      if (results.code !== ExportResultCode.SUCCESS) {
-        throw new OperonJaegerExporterError(results);
-      }
-      console.log(results);
+    return await new Promise<void>((resolve) => {
+      const exportSpans: ReadableSpan[] = [];
+      signals.forEach((signal) => {
+        if (signal.traceSpan) {
+          exportSpans.push(signal.traceSpan);
+        }
+      });
+      this.exporter.export(exportSpans, (results: ExportResult) => {
+        if (results.code !== ExportResultCode.SUCCESS) {
+          throw new OperonJaegerExporterError(results);
+        }
+        console.log(results);
+      });
+      resolve();
     });
   }
 }

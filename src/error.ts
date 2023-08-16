@@ -116,7 +116,7 @@ export class OperonJaegerExporterError extends OperonError {
   constructor(err: ExportResult) {
     let msg = `JaegerExporter error ${err.code}`;
     if (err.error) {
-        msg = msg.concat(`: ${err.error}`);
+      msg = msg.concat(`: ${err.error.message}`);
     }
     msg = msg.concat(`\n`);
     super(msg, JaegerExporterError);
