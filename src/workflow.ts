@@ -44,20 +44,29 @@ export const StatusString = {
 export class WorkflowContext {
   functionID: number = 0;
   readonly #operon;
+  readonly span: Span;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
   readonly operationName: string;
+  readonly runAs: string;
 
   constructor(
     operon: Operon,
-    readonly span: Span,
+    params: WorkflowParams,
     readonly workflowUUID: string,
-    readonly runAs: string,
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string) {
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
+    this.runAs = params.runAs || 'defaultRole'; // runAs should have been resolved in operon.workflow()
+    this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
+    this.span.setAttributes({
+      'workflowUUID': workflowUUID,
+      'operationName': workflowName,
+      'runAs': params.runAs,
+      'functionID': 0,
+    });
   }
 
   functionIDGetIncrement() : number {

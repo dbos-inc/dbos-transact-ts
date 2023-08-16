@@ -28,7 +28,6 @@ import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
 import { OperonMethodRegistration, forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { Span } from "@opentelemetry/sdk-trace-base";
 import { Tracer } from './telemetry/traces';
 
 export interface OperonNull {}
@@ -309,16 +308,9 @@ export class Operon {
         throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
       }
 
-      const span: Span = this.tracer.startSpan(wf.name, params.parentSpan);
-      const wCtxt: WorkflowContext = new WorkflowContext(this, span, workflowUUID, params.runAs, wConfig, wf.name);
+      const wCtxt: WorkflowContext = new WorkflowContext(this, params, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
-      wCtxt.span.setAttributes({
-        'workflowUUID': workflowUUID,
-        'operationName': wf.name,
-        'runAs': params.runAs,
-        'functionID': workflowInputID,
-        'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
-      });
+      wCtxt.span.setAttributes({ 'args': JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
       const checkWorkflowInput = async (input: T) => {
         // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
@@ -338,7 +330,7 @@ export class Operon {
       if (previousOutput !== operonNull) {
         wCtxt.span.setAttribute('cached', true);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        this.tracer.endSpan(span);
+        this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
       // Record inputs for OAOO. Not needed for temporary workflows.
