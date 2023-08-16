@@ -1,6 +1,5 @@
 export interface workflow_status {
   workflow_uuid: string;
-  workflow_name: string;
   status: string;
   output: string;
   error: string;
@@ -33,7 +32,6 @@ export const systemDBSchema = `
 
   CREATE TABLE IF NOT EXISTS operon.workflow_status (
     workflow_uuid TEXT PRIMARY KEY,
-    workflow_name TEXT,
     status TEXT,
     output TEXT,
     error TEXT,
