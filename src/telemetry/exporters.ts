@@ -172,7 +172,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
             severity: signal.severity,
             log_message: signal.logMessage,
             trace_id: signal.traceID,
-            trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : "",
+            trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : null,
           };
         })
       );
