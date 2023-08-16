@@ -53,25 +53,7 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(Date.now());
-    const readableSpan: ReadableSpan = {
-      name: span.name,
-      kind: span.kind,
-      spanContext: () => span.spanContext(), // need to capture `this` from `span`
-      parentSpanId: span.parentSpanId,
-      startTime: span.startTime,
-      endTime: span.endTime,
-      status: span.status,
-      attributes: span.attributes,
-      links: span.links,
-      events: span.events,
-      duration: span.duration,
-      ended: span.ended,
-      resource: span.resource,
-      instrumentationLibrary: span.instrumentationLibrary,
-      droppedAttributesCount: span.droppedAttributesCount,
-      droppedEventsCount: span.droppedEventsCount,
-      droppedLinksCount: span.droppedLinksCount,
-    };
+    const readableSpan: ReadableSpan = span as ReadableSpan;
 
     const workflowUUID = span.attributes.workflowUUID as string;
     const functionID = span.attributes.functionID as number;
