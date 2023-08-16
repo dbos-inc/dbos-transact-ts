@@ -316,7 +316,7 @@ export class Operon {
         'workflowUUID': workflowUUID,
         'operationName': wf.name,
         'runAs': params.runAs,
-        'functionID': wCtxt.functionID,
+        'functionID': workflowInputID,
         'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
       });
 
