@@ -7,12 +7,15 @@ import {
   OperonDataType,
   OperonMethodRegistrationBase,
 } from "./../decorators";
-import { OperonPostgresExporterError } from "./../error";
+import {
+  OperonPostgresExporterError,
+  OperonJaegerExporterError,
+} from "./../error";
 import { TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
-import { ExportResult } from "@opentelemetry/core";
-import {spanToString} from "./traces";
+import { ExportResult, ExportResultCode } from "@opentelemetry/core";
+import { spanToString } from "./traces";
 
 export interface ITelemetryExporter<T, U> {
   export(signal: TelemetrySignal[]): Promise<T>;
@@ -26,7 +29,8 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
   private readonly exporter: OTLPTraceExporter;
   constructor() {
     this.exporter = new OTLPTraceExporter({
-      url: process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
+      url:
+        process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
     });
   }
 
@@ -38,6 +42,9 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
       }
     });
     this.exporter.export(exportSpans, (results: ExportResult) => {
+      if (results.code !== ExportResultCode.SUCCESS) {
+        throw new OperonJaegerExporterError(results);
+      }
       console.log(results);
     });
   }
@@ -162,7 +169,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
             severity: signal.severity,
             log_message: signal.logMessage,
             trace_id: signal.traceID,
-            trace_span: signal.traceSpan ? spanToString(signal.traceSpan): '',
+            trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : "",
           };
         })
       );

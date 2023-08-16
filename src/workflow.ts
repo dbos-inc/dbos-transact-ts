@@ -155,6 +155,7 @@ export class WorkflowContext {
       'runAs': this.runAs,
       'functionID': funcId,
       'readOnly': readOnly,
+      'isolationLevel': config.isolationLevel,
       'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
     // eslint-disable-next-line no-constant-condition
@@ -244,6 +245,10 @@ export class WorkflowContext {
       'operationName': commFn.name,
       'runAs': this.runAs,
       'functionID': funcID,
+      'retriesAllowed': commConfig.retriesAllowed,
+      'intervalSeconds': commConfig.intervalSeconds,
+      'maxAttempts': commConfig.maxAttempts,
+      'backoffRate': commConfig.backoffRate,
       'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
     const ctxt: CommunicatorContext = new CommunicatorContext(funcID, span, commConfig);
