@@ -37,8 +37,6 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
         exportSpans.push(signal.traceSpan);
       }
     });
-    console.log(exportSpans);
-    console.log(exportSpans[0].spanContext());
     this.exporter.export(exportSpans, (results: ExportResult) => {
       console.log(results);
     });
