@@ -353,6 +353,7 @@ export class Operon {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
           result = await retrievedHandle.getResult();
+          wCtxt.span.setAttribute('cached', true);
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
