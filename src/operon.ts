@@ -18,7 +18,6 @@ import {
   POSTGRES_EXPORTER,
   JAEGER_EXPORTER,
   JaegerExporter,
-  Logger,
 } from './telemetry';
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
@@ -29,6 +28,7 @@ import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } fr
 import { OperonMethodRegistration, forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Tracer } from './telemetry/traces';
+import { Logger } from './telemetry/logs';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
