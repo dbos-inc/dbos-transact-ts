@@ -210,14 +210,16 @@ export interface OperonMethodRegistrationBase {
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
 
+  // eslint-disable-next-line @typescript-eslint/ban-types
   origFunction : Function;
+  // eslint-disable-next-line @typescript-eslint/ban-types
   replacementFunction : Function | undefined;
 
   invoke(pthis: unknown, args: unknown[]) : unknown;
 }
 
 class OperonMethodRegistration <This, Args extends unknown[], Return>
-  implements OperonMethodRegistrationBase
+implements OperonMethodRegistrationBase
 {
   name: string = "";
   traceLevel : TraceLevels = TraceLevels.INFO;

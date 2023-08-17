@@ -26,7 +26,7 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
-import { OperonMethodRegistrationBase, forEachMethod } from './decorators';
+import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Tracer } from './telemetry/traces';
 
