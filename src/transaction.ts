@@ -4,6 +4,7 @@ import { PrismaClient, UserDatabaseName, UserDatabaseClient } from './user_datab
 import { Logger } from "./telemetry";
 import { ValuesOf } from './utils';
 import { WorkflowContext} from "./workflow";
+import { Span } from "@opentelemetry/sdk-trace-base";
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -32,6 +33,7 @@ export class TransactionContext {
     config: TransactionConfig,
     workflowContext: WorkflowContext,
     private readonly logger: Logger,
+    readonly span: Span,
     readonly functionID: number,
     readonly operationName: string) {
     void config;

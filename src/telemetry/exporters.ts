@@ -7,8 +7,15 @@ import {
   OperonDataType,
   OperonMethodRegistrationBase,
 } from "./../decorators";
-import { OperonPostgresExporterError } from "./../error";
+import {
+  OperonPostgresExporterError,
+  OperonJaegerExporterError,
+} from "./../error";
 import { TelemetrySignal } from "./signals";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import { ExportResult, ExportResultCode } from "@opentelemetry/core";
+import { spanToString } from "./traces";
 
 export interface ITelemetryExporter<T, U> {
   export(signal: TelemetrySignal[]): Promise<T>;
@@ -17,12 +24,43 @@ export interface ITelemetryExporter<T, U> {
   destroy?(): Promise<void>;
 }
 
+export const JAEGER_EXPORTER = "JaegerExporter";
+export class JaegerExporter implements ITelemetryExporter<void, undefined> {
+  private readonly exporter: OTLPTraceExporter;
+  constructor() {
+    this.exporter = new OTLPTraceExporter({
+      url:
+        process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
+    });
+  }
+
+  async export(signals: TelemetrySignal[]): Promise<void> {
+    return await new Promise<void>((resolve) => {
+      const exportSpans: ReadableSpan[] = [];
+      signals.forEach((signal) => {
+        if (signal.traceSpan) {
+          exportSpans.push(signal.traceSpan);
+        }
+      });
+      this.exporter.export(exportSpans, (results: ExportResult) => {
+        if (results.code !== ExportResultCode.SUCCESS) {
+          throw new OperonJaegerExporterError(results);
+        }
+        console.log(results);
+      });
+      resolve();
+    });
+  }
+}
+
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   async export(signals: TelemetrySignal[]): Promise<void> {
     return await new Promise<void>((resolve) => {
       for (const signal of signals) {
-        console.log(`[${signal.severity}] ${signal.logMessage}`);
+        if (signal.logMessage) {
+          console.log(`[${signal.severity}] ${signal.logMessage}`);
+        }
       }
       resolve();
     });
@@ -81,17 +119,17 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
         run_as TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
         severity TEXT DEFAULT NULL,
-        log_message TEXT DEFAULT NULL,\n`;
+        log_message TEXT DEFAULT NULL,
+        trace_id TEXT DEFAULT NULL,
+        trace_span JSONB DEFAULT NULL,\n`;
 
       for (const arg of registeredOperation.args) {
         if (arg.logMask === LogMasks.SKIP) {
           continue;
-        }
-        else if (arg.logMask === LogMasks.HASH) {
+        } else if (arg.logMask === LogMasks.HASH) {
           const row = `${arg.name} VARCHAR(64) DEFAULT NULL,\n`;
           createSignalTableQuery = createSignalTableQuery.concat(row);
-        }
-        else {
+        } else {
           const row = `${arg.name} ${PostgresExporter.getPGDataType(
             arg.dataType
           )} DEFAULT NULL,\n`;
@@ -120,7 +158,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
       const tableName: string = `signal_${operationName}`;
       const query = `
         INSERT INTO ${tableName}
-        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text)
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, severity text, log_message text, trace_id text, trace_span json)
       `;
 
       const values: string = JSON.stringify(
@@ -133,6 +171,8 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
             timestamp: signal.timestamp,
             severity: signal.severity,
             log_message: signal.logMessage,
+            trace_id: signal.traceID,
+            trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : null,
           };
         })
       );

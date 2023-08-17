@@ -9,11 +9,7 @@ import {
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
-import {
-  TransactionContext,
-  WorkflowContext,
-  WorkflowParams,
-} from "src";
+import { TransactionContext, WorkflowContext, WorkflowParams } from "src";
 import { WorkflowHandle } from "src/workflow";
 
 type TelemetrySignalDbFields = {
@@ -24,6 +20,8 @@ type TelemetrySignalDbFields = {
   timestamp: bigint;
   severity: string;
   log_message: string;
+  trace_id: string;
+  trace_span: JSON;
 };
 
 class TestClass {
@@ -181,16 +179,16 @@ describe("operon-telemetry", () => {
       );
       const expectedStfColumns = [
         {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
           column_name: "function_id",
           data_type: "integer",
         },
         {
-          column_name: "run_as",
-          data_type: "text",
+          column_name: "trace_span",
+          data_type: "jsonb",
+        },
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
         },
         {
           column_name: "severity",
@@ -198,6 +196,10 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "log_message",
+          data_type: "text",
+        },
+        {
+          column_name: "trace_id",
           data_type: "text",
         },
         {
@@ -210,6 +212,10 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "function_name",
+          data_type: "text",
+        },
+        {
+          column_name: "run_as",
           data_type: "text",
         },
       ];
@@ -220,16 +226,16 @@ describe("operon-telemetry", () => {
       );
       const expectedStwColumns = [
         {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
           column_name: "function_id",
           data_type: "integer",
         },
         {
-          column_name: "run_as",
-          data_type: "text",
+          column_name: "trace_span",
+          data_type: "jsonb",
+        },
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
         },
         {
           column_name: "severity",
@@ -237,6 +243,10 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "log_message",
+          data_type: "text",
+        },
+        {
+          column_name: "trace_id",
           data_type: "text",
         },
         {
@@ -251,6 +261,10 @@ describe("operon-telemetry", () => {
           column_name: "function_name",
           data_type: "text",
         },
+        {
+          column_name: "run_as",
+          data_type: "text",
+        },
       ];
       expect(stwQueryResult.rows).toEqual(expectedStwColumns);
 
@@ -259,12 +273,16 @@ describe("operon-telemetry", () => {
       );
       const expectedScuColumns = [
         {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
           column_name: "function_id",
           data_type: "integer",
+        },
+        {
+          column_name: "trace_span",
+          data_type: "jsonb",
+        },
+        {
+          column_name: "timestamp",
+          data_type: "bigint",
         },
         {
           column_name: "age",
@@ -283,7 +301,7 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
         {
-          column_name: "severity",
+          column_name: "log_message",
           data_type: "text",
         },
         {
@@ -295,11 +313,15 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
         {
+          column_name: "severity",
+          data_type: "text",
+        },
+        {
           column_name: "workflow_uuid",
           data_type: "text",
         },
         {
-          column_name: "log_message",
+          column_name: "trace_id",
           data_type: "text",
         },
       ];
@@ -332,7 +354,7 @@ describe("operon-telemetry", () => {
 
       const txnLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_function`
+          `SELECT * FROM signal_test_function WHERE log_message IS NOT NULL`
         );
       expect(txnLogQueryResult.rows).toHaveLength(1);
       const txnLogEntry = txnLogQueryResult.rows[0];
@@ -342,10 +364,12 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.run_as).toBe(params.runAs);
       expect(txnLogEntry.severity).toBe("INFO");
       expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
+      expect(txnLogEntry.trace_id).toBe(null);
+      expect(txnLogEntry.trace_span).toBe(null);
 
       const wfLogQueryResult =
         await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_workflow`
+          `SELECT * FROM signal_test_workflow WHERE log_message IS NOT NULL`
         );
       expect(wfLogQueryResult.rows).toHaveLength(1);
       const wfLogEntry = wfLogQueryResult.rows[0];
@@ -355,6 +379,31 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.run_as).toBe(params.runAs);
       expect(wfLogEntry.severity).toBe("INFO");
       expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
+      expect(wfLogEntry.trace_id).toBe(null);
+      expect(wfLogEntry.trace_span).toBe(null);
+
+      // Exporter should export traces
+      const txnTraceQueryResult =
+        await pgExporterPgClient.query<TelemetrySignalDbFields>(
+          `SELECT * FROM signal_test_function WHERE trace_id IS NOT NULL`
+        );
+      expect(txnTraceQueryResult.rows).toHaveLength(1);
+      const txnTraceEntry = txnTraceQueryResult.rows[0];
+      expect(txnTraceEntry.trace_id.length).toBe(32);
+      expect(txnTraceEntry.log_message).toBe(null);
+      expect(txnTraceEntry.severity).toBe(null);
+      expect(txnTraceEntry.trace_span).not.toBe(null);
+
+      const wfTraceQueryResult =
+        await pgExporterPgClient.query<TelemetrySignalDbFields>(
+          `SELECT * FROM signal_test_workflow WHERE trace_id IS NOT NULL`
+        );
+      expect(wfTraceQueryResult.rows).toHaveLength(1);
+      const wfTraceEntry = wfTraceQueryResult.rows[0];
+      expect(wfTraceEntry.trace_id.length).toBe(32);
+      expect(wfTraceEntry.log_message).toBe(null);
+      expect(wfTraceEntry.severity).toBe(null);
+      expect(wfTraceEntry.trace_span).not.toBe(null);
     });
   });
 });
