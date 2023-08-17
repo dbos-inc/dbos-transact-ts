@@ -26,27 +26,29 @@ const Tables = {
 
 export class FoundationDBSystemDatabase implements SystemDatabase {
 
-  dbRoot: fdb.Database<NativeValue, Buffer, NativeValue, Buffer> = null as unknown as fdb.Database<NativeValue, Buffer, NativeValue, Buffer>;
-  workflowStatusDB: fdb.Database<string, string, unknown, unknown> = null as unknown as fdb.Database<string, string, unknown, unknown>;
-  operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown> = null as unknown as fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
-  notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown> = null as unknown as fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
+  dbRoot: fdb.Database<NativeValue, Buffer, NativeValue, Buffer>;
+  workflowStatusDB: fdb.Database<string, string, unknown, unknown>;
+  operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
+  notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
 
   readonly workflowOutputBuffer: Map<string, unknown> = new Map();
-  
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async init(): Promise<void> {
+
+  constructor() {
     fdb.setAPIVersion(710, 710);
     this.dbRoot = fdb.open();
     this.workflowStatusDB = this.dbRoot.at(Tables.WorkflowStatus)
       .withKeyEncoding(fdb.encoders.string) // We use workflowUUID as the key
-      .withValueEncoding(fdb.encoders.json) // and values using JSON
+      .withValueEncoding(fdb.encoders.json); // and values using JSON
     this.operationOutputsDB = this.dbRoot.at(Tables.OperationOutputs)
       .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, function_id] as the key
-      .withValueEncoding(fdb.encoders.json) // and values using JSON
+      .withValueEncoding(fdb.encoders.json); // and values using JSON
     this.notificationsDB = this.dbRoot.at(Tables.Notifications)
       .withKeyEncoding(fdb.encoders.tuple) // We use [topic, key] as the key
-      .withValueEncoding(fdb.encoders.json) // and values using JSON
+      .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
+  
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async init(): Promise<void> {}
   
   // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {
