@@ -243,11 +243,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms, workflow_name FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1, workflow_name: "unknown"};
+      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1};
     }
-    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms, workflow_name: rows[0].workflow_name};
+    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms};
   }
   
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

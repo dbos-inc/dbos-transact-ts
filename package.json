@@ -6,9 +6,11 @@
   "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
-    "lint": "eslint --ext .ts .",
-    "lint-fix": "eslint --fix --ext .ts .",
-    "test": "npx prisma generate --schema tests/prisma/schema.prisma && tsc && jest --coverage --detectOpenHandles"
+    "build-fdb": "tsc --project tsconfig.build-fdb.json",
+    "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
+    "lint-fdb": "eslint --fix --ext .ts .",
+    "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=tests/foundationdb/*",
+    "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
   "devDependencies": {
     "@prisma/client": "^5.1.1",
@@ -31,5 +33,8 @@
     "serialize-error": "8.1.0",
     "uuid": "^9.0.0",
     "yaml": "^2.3.1"
+  },
+  "optionalDependencies": {
+    "foundationdb": "^2.0.1"
   }
 }

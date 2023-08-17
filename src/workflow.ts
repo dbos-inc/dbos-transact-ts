@@ -32,7 +32,6 @@ export interface WorkflowConfig {
 export interface WorkflowStatus {
   status: string,
   updatedAtEpochMs: number,
-  workflow_name: string
 }
 
 export const StatusString = {
@@ -397,7 +396,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now(), workflow_name: this.workflowName};
+      return {status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now()};
     } else {
       return status;
     }
