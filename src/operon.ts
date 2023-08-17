@@ -11,6 +11,8 @@ import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
 import {
+  Logger,
+  Tracer,
   TelemetryCollector,
   ConsoleExporter,
   CONSOLE_EXPORTER,
@@ -27,8 +29,6 @@ import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
 import { OperonMethodRegistration, forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { Tracer } from './telemetry/traces';
-import { Logger } from './telemetry/logs';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};

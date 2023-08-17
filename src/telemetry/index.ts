@@ -1,3 +1,5 @@
+export { Tracer } from "./traces";
+export { Logger } from "./logs";
 export { TelemetryCollector } from "./collector";
 export {
   POSTGRES_EXPORTER,
