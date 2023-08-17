@@ -1,4 +1,5 @@
 import {DatabaseError} from "pg";
+import { ExportResult } from "@opentelemetry/core";
 
 function formatPgDatabaseError(err: DatabaseError): string {
   let msg = '';
@@ -107,6 +108,18 @@ export class OperonPostgresExporterError extends OperonError {
       msg = msg.concat(formatPgDatabaseError(err));
     }
     super(msg, PostgresExporterError);
+  }
+}
+
+const JaegerExporterError = 8;
+export class OperonJaegerExporterError extends OperonError {
+  constructor(err: ExportResult) {
+    let msg = `JaegerExporter error ${err.code}`;
+    if (err.error) {
+      msg = msg.concat(`: ${err.error.message}`);
+    }
+    msg = msg.concat(`\n`);
+    super(msg, JaegerExporterError);
   }
 }
 

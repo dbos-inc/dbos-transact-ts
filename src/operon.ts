@@ -16,6 +16,8 @@ import {
   CONSOLE_EXPORTER,
   PostgresExporter,
   POSTGRES_EXPORTER,
+  JAEGER_EXPORTER,
+  JaegerExporter,
   Logger,
 } from './telemetry';
 import { PoolConfig } from 'pg';
@@ -25,6 +27,8 @@ import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
 import { OperonMethodRegistration, forEachMethod } from './decorators';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { Tracer } from './telemetry/traces';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -95,6 +99,7 @@ export class Operon {
   readonly flushBufferID: NodeJS.Timeout;
 
   readonly logger: Logger;
+  readonly tracer: Tracer;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig) {
@@ -117,11 +122,14 @@ export class Operon {
           telemetryExporters.push(new ConsoleExporter());
         } else if (exporter === POSTGRES_EXPORTER) {
           telemetryExporters.push(new PostgresExporter(this, config?.observability_database));
+        } else if (exporter === JAEGER_EXPORTER) {
+          telemetryExporters.push(new JaegerExporter());
         }
       }
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector);
+    this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
 
@@ -282,7 +290,6 @@ export class Operon {
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
-    // this.telemetryCollector.push(`Starting workflow ${wf.name}`);
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
@@ -301,8 +308,9 @@ export class Operon {
         throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
       }
 
-      const wCtxt: WorkflowContext = new WorkflowContext(this, workflowUUID, params.runAs, wConfig, wf.name);
+      const wCtxt: WorkflowContext = new WorkflowContext(this, params, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
+      wCtxt.span.setAttributes({ 'args': JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
       const checkWorkflowInput = async (input: T) => {
         // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
@@ -320,6 +328,9 @@ export class Operon {
 
       const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
       if (previousOutput !== operonNull) {
+        wCtxt.span.setAttribute('cached', true);
+        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
+        this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
       // Record inputs for OAOO. Not needed for temporary workflows.
@@ -328,16 +339,23 @@ export class Operon {
       try {
         result = await wf(wCtxt, ...input);
         await this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
+        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
           result = await retrievedHandle.getResult();
+          wCtxt.span.setAttribute('cached', true);
+          wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
-          await this.systemDatabase.recordWorkflowError(workflowUUID, err as Error);
+          const e: Error = err as Error;
+          await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
+      } finally {
+        this.tracer.endSpan(wCtxt.span);
       }
       return result!;
     }

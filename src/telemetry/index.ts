@@ -6,4 +6,6 @@ export {
   PostgresExporter,
   CONSOLE_EXPORTER,
   ConsoleExporter,
+  JAEGER_EXPORTER,
+  JaegerExporter,
 } from "./exporters";
