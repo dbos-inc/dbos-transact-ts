@@ -137,10 +137,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
   /**
    *  Guard the operation, throwing an error if a conflicting execution is detected.
    */
-  async guardOperation(client: PoolClient, workflowUUID: string, functionID: number) {
+  async recordNotificationOutput<R>(client: PoolClient, workflowUUID: string, functionID: number, output: R) {
     try {
-      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id) VALUES ($1, $2);",
-        [workflowUUID, functionID]);
+      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);",
+        [workflowUUID, functionID, JSON.stringify(output)]);
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
@@ -156,24 +156,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
 
-    await client.query("BEGIN");
-    let { rows } = await client.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    let { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
-      if (JSON.parse(rows[0].error) !== null) {
-        throw deserializeError(JSON.parse(rows[0].error));
-      } else  {
-        return JSON.parse(rows[0].output) as boolean;
-      }
+      return JSON.parse(rows[0].output) as boolean;
     }
-    await this.guardOperation(client, workflowUUID, functionID);
     ({ rows } = await client.query(`INSERT INTO operon.notifications (topic, key, message) VALUES ($1, $2, $3)
       ON CONFLICT (topic, key) DO NOTHING RETURNING 'Success';`, [topic, key, JSON.stringify(message)]));
     const success: boolean = (rows.length !== 0); // Return true if successful, false if the key already exists.
-    await client.query("UPDATE operon.operation_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      [JSON.stringify(success), workflowUUID, functionID]);
+    await this.recordNotificationOutput(client, workflowUUID, functionID, success);
     await client.query("COMMIT");
     client.release();
     return success;
@@ -181,14 +175,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // First, check for previous executions.
-    const checkRows = (await this.pool.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+    const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2",
       [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
-      if (JSON.parse(checkRows[0].error) !== null) {
-        throw deserializeError(JSON.parse(checkRows[0].error));
-      } else  {
-        return JSON.parse(checkRows[0].output) as T;
-      }
+      return JSON.parse(checkRows[0].output) as T;
     }
 
     // Then, register the key with the global notifications listener.
@@ -205,49 +195,33 @@ export class PostgresSystemDatabase implements SystemDatabase {
     });
     const received = Promise.race([messagePromise, timeoutPromise]);
 
-    // Then, check if the key is already in the DB, returning it if it is.
-    let client = await this.pool.connect();
-    await client.query(`BEGIN`);
-    await this.guardOperation(client, workflowUUID, functionID);
-    const initRecvRows = (await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key])).rows;
-    if (initRecvRows.length > 0 ) {
-      const message: T = JSON.parse(initRecvRows[0].message) as T;
-      await client.query("UPDATE operon.operation_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-        [JSON.stringify(message), workflowUUID, functionID]);
-      await client.query(`COMMIT`);
-      client.release();
-      delete this.listenerMap[`${topic}::${key}`];
-      clearTimeout(timer!);
-      return message;
-    } else {
-      await client.query(`ROLLBACK`);
+    // Check if the key is already in the DB, then wait for the notification if it isn't.
+    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE topic=$1 AND key=$2", [topic, key])).rows;
+    if (initRecvRows.length === 0 ) {
+      await received;
     }
-    client.release();
-
-    // Wait for the notification, then check if the key is in the DB, returning the message if it is and null if it isn't.
-    await received;
     clearTimeout(timer!);
-    client = await this.pool.connect();
-    await client.query(`BEGIN`);
-    await this.guardOperation(client, workflowUUID, functionID);
+
+    // Transactionally consume and return the message if it's in the DB, otherwise return null.
+    const client = await this.pool.connect();
+    await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
     const finalRecvRows = (await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key])).rows;
     let message: T | null = null;
     if (finalRecvRows.length > 0 ) {
       message = JSON.parse(finalRecvRows[0].message) as T;
     }
-    await client.query("UPDATE operon.operation_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      [JSON.stringify(message), workflowUUID, functionID]);
+    await this.recordNotificationOutput(client, workflowUUID, functionID, message);
     await client.query(`COMMIT`);
     client.release();
     return message;
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms, workflow_name FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1, workflow_name: "unknown"};
+      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1};
     }
-    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms, workflow_name: rows[0].workflow_name};
+    return {status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms};
   }
   
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
