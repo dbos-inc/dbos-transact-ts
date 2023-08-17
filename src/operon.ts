@@ -24,7 +24,7 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
-import { OperonMethodRegistration, forEachMethod } from './decorators';
+import { OperonMethodRegistrationBase, forEachMethod } from './decorators';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -127,7 +127,7 @@ export class Operon {
 
     // Register user declared operations
     forEachMethod((registeredOperation) => {
-      const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation;
       for (const arg of ro.args) {
         if (arg.argType.name === 'WorkflowContext') {
           const wf = ro.origFunction as OperonWorkflow<any, any>;

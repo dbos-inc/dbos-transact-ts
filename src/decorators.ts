@@ -198,7 +198,27 @@ class OperonParameter {
   }
 }
 
-export class OperonMethodRegistrationBase {
+export interface OperonMethodRegistrationBase {
+  name: string;
+  traceLevel : TraceLevels;
+
+  apiType : APITypes;
+  apiURL : string;
+
+  args : OperonParameter[];
+
+  workflowConfig?: WorkflowConfig;
+  txnConfig?: TransactionConfig;
+
+  origFunction : Function;
+  replacementFunction : Function | undefined;
+
+  invoke(pthis: unknown, args: unknown[]) : unknown;
+}
+
+class OperonMethodRegistration <This, Args extends unknown[], Return>
+  implements OperonMethodRegistrationBase
+{
   name: string = "";
   traceLevel : TraceLevels = TraceLevels.INFO;
 
@@ -206,14 +226,9 @@ export class OperonMethodRegistrationBase {
   apiURL : string = '';
 
   args : OperonParameter[] = [];
-}
 
-export class OperonMethodRegistration <This, Args extends unknown[], Return>
-  extends OperonMethodRegistrationBase
-{
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
   {
-    super();
     this.origFunction = origFunc;
   }
   needInitialized: boolean = true;
@@ -221,6 +236,15 @@ export class OperonMethodRegistration <This, Args extends unknown[], Return>
   replacementFunction : ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
+
+  invoke(pthis:This, args: Args) : Promise<Return> {
+    return this.replacementFunction!.call(pthis, ...args);
+  }
+
+  // CB - Why would you do this?
+  invokeReplacement(pthis:This, args: Args) : Promise<Return> {
+    return this.origFunction.call(pthis, ...args);
+  }
 
   // TODO: Permissions, attachment point, error handling, etc.
 }
@@ -417,7 +441,7 @@ export function TraceLevel(level: TraceLevels) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.traceLevel = level;    
+    registration.traceLevel = level;
     return descriptor;
   }
   return logdec;
@@ -431,6 +455,7 @@ export function Traced<This, Args extends unknown[], Return>(
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
+
 export function GetApi(url: string) {
   function apidec<This, Args extends unknown[], Return>(
     target: object,
@@ -440,6 +465,7 @@ export function GetApi(url: string) {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.apiURL = url;
     registration.apiType = APITypes.GET;
+
     return descriptor;
   }
   return apidec;
