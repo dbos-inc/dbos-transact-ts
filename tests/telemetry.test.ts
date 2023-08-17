@@ -5,7 +5,7 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { TelemetrySignal } from "../src/telemetry/signals";
+import { TelemetrySignal } from "../src/telemetry/signals";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
