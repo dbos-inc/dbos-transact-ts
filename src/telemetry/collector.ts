@@ -59,10 +59,7 @@ export class TelemetryCollector {
 
   async processAndExportSignals(): Promise<void> {
     const batch: TelemetrySignal[] = [];
-    while (
-      this.signals.size() > 0 &&
-      batch.length < this.processAndExportSignalsMaxBatchSize
-    ) {
+    while (this.signals.size() > 0 && batch.length < this.processAndExportSignalsMaxBatchSize) {
       const signal = this.pop();
       if (!signal) {
         break;

@@ -1,11 +1,17 @@
-import { CommunicatorContext, Operon, OperonConfig, TransactionContext, WorkflowContext } from "src/";
-import { v1 as uuidv1 } from 'uuid';
+import {
+  CommunicatorContext,
+  Operon,
+  OperonConfig,
+  TransactionContext,
+  WorkflowContext,
+} from "src/";
+import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 
-describe('concurrency-tests', () => {
+describe("concurrency-tests", () => {
   let operon: Operon;
-  const testTableName = 'operon_concurrency_test_kv';
+  const testTableName = "operon_concurrency_test_kv";
 
   let config: OperonConfig;
 
@@ -19,14 +25,16 @@ describe('concurrency-tests', () => {
     operon.useNodePostgres();
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    await operon.userDatabase.query(
+      `CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`
+    );
   });
 
   afterEach(async () => {
     await operon.destroy();
   });
 
-  test('duplicate-transaction',async () => {
+  test("duplicate-transaction", async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     let cnt = 0;
@@ -39,8 +47,8 @@ describe('concurrency-tests', () => {
 
     const workflowUUID = uuidv1();
     let results = await Promise.allSettled([
-      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10),
-      operon.transaction(testFunction, {workflowUUID: workflowUUID}, 10)
+      operon.transaction(testFunction, { workflowUUID: workflowUUID }, 10),
+      operon.transaction(testFunction, { workflowUUID: workflowUUID }, 10),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
@@ -48,18 +56,18 @@ describe('concurrency-tests', () => {
 
     // Read-only transactions would execute twice.
     cnt = 0;
-    operon.registerTransaction(testFunction, {readOnly: true});
+    operon.registerTransaction(testFunction, { readOnly: true });
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      operon.transaction(testFunction, {workflowUUID: readUUID}, 12),
-      operon.transaction(testFunction, {workflowUUID: readUUID}, 12)
+      operon.transaction(testFunction, { workflowUUID: readUUID }, 12),
+      operon.transaction(testFunction, { workflowUUID: readUUID }, 12),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
     expect(cnt).toBe(2);
   });
 
-  test('concurrent-gc',async () => {
+  test("concurrent-gc", async () => {
     let resolve: () => void;
     const promise = new Promise<void>((r) => {
       resolve = r;
@@ -75,13 +83,13 @@ describe('concurrency-tests', () => {
 
     // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
-    const testWorkflow = async(ctxt: WorkflowContext) => {
+    const testWorkflow = async (ctxt: WorkflowContext) => {
       if (wfCounter++ === 1) {
         resolve2!();
         await promise;
       }
       await ctxt.transaction(testFunction);
-    }
+    };
     operon.registerWorkflow(testWorkflow);
 
     const testFunction = async (ctxt: TransactionContext) => {
@@ -93,8 +101,8 @@ describe('concurrency-tests', () => {
     operon.registerTransaction(testFunction);
 
     const uuid = uuidv1();
-    await operon.workflow(testWorkflow, {workflowUUID: uuid}).getResult();
-    const handle = operon.workflow(testWorkflow, {workflowUUID: uuid});
+    await operon.workflow(testWorkflow, { workflowUUID: uuid }).getResult();
+    const handle = operon.workflow(testWorkflow, { workflowUUID: uuid });
     await promise2;
     await operon.flushWorkflowOutputBuffer();
     resolve!();
@@ -104,7 +112,7 @@ describe('concurrency-tests', () => {
     expect(wfCounter).toBe(2);
   });
 
-  test('duplicate-communicator',async () => {
+  test("duplicate-communicator", async () => {
     // Run two communicators concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
     let counter = 0;
@@ -115,7 +123,7 @@ describe('concurrency-tests', () => {
       void ctxt;
       return id;
     };
-    operon.registerCommunicator(testFunction, {retriesAllowed: false});
+    operon.registerCommunicator(testFunction, { retriesAllowed: false });
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number) => {
       const funcResult = await workflowCtxt.external(testFunction, id);
@@ -125,8 +133,12 @@ describe('concurrency-tests', () => {
 
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 11).getResult(),
-      operon.workflow(testWorkflow, {workflowUUID: workflowUUID}, 11).getResult()
+      operon
+        .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
+        .getResult(),
+      operon
+        .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
+        .getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -134,22 +146,24 @@ describe('concurrency-tests', () => {
     expect(counter).toBeGreaterThanOrEqual(1);
   });
 
-  test('duplicate-notifications',async () => {
+  test("duplicate-notifications", async () => {
     // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
-    
+
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
-    operon.registerTopic('testTopic', ['defaultRole']);
+    operon.registerTopic("testTopic", ["defaultRole"]);
     const recvResPromise = Promise.allSettled([
-      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2),
-      operon.recv({workflowUUID: recvUUID}, 'testTopic', 'testmsg', 2)
+      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
+      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
 
-    await expect(operon.send({workflowUUID: sendUUID}, "testTopic", "testmsg", "hello")).resolves.toBe(true);
+    await expect(
+      operon.send({ workflowUUID: sendUUID }, "testTopic", "testmsg", "hello")
+    ).resolves.toBe(true);
 
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
@@ -162,5 +176,4 @@ describe('concurrency-tests', () => {
     const recvHandle = operon.retrieveWorkflow(recvUUID);
     await expect(recvHandle.getResult()).resolves.toBe("hello");
   });
-
 });

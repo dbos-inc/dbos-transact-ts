@@ -2,7 +2,7 @@ import { deserializeError, serializeError } from "serialize-error";
 import { OperonNull, operonNull } from "../operon";
 import { SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
-import * as fdb from 'foundationdb';
+import * as fdb from "foundationdb";
 import { OperonWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 
@@ -25,7 +25,6 @@ const Tables = {
 } as const;
 
 export class FoundationDBSystemDatabase implements SystemDatabase {
-
   dbRoot: fdb.Database<NativeValue, Buffer, NativeValue, Buffer>;
   workflowStatusDB: fdb.Database<string, string, unknown, unknown>;
   operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
@@ -36,27 +35,30 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   constructor() {
     fdb.setAPIVersion(710, 710);
     this.dbRoot = fdb.open();
-    this.workflowStatusDB = this.dbRoot.at(Tables.WorkflowStatus)
+    this.workflowStatusDB = this.dbRoot
+      .at(Tables.WorkflowStatus)
       .withKeyEncoding(fdb.encoders.string) // We use workflowUUID as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
-    this.operationOutputsDB = this.dbRoot.at(Tables.OperationOutputs)
+    this.operationOutputsDB = this.dbRoot
+      .at(Tables.OperationOutputs)
       .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, function_id] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
-    this.notificationsDB = this.dbRoot.at(Tables.Notifications)
+    this.notificationsDB = this.dbRoot
+      .at(Tables.Notifications)
       .withKeyEncoding(fdb.encoders.tuple) // We use [topic, key] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
-  
+
   // eslint-disable-next-line @typescript-eslint/require-await
   async init(): Promise<void> {}
-  
+
   // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {
     this.dbRoot.close();
   }
-  
+
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | OperonNull> {
-    const output = await this.workflowStatusDB.get(workflowUUID) as WorkflowOutput<R> | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<R> | undefined;
     if (output === undefined) {
       return operonNull;
     } else if (output.status === StatusString.ERROR) {
@@ -65,12 +67,12 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       return output.output;
     }
   }
-  
+
   // eslint-disable-next-line @typescript-eslint/require-await
   async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
     this.workflowOutputBuffer.set(workflowUUID, output);
   }
-  
+
   async flushWorkflowOutputBuffer(): Promise<string[]> {
     const localBuffer = new Map(this.workflowOutputBuffer);
     this.workflowOutputBuffer.clear();
@@ -81,24 +83,24 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
           status: StatusString.SUCCESS,
           error: null,
           output: output,
-          updatedAtEpochMs: Math.floor((new Date()).getTime()/1000)
+          updatedAtEpochMs: Math.floor(new Date().getTime() / 1000),
         });
       }
     });
     return Array.from(localBuffer.keys());
   }
-  
+
   async recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.workflowStatusDB.set(workflowUUID, {
       status: StatusString.ERROR,
       error: serialErr,
-      output: null
+      output: null,
     });
   }
-  
+
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
-    const output = await this.operationOutputsDB.get([workflowUUID, functionID]) as OperationOutput<R> | undefined;
+    const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<R> | undefined;
     if (output === undefined) {
       return operonNull;
     } else if (JSON.parse(output.error) !== null) {
@@ -107,7 +109,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       return output.output;
     }
   }
-  
+
   async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
@@ -117,11 +119,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       txn.set([workflowUUID, functionID], {
         error: null,
-        output: output
-      })
+        output: output,
+      });
     });
   }
-  
+
   async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.operationOutputsDB.doTransaction(async (txn) => {
@@ -132,19 +134,19 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       txn.set([workflowUUID, functionID], {
         error: serialErr,
-        output: null
-      })
+        output: null,
+      });
     });
   }
-  
+
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const output = await this.workflowStatusDB.get(workflowUUID) as WorkflowOutput<unknown> | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: -1};
+      return { status: StatusString.UNKNOWN, updatedAtEpochMs: -1 };
     }
-    return {status: output.status, updatedAtEpochMs: output.updatedAtEpochMs};
+    return { status: output.status, updatedAtEpochMs: output.updatedAtEpochMs };
   }
-  
+
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
     const watch = await this.workflowStatusDB.getAndWatch(workflowUUID);
     let value = watch.value;
@@ -162,33 +164,33 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       throw deserializeError(JSON.parse(output.error));
     }
   }
-  
+
   async send<T>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const output = await operationOutputs.get([workflowUUID, functionID]) as OperationOutput<boolean>;
+      const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
       if (output !== undefined) {
         return output.output;
       }
-      const success = await notifications.get([topic, key]) === undefined;
+      const success = (await notifications.get([topic, key])) === undefined;
       if (success) {
         notifications.set([topic, key], message);
       }
-      operationOutputs.set([workflowUUID, functionID], {error: null, output: success});
+      operationOutputs.set([workflowUUID, functionID], { error: null, output: success });
       return success;
     });
   }
-  
+
   async recv<T>(workflowUUID: string, functionID: number, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
-    const output = await this.operationOutputsDB.get([workflowUUID, functionID]) as OperationOutput<T | null> | undefined;
+    const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;
     if (output !== undefined) {
       return output.output;
     }
     const watch = await this.notificationsDB.getAndWatch([topic, key]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
-        watch.cancel()
+        watch.cancel();
       }, timeoutSeconds * 1000);
       await watch.promise;
       clearInterval(timeout);
@@ -198,7 +200,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const message = await notifications.get([topic, key]) as T | undefined;
+      const message = (await notifications.get([topic, key])) as T | undefined;
       if (message === undefined) {
         return null;
       }
@@ -206,7 +208,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       if (output !== undefined) {
         throw new OperonWorkflowConflictUUIDError();
       }
-      operationOutputs.set([workflowUUID, functionID], {error: null, output: message});
+      operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
       return message;
     });
   }

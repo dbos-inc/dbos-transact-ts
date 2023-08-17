@@ -1,16 +1,8 @@
 import { Client, QueryConfig, QueryArrayResult } from "pg";
 import { Operon } from "./../operon";
 import { groupBy } from "lodash";
-import {
-  forEachMethod,
-  LogMasks,
-  OperonDataType,
-  OperonMethodRegistrationBase,
-} from "./../decorators";
-import {
-  OperonPostgresExporterError,
-  OperonJaegerExporterError,
-} from "./../error";
+import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
+import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
 import { TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
@@ -29,8 +21,7 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
   private readonly exporter: OTLPTraceExporter;
   constructor() {
     this.exporter = new OTLPTraceExporter({
-      url:
-        process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
+      url: process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
     });
   }
 
@@ -68,15 +59,10 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
 }
 
 export const POSTGRES_EXPORTER = "PostgresExporter";
-export class PostgresExporter
-implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
-{
+export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]> {
   readonly pgClient: Client;
 
-  constructor(
-    private readonly operon: Operon,
-    readonly observabilityDBName: string = "operon_observability"
-  ) {
+  constructor(private readonly operon: Operon, readonly observabilityDBName: string = "operon_observability") {
     const pgClientConfig = { ...operon.config.poolConfig };
     pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
@@ -93,9 +79,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
     const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
-    const dbExists = await pgSystemClient.query(
-      `SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`
-    );
+    const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`);
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
       await pgSystemClient.query(`CREATE DATABASE ${this.observabilityDBName}`);
@@ -130,16 +114,12 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
           const row = `${arg.name} VARCHAR(64) DEFAULT NULL,\n`;
           createSignalTableQuery = createSignalTableQuery.concat(row);
         } else {
-          const row = `${arg.name} ${PostgresExporter.getPGDataType(
-            arg.dataType
-          )} DEFAULT NULL,\n`;
+          const row = `${arg.name} ${PostgresExporter.getPGDataType(arg.dataType)} DEFAULT NULL,\n`;
           createSignalTableQuery = createSignalTableQuery.concat(row);
         }
       }
       // Trim last comma and line feed
-      createSignalTableQuery = createSignalTableQuery
-        .slice(0, -2)
-        .concat("\n);");
+      createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
     }
   }
@@ -149,9 +129,7 @@ implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]>
   }
 
   process(signals: TelemetrySignal[]): QueryConfig[] {
-    const groupByFunctionName: Map<string, TelemetrySignal[]> = new Map(
-      Object.entries(groupBy(signals, ({ operationName }) => operationName))
-    );
+    const groupByFunctionName: Map<string, TelemetrySignal[]> = new Map(Object.entries(groupBy(signals, ({ operationName }) => operationName)));
     const queries: QueryConfig[] = [];
 
     for (const [operationName, signals] of groupByFunctionName) {
