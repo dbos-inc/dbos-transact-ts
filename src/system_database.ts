@@ -202,7 +202,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     clearTimeout(timer!);
 
-    // Transactionally check if the key is in the DB, returning the message if it is and null if it isn't.
+    // Transactionally consume and return the message if it's in the DB, otherwise return null.
     const client = await this.pool.connect();
     await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
     const finalRecvRows = (await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key])).rows;
