@@ -5,6 +5,7 @@ import { Logger } from "./telemetry";
 import { ValuesOf } from './utils';
 import { WorkflowContext} from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
+import { OperonContext } from './context';
 
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
 
@@ -21,7 +22,7 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>
 
-export class TransactionContext {
+export class TransactionContext extends OperonContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 
@@ -35,7 +36,10 @@ export class TransactionContext {
     private readonly logger: Logger,
     readonly span: Span,
     readonly functionID: number,
-    readonly operationName: string) {
+    readonly operationName: string)
+  {
+    super();
+
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;

@@ -457,7 +457,6 @@ export function Traced<This, Args extends unknown[], Return>(
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-
 export function GetApi(url: string) {
   function apidec<This, Args extends unknown[], Return>(
     target: object,

@@ -1,4 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
+import { OperonContext } from "./context";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
@@ -10,8 +11,8 @@ export interface CommunicatorConfig {
   backoffRate?: number; // The multiplier by which the retry interval increases after every retry attempt (default 2).
 }
 
-export class CommunicatorContext {
-
+export class CommunicatorContext extends OperonContext
+{
   readonly functionID: number;
   readonly retriesAllowed: boolean;
   readonly intervalSeconds: number;
@@ -20,7 +21,9 @@ export class CommunicatorContext {
   readonly span: Span;
 
   // TODO: Validate the parameters.
-  constructor(functionID: number, span: Span, params: CommunicatorConfig) {
+  constructor(functionID: number, span: Span, params: CommunicatorConfig)
+  {
+    super();
     this.functionID = functionID;
     this.span = span;
     this.retriesAllowed = params.retriesAllowed ?? true;
@@ -28,5 +31,4 @@ export class CommunicatorContext {
     this.maxAttempts = params.maxAttempts ?? 3;
     this.backoffRate = params.backoffRate ?? 2;
   }
-
 }

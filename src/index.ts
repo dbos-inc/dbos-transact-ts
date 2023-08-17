@@ -1,5 +1,10 @@
 export { Operon, OperonConfig } from './operon';
-export { TransactionContext } from './transaction';
+
+export {
+  TransactionContext,
+  TransactionConfig,
+} from './transaction';
+
 export { WorkflowContext, WorkflowConfig, WorkflowParams, WorkflowHandle } from './workflow';
 export { CommunicatorContext } from './communicator';
 export {
@@ -27,8 +32,12 @@ export {
   TraceLevel,
   Traced,
 
+  APITypes,
   GetApi,
   PostApi,
+
+  OperonTransaction,
+  OperonWorkflow,
 
   forEachMethod,
 } from './decorators';

@@ -14,6 +14,7 @@ import { SystemDatabase } from './system_database';
 import { UserDatabaseClient } from './user_database';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
+import { OperonContext } from './context';
 
 const defaultRecvTimeoutSec = 60;
 
@@ -41,7 +42,7 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext {
+export class WorkflowContext extends OperonContext {
   functionID: number = 0;
   readonly #operon;
   readonly span: Span;
@@ -55,7 +56,9 @@ export class WorkflowContext {
     params: WorkflowParams,
     readonly workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
-    readonly workflowName: string) {
+    readonly workflowName: string)
+  {
+    super ();
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
