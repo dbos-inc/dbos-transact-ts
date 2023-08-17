@@ -195,14 +195,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     });
     const received = Promise.race([messagePromise, timeoutPromise]);
 
-    // Then, check if the key is already in the DB, returning it if it is.
+    // Check if the key is already in the DB, then wait for the notification if it isn't.
     const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE topic=$1 AND key=$2", [topic, key])).rows;
     if (initRecvRows.length === 0 ) {
       await received;
     }
     clearTimeout(timer!);
 
-    // Wait for the notification, then check if the key is in the DB, returning the message if it is and null if it isn't.
+    // Transactionally check if the key is in the DB, returning the message if it is and null if it isn't.
     const client = await this.pool.connect();
     await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
     const finalRecvRows = (await client.query<notifications>("DELETE FROM operon.notifications WHERE topic=$1 AND key=$2 RETURNING message", [topic, key])).rows;
