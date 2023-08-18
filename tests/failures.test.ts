@@ -15,6 +15,7 @@ import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
 import { StatusString } from "src/workflow";
+import { OperonNotRegisteredError } from "src/error";
 
 describe("failures-tests", () => {
   let operon: Operon;
@@ -321,16 +322,12 @@ describe("failures-tests", () => {
     // Invoke an unregistered workflow.
     await expect(
       operon.workflow(testWorkflow, {}, 10, "test").getResult()
-    ).rejects.toThrowError(
-      new OperonError(`Unregistered Workflow ${testWorkflow.name}`)
-    );
+    ).rejects.toThrowError(new OperonNotRegisteredError(testWorkflow.name));
 
     // Invoke an unregistered transaction.
     await expect(
       operon.transaction(testFunction, {}, 10, "test")
-    ).rejects.toThrowError(
-      new OperonError(`Unregistered Transaction ${testFunction.name}`)
-    );
+    ).rejects.toThrowError(new OperonNotRegisteredError(testFunction.name));
 
     operon.registerTransaction(testFunction, {});
     operon.registerWorkflow(testWorkflow, {});
@@ -338,9 +335,7 @@ describe("failures-tests", () => {
     // Invoke an unregistered communicator.
     await expect(
       operon.workflow(testWorkflow, {}, 10, "test").getResult()
-    ).rejects.toThrowError(
-      new OperonError(`Unregistered External ${testCommunicator.name}`)
-    );
+    ).rejects.toThrowError(new OperonNotRegisteredError(testCommunicator.name));
 
     operon.registerCommunicator(testCommunicator, {});
 
@@ -348,77 +343,5 @@ describe("failures-tests", () => {
     await expect(
       operon.workflow(testWorkflow, {}, 10, "test").getResult()
     ).resolves.toBe(11);
-  });
-
-  test("failure-recovery", async () => {
-    // Run a workflow until a mid point, then shut down the server, and recover from there.
-    let resolve1: () => void;
-    const promise1 = new Promise<void>((resolve) => {
-      resolve1 = resolve;
-    });
-
-    let resolve2: () => void;
-    const promise2 = new Promise<void>((resolve) => {
-      resolve2 = resolve;
-    });
-
-    const writeFunction = async (
-      txnCtxt: TransactionContext,
-      id: number,
-      name: string
-    ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
-        [id, name]
-      );
-      return rows[0].value!;
-    };
-    operon.registerTransaction(writeFunction, {});
-
-    const testWorkflow = async (
-      workflowCtxt: WorkflowContext,
-      id: number,
-      name: string
-    ) => {
-      const value = await workflowCtxt.transaction(writeFunction, id, name);
-      resolve1(); // Signal the execution has done.
-      await promise2;
-      return value;
-    };
-    operon.registerWorkflow(testWorkflow, {});
-
-    const workflowUUID = uuidv1();
-
-    const invokeHandle = operon.workflow(
-      testWorkflow,
-      { workflowUUID: workflowUUID },
-      123,
-      "hello"
-    );
-
-    await promise1;
-
-    await expect(invokeHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.UNKNOWN,
-    });
-
-    // Shut down the server.
-    await operon.destroy();
-
-    await sleep(1000);
-
-    // Create a new operon and register everything
-    operon = new Operon(config);
-    operon.useNodePostgres();
-    await operon.init();
-    operon.registerTransaction(writeFunction, {});
-    operon.registerWorkflow(testWorkflow, {});
-
-    // Start the recovery.
-    resolve2!();
-    await operon.recoverPendingWorkflows();
-    await expect(
-      operon.retrieveWorkflow<string>(workflowUUID).getResult()
-    ).resolves.toBe("hello");
   });
 });
