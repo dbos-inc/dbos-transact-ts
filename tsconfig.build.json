@@ -1,11 +1,6 @@
 {
-  "extends": "./tsconfig.json",
-  "include": [
-    "src/**/*",
-    "tests/**/*",
-    "schemas/**/*"
-  ],
+  "extends": "./tsconfig.build-fdb.json",
   "exclude": [
-    "tests/prisma.test.ts"
+    "src/foundationdb/**/*",
   ]
 }

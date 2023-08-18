@@ -11,4 +11,3 @@ export interface TelemetrySignal {
   traceID?: string;
   traceSpan?: ReadableSpan;
 }
-

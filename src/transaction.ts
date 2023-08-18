@@ -17,9 +17,9 @@ export const IsolationLevel = {
   ReadUncommitted: "READ UNCOMMITTED",
   ReadCommitted: "READ COMMITTED",
   RepeatableRead: "REPEATABLE READ",
-  Serializable: "SERIALIZABLE"
+  Serializable: "SERIALIZABLE",
 } as const;
-export type IsolationLevel = ValuesOf<typeof IsolationLevel>
+export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export class TransactionContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
@@ -28,14 +28,16 @@ export class TransactionContext {
   readonly workflowUUID: string;
   readonly runAs: string;
 
-  constructor(userDatabaseName: UserDatabaseName,
+  constructor(
+    userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
     config: TransactionConfig,
     workflowContext: WorkflowContext,
     private readonly logger: Logger,
     readonly span: Span,
     readonly functionID: number,
-    readonly operationName: string) {
+    readonly operationName: string
+  ) {
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;

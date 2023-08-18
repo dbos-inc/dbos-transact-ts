@@ -1,8 +1,8 @@
-import {DatabaseError} from "pg";
+import { DatabaseError } from "pg";
 import { ExportResult } from "@opentelemetry/core";
 
 function formatPgDatabaseError(err: DatabaseError): string {
-  let msg = '';
+  let msg = "";
   if (err.severity) {
     msg = msg.concat(`severity: ${err.severity} \n`);
   }
@@ -51,7 +51,6 @@ function formatPgDatabaseError(err: DatabaseError): string {
   return msg;
 }
 
-
 export class OperonError extends Error {
   // TODO: define a better coding system.
   constructor(msg: string, readonly operonErrorCode: number = 1) {
@@ -77,9 +76,7 @@ export class OperonInitializationError extends OperonError {
 const TopicPermissionDeniedError = 4;
 export class OperonTopicPermissionDeniedError extends OperonError {
   constructor(topic: string, workflowUUID: string, functionID: number, runAs: string) {
-    const msg =
-      `Subject ${runAs} does not have permission on topic ${topic}.`
-      + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
+    const msg = `Subject ${runAs} does not have permission on topic ${topic}.` + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
     super(msg, TopicPermissionDeniedError);
   }
 }
@@ -94,8 +91,7 @@ export class OperonWorkflowConflictUUIDError extends OperonError {
 const WorkflowUnknownError = 6;
 export class OperonWorkflowUnknownError extends OperonError {
   constructor(workflowUUID: string, workflowname: string) {
-    const msg =
-      `Workflow (UUID: ${workflowUUID} Name: ${workflowname}) unknown during recovery`;
+    const msg = `Workflow (UUID: ${workflowUUID} Name: ${workflowname}) unknown during recovery`;
     super(msg, WorkflowUnknownError);
   }
 }
@@ -122,4 +118,3 @@ export class OperonJaegerExporterError extends OperonError {
     super(msg, JaegerExporterError);
   }
 }
-

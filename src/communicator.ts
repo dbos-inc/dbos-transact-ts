@@ -11,7 +11,6 @@ export interface CommunicatorConfig {
 }
 
 export class CommunicatorContext {
-
   readonly functionID: number;
   readonly retriesAllowed: boolean;
   readonly intervalSeconds: number;
@@ -28,5 +27,4 @@ export class CommunicatorContext {
     this.maxAttempts = params.maxAttempts ?? 3;
     this.backoffRate = params.backoffRate ?? 2;
   }
-
 }
