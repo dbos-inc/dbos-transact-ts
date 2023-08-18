@@ -1,8 +1,36 @@
-export { Operon, OperonConfig } from "./operon";
-export { TransactionContext } from "./transaction";
-export { WorkflowContext, WorkflowConfig, WorkflowParams, WorkflowHandle, StatusString } from "./workflow";
-export { CommunicatorContext } from "./communicator";
-export { OperonError, OperonInitializationError, OperonTopicPermissionDeniedError, OperonWorkflowPermissionDeniedError } from "./error";
+export {
+  Operon,
+  OperonConfig,
+} from './operon';
+
+export {
+  OperonContext,
+} from './context';
+
+export {
+  TransactionContext,
+  TransactionConfig,
+} from './transaction';
+
+export {
+  WorkflowContext,
+  WorkflowConfig,
+  WorkflowParams,
+  WorkflowHandle,
+  StatusString
+} from './workflow';
+
+export {
+  CommunicatorContext
+} from './communicator';
+
+export {
+  OperonError,
+  OperonInitializationError,
+  OperonTopicPermissionDeniedError,
+  OperonWorkflowPermissionDeniedError
+} from './error';
+
 export {
   OperonFieldType,
   OperonDataType,
@@ -18,5 +46,9 @@ export {
   ArgName,
   TraceLevel,
   Traced,
+
+  OperonTransaction,
+  OperonWorkflow,
+
   forEachMethod,
 } from "./decorators";
