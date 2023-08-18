@@ -88,11 +88,11 @@ export class OperonWorkflowConflictUUIDError extends OperonError {
   }
 }
 
-const WorkflowUnknownError = 6;
-export class OperonWorkflowUnknownError extends OperonError {
-  constructor(workflowUUID: string, workflowname: string) {
-    const msg = `Workflow (UUID: ${workflowUUID} Name: ${workflowname}) unknown during recovery`;
-    super(msg, WorkflowUnknownError);
+const NotRegisteredError = 6;
+export class OperonNotRegisteredError extends OperonError {
+  constructor(name: string) {
+    const msg = `Operation (Name: ${name}) not registered`;
+    super(msg, NotRegisteredError);
   }
 }
 
