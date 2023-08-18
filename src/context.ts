@@ -5,9 +5,9 @@ export class OperonContext {
   response: unknown;
 
   //readonly span: Span;
-  
+
   // TODO: Validate the parameters.
   constructor() {
     //this.span = span;
-  }  
+  }
 }

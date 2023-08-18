@@ -1,7 +1,11 @@
 export {
   Operon,
-  OperonConfig
+  OperonConfig,
 } from './operon';
+
+export {
+  OperonContext,
+} from './context';
 
 export {
   TransactionContext,
