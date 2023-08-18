@@ -23,6 +23,7 @@ import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { CommunicatorContext } from "./communicator";
+import { OperonContext } from "./context";
 
 /**
  * Any column type column can be.
@@ -458,10 +459,10 @@ export function Traced<This, Args extends unknown[], Return>(
 }
 
 export function GetApi(url: string) {
-  function apidec<This, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.apiURL = url;
@@ -473,10 +474,10 @@ export function GetApi(url: string) {
 }
 
 export function PostApi(url: string) {
-  function apidec<This, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.apiURL = url;
@@ -490,7 +491,7 @@ export function OperonWorkflow(config: WorkflowConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
@@ -503,7 +504,7 @@ export function OperonTransaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
   {
     const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
