@@ -10,7 +10,7 @@ export interface UserDatabase {
 
   getName() : UserDatabaseName;
 
-  transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, txnName: string, workflowUUID:string, config: TransactionConfig, ...args: T) : Promise<R>;
+  transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T) : Promise<R>;
   query<R>(sql: string, ...params: any[]) : Promise<R[]>;
   queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]) : Promise<R[]>;
   getPostgresErrorCode(error: unknown) : string | null;
@@ -50,7 +50,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     return UserDatabaseName.PGNODE;
   }
   
-  async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, txnName: string, workflowUUID:string, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -64,7 +64,6 @@ export class PGNodeUserDatabase implements UserDatabase {
       return result;
     } catch(err) {
       await client.query(`ROLLBACK`);
-      console.error(`Error in transaction ${txnName} for workflow ${workflowUUID}: ${err}`);
       throw err;
     } finally {
       client.release();
@@ -126,7 +125,7 @@ export class PrismaUserDatabase implements UserDatabase {
     return UserDatabaseName.PRISMA;
   }
   
-  async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, txnName: string, workflowUUID: string, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let isolationLevel: string;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
