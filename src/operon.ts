@@ -136,6 +136,7 @@ export class Operon {
     // Register user declared operations
     forEachMethod((registeredOperation) => {
       const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+      console.log(`Registering ${ro.origFunction.name} as ${ro.name}`);
       for (const arg of ro.args) {
         if (arg.argType.name === 'WorkflowContext') {
           const wf = ro.origFunction as OperonWorkflow<any, any>;

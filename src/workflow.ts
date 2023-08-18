@@ -110,7 +110,7 @@ export class WorkflowContext {
     } catch (error) {
       const code = this.#operon.userDatabase.getPostgresErrorCode(error);
       if (code === '40001' || code === '23505') { // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
@@ -207,7 +207,7 @@ export class WorkflowContext {
       }
 
       try {
-        const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
+        const result = await this.#operon.userDatabase.transaction(wrappedTransaction, txn.name, this.workflowUUID, config);
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
@@ -225,7 +225,7 @@ export class WorkflowContext {
             await this.flushResultBuffer(client);
             await this.recordGuardedError(client, funcId, e);
             this.resultBuffer.clear();
-          }, {});
+          }, txn.name, this.workflowUUID, {});
           span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -265,7 +265,7 @@ export class WorkflowContext {
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
-    }, {});
+    }, commFn.name, this.workflowUUID, {});
 
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
@@ -339,7 +339,7 @@ export class WorkflowContext {
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
-    }, {});
+    }, "send", this.workflowUUID, {});
 
     return this.#operon.systemDatabase.send(this.workflowUUID, functionID, topic, key, message);
   }
@@ -361,7 +361,7 @@ export class WorkflowContext {
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
-    }, {});
+    }, "recv", this.workflowUUID, {});
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, key, timeoutSeconds);
   }

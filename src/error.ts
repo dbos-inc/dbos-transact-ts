@@ -86,8 +86,8 @@ export class OperonTopicPermissionDeniedError extends OperonError {
 
 const ConflictingUUIDError = 5;
 export class OperonWorkflowConflictUUIDError extends OperonError {
-  constructor() {
-    super("Conflicting UUIDs", ConflictingUUIDError);
+  constructor(workflowUUID: string) {
+    super(`Conflicting UUID ${workflowUUID}`, ConflictingUUIDError);
   }
 }
 
