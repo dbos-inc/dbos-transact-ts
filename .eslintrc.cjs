@@ -1,30 +1,35 @@
 /* eslint-env node */
 module.exports = {
-    extends: ['eslint:recommended',
-              'plugin:@typescript-eslint/recommended',
-              'plugin:@typescript-eslint/recommended-type-checked'],
-    parser: '@typescript-eslint/parser',
-    "parserOptions": { "project": ["./tsconfig.json"] },
-    plugins: ['@typescript-eslint'],
-    parserOptions: {
-      project: true,
-      tsconfigRootDir: __dirname,
+  extends: [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/recommended-type-checked",
+  ],
+  parser: "@typescript-eslint/parser",
+  parserOptions: { project: ["./tsconfig.json"] },
+  plugins: ["@typescript-eslint"],
+  parserOptions: {
+    project: true,
+    tsconfigRootDir: __dirname,
+  },
+  root: true,
+  ignorePatterns: ["dist/"],
+  overrides: [
+    {
+      files: ["*.js"],
+      extends: ["plugin:@typescript-eslint/disable-type-checked"],
     },
-    root: true,
-    ignorePatterns: ['dist/'],
-    overrides: [
+  ],
+  rules: {
+    "@typescript-eslint/indent": "off",
+    "@typescript-eslint/unbound-method": [
+      "error",
       {
-        files: ['*.js'],
-        extends: ['plugin:@typescript-eslint/disable-type-checked'],
+        ignoreStatic: true,
       },
     ],
-    rules: {
-      'indent': ['error', 2],
-      "@typescript-eslint/unbound-method": ["error", {
-        "ignoreStatic": true
-      }],
-    },
-    "env": {
-      "node": true
-    },
+  },
+  env: {
+    node: true,
+  },
 };

@@ -19,7 +19,7 @@
 
 import "reflect-metadata";
 
-import * as crypto from 'crypto';
+import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { CommunicatorContext } from "./communicator";
@@ -27,28 +27,18 @@ import { CommunicatorContext } from "./communicator";
 /**
  * Any column type column can be.
  */
-export type OperonFieldType =
-    | 'integer'
-    | 'double'
-    | 'decimal'
-    | 'timestamp'
-    | 'text'
-    | 'varchar'
-    | 'boolean'
-    | 'uuid'
-    | 'json'
-;
+export type OperonFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
 
 export class OperonDataType {
-  dataType : OperonFieldType = 'text';
-  length : number = -1;
-  precision : number = -1;
-  scale : number = -1;
+  dataType: OperonFieldType = "text";
+  length: number = -1;
+  precision: number = -1;
+  scale: number = -1;
 
   /** Varchar has length */
   static varchar(length: number) {
     const dt = new OperonDataType();
-    dt.dataType = 'varchar';
+    dt.dataType = "varchar";
     dt.length = length;
     return dt;
   }
@@ -56,7 +46,7 @@ export class OperonDataType {
   /** Some decimal has precision / scale (as opposed to floating point decimal) */
   static decimal(precision: number, scale: number) {
     const dt = new OperonDataType();
-    dt.dataType = 'decimal';
+    dt.dataType = "decimal";
     dt.precision = precision;
     dt.scale = scale;
 
@@ -69,19 +59,15 @@ export class OperonDataType {
     const dt = new OperonDataType();
 
     if (arg === String) {
-      dt.dataType = 'text';
-    }
-    else if (arg === Date) {
-      dt.dataType = 'timestamp';
-    }
-    else if (arg === Number) {
-      dt.dataType = 'double';
-    }
-    else if (arg === Boolean) {
-      dt.dataType = 'boolean';
-    }
-    else {
-      dt.dataType = 'json';
+      dt.dataType = "text";
+    } else if (arg === Date) {
+      dt.dataType = "timestamp";
+    } else if (arg === Number) {
+      dt.dataType = "double";
+    } else if (arg === Boolean) {
+      dt.dataType = "boolean";
+    } else {
+      dt.dataType = "json";
     }
 
     return dt;
@@ -89,14 +75,13 @@ export class OperonDataType {
 
   formatAsString(): string {
     let rv: string = this.dataType;
-    if (this.dataType === 'varchar' && this.length > 0) {
+    if (this.dataType === "varchar" && this.length > 0) {
       rv += `(${this.length})`;
     }
-    if (this.dataType === 'decimal' && this.precision > 0) {
+    if (this.dataType === "decimal" && this.precision > 0) {
       if (this.scale > 0) {
         rv += `(${this.precision},${this.scale})`;
-      }
-      else {
+      } else {
         rv += `(${this.precision})`;
       }
     }
@@ -123,34 +108,34 @@ function getArgNames(func: Function): string[] {
 }
 
 export enum TraceLevels {
-    DEBUG = "DEBUG",
-    INFO = "INFO",
-    WARN = "WARN",
-    ERROR = "ERROR",
-    CRITICAL = "CRITICAL"
+  DEBUG = "DEBUG",
+  INFO = "INFO",
+  WARN = "WARN",
+  ERROR = "ERROR",
+  CRITICAL = "CRITICAL",
 }
 
 export enum LogMasks {
-    NONE = "NONE",
-    HASH = "HASH",
-    SKIP = "SKIP",
+  NONE = "NONE",
+  HASH = "HASH",
+  SKIP = "SKIP",
 }
 
 export enum TraceEventTypes {
-    METHOD_ENTER = 'METHOD_ENTER',
-    METHOD_EXIT = 'METHOD_EXIT',
-    METHOD_ERROR = 'METHOD_ERROR',
+  METHOD_ENTER = "METHOD_ENTER",
+  METHOD_EXIT = "METHOD_EXIT",
+  METHOD_ERROR = "METHOD_ERROR",
 }
 
 class BaseTraceEvent {
   eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
-  eventComponent: string = '';
+  eventComponent: string = "";
   eventLevel: TraceLevels = TraceLevels.DEBUG;
   eventTime: Date = new Date();
-  authorizedUser: string = '';
-  authorizedRole: string = '';
+  authorizedUser: string = "";
+  authorizedRole: string = "";
   positionalArgs: unknown[] = [];
-  namedArgs: {[x: string]: unknown} = {};
+  namedArgs: { [x: string]: unknown } = {};
 
   toString(): string {
     return `
@@ -175,7 +160,7 @@ class OperonParameter {
   argType: Function = String;
   dataType: OperonDataType;
   // TODO: If we override the logging behavior (say to mask/hash it), where do we record that?
-  index:number = -1;
+  index: number = -1;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   constructor(idx: number, at: Function) {
@@ -187,21 +172,18 @@ class OperonParameter {
 
 export class OperonMethodRegistrationBase {
   name: string = "";
-  traceLevel : TraceLevels = TraceLevels.INFO;
-  args : OperonParameter[] = [];
+  traceLevel: TraceLevels = TraceLevels.INFO;
+  args: OperonParameter[] = [];
 }
 
-export class OperonMethodRegistration <This, Args extends unknown[], Return>
-  extends OperonMethodRegistrationBase
-{
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
-  {
+export class OperonMethodRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistrationBase {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
     super();
     this.origFunction = origFunc;
   }
   needInitialized: boolean = true;
-  origFunction : ((this: This, ...args: Args) => Promise<Return>);
-  replacementFunction : ((this: This, ...args: Args) => Promise<Return>) | undefined;
+  origFunction: (this: This, ...args: Args) => Promise<Return>;
+  replacementFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
 
@@ -214,15 +196,12 @@ export function forEachMethod(f: (m: OperonMethodRegistrationBase) => void) {
   methodRegistry.forEach(f);
 }
 
-function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol) : OperonParameter[]
-{
-  let mParameters: OperonParameter[]
-        = Reflect.getOwnMetadata(operonParamMetadataKey, target, propertyKey) as OperonParameter[]
-        || [];
+function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
+  let mParameters: OperonParameter[] = (Reflect.getOwnMetadata(operonParamMetadataKey, target, propertyKey) as OperonParameter[]) || [];
 
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
-    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function [];
+    const designParamTypes = Reflect.getMetadata("design:paramtypes", target, propertyKey) as Function[];
     mParameters = designParamTypes.map((value, index) => new OperonParameter(index, value));
 
     Reflect.defineMetadata(operonParamMetadataKey, mParameters, target, propertyKey);
@@ -232,16 +211,18 @@ function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: st
 }
 
 function generateSaltedHash(data: string, salt: string): string {
-  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
+  const hash = crypto.createHash("sha256"); // You can use other algorithms like 'md5', 'sha512', etc.
   hash.update(data + salt);
-  return hash.digest('hex');
+  return hash.digest("hex");
 }
 
-function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Return>(target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-{
-  const methReg : OperonMethodRegistration<This, Args, Return> = 
-       Reflect.getOwnMetadata(operonMethodMetadataKey, target, propertyKey) as OperonMethodRegistration<This, Args, Return>
-       || new OperonMethodRegistration<This, Args, Return>(descriptor.value!);
+function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Return>(
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+) {
+  const methReg: OperonMethodRegistration<This, Args, Return> =
+    (Reflect.getOwnMetadata(operonMethodMetadataKey, target, propertyKey) as OperonMethodRegistration<This, Args, Return>) || new OperonMethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
     methReg.name = propertyKey.toString();
@@ -249,7 +230,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     methReg.args = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const argNames = getArgNames(descriptor.value!);
-    methReg.args.forEach( (e) => {
+    methReg.args.forEach((e) => {
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
@@ -264,9 +245,9 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
 
     // This is the replacement method
-    const nmethod = async function(this: This, ...args: Args) {
+    const nmethod = async function (this: This, ...args: Args) {
       const mn = methReg.name;
-        
+
       // TODO: Validate the user authentication
 
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
@@ -284,17 +265,15 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         let lv = v;
         if (methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
-        }
-        else {
+        } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
             // For now this means hash
-            if (methReg.args[idx].dataType.dataType === 'json') {
-              lv = generateSaltedHash(JSON.stringify(v), 'JSONSALT');
-            }
-            else {
+            if (methReg.args[idx].dataType.dataType === "json") {
+              lv = generateSaltedHash(JSON.stringify(v), "JSONSALT");
+            } else {
               // Yes, we are doing the same as above for now.
               //  It can be better if we have verified the type of the data
-              lv = generateSaltedHash(JSON.stringify(v), 'OPERONSALT');
+              lv = generateSaltedHash(JSON.stringify(v), "OPERONSALT");
             }
           }
           sLogRec.positionalArgs.push(lv);
@@ -302,21 +281,20 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-      console.log(`${methReg.traceLevel}: ${mn}: Invoked - `+ sLogRec.toString());
+      console.log(`${methReg.traceLevel}: ${mn}: Invoked - ` + sLogRec.toString());
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
         console.log(`${methReg.traceLevel}: ${mn}: Returned`);
         return result;
-      }
-      catch (e) {
+      } catch (e) {
         console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
         throw e;
       }
     };
-    Object.defineProperty(nmethod, 'name', {
+    Object.defineProperty(nmethod, "name", {
       value: methReg.name,
-    })
+    });
 
     descriptor.value = nmethod;
     methReg.replacementFunction = nmethod;
@@ -328,18 +306,14 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
   return methReg;
 }
 
-function registerAndWrapFunction<This, Args extends unknown[], Return>(
-  target: object,
-  propertyKey: string,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-{
+function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of operon decorator when original method is undefined");
   }
 
   const registration = getOrCreateOperonMethodRegistration(target, propertyKey, descriptor);
-    
-  return {descriptor, registration};
+
+  return { descriptor, registration };
 }
 
 export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -357,7 +331,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 }
 
 export function ArgName(name: string) {
-  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
@@ -366,7 +340,7 @@ export function ArgName(name: string) {
 }
 
 export function LogMask(mask: LogMasks) {
-  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
@@ -385,46 +359,30 @@ type MethodDecorator = <T>(
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
 export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
-  function logdec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.traceLevel = level;    
+  function logdec<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.traceLevel = level;
     return descriptor;
   }
   return logdec;
 }
 
-export function Traced<This, Args extends unknown[], Return>(
-  target: object,
-  propertyKey: string,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-{
+export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-export function OperonWorkflow(config: WorkflowConfig={}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+export function OperonWorkflow(config: WorkflowConfig = {}) {
+  function decorator<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
     return descriptor;
   }
   return decorator;
 }
 
-export function OperonTransaction(config: TransactionConfig={}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+export function OperonTransaction(config: TransactionConfig = {}) {
+  function decorator<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
   }
