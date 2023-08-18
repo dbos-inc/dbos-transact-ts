@@ -1,18 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  Operon,
-  OperonNull,
-  operonNull,
-} from './operon';
-import { transaction_outputs } from '../schemas/user_db_schema';
-import { OperonTransaction, TransactionContext } from './transaction';
-import { OperonCommunicator, CommunicatorContext } from './communicator';
-import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from './error';
-import { serializeError, deserializeError } from 'serialize-error';
-import { sleep } from './utils';
-import { SystemDatabase } from './system_database';
-import { UserDatabaseClient } from './user_database';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { Operon, OperonNull, operonNull } from "./operon";
+import { transaction_outputs } from "../schemas/user_db_schema";
+import { OperonTransaction, TransactionContext } from "./transaction";
+import { OperonCommunicator, CommunicatorContext } from "./communicator";
+import { OperonError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from "./error";
+import { serializeError, deserializeError } from "serialize-error";
+import { sleep } from "./utils";
+import { SystemDatabase } from "./system_database";
+import { UserDatabaseClient } from "./user_database";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 
 const defaultRecvTimeoutSec = 60;
@@ -30,8 +26,8 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  status: string,
-  updatedAtEpochMs: number,
+  status: string;
+  updatedAtEpochMs: number;
 }
 
 export const StatusString = {
@@ -49,26 +45,21 @@ export class WorkflowContext {
   readonly operationName: string;
   readonly runAs: string;
 
-  constructor(
-    operon: Operon,
-    params: WorkflowParams,
-    readonly workflowUUID: string,
-    readonly workflowConfig: WorkflowConfig,
-    readonly workflowName: string) {
+  constructor(operon: Operon, params: WorkflowParams, readonly workflowUUID: string, readonly workflowConfig: WorkflowConfig, readonly workflowName: string) {
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    this.runAs = params.runAs || 'defaultRole'; // runAs should have been resolved in operon.workflow()
+    this.runAs = params.runAs || "defaultRole"; // runAs should have been resolved in operon.workflow()
     this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
     this.span.setAttributes({
-      'workflowUUID': workflowUUID,
-      'operationName': workflowName,
-      'runAs': params.runAs,
-      'functionID': 0,
+      workflowUUID: workflowUUID,
+      operationName: workflowName,
+      runAs: params.runAs,
+      functionID: 0,
     });
   }
 
-  functionIDGetIncrement() : number {
+  functionIDGetIncrement(): number {
     return this.functionID++;
   }
 
@@ -83,8 +74,12 @@ export class WorkflowContext {
    * Otherwise, return OperonNull.
    */
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<R | OperonNull> {
-    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(client, "SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
-      this.workflowUUID, funcID);
+    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(
+      client,
+      "SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+      this.workflowUUID,
+      funcID
+    );
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
@@ -103,12 +98,19 @@ export class WorkflowContext {
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
-        await this.#operon.userDatabase.queryWithClient(client, "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
-          this.workflowUUID, funcID, JSON.stringify(this.resultBuffer.get(funcID)), JSON.stringify(null));
+        await this.#operon.userDatabase.queryWithClient(
+          client,
+          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+          this.workflowUUID,
+          funcID,
+          JSON.stringify(this.resultBuffer.get(funcID)),
+          JSON.stringify(null)
+        );
       }
     } catch (error) {
       const code = this.#operon.userDatabase.getPostgresErrorCode(error);
-      if (code === '40001' || code === '23505') { // Serialization and primary key conflict (Postgres).
+      if (code === "40001" || code === "23505") {
+        // Serialization and primary key conflict (Postgres).
         throw new OperonWorkflowConflictUUIDError();
       } else {
         throw error;
@@ -128,8 +130,7 @@ export class WorkflowContext {
    */
   async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      serialOutput, this.workflowUUID, funcID);
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialOutput, this.workflowUUID, funcID);
   }
 
   /**
@@ -137,8 +138,7 @@ export class WorkflowContext {
    */
   async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;",
-      serialErr, this.workflowUUID, funcID);
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
   }
 
   /**
@@ -150,7 +150,7 @@ export class WorkflowContext {
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
     const config = this.#operon.transactionConfigMap.get(txn.name);
     if (config === undefined) {
-      throw new OperonError(`Unregistered Transaction ${txn.name}`)
+      throw new OperonError(`Unregistered Transaction ${txn.name}`);
     }
     const readOnly = config.readOnly ?? false;
     let retryWaitMillis = 1;
@@ -158,26 +158,23 @@ export class WorkflowContext {
     const funcId = this.functionIDGetIncrement();
     const span: Span = this.#operon.tracer.startSpan(txn.name, this.span);
     span.setAttributes({
-      'workflowUUID': this.workflowUUID,
-      'operationName': txn.name,
-      'runAs': this.runAs,
-      'functionID': funcId,
-      'readOnly': readOnly,
-      'isolationLevel': config.isolationLevel,
-      'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
+      workflowUUID: this.workflowUUID,
+      operationName: txn.name,
+      runAs: this.runAs,
+      functionID: funcId,
+      readOnly: readOnly,
+      isolationLevel: config.isolationLevel,
+      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
     // eslint-disable-next-line no-constant-condition
-    while(true) {
-      const wrappedTransaction = async(client: UserDatabaseClient): Promise<R> => {
+    while (true) {
+      const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(
-          this.#operon.userDatabase.getName(), client, config,
-          this, this.#operon.logger, span, funcId, txn.name,
-        );
+        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, span, funcId, txn.name);
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
-          tCtxt.span.setAttribute('cached', true);
+          tCtxt.span.setAttribute("cached", true);
           tCtxt.span.setStatus({ code: SpanStatusCode.OK });
           this.#operon.tracer.endSpan(tCtxt.span);
           return check as R;
@@ -203,7 +200,7 @@ export class WorkflowContext {
         }
 
         return result;
-      }
+      };
 
       try {
         const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
@@ -211,8 +208,9 @@ export class WorkflowContext {
         return result;
       } catch (err) {
         const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
-        if (errCode === '40001') { // serialization_failure in PostgreSQL
-          span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis });
+        if (errCode === "40001") {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
           // Retry serialization failures.
           await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
@@ -242,22 +240,22 @@ export class WorkflowContext {
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
     const commConfig = this.#operon.communicatorConfigMap.get(commFn);
     if (commConfig === undefined) {
-      throw new OperonError(`Unregistered External ${commFn.name}`)
+      throw new OperonError(`Unregistered External ${commFn.name}`);
     }
 
     const funcID = this.functionIDGetIncrement();
 
     const span: Span = this.#operon.tracer.startSpan(commFn.name, this.span);
     span.setAttributes({
-      'workflowUUID': this.workflowUUID,
-      'operationName': commFn.name,
-      'runAs': this.runAs,
-      'functionID': funcID,
-      'retriesAllowed': commConfig.retriesAllowed,
-      'intervalSeconds': commConfig.intervalSeconds,
-      'maxAttempts': commConfig.maxAttempts,
-      'backoffRate': commConfig.backoffRate,
-      'args': JSON.stringify(args), // TODO enforce skipLogging & request for hashing
+      workflowUUID: this.workflowUUID,
+      operationName: commFn.name,
+      runAs: this.runAs,
+      functionID: funcID,
+      retriesAllowed: commConfig.retriesAllowed,
+      intervalSeconds: commConfig.intervalSeconds,
+      maxAttempts: commConfig.maxAttempts,
+      backoffRate: commConfig.backoffRate,
+      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
     const ctxt: CommunicatorContext = new CommunicatorContext(funcID, span, commConfig);
 
@@ -269,7 +267,7 @@ export class WorkflowContext {
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== operonNull) {
-      ctxt.span.setAttribute('cached', true);
+      ctxt.span.setAttribute("cached", true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.#operon.tracer.endSpan(ctxt.span);
       return check as R;
@@ -326,7 +324,7 @@ export class WorkflowContext {
    * Send a message to a key, returning true if successful.
    * If a message is already associated with the key, do nothing and return false.
    */
-  async send<T extends NonNullable<any>>(topic: string, key: string, message: T) : Promise<boolean> {
+  async send<T extends NonNullable<any>>(topic: string, key: string, message: T): Promise<boolean> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Is this receiver permitted to read from this topic?
@@ -348,7 +346,7 @@ export class WorkflowContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultRecvTimeoutSec) : Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Is this receiver permitted to read from this topic?
@@ -396,7 +394,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return {status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now()};
+      return { status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now() };
     } else {
       return status;
     }
