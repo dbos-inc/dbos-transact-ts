@@ -90,8 +90,8 @@ export class OperonWorkflowConflictUUIDError extends OperonError {
 
 const NotRegisteredError = 6;
 export class OperonNotRegisteredError extends OperonError {
-  constructor(workflowname: string) {
-    const msg = `Operation (Name: ${workflowname}) not registered`;
+  constructor(name: string) {
+    const msg = `Operation (Name: ${name}) not registered`;
     super(msg, NotRegisteredError);
   }
 }
