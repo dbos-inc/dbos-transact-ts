@@ -186,6 +186,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
+        console.log(err);
         throw new OperonInitializationError(err.message);
       }
     }
