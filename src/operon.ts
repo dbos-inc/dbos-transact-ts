@@ -61,7 +61,7 @@ interface ConfigFile {
     connectionTimeoutMillis: number;
     user_database: string;
     system_database: string;
-    ssl?: string;
+    ssl_ca?: string;
   };
   telemetryExporters?: string[];
 }
@@ -237,8 +237,8 @@ export class Operon {
       connectionTimeoutMillis: config.database.connectionTimeoutMillis,
       database: config.database.user_database,
     };
-    if (config.database.ssl) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl)], rejectUnauthorized: true };
+    if (config.database.ssl_ca) {
+      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
     }
     return {
       poolConfig: poolConfig,
