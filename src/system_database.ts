@@ -122,7 +122,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialErr]);
     } catch (error) {
-      const err: DatabaseError = error as DatabaseError;=
+      const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
