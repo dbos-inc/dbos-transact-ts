@@ -111,7 +111,7 @@ export class WorkflowContext {
       const code = this.#operon.userDatabase.getPostgresErrorCode(error);
       if (code === "40001" || code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
