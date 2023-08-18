@@ -64,6 +64,7 @@ export class PGNodeUserDatabase implements UserDatabase {
       return result;
     } catch(err) {
       await client.query(`ROLLBACK`);
+      console.error(`Error in transaction ${txnName} for workflow ${workflowUUID}: ${err}`);
       throw err;
     } finally {
       client.release();
