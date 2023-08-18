@@ -31,18 +31,15 @@ export {
   OperonFieldType,
   OperonDataType,
   OperonMethodRegistrationBase,
-
   TraceLevels,
   LogMasks,
   TraceEventTypes,
 
   // BaseLogEvent, // Would be OK to export for some uses I think?
-
   Required,
   SkipLogging,
   LogMask,
   ArgName,
-
   TraceLevel,
   Traced,
 
@@ -54,4 +51,4 @@ export {
   OperonWorkflow,
 
   forEachMethod,
-} from './decorators';
+} from "./decorators";

@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PoolClient } from 'pg';
-import { PrismaClient, UserDatabaseName, UserDatabaseClient } from './user_database';
+import { PoolClient } from "pg";
+import { PrismaClient, UserDatabaseName, UserDatabaseClient } from "./user_database";
 import { Logger } from "./telemetry";
-import { ValuesOf } from './utils';
-import { WorkflowContext} from "./workflow";
+import { ValuesOf } from "./utils";
+import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
 
@@ -18,9 +18,9 @@ export const IsolationLevel = {
   ReadUncommitted: "READ UNCOMMITTED",
   ReadCommitted: "READ COMMITTED",
   RepeatableRead: "REPEATABLE READ",
-  Serializable: "SERIALIZABLE"
+  Serializable: "SERIALIZABLE",
 } as const;
-export type IsolationLevel = ValuesOf<typeof IsolationLevel>
+export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export class TransactionContext extends OperonContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
@@ -29,17 +29,17 @@ export class TransactionContext extends OperonContext {
   readonly workflowUUID: string;
   readonly runAs: string;
 
-  constructor(userDatabaseName: UserDatabaseName,
+  constructor(
+    userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
     config: TransactionConfig,
     workflowContext: WorkflowContext,
     private readonly logger: Logger,
     readonly span: Span,
     readonly functionID: number,
-    readonly operationName: string)
-  {
+    readonly operationName: string
+  ) {
     super();
-
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;

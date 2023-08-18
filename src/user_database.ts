@@ -5,15 +5,15 @@ import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
 
 export interface UserDatabase {
-  init() : Promise<void>;
-  destroy() : Promise<void>;
+  init(): Promise<void>;
+  destroy(): Promise<void>;
 
-  getName() : UserDatabaseName;
+  getName(): UserDatabaseName;
 
-  transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T) : Promise<R>;
-  query<R>(sql: string, ...params: any[]) : Promise<R[]>;
-  queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]) : Promise<R[]>;
-  getPostgresErrorCode(error: unknown) : string | null;
+  transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R>;
+  query<R>(sql: string, ...params: any[]): Promise<R[]>;
+  queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]>;
+  getPostgresErrorCode(error: unknown): string | null;
 }
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
@@ -30,7 +30,6 @@ export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
  * node-postgres user data access interface
  */
 export class PGNodeUserDatabase implements UserDatabase {
-  
   readonly pool: Pool;
 
   constructor(readonly poolConfig: PoolConfig) {
@@ -49,7 +48,7 @@ export class PGNodeUserDatabase implements UserDatabase {
   getName() {
     return UserDatabaseName.PGNODE;
   }
-  
+
   async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
@@ -62,7 +61,7 @@ export class PGNodeUserDatabase implements UserDatabase {
       const result: R = await txn(client, ...args);
       await client.query(`COMMIT`);
       return result;
-    } catch(err) {
+    } catch (err) {
       await client.query(`ROLLBACK`);
       throw err;
     } finally {
@@ -71,15 +70,19 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
-    return this.pool.query(sql, params).then((value) => { return value.rows as R[]; });
+    return this.pool.query(sql, params).then((value) => {
+      return value.rows as R[];
+    });
   }
 
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
     const pgClient: PoolClient = client as PoolClient;
-    return pgClient.query(sql, params).then((value) => { return value.rows as R[]; });
+    return pgClient.query(sql, params).then((value) => {
+      return value.rows as R[];
+    });
   }
 
-  getPostgresErrorCode(error: unknown) : string | null{
+  getPostgresErrorCode(error: unknown): string | null {
     const dbErr: DatabaseError = error as DatabaseError;
     return dbErr.code ? dbErr.code : null;
   }
@@ -90,7 +93,7 @@ export class PGNodeUserDatabase implements UserDatabase {
  */
 export interface PrismaClient {
   $queryRawUnsafe<R>(query: string, ...params: any[]): Promise<R[]>;
-  $transaction<R>(fn: (prisma: any) => Promise<R>, options?: { maxWait?: number, timeout?: number, isolationLevel?: any }): Promise<R>;
+  $transaction<R>(fn: (prisma: any) => Promise<R>, options?: { maxWait?: number; timeout?: number; isolationLevel?: any }): Promise<R>;
   $disconnect(): Promise<void>;
 }
 
@@ -99,14 +102,14 @@ interface PrismaError {
   meta: {
     code: string;
     message: string;
-  }
+  };
 }
 
 const PrismaIsolationLevel = {
-  ReadUncommitted: 'ReadUncommitted',
-  ReadCommitted: 'ReadCommitted',
-  RepeatableRead: 'RepeatableRead',
-  Serializable: 'Serializable'
+  ReadUncommitted: "ReadUncommitted",
+  ReadCommitted: "ReadCommitted",
+  RepeatableRead: "RepeatableRead",
+  Serializable: "Serializable",
 } as const;
 
 export class PrismaUserDatabase implements UserDatabase {
@@ -124,7 +127,7 @@ export class PrismaUserDatabase implements UserDatabase {
   getName() {
     return UserDatabaseName.PRISMA;
   }
-  
+
   async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let isolationLevel: string;
@@ -137,9 +140,12 @@ export class PrismaUserDatabase implements UserDatabase {
     } else {
       isolationLevel = PrismaIsolationLevel.Serializable;
     }
-    const result = await this.prisma.$transaction<R>(async (tx) => {
-      return await transaction(tx as PrismaClient, ...args);
-    }, {isolationLevel: isolationLevel});
+    const result = await this.prisma.$transaction<R>(
+      async (tx) => {
+        return await transaction(tx as PrismaClient, ...args);
+      },
+      { isolationLevel: isolationLevel }
+    );
     return result;
   }
 
@@ -154,7 +160,7 @@ export class PrismaUserDatabase implements UserDatabase {
     return prismaClient.$queryRawUnsafe<R>(sql, ...params);
   }
 
-  getPostgresErrorCode(error: unknown) : string | null {
+  getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PrismaError = error as PrismaError;
     return dbErr.meta ? dbErr.meta.code : null;
   }

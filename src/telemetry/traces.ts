@@ -1,8 +1,4 @@
-import {
-  BasicTracerProvider,
-  ReadableSpan,
-  Span,
-} from "@opentelemetry/sdk-trace-base";
+import { BasicTracerProvider, ReadableSpan, Span } from "@opentelemetry/sdk-trace-base";
 import { Resource } from "@opentelemetry/resources";
 import opentelemetry from "@opentelemetry/api";
 import { hrTimeToMicroseconds } from "@opentelemetry/core";
@@ -41,10 +37,7 @@ export class Tracer {
   startSpan(name: string, parentSpan?: Span): Span {
     const tracer = opentelemetry.trace.getTracer("operon-tracer");
     if (parentSpan) {
-      const ctx = opentelemetry.trace.setSpan(
-        opentelemetry.context.active(),
-        parentSpan
-      );
+      const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
       return tracer.startSpan(name, { startTime: Date.now() }, ctx) as Span;
     } else {
       return tracer.startSpan(name) as Span;
