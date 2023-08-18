@@ -4,12 +4,22 @@ import {
   OperonWorkflowPermissionDeniedError,
   OperonInitializationError,
   OperonWorkflowConflictUUIDError,
-  OperonWorkflowUnknownError
+  OperonNotRegisteredError,
 } from './error';
-import {InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle, StatusString } from './workflow';
+import {
+  InvokedHandle,
+  OperonWorkflow,
+  WorkflowConfig,
+  WorkflowContext,
+  WorkflowHandle,
+  WorkflowParams,
+  RetrievedHandle,
+} from './workflow';
+
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
+
 import {
   TelemetryCollector,
   ConsoleExporter,
@@ -76,9 +86,6 @@ export class Operon {
   // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
   readonly tempWorkflowName = "operon_temp_workflow";
 
-  readonly recoveryDelayMs: number = 20000;
-  readonly recoveryID: NodeJS.Timeout;
-
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
     // We initialize the map with an entry for temporary workflows.
     [
@@ -118,9 +125,6 @@ export class Operon {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowOutputBuffer();
     }, this.flushBufferIntervalMs);
-    this.recoveryID = setTimeout(() => {
-      void this.recoverPendingWorkflows();
-    }, this.recoveryDelayMs);
 
     // Parse requested exporters
     const telemetryExporters = [];
@@ -196,7 +200,6 @@ export class Operon {
   async destroy() {
     clearInterval(this.flushBufferID);
     await this.flushWorkflowOutputBuffer();
-    clearTimeout(this.recoveryID);
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
@@ -241,34 +244,6 @@ export class Operon {
     };
   }
 
-  /* BACKGROUND PROCESSES */
-
-  /**
-   * A background process that runs once asynchronously a certain period after initialization.
-   * It executes all pending workflows that were last updated before initialization.
-   * This recovers and runs to completion any workflows that were still executing when a previous executor failed.
-   */
-  async recoverPendingWorkflows() {
-    // Retrieve a list of workflow UUIDs from the function output table.
-    const workflows = await this.userDatabase.query<transaction_outputs>("select workflow_uuid, output from operon.transaction_outputs WHERE function_id = 0;");
-    const handlerArray: WorkflowHandle<any>[] = [];
-    for (const workflow of workflows) {
-      // Check workflow status. If not success or error, then recover.
-      const status = await this.retrieveWorkflow(workflow.workflow_uuid).getStatus();
-      if (status.status !== StatusString.SUCCESS && status.status !== StatusString.ERROR) {
-        // Retrieve workflow name from the recorded input.
-        const wfInput: WorkflowInput<any> = JSON.parse(workflow.output) as WorkflowInput<any>;
-        const wInfo = this.workflowInfoMap.get(wfInput.workflow_name);
-        if (wInfo === undefined) {
-          throw new OperonWorkflowUnknownError(workflow.workflow_uuid, wfInput.workflow_name);
-        }
-        handlerArray.push(this.workflow(wInfo.workflow, { workflowUUID: workflow.workflow_uuid }));
-      }
-    }
-    // Wait until all workflows complete.
-    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
-  }
-
   /* WORKFLOW OPERATIONS */
 
   registerTopic(topic: string, rolesThatCanPubSub: string[] = []) {
@@ -300,7 +275,7 @@ export class Operon {
     const runWorkflow = async () => {
       const wInfo = this.workflowInfoMap.get(wf.name);
       if (wInfo === undefined) {
-        throw new OperonError(`Unregistered Workflow ${wf.name}`);
+        throw new OperonNotRegisteredError(wf.name);
       }
       const wConfig = wInfo.config;
 
