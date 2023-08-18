@@ -210,7 +210,7 @@ implements OperonMethodRegistrationBase
   }
 
   // CB - Why would you do this?
-  invokeReplacement(pthis:This, args: Args) : Promise<Return> {
+  invokeOriginal(pthis:This, args: Args) : Promise<Return> {
     return this.origFunction.call(pthis, ...args);
   }
 
