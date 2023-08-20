@@ -1,18 +1,44 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { OperonError, OperonWorkflowPermissionDeniedError, OperonInitializationError, OperonWorkflowConflictUUIDError, OperonNotRegisteredError } from "./error";
-import { InvokedHandle, OperonWorkflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowParams, RetrievedHandle } from "./workflow";
-import { OperonTransaction, TransactionConfig } from "./transaction";
-import { CommunicatorConfig, OperonCommunicator } from "./communicator";
-import { readFileSync } from "./utils";
-import { TelemetryCollector, ConsoleExporter, CONSOLE_EXPORTER, PostgresExporter, POSTGRES_EXPORTER, JAEGER_EXPORTER, JaegerExporter, Logger, Tracer } from "./telemetry";
-import { PoolConfig } from "pg";
-import { transaction_outputs } from "../schemas/user_db_schema";
-import { SystemDatabase, PostgresSystemDatabase } from "./system_database";
-import { v4 as uuidv4 } from "uuid";
-import YAML from "yaml";
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from "./user_database";
-import { OperonMethodRegistration, forEachMethod } from "./decorators";
-import { SpanStatusCode } from "@opentelemetry/api";
+import {
+  OperonError,
+  OperonWorkflowPermissionDeniedError,
+  OperonInitializationError,
+  OperonWorkflowConflictUUIDError,
+  OperonNotRegisteredError,
+} from './error';
+import {
+  InvokedHandle,
+  OperonWorkflow,
+  WorkflowConfig,
+  WorkflowContext,
+  WorkflowHandle,
+  WorkflowParams,
+  RetrievedHandle,
+} from './workflow';
+
+import { OperonTransaction, TransactionConfig } from './transaction';
+import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { readFileSync } from './utils';
+
+import {
+  TelemetryCollector,
+  ConsoleExporter,
+  CONSOLE_EXPORTER,
+  PostgresExporter,
+  POSTGRES_EXPORTER,
+  JAEGER_EXPORTER,
+  JaegerExporter,
+  Logger,
+  Tracer,
+} from './telemetry';
+import { PoolConfig } from 'pg';
+import { transaction_outputs } from '../schemas/user_db_schema';
+import { SystemDatabase, PostgresSystemDatabase } from './system_database';
+import { v4 as uuidv4 } from 'uuid';
+import YAML from 'yaml';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
+import { forEachMethod } from './decorators';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -35,6 +61,7 @@ interface ConfigFile {
     connectionTimeoutMillis: number;
     user_database: string;
     system_database: string;
+    ssl_ca?: string;
   };
   telemetryExporters?: string[];
 }
@@ -121,7 +148,7 @@ export class Operon {
 
     // Register user declared operations
     forEachMethod((registeredOperation) => {
-      const ro = registeredOperation as OperonMethodRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation;
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.origFunction as OperonWorkflow<any, any>;
@@ -164,6 +191,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
+        console.log(err);
         throw new OperonInitializationError(err.message);
       }
     }
@@ -209,7 +237,9 @@ export class Operon {
       connectionTimeoutMillis: config.database.connectionTimeoutMillis,
       database: config.database.user_database,
     };
-
+    if (config.database.ssl_ca) {
+      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
+    }
     return {
       poolConfig: poolConfig,
       telemetryExporters: config.telemetryExporters || [],

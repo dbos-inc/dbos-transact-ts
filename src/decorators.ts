@@ -170,15 +170,33 @@ class OperonParameter {
   }
 }
 
-export class OperonMethodRegistrationBase {
-  name: string = "";
-  traceLevel: TraceLevels = TraceLevels.INFO;
-  args: OperonParameter[] = [];
+export interface OperonMethodRegistrationBase {
+  name: string;
+  traceLevel: TraceLevels;
+
+  args: OperonParameter[];
+
+  workflowConfig?: WorkflowConfig;
+  txnConfig?: TransactionConfig;
+
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  origFunction: Function;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  replacementFunction: Function | undefined;
+
+  invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
-export class OperonMethodRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistrationBase {
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
-    super();
+class OperonMethodRegistration <This, Args extends unknown[], Return>
+implements OperonMethodRegistrationBase
+{
+  name: string = "";
+  traceLevel: TraceLevels = TraceLevels.INFO;
+
+  args: OperonParameter[] = [];
+
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
+  {
     this.origFunction = origFunc;
   }
   needInitialized: boolean = true;
@@ -186,6 +204,15 @@ export class OperonMethodRegistration<This, Args extends unknown[], Return> exte
   replacementFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
+
+  invoke(pthis:This, args: Args) : Promise<Return> {
+    return this.replacementFunction!.call(pthis, ...args);
+  }
+
+  // CB - Why would you do this?
+  invokeOriginal(pthis:This, args: Args) : Promise<Return> {
+    return this.origFunction.call(pthis, ...args);
+  }
 
   // TODO: Permissions, attachment point, error handling, etc.
 }
@@ -371,8 +398,12 @@ export function Traced<This, Args extends unknown[], Return>(target: object, pro
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-export function OperonWorkflow(config: WorkflowConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function OperonWorkflow(config: WorkflowConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
+  {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
     return descriptor;
@@ -380,8 +411,12 @@ export function OperonWorkflow(config: WorkflowConfig = {}) {
   return decorator;
 }
 
-export function OperonTransaction(config: TransactionConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function OperonTransaction(config: TransactionConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
+  {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
