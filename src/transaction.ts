@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
 import { PrismaClient, UserDatabaseName, UserDatabaseClient } from "./user_database";
-import { Logger } from "./telemetry/logs";
+import { Logger } from "./telemetry";
 import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
