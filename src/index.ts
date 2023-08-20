@@ -35,7 +35,6 @@ export {
   OperonFieldType,
   OperonDataType,
   OperonMethodRegistrationBase,
-
   TraceLevels,
   LogMasks,
   TraceEventTypes,
