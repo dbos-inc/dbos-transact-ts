@@ -10,4 +10,9 @@ export class OperonContext {
   constructor() {
     //this.span = span;
   }
+
+  copyBaseFields(other: OperonContext) {
+    this.request = other.request;
+    this.response = other.response;
+  }
 }

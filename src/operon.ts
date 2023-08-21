@@ -144,8 +144,11 @@ export class Operon {
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
+  }
 
+  registerDecoratedWT() {
     // Register user declared operations
+    // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
     forEachMethod((registeredOperation) => {
       const ro = registeredOperation;
       for (const arg of ro.args) {
@@ -289,6 +292,9 @@ export class Operon {
       }
 
       const wCtxt: WorkflowContext = new WorkflowContext(this, params, workflowUUID, wConfig, wf.name);
+      if (params.parentCtx) {
+        wCtxt.copyBaseFields(params.parentCtx);
+      }
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
