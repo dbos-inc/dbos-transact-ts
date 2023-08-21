@@ -37,7 +37,6 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
         if (results.code !== ExportResultCode.SUCCESS) {
           throw new OperonJaegerExporterError(results);
         }
-        console.log(results);
       });
       resolve();
     });

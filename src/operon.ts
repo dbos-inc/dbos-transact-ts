@@ -29,6 +29,7 @@ import {
   JAEGER_EXPORTER,
   JaegerExporter,
   Logger,
+  Tracer,
 } from './telemetry';
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
@@ -38,7 +39,6 @@ import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { Tracer } from './telemetry/traces';
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -61,6 +61,7 @@ interface ConfigFile {
     connectionTimeoutMillis: number;
     user_database: string;
     system_database: string;
+    ssl_ca?: string;
   };
   telemetryExporters?: string[];
 }
@@ -240,7 +241,9 @@ export class Operon {
       connectionTimeoutMillis: config.database.connectionTimeoutMillis,
       database: config.database.user_database,
     };
-
+    if (config.database.ssl_ca) {
+      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
+    }
     return {
       poolConfig: poolConfig,
       telemetryExporters: config.telemetryExporters || [],

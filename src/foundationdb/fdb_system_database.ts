@@ -115,7 +115,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
       if (keyOutput !== undefined) {
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       txn.set([workflowUUID, functionID], {
         error: null,
@@ -130,7 +130,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
       if (keyOutput !== undefined) {
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       txn.set([workflowUUID, functionID], {
         error: serialErr,
@@ -206,7 +206,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
       return message;
