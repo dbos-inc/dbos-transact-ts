@@ -149,6 +149,7 @@ export class Operon {
   registerDecoratedWT() {
     // Register user declared operations
     // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
+    // Also, why the original function?  It should get logged...
     forEachMethod((registeredOperation) => {
       const ro = registeredOperation;
       for (const arg of ro.args) {
