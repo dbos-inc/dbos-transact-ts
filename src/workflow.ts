@@ -116,7 +116,7 @@ export class WorkflowContext extends OperonContext {
           this.workflowUUID,
           funcID,
           JSON.stringify(this.resultBuffer.get(funcID)),
-          JSON.stringify(null),
+          JSON.stringify(null)
         );
       }
     } catch (error) {
