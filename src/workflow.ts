@@ -31,6 +31,10 @@ export interface WorkflowStatus {
   updatedAtEpochMs: number;
 }
 
+interface PgTransactionId {
+  txid: string;
+}
+
 export const StatusString = {
   UNKNOWN: "UNKNOWN",
   SUCCESS: "SUCCESS",
@@ -108,12 +112,11 @@ export class WorkflowContext extends OperonContext {
       for (const funcID of funcIDs) {
         await this.#operon.userDatabase.queryWithClient(
           client,
-          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, transaction_id) VALUES ($1, $2, $3, $4, $5);",
+          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
           this.workflowUUID,
           funcID,
           JSON.stringify(this.resultBuffer.get(funcID)),
           JSON.stringify(null),
-          JSON.stringify(null) // If we flush the output here, it means the original function didn't get a transaction ID.
         );
       }
     } catch (error) {
@@ -137,16 +140,9 @@ export class WorkflowContext extends OperonContext {
   /**
    * Write a guarded operation's output to the database.
    */
-  async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
+  async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(
-      client,
-      "UPDATE operon.transaction_outputs SET output=$1, transaction_id=CAST(pg_current_xact_id_if_assigned() AS TEXT) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING transaction_id;",
-      serialOutput,
-      this.workflowUUID,
-      funcID
-    );
-    return rows[0].transaction_id;
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialOutput, this.workflowUUID, funcID);
   }
 
   /**
@@ -211,7 +207,11 @@ export class WorkflowContext extends OperonContext {
           this.resultBuffer.set(funcId, result);
         } else {
           // Synchronously record the output of write transactions.
-          const pg_txn_id = await this.recordGuardedOutput<R>(client, funcId, result);
+          await this.recordGuardedOutput<R>(client, funcId, result);
+
+          // Obtain the transaction ID.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+          const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
           tCtxt.span.setAttribute("postgres_transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }
