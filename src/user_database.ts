@@ -18,11 +18,12 @@ export interface UserDatabase {
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient;
+export type UserDatabaseClient = PoolClient | PrismaClient /*| TypeORMClient*/;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
+  TYPEORM: "typeorm",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
