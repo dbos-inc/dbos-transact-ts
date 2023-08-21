@@ -210,7 +210,6 @@ export class WorkflowContext extends OperonContext {
           await this.recordGuardedOutput<R>(client, funcId, result);
 
           // Obtain the transaction ID.
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
           tCtxt.span.setAttribute("postgres_transaction_id", pg_txn_id);
           this.resultBuffer.clear();
