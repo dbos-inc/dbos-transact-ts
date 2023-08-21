@@ -3,6 +3,7 @@ export interface transaction_outputs {
   function_id: number;
   output: string;
   error: string;
+  transaction_id: string;
 }
 
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS operon;`;
@@ -13,6 +14,7 @@ export const userDBSchema = `
     function_id INT NOT NULL,
     output TEXT,
     error TEXT,
+    transaction_id TEXT,
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;
