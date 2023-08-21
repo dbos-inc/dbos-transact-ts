@@ -119,7 +119,7 @@ export class WorkflowContext extends OperonContext {
       const code = this.#operon.userDatabase.getPostgresErrorCode(error);
       if (code === "40001" || code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
@@ -265,7 +265,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(funcID, span, commConfig);
+    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, this.#operon.logger, span, commConfig);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

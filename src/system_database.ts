@@ -110,7 +110,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
@@ -125,7 +125,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
@@ -144,7 +144,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError();
+        throw new OperonWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
