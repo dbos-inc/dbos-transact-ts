@@ -27,7 +27,7 @@ describe("operon-provenance", () => {
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
     );
-    provDaemon = new ProvenanceDaemon(config.poolConfig, "jest_test_slot");
+    provDaemon = new ProvenanceDaemon(config, "jest_test_slot");
     await provDaemon.start();
   });
 

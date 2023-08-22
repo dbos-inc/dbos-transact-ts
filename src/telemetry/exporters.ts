@@ -1,17 +1,16 @@
-import { Client, QueryConfig, QueryArrayResult } from "pg";
-import { Operon } from "./../operon";
+import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
-import { TelemetrySignal } from "./signals";
+import { OperonSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { spanToString } from "./traces";
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: TelemetrySignal[]): Promise<T>;
-  process?(signal: TelemetrySignal[]): U;
+  export(signal: OperonSignal[]): Promise<T>;
+  process?(signal: OperonSignal[]): U;
   init?(): Promise<void>;
   destroy?(): Promise<void>;
 }
@@ -25,7 +24,9 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
     });
   }
 
-  async export(signals: TelemetrySignal[]): Promise<void> {
+  async export(rawSignals: OperonSignal[]): Promise<void> {
+    // Note: it is not compatible with provenance signal.
+    const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
       const exportSpans: ReadableSpan[] = [];
       signals.forEach((signal) => {
@@ -45,10 +46,11 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
-  async export(signals: TelemetrySignal[]): Promise<void> {
+  async export(rawSignals: OperonSignal[]): Promise<void> {
+    const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
       for (const signal of signals) {
-        if (signal.logMessage) {
+        if (signal.logMessage !== undefined) {
           console.log(`[${signal.severity}] ${signal.logMessage}`);
         }
       }
@@ -61,8 +63,8 @@ export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]> {
   readonly pgClient: Client;
 
-  constructor(private readonly operon: Operon, readonly observabilityDBName: string = "operon_observability") {
-    const pgClientConfig = { ...operon.config.poolConfig };
+  constructor(private readonly poolConfig: PoolConfig, readonly observabilityDBName: string = "operon_observability") {
+    const pgClientConfig = { ...poolConfig };
     pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
   }
@@ -75,7 +77,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
   }
 
   async init() {
-    const pgSystemClient: Client = new Client(this.operon.config.poolConfig);
+    const pgSystemClient: Client = new Client(this.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`);
@@ -120,6 +122,18 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       // Trim last comma and line feed
       createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
+
+      // Create a table for provenance logs.
+      // TODO: create a secondary index.
+      await this.pgClient.query(`CREATE TABLE IF NOT EXISTS provenance_logs (
+        transaction_id TEXT NOT NULL,
+        kind TEXT,
+        schema_name TEXT,
+        table_name TEXT,
+        columnnames TEXT,
+        columntypes TEXT,
+        columnvalues TEXT
+      );`);
     }
   }
 
@@ -163,8 +177,10 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return queries;
   }
 
-  async export(signals: TelemetrySignal[]): Promise<QueryArrayResult[]> {
-    const queries = this.process(signals);
+  async export(signals: OperonSignal[]): Promise<QueryArrayResult[]> {
+    // Find all telemetry signals and process.
+    const telemetrySignals = signals.filter(obj => (obj as TelemetrySignal).workflowUUID !== undefined) as TelemetrySignal[];
+    const queries = this.process(telemetrySignals);
     const results: Promise<QueryArrayResult>[] = [];
     for (const query of queries) {
       results.push(this.pgClient.query(query));

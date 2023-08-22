@@ -134,7 +134,7 @@ export class Operon {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
         } else if (exporter === POSTGRES_EXPORTER) {
-          telemetryExporters.push(new PostgresExporter(this, config?.observability_database));
+          telemetryExporters.push(new PostgresExporter(this.config.poolConfig, config?.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
         }

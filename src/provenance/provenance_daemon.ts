@@ -1,7 +1,9 @@
-import { Client, ClientConfig, DatabaseError } from "pg";
+import { Client, DatabaseError } from "pg";
+import { CONSOLE_EXPORTER, ConsoleExporter, POSTGRES_EXPORTER, PostgresExporter, TelemetryCollector } from "../telemetry";
+import { OperonConfig } from "src/operon";
+import { ProvenanceSignal } from "src/telemetry/signals";
 
 interface wal2jsonRow {
-  lsn: string;
   xid: string;
   data: string;
 }
@@ -23,13 +25,26 @@ export class ProvenanceDaemon {
   readonly client;
   readonly daemonID;
   readonly recordProvenanceIntervalMs = 1000;
+  readonly telemetryCollector: TelemetryCollector;
   initialized = false;
 
-  constructor(clientConfig: ClientConfig, readonly slotName: string) {
-    this.client = new Client(clientConfig);
+  constructor(operonConfig: OperonConfig, readonly slotName: string) {
+    this.client = new Client(operonConfig.poolConfig);
     this.daemonID = setInterval(() => {
       void this.recordProvenance();
     }, this.recordProvenanceIntervalMs);
+    const telemetryExporters = [];
+    if (operonConfig.telemetryExporters) {
+      for (const exporter of operonConfig.telemetryExporters) {
+        if (exporter === CONSOLE_EXPORTER) {
+          telemetryExporters.push(new ConsoleExporter());
+        } else if (exporter === POSTGRES_EXPORTER) {
+          telemetryExporters.push(new PostgresExporter(operonConfig.poolConfig, operonConfig?.observability_database));
+        }
+      }
+    }
+    
+    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
   }
 
   async start() {
@@ -46,16 +61,26 @@ export class ProvenanceDaemon {
         throw err;
       }
     }
+    await this.telemetryCollector.init();
     this.initialized = true;
   }
 
   async recordProvenance() {
     if (this.initialized) {
-      const { rows } = await this.client.query<wal2jsonRow>("SELECT * FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
+      const { rows } = await this.client.query<wal2jsonRow>("SELECT CAST(xid AS TEXT), data FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
       for (const row of rows) {
         const data = (JSON.parse(row.data) as wal2jsonData).change;
         for (const change of data) {
-          console.log(row.xid, change);
+          const signal: ProvenanceSignal = {
+            transactionID: row.xid,
+            kind: change.kind,
+            schema: change.schema,
+            table: change.table,
+            columnnames: change.columnnames,
+            columntypes: change.columntypes,
+            columnvalues: change.columnvalues
+          }
+          this.telemetryCollector.push(signal);
         }
       }
     }
@@ -64,5 +89,6 @@ export class ProvenanceDaemon {
   async stop() {
     clearInterval(this.daemonID);
     await this.client.end();
+    await this.telemetryCollector.destroy();
   }
 }
