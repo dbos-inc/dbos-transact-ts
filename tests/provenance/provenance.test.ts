@@ -1,8 +1,9 @@
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
-import { POSTGRES_EXPORTER } from "../../src/telemetry";
+import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry";
 import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
 import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src";
+import { Client } from "pg";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -39,16 +40,23 @@ describe("operon-provenance", () => {
     @OperonTransaction()
     static async testFunction(ctxt: TransactionContext, name: string) {
       await ctxt.pgClient.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
+      return (await ctxt.pgClient.query("select CAST(pg_current_xact_id() AS TEXT) as txid;")).rows[0].txid;
     };
 
     @OperonWorkflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
-      await ctxt.transaction(TestFunctions.testFunction, name);
+      return await ctxt.transaction(TestFunctions.testFunction, name);
     }
   }
 
   test("basic-provenance", async () => {
-    await operon.workflow(TestFunctions.testWorkflow, {}, "write one").getResult();
+    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").getResult();
     await provDaemon.recordProvenance();
+    await operon.telemetryCollector.processAndExportSignals();
+    const pgExporter = operon.telemetryCollector
+    .exporters[0] as PostgresExporter;
+    console.log(xid);
+    const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs`);
+    console.log(rows);
   });
 });
