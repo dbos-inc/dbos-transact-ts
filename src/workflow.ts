@@ -32,6 +32,10 @@ export interface WorkflowStatus {
   updatedAtEpochMs: number;
 }
 
+interface PgTransactionId {
+  txid: string;
+}
+
 export const StatusString = {
   UNKNOWN: "UNKNOWN",
   SUCCESS: "SUCCESS",
@@ -205,6 +209,10 @@ export class WorkflowContext extends OperonContext {
         } else {
           // Synchronously record the output of write transactions.
           await this.recordGuardedOutput<R>(client, funcId, result);
+
+          // Obtain the transaction ID.
+          const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
+          tCtxt.span.setAttribute("postgres_transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }
 
