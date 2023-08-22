@@ -1,10 +1,8 @@
-import {
-  generateOperonTestConfig,
-  setupOperonTestDb,
-} from "../helpers";
-import { Operon, OperonConfig, TransactionContext } from "../../src";
+import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
-import { POSTGRES_EXPORTER } from "src/telemetry";
+import { POSTGRES_EXPORTER } from "../../src/telemetry";
+import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
+import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -21,6 +19,7 @@ describe("operon-provenance", () => {
   beforeEach(async () => {
     operon = new Operon(config);
     operon.useNodePostgres();
+    operon.registerDecoratedWT();
     await operon.init();
     operon.registerTopic("testTopic", ["defaultRole"]);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
@@ -36,17 +35,20 @@ describe("operon-provenance", () => {
     await provDaemon.stop();
   });
 
-  test("basic-provenance", async () => {
-    const testFunction = async (ctxt: TransactionContext, name: string) => {
-      await ctxt.pgClient.query(
-        `INSERT INTO ${testTableName}(value) VALUES ($1)`,
-        [name]
-      );
+  class TestFunctions {
+    @OperonTransaction()
+    static async testFunction(ctxt: TransactionContext, name: string) {
+      await ctxt.pgClient.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
     };
-    operon.registerTransaction(testFunction);
-    await operon.transaction(testFunction, {}, "write one");
-    await operon.transaction(testFunction, {}, "write two");
-    await operon.transaction(testFunction, {}, "write three");
+
+    @OperonWorkflow()
+    static async testWorkflow(ctxt: WorkflowContext, name: string) {
+      await ctxt.transaction(TestFunctions.testFunction, name);
+    }
+  }
+
+  test("basic-provenance", async () => {
+    await operon.workflow(TestFunctions.testWorkflow, {}, "write one").getResult();
     await provDaemon.recordProvenance();
   });
 });

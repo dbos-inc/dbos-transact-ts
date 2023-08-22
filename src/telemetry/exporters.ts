@@ -86,7 +86,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       await pgSystemClient.query(`CREATE DATABASE ${this.observabilityDBName}`);
     }
     await pgSystemClient.end();
-    console.log("here");
 
     // Connect the exporter client
     await this.pgClient.connect();
@@ -126,16 +125,16 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
 
       // Create a table for provenance logs.
       // TODO: create a secondary index.
-      await this.pgClient.query(`CREATE TABLE IF NOT EXISTS provenance_logs (
-        transaction_id TEXT NOT NULL,
-        kind TEXT,
-        schema_name TEXT,
-        table_name TEXT,
-        columnnames TEXT,
-        columntypes TEXT,
-        columnvalues TEXT
-      );`);
     }
+    await this.pgClient.query(`CREATE TABLE IF NOT EXISTS provenance_logs (
+      transaction_id TEXT NOT NULL,
+      kind TEXT,
+      schema_name TEXT,
+      table_name TEXT,
+      columnnames TEXT,
+      columntypes TEXT,
+      columnvalues TEXT
+    );`);
   }
 
   async destroy(): Promise<void> {

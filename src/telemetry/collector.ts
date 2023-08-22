@@ -17,6 +17,7 @@ class SignalsQueue {
   }
 }
 
+// TODO: Handle temporary workflows properly.
 export class TelemetryCollector {
   // Signals buffer management
   private readonly signals: SignalsQueue = new SignalsQueue();
