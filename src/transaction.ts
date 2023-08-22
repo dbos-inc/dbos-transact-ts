@@ -40,7 +40,7 @@ export class TransactionContext extends OperonContext {
     readonly functionID: number,
     readonly operationName: string
   ) {
-    super();
+    super({parentCtx: workflowContext});
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;

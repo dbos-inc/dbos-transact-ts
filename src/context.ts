@@ -7,8 +7,10 @@ export class OperonContext {
   //readonly span: Span;
 
   // TODO: Validate the parameters.
-  constructor() {
-    //this.span = span;
+  constructor(args ?: {parentCtx?:OperonContext}) {
+    if (args && args.parentCtx) {
+      this.copyBaseFields(args.parentCtx);
+    }
   }
 
   copyBaseFields(other: OperonContext) {

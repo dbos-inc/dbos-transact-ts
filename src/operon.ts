@@ -296,9 +296,6 @@ export class Operon {
       }
 
       const wCtxt: WorkflowContext = new WorkflowContext(this, params, workflowUUID, wConfig, wf.name);
-      if (params.parentCtx) {
-        wCtxt.copyBaseFields(params.parentCtx);
-      }
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 

@@ -54,7 +54,7 @@ export class WorkflowContext extends OperonContext {
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string
   ) {
-    super ();
+    super ({parentCtx: params.parentCtx});
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
@@ -181,7 +181,6 @@ export class WorkflowContext extends OperonContext {
         // Check if this execution previously happened, returning its original result if it did.
 
         const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, span, funcId, txn.name);
-        tCtxt.copyBaseFields(this);
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
