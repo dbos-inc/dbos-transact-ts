@@ -1,5 +1,20 @@
 import { Client, ClientConfig, DatabaseError } from "pg";
 
+interface wal2jsonRow {
+  lsn: string;
+  xid: string;
+  data: string;
+}
+
+interface wal2jsonChange {
+  kind: string;
+  schema: string;
+  table: string;
+  columnnames: string[];
+  columntypes: string[];
+  columnvalues: string[];
+}
+
 export class ProvenanceDaemon {
   readonly client;
   readonly daemonID;
@@ -32,8 +47,13 @@ export class ProvenanceDaemon {
 
   async recordProvenance() {
     if (this.initialized) {
-      const { rows } = await this.client.query("SELECT pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
-      console.log(rows);
+      const { rows } = await this.client.query<wal2jsonRow>("SELECT * FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
+      for (let row of rows) {
+        const data = JSON.parse(row.data).change as wal2jsonChange[];
+        for (let change of data) {
+          console.log(row.xid, change);
+        }
+      }
     }
   }
 
