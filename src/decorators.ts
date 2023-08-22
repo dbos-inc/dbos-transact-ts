@@ -5,11 +5,12 @@
 // General
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
-//   Integrate with API registration
-//   Integrate with Operon workflows
-//   Integrate parameter validation
+//
+//   Integrate parameter extraction validation
+//   Integrate with a return value
 //   Integrate with Authentication
 //   Integrate with error handling
+//
 //   Find a way to unit test - perhaps a mock log collector?
 //     Or is it easier once there is a real log collector?
 //
