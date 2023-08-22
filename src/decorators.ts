@@ -6,7 +6,8 @@
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
 //
-//   Integrate parameter extraction validation
+//   Integrate parameter extraction
+//   Integrate parameter validation
 //   Integrate with a return value
 //   Integrate with Authentication
 //   Integrate with error handling
@@ -300,6 +301,35 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
       //        And skip/mask arguments
+      methReg.args.forEach((v, idx) => {
+        if (v.argType === TransactionContext
+            || v.argType == WorkflowContext
+            || v.argType == CommunicatorContext
+            || v.argType == OperonContext)
+        {
+          // Context
+          return;
+        }
+
+        // Do we have an arg at all
+        if (idx >= args.length) {
+          if (v.required) {
+            throw Error(`Insufficient number of arguments calling ${methReg.name}`);
+          }
+          return;
+        }
+
+        const iv = args[idx];
+        if (iv === undefined && v.required) {
+          throw Error(`Missing required argument ${v.name} calling ${methReg.name}`);
+        }
+
+        if (v.dataType.dataType === 'text') {
+          if ((typeof iv !== 'string')) {
+            throw Error(`Argument ${v.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+          }
+        }
+      });
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
@@ -393,6 +423,15 @@ export function ArgName(name: string) {
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
+  };
+}
+
+export function ArgDate() { // TODO a little more info about it
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.dataType.dataType = 'timestamp';
   };
 }
 

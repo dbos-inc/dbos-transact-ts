@@ -14,7 +14,7 @@ class TestFunctions {
   @TraceLevel(TraceLevels.INFO)
   static foo(
     @LogMask(LogMasks.HASH) arg1: string,
-    arg2: Date,
+    /*@ArgDate()*/ arg2: Date,
     @SkipLogging arg3: boolean,
     @ArgName("arg4") arg_should_be_4: number
   ): Promise<string> {
