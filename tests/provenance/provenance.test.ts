@@ -4,7 +4,7 @@ import {
 } from "../helpers";
 import { Operon, OperonConfig, TransactionContext } from "../../src";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { POSTGRES_EXPORTER } from "src/telemetry";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -14,7 +14,7 @@ describe("operon-provenance", () => {
   let provDaemon: ProvenanceDaemon;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig([POSTGRES_EXPORTER]);
     await setupOperonTestDb(config);
   });
 
