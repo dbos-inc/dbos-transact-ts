@@ -1,5 +1,5 @@
 import { ITelemetryExporter } from "./exporters";
-import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
+import { OperonSignal } from "./signals";
 
 class SignalsQueue {
   data: OperonSignal[] = [];

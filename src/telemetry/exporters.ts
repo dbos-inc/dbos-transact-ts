@@ -1,8 +1,8 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
-import { groupBy } from "lodash";
+import { groupBy, result } from "lodash";
 import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
-import { OperonSignal, TelemetrySignal } from "./signals";
+import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
@@ -86,6 +86,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       await pgSystemClient.query(`CREATE DATABASE ${this.observabilityDBName}`);
     }
     await pgSystemClient.end();
+    console.log("here");
 
     // Connect the exporter client
     await this.pgClient.connect();
@@ -177,6 +178,30 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return queries;
   }
 
+  processProvenance(signals: ProvenanceSignal[]): QueryConfig {
+    const query = `
+      INSERT INTO provenance_logs
+      SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (
+        transaction_id text, kind text, schema_name text, table_name text,
+        columnnames text, columntypes text, columnvalues text);
+    `;
+
+    const values: string = JSON.stringify(
+      signals.map((signal) => {
+        return {
+          transaction_id: signal.transactionID,
+          kind: signal.kind,
+          schema_name: signal.schema,
+          table_name: signal.table,
+          columnnames: signal.columnnames,
+          columntypes: signal.columntypes,
+          columnvalues: signal.columnvalues
+        };
+      })
+    );
+    return { name: `insert-provenance-log`, text: query, values: [values] };
+  }
+
   async export(signals: OperonSignal[]): Promise<QueryArrayResult[]> {
     // Find all telemetry signals and process.
     const telemetrySignals = signals.filter(obj => (obj as TelemetrySignal).workflowUUID !== undefined) as TelemetrySignal[];
@@ -184,6 +209,13 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     const results: Promise<QueryArrayResult>[] = [];
     for (const query of queries) {
       results.push(this.pgClient.query(query));
+    }
+
+    // Find all provenance signals and process.
+    const provenanceSignals = signals.filter((obj) => (obj as ProvenanceSignal).transactionID !== undefined) as ProvenanceSignal[];
+    if (provenanceSignals.length > 0) {
+      const provQuery = this.processProvenance(provenanceSignals);
+      results.push(this.pgClient.query(provQuery));
     }
     try {
       // We do await here so we can catch and format PostgresExporter specific errors
