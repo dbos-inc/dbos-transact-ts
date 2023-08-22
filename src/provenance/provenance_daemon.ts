@@ -6,6 +6,10 @@ interface wal2jsonRow {
   data: string;
 }
 
+interface wal2jsonData {
+  change: wal2jsonChange[];
+}
+
 interface wal2jsonChange {
   kind: string;
   schema: string;
@@ -48,9 +52,9 @@ export class ProvenanceDaemon {
   async recordProvenance() {
     if (this.initialized) {
       const { rows } = await this.client.query<wal2jsonRow>("SELECT * FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
-      for (let row of rows) {
-        const data = JSON.parse(row.data).change as wal2jsonChange[];
-        for (let change of data) {
+      for (const row of rows) {
+        const data = (JSON.parse(row.data) as wal2jsonData).change;
+        for (const change of data) {
           console.log(row.xid, change);
         }
       }

@@ -10,13 +10,11 @@ describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
 
   let operon: Operon;
-  let username: string;
   let config: OperonConfig;
   let provDaemon: ProvenanceDaemon;
 
   beforeAll(async () => {
     config = generateOperonTestConfig([CONSOLE_EXPORTER]);
-    username = config.poolConfig.user || "postgres";
     await setupOperonTestDb(config);
   });
 
@@ -49,6 +47,6 @@ describe("operon-provenance", () => {
     await operon.transaction(testFunction, {}, "write one");
     await operon.transaction(testFunction, {}, "write two");
     await operon.transaction(testFunction, {}, "write three");
-    provDaemon.recordProvenance();
+    await provDaemon.recordProvenance();
   });
 });
