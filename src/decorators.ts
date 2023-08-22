@@ -26,6 +26,7 @@ import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { CommunicatorContext } from "./communicator";
 import { OperonContext } from "./context";
+import { OperonDataValidationError } from "./error";
 
 /**
  * Any column type column can be.
@@ -314,19 +315,24 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         // Do we have an arg at all
         if (idx >= args.length) {
           if (v.required) {
-            throw Error(`Insufficient number of arguments calling ${methReg.name}`);
+            throw new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name}`);
           }
           return;
         }
 
-        const iv = args[idx];
+        let iv = args[idx];
         if (iv === undefined && v.required) {
-          throw Error(`Missing required argument ${v.name} calling ${methReg.name}`);
+          throw new OperonDataValidationError(`Missing required argument ${v.name} calling ${methReg.name}`);
+        }
+
+        if (iv instanceof String) {
+          iv = iv.toString();
+          args[idx] = iv;
         }
 
         if (v.dataType.dataType === 'text') {
           if ((typeof iv !== 'string')) {
-            throw Error(`Argument ${v.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+            throw new OperonDataValidationError(`Argument ${v.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
           }
         }
       });
