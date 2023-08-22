@@ -25,6 +25,7 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 export class TransactionContext extends OperonContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
+  //readonly typeormDS: unknown = null;
 
   readonly workflowUUID: string;
   readonly runAs: string;
@@ -39,12 +40,14 @@ export class TransactionContext extends OperonContext {
     readonly functionID: number,
     readonly operationName: string
   ) {
-    super();
+    super({parentCtx: workflowContext});
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
     } else if (userDatabaseName === UserDatabaseName.PRISMA) {
       this.prismaClient = client as PrismaClient;
+    } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
+      //this.typeormDS = client;
     }
     this.workflowUUID = workflowContext.workflowUUID;
     this.runAs = workflowContext.runAs;

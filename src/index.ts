@@ -10,6 +10,7 @@ export {
 export {
   TransactionContext,
   TransactionConfig,
+  OperonTransaction as OperonTransactionFunction,
 } from './transaction';
 
 export {

@@ -20,6 +20,7 @@ export interface WorkflowParams {
   workflowUUID?: string;
   runAs?: string;
   parentSpan?: Span;
+  parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
@@ -53,7 +54,7 @@ export class WorkflowContext extends OperonContext {
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string
   ) {
-    super ();
+    super ({parentCtx: params.parentCtx});
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
