@@ -200,7 +200,7 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
-    // const client: PoolClient = await this.pool.connect();
+    
     try {
       const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
@@ -215,13 +215,12 @@ export class TypeOrmDatabase implements UserDatabase {
       await this.dataSource.query(`ROLLBACK`);
       throw err;
     } finally {
-      // this.dataSource.release();
+      // Do we need to release
     }
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
     return this.dataSource.query(sql, params).then((value) => {
-      // return value.rows as R[];
       return value;
     });
   }
@@ -229,7 +228,6 @@ export class TypeOrmDatabase implements UserDatabase {
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
     const tClient: DataSource = client as DataSource;
     return tClient.query(sql, params).then((value) => {
-      // return value.rows as R[];
       return value;
     });
   }
