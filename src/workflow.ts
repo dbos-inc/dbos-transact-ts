@@ -32,7 +32,7 @@ export interface WorkflowStatus {
   updatedAtEpochMs: number;
 }
 
-interface PgTransactionId {
+export interface PgTransactionId {
   txid: string;
 }
 

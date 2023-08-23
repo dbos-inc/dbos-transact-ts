@@ -3,7 +3,7 @@ import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry";
 import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
 import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src";
-import { Client } from "pg";
+import { PgTransactionId } from "../../src/workflow";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -40,8 +40,12 @@ describe("operon-provenance", () => {
     @OperonTransaction()
     static async testFunction(ctxt: TransactionContext, name: string) {
       await ctxt.pgClient.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
-      return (await ctxt.pgClient.query("select CAST(pg_current_xact_id() AS TEXT) as txid;")).rows[0].txid;
-    };
+      return (
+        await ctxt.pgClient.query<PgTransactionId>(
+          "select CAST(pg_current_xact_id() AS TEXT) as txid;"
+        )
+      ).rows[0].txid;
+    }
 
     @OperonWorkflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
@@ -58,6 +62,7 @@ describe("operon-provenance", () => {
     console.log(xid);
     const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(rows[0].table_name).toBe(testTableName);
   });
 });

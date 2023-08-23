@@ -1,5 +1,5 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
-import { groupBy, result } from "lodash";
+import { groupBy } from "lodash";
 import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
 import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
