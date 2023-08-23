@@ -52,11 +52,12 @@ describe("operon-provenance", () => {
   test("basic-provenance", async () => {
     const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").getResult();
     await provDaemon.recordProvenance();
-    await operon.telemetryCollector.processAndExportSignals();
+    await provDaemon.telemetryCollector.processAndExportSignals();
     const pgExporter = operon.telemetryCollector
     .exporters[0] as PostgresExporter;
     console.log(xid);
-    const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs`);
-    console.log(rows);
+    const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].table_name).toBe(testTableName);
   });
 });
