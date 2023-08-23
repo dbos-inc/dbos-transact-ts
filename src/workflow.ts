@@ -20,6 +20,7 @@ export interface WorkflowParams {
   workflowUUID?: string;
   runAs?: string;
   parentSpan?: Span;
+  parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
@@ -29,6 +30,10 @@ export interface WorkflowConfig {
 export interface WorkflowStatus {
   status: string;
   updatedAtEpochMs: number;
+}
+
+interface PgTransactionId {
+  txid: string;
 }
 
 export const StatusString = {
@@ -53,7 +58,7 @@ export class WorkflowContext extends OperonContext {
     readonly workflowConfig: WorkflowConfig,
     readonly workflowName: string
   ) {
-    super ();
+    super ({parentCtx: params.parentCtx});
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
@@ -204,6 +209,10 @@ export class WorkflowContext extends OperonContext {
         } else {
           // Synchronously record the output of write transactions.
           await this.recordGuardedOutput<R>(client, funcId, result);
+
+          // Obtain the transaction ID.
+          const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
+          tCtxt.span.setAttribute("postgres_transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }
 

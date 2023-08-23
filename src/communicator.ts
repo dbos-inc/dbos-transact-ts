@@ -28,7 +28,7 @@ export class CommunicatorContext extends OperonContext
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig) {
-    super();
+    super({parentCtx: workflowContext});
     this.functionID = functionID;
     this.span = span;
     this.logger = logger;
