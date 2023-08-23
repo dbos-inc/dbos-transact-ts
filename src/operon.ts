@@ -62,6 +62,7 @@ interface ConfigFile {
     user_database: string;
     system_database: string;
     ssl_ca?: string;
+    observability_database: string;
   };
   telemetryExporters?: string[];
 }
@@ -134,7 +135,7 @@ export class Operon {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
         } else if (exporter === POSTGRES_EXPORTER) {
-          telemetryExporters.push(new PostgresExporter(this.config.poolConfig, config?.observability_database));
+          telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
         }
@@ -248,6 +249,7 @@ export class Operon {
       poolConfig: poolConfig,
       telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? "operon_systemdb",
+      observability_database: config.database.observability_database || undefined
     };
   }
 
