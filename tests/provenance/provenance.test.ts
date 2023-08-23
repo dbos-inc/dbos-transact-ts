@@ -38,7 +38,7 @@ describe("operon-provenance", () => {
 
   class TestFunctions {
     @OperonTransaction()
-    static async testFunction(ctxt: TransactionContext, name: string) {
+    static async testTransaction(ctxt: TransactionContext, name: string) {
       await ctxt.pgClient.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
       return (
         await ctxt.pgClient.query<PgTransactionId>(
@@ -49,7 +49,7 @@ describe("operon-provenance", () => {
 
     @OperonWorkflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
-      return await ctxt.transaction(TestFunctions.testFunction, name);
+      return await ctxt.transaction(TestFunctions.testTransaction, name);
     }
   }
 
@@ -59,9 +59,13 @@ describe("operon-provenance", () => {
     await provDaemon.telemetryCollector.processAndExportSignals();
     const pgExporter = operon.telemetryCollector
     .exporters[0] as PostgresExporter;
-    const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
+    let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(rows[0].table_name).toBe(testTableName);
+    await operon.telemetryCollector.processAndExportSignals();
+    ({ rows } = await pgExporter.pgClient.query(`SELECT * FROM signal_testtransaction WHERE transaction_id=$1`, [xid]));
+    expect(rows.length).toBeGreaterThan(0);
+
   });
 });

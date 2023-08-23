@@ -62,7 +62,7 @@ export class Tracer {
       runAs,
       timestamp: Date.now(),
       traceID,
-      transactionID,
+      transactionID: transactionID,
       traceSpan: readableSpan,
     };
 
