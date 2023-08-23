@@ -31,6 +31,7 @@
     "pg": "^8.11.1",
     "reflect-metadata": "^0.1.13",
     "serialize-error": "8.1.0",
+    "typeorm": "^0.3.17",
     "uuid": "^9.0.0",
     "yaml": "^2.3.1"
   },

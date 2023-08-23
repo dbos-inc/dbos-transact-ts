@@ -36,9 +36,10 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeOrmDatabase } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { DataSource } from "typeorm"
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -111,6 +112,8 @@ export class Operon {
   readonly logger: Logger;
   readonly tracer: Tracer;
 
+  configFile : ConfigFile | undefined;
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
     if (config) {
@@ -181,6 +184,30 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
+  useTypeOrm() {
+
+    if (this.userDatabase) {
+      throw new OperonInitializationError("Data source already initialized!");
+    }
+
+    if (!this.configFile) {
+      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
+    }
+
+    const dataSource = new DataSource({
+      type: "postgres", // perhaps should move to config file
+      host: this.configFile.database.hostname,
+      port: this.configFile.database.port,
+      username: this.configFile.database.username,
+      password: this.getDbPassword(),
+      database: this.configFile.database.user_database,
+    })
+  
+    this.userDatabase = new TypeOrmDatabase(dataSource);
+  }
+
+  
+
   async init(): Promise<void> {
     if (!this.userDatabase) {
       throw new OperonInitializationError("No data source!");
@@ -212,43 +239,50 @@ export class Operon {
 
   generateOperonConfig(): OperonConfig {
     // Load default configuration
-    let config: ConfigFile | undefined;
+    // let config: ConfigFile | undefined;
     try {
       const configContent = readFileSync(CONFIG_FILE);
-      config = YAML.parse(configContent) as ConfigFile;
+      this.configFile = YAML.parse(configContent) as ConfigFile;
     } catch (error) {
       if (error instanceof Error) {
         throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
       }
     }
-    if (!config) {
+    if (!this.configFile) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
 
     // Handle "Global" pool config
-    if (!config.database) {
+    if (!this.configFile.database) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
     }
+    
+    const poolConfig: PoolConfig = {
+      host: this.configFile.database.hostname,
+      port: this.configFile.database.port,
+      user: this.configFile.database.username,
+      password: this.getDbPassword(),
+      connectionTimeoutMillis: this.configFile.database.connectionTimeoutMillis,
+      database: this.configFile.database.user_database,
+    };
+    if (this.configFile.database.ssl_ca) {
+      poolConfig.ssl = { ca: [readFileSync(this.configFile.database.ssl_ca)], rejectUnauthorized: true };
+    }
+    return {
+      poolConfig: poolConfig,
+      telemetryExporters: this.configFile.telemetryExporters || [],
+      system_database: this.configFile.database.system_database ?? "operon_systemdb",
+    };
+  }
+
+  getDbPassword(): string {
+
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
       throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
     }
-    const poolConfig: PoolConfig = {
-      host: config.database.hostname,
-      port: config.database.port,
-      user: config.database.username,
-      password: dbPassword,
-      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
-      database: config.database.user_database,
-    };
-    if (config.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
-    }
-    return {
-      poolConfig: poolConfig,
-      telemetryExporters: config.telemetryExporters || [],
-      system_database: config.database.system_database ?? "operon_systemdb",
-    };
+
+    return dbPassword;
   }
 
   /* WORKFLOW OPERATIONS */

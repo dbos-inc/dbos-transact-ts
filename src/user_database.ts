@@ -3,6 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError } from "pg";
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
+import { DataSource } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -18,12 +19,13 @@ export interface UserDatabase {
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient /*| TypeORMClient*/;
+export type UserDatabaseClient = PoolClient | PrismaClient | DataSource;
+
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
-  TYPEORM: "typeorm",
+  TYPEORM: "typeorm"
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -164,5 +166,75 @@ export class PrismaUserDatabase implements UserDatabase {
   getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PrismaError = error as PrismaError;
     return dbErr.meta ? dbErr.meta.code : null;
+  }
+
+}
+
+/**
+ * TypeOrm user data access interface
+ */
+export class TypeOrmDatabase implements UserDatabase {
+  readonly dataSource: DataSource;
+
+  constructor(readonly ds: DataSource) {
+    this.dataSource = ds;
+  }
+
+  async init(): Promise<void> {
+
+    await this.dataSource.initialize();
+
+    if (this.dataSource.isInitialized) {
+      console.log("DataSource is successfully initialized"); 
+    }
+
+    await this.dataSource.query(createUserDBSchema);
+    await this.dataSource.query(userDBSchema);
+  }
+
+  async destroy(): Promise<void> {
+    await this.dataSource.destroy;
+  }
+
+  getName() {
+    return UserDatabaseName.TYPEORM;
+  }
+
+  async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+    
+    try {
+      const readOnly = config.readOnly ?? false;
+      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+      await this.dataSource.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
+      if (readOnly) {
+        await this.dataSource.query(`SET TRANSACTION READ ONLY`);
+      }
+      const result: R = await txn(this.dataSource, ...args);
+      await this.dataSource.query(`COMMIT`);
+      return result;
+    } catch (err) {
+      await this.dataSource.query(`ROLLBACK`);
+      throw err;
+    } finally {
+      // Do we need to release
+    }
+  }
+
+  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+    return this.dataSource.query(sql, params).then((value) => {
+      return value;
+    });
+  }
+
+  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
+    const tClient: DataSource = client as DataSource;
+    return tClient.query(sql, params).then((value) => {
+      return value;
+    });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: DatabaseError = error as DatabaseError;
+    return dbErr.code ? dbErr.code : null;
   }
 }

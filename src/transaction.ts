@@ -6,6 +6,7 @@ import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
+import { DataSource } from "typeorm";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
@@ -26,7 +27,9 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 export class TransactionContext extends OperonContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
-  //readonly typeormDS: unknown = null;
+
+  readonly typeormDS: DataSource = null as unknown as DataSource;;
+
 
   readonly workflowUUID: string;
   readonly runAs: string;
@@ -48,7 +51,7 @@ export class TransactionContext extends OperonContext {
     } else if (userDatabaseName === UserDatabaseName.PRISMA) {
       this.prismaClient = client as PrismaClient;
     } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
-      //this.typeormDS = client;
+      this.typeormDS = client as DataSource;
     }
     this.workflowUUID = workflowContext.workflowUUID;
     this.runAs = workflowContext.runAs;
