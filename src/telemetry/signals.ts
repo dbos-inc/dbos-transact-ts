@@ -8,6 +8,7 @@ export interface TelemetrySignal {
   operationName: string;
   runAs: string;
   timestamp: number;
+  transactionID?: string;
   severity?: string;
   logMessage?: string;
   traceID?: string;

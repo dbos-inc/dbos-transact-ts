@@ -52,6 +52,7 @@ export class Tracer {
     const functionID = span.attributes.functionID as number;
     const operationName = span.attributes.operationName as string;
     const runAs = span.attributes.runAs as string;
+    const transactionID = span.attributes.transaction_id as string;
     const traceID = span.spanContext().traceId;
 
     const signal: TelemetrySignal = {
@@ -61,6 +62,7 @@ export class Tracer {
       runAs,
       timestamp: Date.now(),
       traceID,
+      transactionID,
       traceSpan: readableSpan,
     };
 
