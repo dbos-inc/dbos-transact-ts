@@ -21,13 +21,13 @@ interface wal2jsonChange {
   columnvalues: string[];
 }
 
-
 /**
  * A class implementing a daemon which collects and exports provenance information,
- * specifically a record of all INSERTs, UPDATEs, and DELETEs in the target database and their associated transactions.
+ * specifically a record of all INSERTs, UPDATEs, and DELETEs in the target database.
  * Only one daemon is needed per database. The daemon need not run in the same process as Operon.
- * The daemon has three requirements and will fail to launch if either is not met:
- *  1.  The postgres databsae must be configured with wal_level=logical.
+ * The daemon has three requirements and will fail to launch if any is not met:
+ *
+ *  1.  The database must be configured with wal_level=logical.
  *  2.  An open replication slot must be available.
  *  3.  The wal2json Postgres plugin must be installed. It is installed by default on most cloud databases, including RDS.
  *
@@ -43,7 +43,7 @@ export class ProvenanceDaemon {
 
   /**
    * @param operonConfig An Operon config defining exporters and database connection information.
-   * @param slotName  The name of a logical replication slot.  This slot is persistent and must be deleted if the daemon is no longer to be used.
+   * @param slotName  The name of a logical replication slot. This slot is persistent and must be deleted if the daemon is no longer to be used.
    */
   constructor(operonConfig: OperonConfig, readonly slotName: string) {
     this.client = new Client(operonConfig.poolConfig);
@@ -72,7 +72,7 @@ export class ProvenanceDaemon {
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "42710") {
-        // This means the slot has been created before.
+        // The slot has already been created.
       } else {
         console.error(err);
         throw err;
