@@ -29,7 +29,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          --entrypoint "docker-entrypoint.sh postgres -c wal_level=logical"
+          --entrypoint "/docker-entrypoint.sh postgres -c wal_level=logical"
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
