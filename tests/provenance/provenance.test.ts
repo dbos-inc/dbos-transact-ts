@@ -59,7 +59,6 @@ describe("operon-provenance", () => {
     await provDaemon.telemetryCollector.processAndExportSignals();
     const pgExporter = operon.telemetryCollector
     .exporters[0] as PostgresExporter;
-    console.log(xid);
     const { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
