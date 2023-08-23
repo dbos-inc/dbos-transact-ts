@@ -72,7 +72,7 @@ export class ProvenanceDaemon {
         const data = (JSON.parse(row.data) as wal2jsonData).change;
         for (const change of data) {
           const signal: ProvenanceSignal = {
-            transactionID: row.xid,
+            provTransactionID: row.xid,
             kind: change.kind,
             schema: change.schema,
             table: change.table,

@@ -16,7 +16,7 @@ export interface TelemetrySignal {
 }
 
 export interface ProvenanceSignal {
-  transactionID: string;
+  provTransactionID: string;
   kind: string;
   schema: string;
   table: string;

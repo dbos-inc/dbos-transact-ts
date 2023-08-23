@@ -190,7 +190,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     const values: string = JSON.stringify(
       signals.map((signal) => {
         return {
-          transaction_id: signal.transactionID,
+          transaction_id: signal.provTransactionID,
           kind: signal.kind,
           schema_name: signal.schema,
           table_name: signal.table,
@@ -213,7 +213,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     }
 
     // Find all provenance signals and process.
-    const provenanceSignals = signals.filter((obj) => (obj as ProvenanceSignal).transactionID !== undefined) as ProvenanceSignal[];
+    const provenanceSignals = signals.filter((obj) => (obj as ProvenanceSignal).provTransactionID !== undefined) as ProvenanceSignal[];
     if (provenanceSignals.length > 0) {
       const provQuery = this.processProvenance(provenanceSignals);
       results.push(this.pgClient.query(provQuery));
