@@ -229,8 +229,8 @@ export class TypeOrmDatabase implements UserDatabase {
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
     const tClient: DataSource = client as DataSource;
     return tClient.query(sql, params).then((value) => {
-      return value.rows as R[];
-      // return value;
+      // return value.rows as R[];
+      return value;
     });
   }
 
