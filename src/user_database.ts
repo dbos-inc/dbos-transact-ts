@@ -21,11 +21,10 @@ type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ..
 
 export type UserDatabaseClient = PoolClient | PrismaClient | DataSource;
 
-
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
-  TYPEORM: "typeorm"
+  TYPEORM: "typeorm",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -185,7 +184,7 @@ export class TypeOrmDatabase implements UserDatabase {
     await this.dataSource.initialize();
 
     if (this.dataSource.isInitialized) {
-      console.log("DataSource is successfully initialized"); 
+      console.log("DataSource is successfully initialized");
     }
 
     await this.dataSource.query(createUserDBSchema);
@@ -201,8 +200,8 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
-    
     try {
+      // TODO: typeORM DS has a transaction function to call - see my example app.  We shouldn't be doing it explicitly like this.
       const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
       await this.dataSource.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
