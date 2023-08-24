@@ -194,6 +194,7 @@ export class Operon {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
 
+    // TODO: Because of how typeorm works, we ought to accept data source provided from elsewhere.
     const dataSource = new DataSource({
       type: "postgres", // perhaps should move to config file
       host: this.configFile.database.hostname,
@@ -202,11 +203,11 @@ export class Operon {
       password: this.getDbPassword(),
       database: this.configFile.database.user_database,
     })
-  
+
     this.userDatabase = new TypeOrmDatabase(dataSource);
   }
 
-  
+
 
   async init(): Promise<void> {
     if (!this.userDatabase) {
@@ -256,7 +257,7 @@ export class Operon {
     if (!this.configFile.database) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
     }
-    
+
     const poolConfig: PoolConfig = {
       host: this.configFile.database.hostname,
       port: this.configFile.database.port,
