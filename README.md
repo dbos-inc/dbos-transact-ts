@@ -13,5 +13,5 @@ npm test
 ```
 
 To run the Operon tests, you must have a Postgres database accessible on `localhost`.
-This database must have the default `postgres` user and must store its password in the `PGPASSWORD` environment variable.
+This database must have the default `postgres` user with password `dbos` (or alternatively, set the password in `jest.setup.ts`).
 Additionally, [`wal_level`](https://www.postgresql.org/docs/current/runtime-config-wal.html) must be set to `logical` in `postgresql.conf` and the [`wal2json`](https://github.com/eulerto/wal2json) Postgres plugin must be installed.

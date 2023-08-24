@@ -204,12 +204,14 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
   }
 
   async export(signals: OperonSignal[]): Promise<QueryArrayResult[]> {
+    const results: Promise<QueryArrayResult>[] = [];
     // Find all telemetry signals and process.
     const telemetrySignals = signals.filter(obj => (obj as TelemetrySignal).workflowUUID !== undefined) as TelemetrySignal[];
-    const queries = this.process(telemetrySignals);
-    const results: Promise<QueryArrayResult>[] = [];
-    for (const query of queries) {
-      results.push(this.pgClient.query(query));
+    if (telemetrySignals.length > 0) {
+      const queries = this.process(telemetrySignals);
+      for (const query of queries) {
+        results.push(this.pgClient.query(query));
+      }
     }
 
     // Find all provenance signals and process.

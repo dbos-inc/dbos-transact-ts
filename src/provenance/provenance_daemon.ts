@@ -1,5 +1,11 @@
 import { Client, DatabaseError } from "pg";
-import { CONSOLE_EXPORTER, ConsoleExporter, POSTGRES_EXPORTER, PostgresExporter, TelemetryCollector } from "../telemetry";
+import {
+  CONSOLE_EXPORTER,
+  ConsoleExporter,
+  POSTGRES_EXPORTER,
+  PostgresExporter,
+  TelemetryCollector
+} from "../telemetry";
 import { OperonConfig } from "src/operon";
 import { ProvenanceSignal } from "src/telemetry/signals";
 
