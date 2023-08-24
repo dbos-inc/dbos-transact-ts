@@ -180,9 +180,10 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async init(): Promise<void> {
-
-    await this.dataSource.initialize();
-
+    if (!this.dataSource.isInitialized) {
+      await this.dataSource.initialize();
+    }
+  
     if (this.dataSource.isInitialized) {
       console.log("DataSource is successfully initialized");
     }
@@ -192,7 +193,9 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async destroy(): Promise<void> {
-    await this.dataSource.destroy();
+    if (this.dataSource.isInitialized) {
+      await this.dataSource.destroy();
+    }
   }
 
   getName() {

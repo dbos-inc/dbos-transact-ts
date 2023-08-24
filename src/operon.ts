@@ -184,23 +184,22 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
-  useTypeOrm(ds?: DataSource) {
+  // TODO: Create an interface for ds that has the high level things we expect from typeorm
+  useTypeOrm(ds?: unknown, alreadyInitialized = true) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
 
     if (ds) {
-      // CB TODO: This DataSource type is not compatible with demo
-      //   app DataSource because the typeorm installs are separate.
-      //   Perhaps it should be a peer dependency.  Or monorepo.
-      this.userDatabase = new TypeOrmDatabase(ds );
+      this.userDatabase = new TypeOrmDatabase(ds as DataSource);
       return;
     }
 
     if (!this.configFile) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
-    // TODO: Because of how typeorm works, we ought to accept data source provided from elsewhere.
+
+    // Do we ever want to make a data source?  I think we don't, not with the DB hardcoded.
     const dataSource = new DataSource({
       type: "postgres", // perhaps should move to config file
       host: this.configFile.database.hostname,
@@ -209,7 +208,6 @@ export class Operon {
       password: this.getDbPassword(),
       database: this.configFile.database.user_database,
     })
-
 
     this.userDatabase = new TypeOrmDatabase(dataSource);
   }
