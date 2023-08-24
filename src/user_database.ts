@@ -68,7 +68,7 @@ export class PGNodeUserDatabase implements UserDatabase {
       throw err;
     } finally {
       client.release();
-    } 
+    }
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
@@ -200,16 +200,14 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
-  
-      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
-      
-      return this.dataSource.manager.transaction(isolationLevel, 
-        async (transactionEntityManager : EntityManager) => {
-        const result = await txn(transactionEntityManager, ...args);
-        return result;
-        },
-      ); 
-   
+    const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+
+    return this.dataSource.manager.transaction(isolationLevel,
+      async (transactionEntityManager : EntityManager) => {
+      const result = await txn(transactionEntityManager, ...args);
+      return result;
+      },
+    );
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
