@@ -184,7 +184,7 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
-  useTypeOrm(ds?: unknown) {
+  useTypeOrm(ds?: DataSource) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
@@ -197,7 +197,7 @@ export class Operon {
       // CB TODO: This DataSource type is not compatible with demo
       //   app DataSource because the typeorm installs are separate.
       //   Perhaps it should be a peer dependency.  Or monorepo.
-      this.userDatabase = new TypeOrmDatabase(ds as DataSource);
+      this.userDatabase = new TypeOrmDatabase(ds );
       return;
     }
     // TODO: Because of how typeorm works, we ought to accept data source provided from elsewhere.
@@ -212,8 +212,6 @@ export class Operon {
 
     this.userDatabase = new TypeOrmDatabase(dataSource);
   }
-
-
 
   async init(): Promise<void> {
     if (!this.userDatabase) {
