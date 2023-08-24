@@ -29,10 +29,6 @@ export class TransactionContext extends OperonContext {
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 
   readonly typeormDS: DataSource = null as unknown as DataSource;
-<<<<<<< HEAD
-
-=======
->>>>>>> 565586d75f7123efe32b5bcf3b63c45a46ebc2f5
 
   readonly workflowUUID: string;
   readonly runAs: string;
