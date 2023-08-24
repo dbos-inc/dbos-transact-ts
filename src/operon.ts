@@ -189,16 +189,16 @@ export class Operon {
       throw new OperonInitializationError("Data source already initialized!");
     }
 
-    if (!this.configFile) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
     if (ds) {
       // CB TODO: This DataSource type is not compatible with demo
       //   app DataSource because the typeorm installs are separate.
       //   Perhaps it should be a peer dependency.  Or monorepo.
       this.userDatabase = new TypeOrmDatabase(ds );
       return;
+    }
+
+    if (!this.configFile) {
+      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
     // TODO: Because of how typeorm works, we ought to accept data source provided from elsewhere.
     const dataSource = new DataSource({
@@ -209,6 +209,7 @@ export class Operon {
       password: this.getDbPassword(),
       database: this.configFile.database.user_database,
     })
+
 
     this.userDatabase = new TypeOrmDatabase(dataSource);
   }

@@ -3,7 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError } from "pg";
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-import { DataSource } from "typeorm";
+import { DataSource, EntityManager } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -19,7 +19,7 @@ export interface UserDatabase {
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | DataSource;
+export type UserDatabaseClient = PoolClient | PrismaClient | EntityManager;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
@@ -68,7 +68,7 @@ export class PGNodeUserDatabase implements UserDatabase {
       throw err;
     } finally {
       client.release();
-    }
+    } 
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
@@ -200,33 +200,26 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
-    try {
-      // TODO: typeORM DS has a transaction function to call - see my example app.  We shouldn't be doing it explicitly like this.
-      const readOnly = config.readOnly ?? false;
+  
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
-      await this.dataSource.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
-      if (readOnly) {
-        await this.dataSource.query(`SET TRANSACTION READ ONLY`);
-      }
-      const result: R = await txn(this.dataSource, ...args);
-      await this.dataSource.query(`COMMIT`);
-      return result;
-    } catch (err) {
-      await this.dataSource.query(`ROLLBACK`);
-      throw err;
-    } finally {
-      // Do we need to release
-    }
+      
+      return this.dataSource.manager.transaction(isolationLevel, 
+        async (transactionEntityManager : EntityManager) => {
+        const result = await txn(transactionEntityManager, ...args);
+        return result;
+        },
+      ); 
+   
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
-    return this.dataSource.query(sql, params).then((value) => {
+    return this.dataSource.manager.query(sql, params).then((value) => {
       return value as R[];
     });
   }
 
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
-    const tClient: DataSource = client as DataSource;
+    const tClient: EntityManager = client as EntityManager;
     return tClient.query(sql, params).then((value) => {
       return value as R[];
     });
