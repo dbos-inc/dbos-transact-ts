@@ -4,6 +4,9 @@ export class OperonContext {
   request: unknown;
   response: unknown;
 
+  authUser: string = '';
+  authRoles: string[] = [];
+
   //readonly span: Span;
 
   // TODO: Validate the parameters.
@@ -16,5 +19,7 @@ export class OperonContext {
   copyBaseFields(other: OperonContext) {
     this.request = other.request;
     this.response = other.response;
+    this.authRoles = other.authRoles;
+    this.authUser = other.authUser;
   }
 }

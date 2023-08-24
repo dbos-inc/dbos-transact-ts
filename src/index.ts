@@ -48,6 +48,9 @@ export {
   ArgName,
   TraceLevel,
   Traced,
+  RequiredRole,
+  ArgSource,
+  ArgSources,
 
   APITypes,
   GetApi,

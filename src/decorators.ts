@@ -196,6 +196,8 @@ export interface OperonMethodRegistrationBase {
 
   args: OperonParameter[];
 
+  requiredRole: string [];
+
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
 
@@ -215,6 +217,8 @@ implements OperonMethodRegistrationBase
 
   apiType: APITypes = APITypes.GET;
   apiURL: string = '';
+
+  requiredRole: string[] = [];
 
   args: OperonParameter[] = [];
 
@@ -457,6 +461,20 @@ type MethodDecorator = <T>(
   descriptor: TypedPropertyDescriptor<T>
 ) => TypedPropertyDescriptor<T> | void;
 */
+
+export function RequiredRole(anyOf: string[]) {
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.requiredRole = anyOf;
+
+    return descriptor;
+  }
+  return apidec;
+}
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
 export function TraceLevel(level: TraceLevels) {
