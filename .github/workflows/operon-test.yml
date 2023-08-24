@@ -18,7 +18,7 @@ jobs:
     # Service container for Postgres
     services:
       # Label used to access the service container.
-      bank-db:
+      postgres:
         image: postgres
         env:
           # Specify the password for Postgres superuser.
@@ -34,6 +34,12 @@ jobs:
           - 5432:5432
   
     steps:
+      - name: "Setup postgres config"
+        run: |
+          docker exec -i ${{ job.services.postgres.id }} apt update
+          docker exec -i ${{ job.services.postgres.id }} apt install -y postgresql-15-wal2json
+          docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
+          docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v3
       - name: Use Node.js 18
         uses: actions/setup-node@v3
