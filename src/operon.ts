@@ -184,8 +184,7 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
-  useTypeOrm() {
-
+  useTypeOrm(ds?: unknown) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
@@ -194,6 +193,13 @@ export class Operon {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
 
+    if (ds) {
+      // CB TODO: This DataSource type is not compatible with demo
+      //   app DataSource because the typeorm installs are separate.
+      //   Perhaps it should be a peer dependency.  Or monorepo.
+      this.userDatabase = new TypeOrmDatabase(ds as DataSource);
+      return;
+    }
     // TODO: Because of how typeorm works, we ought to accept data source provided from elsewhere.
     const dataSource = new DataSource({
       type: "postgres", // perhaps should move to config file
