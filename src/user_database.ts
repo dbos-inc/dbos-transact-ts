@@ -193,7 +193,7 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async destroy(): Promise<void> {
-    await this.dataSource.destroy;
+    await this.dataSource.destroy();
   }
 
   getName() {
@@ -222,14 +222,14 @@ export class TypeOrmDatabase implements UserDatabase {
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
     return this.dataSource.query(sql, params).then((value) => {
-      return value;
+      return value as R[];
     });
   }
 
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
     const tClient: DataSource = client as DataSource;
     return tClient.query(sql, params).then((value) => {
-      return value;
+      return value as R[];
     });
   }
 
