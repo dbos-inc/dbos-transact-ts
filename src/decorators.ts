@@ -6,14 +6,12 @@
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
 //
-//   Integrate parameter extraction
-//   Integrate parameter validation
-//   Integrate with a return value
-//   Integrate with Authentication
-//   Integrate with error handling
+//   Integrate parameter extraction / validation that currently lives in demo app repo
 //
 //   Find a way to unit test - perhaps a mock log collector?
 //     Or is it easier once there is a real log collector?
+//
+// Workflow
 //
 // Logging
 //   Integrate with Logger setup
