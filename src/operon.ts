@@ -277,6 +277,7 @@ export class Operon {
       poolConfig: poolConfig,
       telemetryExporters: this.configFile.telemetryExporters || [],
       system_database: this.configFile.database.system_database ?? "operon_systemdb",
+      observability_database: this.configFile.database.observability_database || undefined
     };
   }
 
