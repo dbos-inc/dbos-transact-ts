@@ -32,7 +32,7 @@ export interface WorkflowStatus {
   updatedAtEpochMs: number;
 }
 
-interface PgTransactionId {
+export interface PgTransactionId {
   txid: string;
 }
 
@@ -213,7 +213,7 @@ export class WorkflowContext extends OperonContext {
           // Obtain the transaction ID.
           // TODO: This needs to be part of interface, not an explicit call to PG
           const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
-          tCtxt.span.setAttribute("postgres_transaction_id", pg_txn_id);
+          tCtxt.span.setAttribute("transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }
 

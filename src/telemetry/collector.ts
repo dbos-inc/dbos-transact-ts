@@ -1,14 +1,14 @@
 import { ITelemetryExporter } from "./exporters";
-import { TelemetrySignal } from "./signals";
+import { OperonSignal } from "./signals";
 
 class SignalsQueue {
-  data: TelemetrySignal[] = [];
+  data: OperonSignal[] = [];
 
-  push(signal: TelemetrySignal): void {
+  push(signal: OperonSignal): void {
     this.data.push(signal);
   }
 
-  pop(): TelemetrySignal | undefined {
+  pop(): OperonSignal | undefined {
     return this.data.shift();
   }
 
@@ -17,6 +17,7 @@ class SignalsQueue {
   }
 }
 
+// TODO: Handle temporary workflows properly.
 export class TelemetryCollector {
   // Signals buffer management
   private readonly signals: SignalsQueue = new SignalsQueue();
@@ -49,16 +50,16 @@ export class TelemetryCollector {
     }
   }
 
-  push(signal: TelemetrySignal) {
+  push(signal: OperonSignal) {
     this.signals.push(signal);
   }
 
-  private pop(): TelemetrySignal | undefined {
+  private pop(): OperonSignal | undefined {
     return this.signals.pop();
   }
 
   async processAndExportSignals(): Promise<void> {
-    const batch: TelemetrySignal[] = [];
+    const batch: OperonSignal[] = [];
     while (this.signals.size() > 0 && batch.length < this.processAndExportSignalsMaxBatchSize) {
       const signal = this.pop();
       if (!signal) {

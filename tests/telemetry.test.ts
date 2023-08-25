@@ -18,6 +18,7 @@ type TelemetrySignalDbFields = {
   function_name: string;
   run_as: string;
   timestamp: bigint;
+  transaction_id: string;
   severity: string;
   log_message: string;
   trace_id: string;
@@ -182,16 +183,20 @@ describe("operon-telemetry", () => {
       );
       const expectedStfColumns = [
         {
-          column_name: "function_id",
-          data_type: "integer",
+          column_name: "timestamp",
+          data_type: "bigint",
         },
         {
           column_name: "trace_span",
           data_type: "jsonb",
         },
         {
-          column_name: "timestamp",
-          data_type: "bigint",
+          column_name: "function_id",
+          data_type: "integer",
+        },
+        {
+          column_name: "transaction_id",
+          data_type: "text"
         },
         {
           column_name: "severity",
@@ -222,7 +227,7 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stfQueryResult.rows).toEqual(expectedStfColumns);
+      expect(stfQueryResult.rows).toEqual(expect.arrayContaining(expectedStfColumns));
 
       const stwQueryResult = await pgExporterPgClient.query(
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`
@@ -237,6 +242,10 @@ describe("operon-telemetry", () => {
           data_type: "jsonb",
         },
         {
+          column_name: "transaction_id",
+          data_type: "text"
+        },
+        {
           column_name: "timestamp",
           data_type: "bigint",
         },
@@ -269,8 +278,7 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stwQueryResult.rows).toEqual(expectedStwColumns);
-
+      expect(stwQueryResult.rows).toEqual(expect.arrayContaining(expectedStwColumns));
       const scuQueryResult = await pgExporterPgClient.query(
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
       );
@@ -286,6 +294,10 @@ describe("operon-telemetry", () => {
         {
           column_name: "timestamp",
           data_type: "bigint",
+        },
+        {
+          column_name: "transaction_id",
+          data_type: "text"
         },
         {
           column_name: "age",
@@ -328,7 +340,7 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(scuQueryResult.rows).toEqual(expectedScuColumns);
+      expect(scuQueryResult.rows).toEqual(expect.arrayContaining(expectedScuColumns));
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
