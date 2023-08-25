@@ -308,9 +308,9 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       //        And skip/mask arguments
       methReg.args.forEach((v, idx) => {
         if (v.argType === TransactionContext
-            || v.argType == WorkflowContext
-            || v.argType == CommunicatorContext
-            || v.argType == OperonContext)
+            || v.argType === WorkflowContext
+            || v.argType === CommunicatorContext
+            || v.argType === OperonContext)
         {
           // Context
           return;
@@ -343,13 +343,25 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = "Get user from middleware arg 0?";
-      sLogRec.authorizedRole = "Get role from middleware arg 0?";
+      sLogRec.authorizedUser = '';
+      sLogRec.authorizedRole = '';
       sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;
 
       args.forEach((v, idx) => {
+        const ad = methReg.args[idx];
+        if (ad.argType === TransactionContext
+          || ad.argType === WorkflowContext
+          || ad.argType === CommunicatorContext
+          || ad.argType === OperonContext)
+        {
+          // Context -- I suppose we could just instanceof
+          const ctx = v as OperonContext;
+          sLogRec.authorizedUser = ctx.authUser;
+          sLogRec.authorizedRole = ctx.authRole;
+        }
+
         let lv = v;
         if (methReg.args[idx].logMask === LogMasks.SKIP) {
           return;

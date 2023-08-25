@@ -5,7 +5,8 @@ export class OperonContext {
   response: unknown;
 
   authUser: string = '';
-  authRoles: string[] = [];
+  authRole: string = ''; // Role in use
+  authRoles: string[] = []; // All roles the user has
 
   //readonly span: Span;
 
@@ -20,6 +21,7 @@ export class OperonContext {
     this.request = other.request;
     this.response = other.response;
     this.authRoles = other.authRoles;
+    this.authRole = other.authRole;
     this.authUser = other.authUser;
   }
 }
