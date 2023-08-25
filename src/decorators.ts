@@ -351,6 +351,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       args.forEach((v, idx) => {
         const ad = methReg.args[idx];
+        let isCtx = false;
         if (ad.argType === TransactionContext
           || ad.argType === WorkflowContext
           || ad.argType === CommunicatorContext
@@ -360,10 +361,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           const ctx = v as OperonContext;
           sLogRec.authorizedUser = ctx.authUser;
           sLogRec.authorizedRole = ctx.authRole;
+          isCtx = true;
         }
 
         let lv = v;
-        if (methReg.args[idx].logMask === LogMasks.SKIP) {
+        if (isCtx || methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
         } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
