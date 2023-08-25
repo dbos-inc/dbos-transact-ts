@@ -113,8 +113,6 @@ export class Operon {
   readonly logger: Logger;
   readonly tracer: Tracer;
 
-  configFile : ConfigFile | undefined;
-
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
     if (config) {
@@ -195,22 +193,6 @@ export class Operon {
       this.userDatabase = new TypeOrmDatabase(ds as DataSource);
       return;
     }
-
-    if (!this.configFile) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
-    // Do we ever want to make a data source?  I think we don't, not with the DB hardcoded.
-    const dataSource = new DataSource({
-      type: "postgres", // perhaps should move to config file
-      host: this.configFile.database.hostname,
-      port: this.configFile.database.port,
-      username: this.configFile.database.username,
-      password: this.getDbPassword(),
-      database: this.configFile.database.user_database,
-    })
-
-    this.userDatabase = new TypeOrmDatabase(dataSource);
   }
 
   async init(): Promise<void> {
@@ -244,45 +226,44 @@ export class Operon {
 
   generateOperonConfig(): OperonConfig {
     // Load default configuration
-    // let config: ConfigFile | undefined;
+    let config: ConfigFile | undefined;
     try {
       const configContent = readFileSync(CONFIG_FILE);
-      this.configFile = YAML.parse(configContent) as ConfigFile;
+      config = YAML.parse(configContent) as ConfigFile;
     } catch (error) {
       if (error instanceof Error) {
         throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
       }
     }
-    if (!this.configFile) {
+    if (!config) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
 
     // Handle "Global" pool config
-    if (!this.configFile.database) {
+    if (!config.database) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
     }
 
     const poolConfig: PoolConfig = {
-      host: this.configFile.database.hostname,
-      port: this.configFile.database.port,
-      user: this.configFile.database.username,
+      host: config.database.hostname,
+      port: config.database.port,
+      user: config.database.username,
       password: this.getDbPassword(),
-      connectionTimeoutMillis: this.configFile.database.connectionTimeoutMillis,
-      database: this.configFile.database.user_database,
+      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
+      database: config.database.user_database,
     };
-    if (this.configFile.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(this.configFile.database.ssl_ca)], rejectUnauthorized: true };
+    if (config.database.ssl_ca) {
+      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
     }
     return {
       poolConfig: poolConfig,
-      telemetryExporters: this.configFile.telemetryExporters || [],
-      system_database: this.configFile.database.system_database ?? "operon_systemdb",
-      observability_database: this.configFile.database.observability_database || undefined
+      telemetryExporters: config.telemetryExporters || [],
+      system_database: config.database.system_database ?? "operon_systemdb",
+      observability_database: config.database.observability_database || undefined
     };
   }
 
   getDbPassword(): string {
-
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
       throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
