@@ -33,12 +33,12 @@ const testTxn = async (
 ) => {
   const p: EntityManager = txnCtxt.typeormEM ;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const  res = await p.query("insert into testkv values($1,$2) returning id;",[id, value]) 
+  const  res = await p.query("insert into testkv values($1,$2) returning id;",[id, value])
   // console.log(res);
   globalCnt += 1;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
   return res[0].id;
-  
+
 };
 
 const readTxn = async (txnCtxt: TransactionContext, id: string) => {
@@ -83,7 +83,7 @@ describe("typeorm-tests", () => {
     ).resolves.toBe("test");
   });
 
-  
+
   test("typeorm-duplicate-transaction", async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
@@ -126,7 +126,7 @@ describe("typeorm-tests", () => {
       "oaootestread"
     );
     expect(globalCnt).toBeGreaterThanOrEqual(1);
-  }); 
+  });
 
 });
 

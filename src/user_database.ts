@@ -3,7 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError } from "pg";
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-import { DataSource, EntityManager } from "typeorm";
+import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -19,7 +19,7 @@ export interface UserDatabase {
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | EntityManager;
+export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
@@ -173,19 +173,15 @@ export class PrismaUserDatabase implements UserDatabase {
  * TypeOrm user data access interface
  */
 export class TypeOrmDatabase implements UserDatabase {
-  readonly dataSource: DataSource;
+  readonly dataSource: TypeORMDataSource;
 
-  constructor(readonly ds: DataSource) {
+  constructor(readonly ds: TypeORMDataSource) {
     this.dataSource = ds;
   }
 
   async init(): Promise<void> {
     if (!this.dataSource.isInitialized) {
       await this.dataSource.initialize();
-    }
-  
-    if (this.dataSource.isInitialized) {
-      console.log("DataSource is successfully initialized");
     }
 
     await this.dataSource.query(createUserDBSchema);
@@ -206,7 +202,7 @@ export class TypeOrmDatabase implements UserDatabase {
     const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
 
     return this.dataSource.manager.transaction(isolationLevel,
-      async (transactionEntityManager : EntityManager) => {
+      async (transactionEntityManager : TypeORMEntityManager) => {
       const result = await txn(transactionEntityManager, ...args);
       return result;
       },
@@ -220,14 +216,14 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
-    const tClient: EntityManager = client as EntityManager;
+    const tClient = client as TypeORMEntityManager;
     return tClient.query(sql, params).then((value) => {
       return value as R[];
     });
   }
 
   getPostgresErrorCode(error: unknown): string | null {
-    const dbErr: DatabaseError = error as DatabaseError;
+    const dbErr = error as DatabaseError;
     return dbErr.code ? dbErr.code : null;
   }
 }

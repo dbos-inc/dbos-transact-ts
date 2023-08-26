@@ -184,7 +184,7 @@ export class Operon {
   }
 
   // TODO: Create an interface for ds that has the high level things we expect from typeorm
-  useTypeOrm(ds?: unknown) {
+  useTypeOrm(ds: unknown) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
