@@ -36,9 +36,10 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase } from './user_database';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeOrmDatabase } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { DataSource } from "typeorm"
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -182,6 +183,18 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
+  // TODO: Create an interface for ds that has the high level things we expect from typeorm
+  useTypeOrm(ds: unknown) {
+    if (this.userDatabase) {
+      throw new OperonInitializationError("Data source already initialized!");
+    }
+
+    if (ds) {
+      this.userDatabase = new TypeOrmDatabase(ds as DataSource);
+      return;
+    }
+  }
+
   async init(): Promise<void> {
     if (!this.userDatabase) {
       throw new OperonInitializationError("No data source!");
@@ -230,15 +243,12 @@ export class Operon {
     if (!config.database) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
     }
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
-    }
+
     const poolConfig: PoolConfig = {
       host: config.database.hostname,
       port: config.database.port,
       user: config.database.username,
-      password: dbPassword,
+      password: this.getDbPassword(),
       connectionTimeoutMillis: config.database.connectionTimeoutMillis,
       database: config.database.user_database,
     };
@@ -251,6 +261,15 @@ export class Operon {
       system_database: config.database.system_database ?? "operon_systemdb",
       observability_database: config.database.observability_database || undefined
     };
+  }
+
+  getDbPassword(): string {
+    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+    if (!dbPassword) {
+      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
+    }
+
+    return dbPassword;
   }
 
   /* WORKFLOW OPERATIONS */

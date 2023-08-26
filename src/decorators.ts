@@ -5,13 +5,13 @@
 // General
 //   Class level decorators - defaults
 //   Field / property decorators - persistent data
-//   Integrate with API registration
-//   Integrate with Operon workflows
-//   Integrate parameter validation
-//   Integrate with Authentication
-//   Integrate with error handling
+//
+//   Integrate parameter extraction / validation that currently lives in demo app repo
+//
 //   Find a way to unit test - perhaps a mock log collector?
 //     Or is it easier once there is a real log collector?
+//
+// Workflow
 //
 // Logging
 //   Integrate with Logger setup
@@ -23,6 +23,8 @@ import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { CommunicatorContext } from "./communicator";
+import { OperonContext } from "./context";
+import { OperonDataValidationError } from "./error";
 
 /**
  * Any column type column can be.
@@ -121,6 +123,18 @@ export enum LogMasks {
   SKIP = "SKIP",
 }
 
+export enum APITypes {
+  GET = 'GET',
+  POST = 'POST',
+}
+
+export enum ArgSources {
+  DEFAULT = 'DEFAULT',
+  BODY = 'BODY',
+  QUERY = 'QUERY',
+  URL = 'URL',
+}
+
 export enum TraceEventTypes {
   METHOD_ENTER = "METHOD_ENTER",
   METHOD_EXIT = "METHOD_EXIT",
@@ -156,10 +170,11 @@ class OperonParameter {
   required: boolean = false;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
+  argSource: ArgSources = ArgSources.DEFAULT;
+
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
   dataType: OperonDataType;
-  // TODO: If we override the logging behavior (say to mask/hash it), where do we record that?
   index: number = -1;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -174,7 +189,12 @@ export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;
 
+  apiType: APITypes;
+  apiURL: string;
+
   args: OperonParameter[];
+
+  requiredRole: string [];
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
@@ -192,6 +212,11 @@ implements OperonMethodRegistrationBase
 {
   name: string = "";
   traceLevel: TraceLevels = TraceLevels.INFO;
+
+  apiType: APITypes = APITypes.GET;
+  apiURL: string = '';
+
+  requiredRole: string[] = [];
 
   args: OperonParameter[] = [];
 
@@ -279,18 +304,66 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
       //        And skip/mask arguments
+      methReg.args.forEach((v, idx) => {
+        if (v.argType === TransactionContext
+            || v.argType === WorkflowContext
+            || v.argType === CommunicatorContext
+            || v.argType === OperonContext)
+        {
+          // Context
+          return;
+        }
+
+        // Do we have an arg at all
+        if (idx >= args.length) {
+          if (v.required) {
+            throw new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name}`);
+          }
+          return;
+        }
+
+        let iv = args[idx];
+        if (iv === undefined && v.required) {
+          throw new OperonDataValidationError(`Missing required argument ${v.name} calling ${methReg.name}`);
+        }
+
+        if (iv instanceof String) {
+          iv = iv.toString();
+          args[idx] = iv;
+        }
+
+        if (v.dataType.dataType === 'text') {
+          if ((typeof iv !== 'string')) {
+            throw new OperonDataValidationError(`Argument ${v.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+          }
+        }
+      });
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = "Get user from middleware arg 0?";
-      sLogRec.authorizedRole = "Get role from middleware arg 0?";
+      sLogRec.authorizedUser = '';
+      sLogRec.authorizedRole = '';
       sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;
 
       args.forEach((v, idx) => {
+        const ad = methReg.args[idx];
+        let isCtx = false;
+        if (ad.argType === TransactionContext
+          || ad.argType === WorkflowContext
+          || ad.argType === CommunicatorContext
+          || ad.argType === OperonContext)
+        {
+          // Context -- I suppose we could just instanceof
+          const ctx = v as OperonContext;
+          sLogRec.authorizedUser = ctx.authUser;
+          sLogRec.authorizedRole = ctx.authRole;
+          isCtx = true;
+        }
+
         let lv = v;
-        if (methReg.args[idx].logMask === LogMasks.SKIP) {
+        if (isCtx || methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
         } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
@@ -357,6 +430,15 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
   curParam.logMask = LogMasks.SKIP;
 }
 
+export function LogMask(mask: LogMasks) {
+  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.logMask = mask;
+  };
+}
+
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
@@ -366,12 +448,21 @@ export function ArgName(name: string) {
   };
 }
 
-export function LogMask(mask: LogMasks) {
+export function ArgDate() { // TODO a little more info about it
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
-    curParam.logMask = mask;
+    curParam.dataType.dataType = 'timestamp';
+  };
+}
+
+export function ArgSource(source: ArgSources) {
+  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.argSource = source;
   };
 }
 
@@ -383,10 +474,28 @@ type MethodDecorator = <T>(
 ) => TypedPropertyDescriptor<T> | void;
 */
 
+export function RequiredRole(anyOf: string[]) {
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.requiredRole = anyOf;
+
+    return descriptor;
+  }
+  return apidec;
+}
+
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
 export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
-  function logdec<This, Args extends unknown[], Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+  function logdec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.traceLevel = level;
     return descriptor;
@@ -396,6 +505,35 @@ export function TraceLevel(level: TraceLevels) {
 
 export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
+}
+
+export function GetApi(url: string) {
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APITypes.GET;
+
+    return descriptor;
+  }
+  return apidec;
+}
+
+export function PostApi(url: string) {
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.apiURL = url;
+    registration.apiType = APITypes.POST;
+    return descriptor;
+  }
+  return apidec;
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {

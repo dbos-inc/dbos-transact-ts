@@ -18,7 +18,7 @@ export {
   WorkflowConfig,
   WorkflowParams,
   WorkflowHandle,
-  StatusString
+  StatusString,
 } from './workflow';
 
 export {
@@ -29,7 +29,8 @@ export {
   OperonError,
   OperonInitializationError,
   OperonTopicPermissionDeniedError,
-  OperonWorkflowPermissionDeniedError
+  OperonWorkflowPermissionDeniedError,
+  OperonDataValidationError,
 } from './error';
 
 export {
@@ -47,6 +48,13 @@ export {
   ArgName,
   TraceLevel,
   Traced,
+  RequiredRole,
+  ArgSource,
+  ArgSources,
+
+  APITypes,
+  GetApi,
+  PostApi,
 
   OperonTransaction,
   OperonWorkflow,
