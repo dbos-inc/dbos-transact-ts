@@ -1,5 +1,5 @@
 // import { PrismaClient, testkv } from "@prisma/client";
-import { DataSource, EntityManager } from "typeorm";
+import { DataSource, EntityManager, Entity, PrimaryColumn, Column} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Operon, OperonConfig, TransactionContext } from "src";
 import { v1 as uuidv1 } from "uuid";
@@ -11,6 +11,15 @@ import { sleep } from "src/utils";
  */
 let globalCnt = 0;
 
+@Entity()
+export class KV {
+    @PrimaryColumn()
+    id: string = "t"
+
+    @Column()
+    value: string = "v"
+}
+
 const typeormDs = new DataSource({
   type: "postgres", // perhaps should move to config file
   host: "localhost",
@@ -18,13 +27,8 @@ const typeormDs = new DataSource({
   username: "postgres",
   password: process.env.PGPASSWORD,
   database: "operontest",
+  entities: [KV]
 });
-
-/*
-interface KV {
-  id: string;
-} */
-
 
 const testTxn = async (
   txnCtxt: TransactionContext,
@@ -32,13 +36,12 @@ const testTxn = async (
   value: string
 ) => {
   const p: EntityManager = txnCtxt.typeormEM ;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const  res = await p.query("insert into testkv values($1,$2) returning id;",[id, value])
-  // console.log(res);
+  const kv: KV = new KV();
+  kv.id = id;
+  kv.value = value;
+  const res = await p.save(kv);
   globalCnt += 1;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
-  return res[0].id;
-
+  return res.id;
 };
 
 const readTxn = async (txnCtxt: TransactionContext, id: string) => {
@@ -48,7 +51,7 @@ const readTxn = async (txnCtxt: TransactionContext, id: string) => {
 };
 
 describe("typeorm-tests", () => {
-  const testTableName = "testkv";
+  const testTableName = "kv";
   let operon: Operon;
   let config: OperonConfig;
 
@@ -65,7 +68,7 @@ describe("typeorm-tests", () => {
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`
-    );
+    ); 
   });
 
   afterEach(async () => {
