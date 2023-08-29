@@ -3,7 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError } from "pg";
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager } from "typeorm";
+import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager, QueryFailedError } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -223,7 +223,8 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   getPostgresErrorCode(error: unknown): string | null {
-    const dbErr = error as DatabaseError;
+    const typeormErr = error as QueryFailedError;
+    const dbErr = typeormErr.driverError as DatabaseError;
     return dbErr.code ? dbErr.code : null;
   }
 }
