@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig, PoolClient, DatabaseError } from "pg";
+import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "pg";
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
@@ -85,7 +85,7 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   getPostgresErrorCode(error: unknown): string | null {
-    const dbErr: DatabaseError = error as DatabaseError;
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
   }
 }
@@ -224,7 +224,7 @@ export class TypeOrmDatabase implements UserDatabase {
 
   getPostgresErrorCode(error: unknown): string | null {
     const typeormErr = error as QueryFailedError;
-    const dbErr = typeormErr.driverError as DatabaseError;
+    const dbErr = typeormErr.driverError as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
   }
 }
