@@ -11,6 +11,7 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
+import { DatabaseError as PGDatabaseError } from 'pg';
 
 const defaultRecvTimeoutSec = 60;
 
@@ -225,25 +226,28 @@ export class WorkflowContext extends OperonContext {
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
-        if (errCode === "40001") {
-          // serialization_failure in PostgreSQL
-          span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
-          // Retry serialization failures.
-          await sleep(retryWaitMillis);
-          retryWaitMillis *= backoffFactor;
-          continue;
-        } else {
-          // Record and throw other errors.
-          const e: Error = err as Error;
-          await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
-            await this.flushResultBuffer(client);
-            await this.recordGuardedError(client, funcId, e);
-            this.resultBuffer.clear();
-          }, {});
-          span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-          throw err;
+        // TODO - This should not be open coded as PG, it should hide the implementation in userDatabase.
+        if (err instanceof PGDatabaseError) {
+          const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
+          if (errCode === "40001") {
+            // serialization_failure in PostgreSQL
+            span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
+            // Retry serialization failures.
+            await sleep(retryWaitMillis);
+            retryWaitMillis *= backoffFactor;
+            continue;
+          }
         }
+
+        // Record and throw other errors.
+        const e: Error = err as Error;
+        await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+          await this.flushResultBuffer(client);
+          await this.recordGuardedError(client, funcId, e);
+          this.resultBuffer.clear();
+        }, {});
+        span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+        throw err;
       } finally {
         this.#operon.tracer.endSpan(span);
       }
