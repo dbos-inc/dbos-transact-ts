@@ -5,6 +5,14 @@ import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
+interface PrismaPGError {
+  code: string;
+  meta: {
+    code: string;
+    message: string;
+  };
+}
+
 /**
  * Funtions used in tests.
  */
@@ -148,7 +156,7 @@ describe("prisma-tests", () => {
     const err: PrismaClientKnownRequestError = (
       errorResult as PromiseRejectedResult
     ).reason as PrismaClientKnownRequestError;
-    expect(operon.userDatabase.getPostgresErrorCode(err)).toBe("23505");
+    expect((err as unknown as PrismaPGError).meta.code).toBe("23505");
   });
 });
 

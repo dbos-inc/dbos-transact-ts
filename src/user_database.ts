@@ -14,7 +14,9 @@ export interface UserDatabase {
   transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R>;
   query<R>(sql: string, ...params: any[]): Promise<R[]>;
   queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]>;
-  getPostgresErrorCode(error: unknown): string | null;
+
+  isRetriableTransactionError(error: unknown): boolean;
+  isKeyConflictError(error: unknown): boolean;
 }
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
@@ -87,6 +89,21 @@ export class PGNodeUserDatabase implements UserDatabase {
   getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PGDatabaseError = error as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    if (!(error instanceof PGDatabaseError)) {
+      return false;
+    }
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    if (!(error instanceof PGDatabaseError)) {
+      return false;
+    }
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "40001" || pge === "23505";
   }
 }
 
@@ -167,6 +184,14 @@ export class PrismaUserDatabase implements UserDatabase {
     return dbErr.meta ? dbErr.meta.code : null;
   }
 
+  isRetriableTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "40001" || pge === "23505";
+  }
 }
 
 /**
@@ -226,5 +251,20 @@ export class TypeOrmDatabase implements UserDatabase {
     const typeormErr = error as QueryFailedError;
     const dbErr = typeormErr.driverError as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "40001" || pge === "23505";
   }
 }

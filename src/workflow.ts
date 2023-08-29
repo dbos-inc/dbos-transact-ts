@@ -11,7 +11,6 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
-import { DatabaseError as PGDatabaseError } from 'pg';
 
 const defaultRecvTimeoutSec = 60;
 
@@ -122,8 +121,7 @@ export class WorkflowContext extends OperonContext {
         );
       }
     } catch (error) {
-      const code = this.#operon.userDatabase.getPostgresErrorCode(error);
-      if (code === "40001" || code === "23505") {
+      if (this.#operon.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new OperonWorkflowConflictUUIDError(this.workflowUUID);
       } else {
@@ -226,17 +224,14 @@ export class WorkflowContext extends OperonContext {
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        // TODO - This should not be open coded as PG, it should hide the implementation in userDatabase.
-        if (err instanceof PGDatabaseError) {
-          const errCode = this.#operon.userDatabase.getPostgresErrorCode(err);
-          if (errCode === "40001") {
-            // serialization_failure in PostgreSQL
-            span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
-            // Retry serialization failures.
-            await sleep(retryWaitMillis);
-            retryWaitMillis *= backoffFactor;
-            continue;
-          }
+        if (this.#operon.userDatabase.isRetriableTransactionError(err))
+        {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
+          // Retry serialization failures.
+          await sleep(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          continue;
         }
 
         // Record and throw other errors.
