@@ -19,6 +19,7 @@ export {
   WorkflowParams,
   WorkflowHandle,
   StatusString,
+  OperonWorkflow as OperonWorkflowFunction,
 } from './workflow';
 
 export {
