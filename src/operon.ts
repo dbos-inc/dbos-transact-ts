@@ -36,10 +36,10 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeOrmDatabase } from './user_database';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeORMDataSource, TypeOrmDatabase } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { DataSource } from "typeorm"
+// import { DataSource } from "typeorm"
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};
@@ -190,7 +190,7 @@ export class Operon {
     }
 
     if (ds) {
-      this.userDatabase = new TypeOrmDatabase(ds as DataSource);
+      this.userDatabase = new TypeOrmDatabase(ds as TypeORMDataSource);
       return;
     }
   }

@@ -3,7 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager, QueryFailedError } from "typeorm";
+// import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager, QueryFailedError } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -194,6 +194,29 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 }
 
+export interface DataSource {
+
+  readonly isInitialized: boolean;
+  readonly manager: EntityManager;
+  initialize(): Promise<this>;
+  query<T=any>(query: string): Promise<T>;
+  destroy(): Promise<void>;
+} 
+
+export type TypeORMDataSource = DataSource;
+
+export interface EntityManager {
+  query<T = any>(query: string, parameters?: any[]): Promise<T>
+  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager:EntityManager) => Promise<T>) : Promise<T>
+}
+
+export type TypeORMEntityManager = EntityManager;
+
+export interface QueryFailedError<T> {
+  driverError: T
+
+}
+
 /**
  * TypeOrm user data access interface
  */
@@ -248,22 +271,22 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   getPostgresErrorCode(error: unknown): string | null {
-    const typeormErr = error as QueryFailedError;
-    const dbErr = typeormErr.driverError as PGDatabaseError;
+    const typeormErr = error as QueryFailedError<PGDatabaseError>;
+    const dbErr = typeormErr.driverError ;
     return dbErr.code ? dbErr.code : null;
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
+    /* if (!(error instanceof QueryFailedError)) {
       return false;
-    }
+    } */
     return this.getPostgresErrorCode(error) === "40001";
   }
 
   isKeyConflictError(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
+    /* if (!(error instanceof QueryFailedError)) {
       return false;
-    }
+    } */
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
   }

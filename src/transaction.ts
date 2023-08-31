@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
-import { PrismaClient, UserDatabaseName, UserDatabaseClient } from "./user_database";
+import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
 import { Logger } from "./telemetry";
 import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
-import { EntityManager } from "typeorm";
+// import { EntityManager } from "typeorm";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
@@ -28,7 +28,7 @@ export class TransactionContext extends OperonContext {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 
-  readonly typeormEM: EntityManager = null as unknown as EntityManager;
+  readonly typeormEM: TypeORMEntityManager = null as unknown as TypeORMEntityManager;
 
   readonly workflowUUID: string;
   readonly runAs: string;
@@ -50,7 +50,7 @@ export class TransactionContext extends OperonContext {
     } else if (userDatabaseName === UserDatabaseName.PRISMA) {
       this.prismaClient = client as PrismaClient;
     } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
-      this.typeormEM = client as EntityManager;
+      this.typeormEM = client as TypeORMEntityManager;
     }
     this.workflowUUID = workflowContext.workflowUUID;
     this.runAs = workflowContext.runAs;
