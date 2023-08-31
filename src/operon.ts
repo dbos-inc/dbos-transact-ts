@@ -39,7 +39,6 @@ import YAML from 'yaml';
 import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeORMDataSource, TypeOrmDatabase } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-// import { DataSource } from "typeorm"
 
 export interface OperonNull {}
 export const operonNull: OperonNull = {};

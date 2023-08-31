@@ -3,7 +3,6 @@ import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-// import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager, QueryFailedError } from "typeorm";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -277,14 +276,16 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    /* if (!(error instanceof QueryFailedError)) {
+    /* TODO: this does not compile 
+      if (!(error instanceof QueryFailedError)) {
       return false;
     } */
     return this.getPostgresErrorCode(error) === "40001";
   }
 
   isKeyConflictError(error: unknown): boolean {
-    /* if (!(error instanceof QueryFailedError)) {
+    /* TODO : this does not compile
+      if (!(error instanceof QueryFailedError)) {
       return false;
     } */
     const pge = this.getPostgresErrorCode(error);
