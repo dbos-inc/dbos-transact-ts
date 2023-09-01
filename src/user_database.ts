@@ -217,9 +217,9 @@ export interface QueryFailedError<T> {
 }
 
 /**
- * TypeOrm user data access interface
+ * TypeORM user data access interface
  */
-export class TypeOrmDatabase implements UserDatabase {
+export class TypeORMDatabase implements UserDatabase {
   readonly dataSource: TypeORMDataSource;
 
   constructor(readonly ds: TypeORMDataSource) {
