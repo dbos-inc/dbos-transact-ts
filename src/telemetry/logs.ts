@@ -1,8 +1,8 @@
-import { WorkflowContext } from "./../workflow";
-import { TelemetryCollector } from "./collector";
-import { TelemetrySignal } from "./signals";
-import { TransactionContext } from "./../transaction";
-import { CommunicatorContext } from "src/communicator";
+import { WorkflowContext } from "../workflow.js";
+import { TelemetryCollector } from "./collector.js";
+import { TelemetrySignal } from "./signals.js";
+import { TransactionContext } from "../transaction.js";
+import { CommunicatorContext } from "../communicator.js";
 
 interface ILogger {
   log(context: WorkflowContext | TransactionContext, severity: string, message: string): void;

@@ -5,17 +5,17 @@ import {
   TransactionContext,
   OperonError,
   CommunicatorContext,
-} from "src/";
+} from "../src/index.js";
 import {
   generateOperonTestConfig,
   setupOperonTestDb,
   TestKvTable,
-} from "./helpers";
+} from "./helpers.js";
 import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
-import { StatusString } from "src/workflow";
-import { OperonNotRegisteredError } from "src/error";
+import { sleep } from "../src/utils.js";
+import { StatusString } from "../src/workflow.js";
+import { OperonNotRegisteredError } from "../src/error.js";
 
 describe("failures-tests", () => {
   let operon: Operon;

@@ -4,13 +4,13 @@ import {
   POSTGRES_EXPORTER,
   TelemetryCollector,
   CONSOLE_EXPORTER,
-} from "../src/telemetry";
-import { TelemetrySignal } from "../src/telemetry/signals";
-import { Operon, OperonConfig } from "../src/operon";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
-import { TransactionContext, WorkflowContext, WorkflowParams } from "src";
-import { WorkflowHandle } from "src/workflow";
+} from "../src/telemetry/index.js";
+import { TelemetrySignal } from "../src/telemetry/signals.js";
+import { Operon, OperonConfig } from "../src/operon.js";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers.js";
+import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators.js";
+import { TransactionContext, WorkflowContext, WorkflowParams } from "../src/index.js";
+import { WorkflowHandle } from "../src/workflow.js";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;

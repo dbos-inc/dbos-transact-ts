@@ -1,17 +1,17 @@
 export {
   Operon,
   OperonConfig,
-} from './operon';
+} from './operon.js';
 
 export {
   OperonContext,
-} from './context';
+} from './context.js';
 
 export {
   TransactionContext,
   TransactionConfig,
   OperonTransaction as OperonTransactionFunction,
-} from './transaction';
+} from './transaction.js';
 
 export {
   WorkflowContext,
@@ -20,11 +20,11 @@ export {
   WorkflowHandle,
   StatusString,
   OperonWorkflow as OperonWorkflowFunction,
-} from './workflow';
+} from './workflow.js';
 
 export {
   CommunicatorContext
-} from './communicator';
+} from './communicator.js';
 
 export {
   OperonError,
@@ -32,7 +32,7 @@ export {
   OperonTopicPermissionDeniedError,
   OperonWorkflowPermissionDeniedError,
   OperonDataValidationError,
-} from './error';
+} from './error.js';
 
 export {
   OperonFieldType,
@@ -61,4 +61,4 @@ export {
   OperonWorkflow,
 
   forEachMethod,
-} from "./decorators";
+} from "./decorators.js";

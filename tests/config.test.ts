@@ -1,6 +1,6 @@
-import { Operon, OperonConfig, OperonInitializationError } from "src/";
-import { generateOperonTestConfig } from "./helpers";
-import * as utils from "../src/utils";
+import { Operon, OperonConfig, OperonInitializationError } from "../src/index.js";
+import { generateOperonTestConfig } from "./helpers.js";
+import * as utils from "../src/utils.js";
 import { PoolConfig } from "pg";
 
 describe("operon-config", () => {

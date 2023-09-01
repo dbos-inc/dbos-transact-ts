@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull } from "./operon";
+import { operonNull, OperonNull } from "./operon.js";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonWorkflowConflictUUIDError } from "./error";
-import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status } from "../schemas/system_db_schema";
-import { sleep } from "./utils";
+import { OperonWorkflowConflictUUIDError } from "./error.js";
+import { StatusString, WorkflowStatus } from "./workflow.js";
+import { systemDBSchema, notifications, operation_outputs, workflow_status } from "../schemas/system_db_schema.js";
+import { sleep } from "./utils.js";
 
 export interface SystemDatabase {
   init(): Promise<void>;

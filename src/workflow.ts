@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, OperonNull, operonNull } from "./operon";
-import { transaction_outputs } from "../schemas/user_db_schema";
-import { OperonTransaction, TransactionContext } from "./transaction";
-import { OperonCommunicator, CommunicatorContext } from "./communicator";
-import { OperonError, OperonNotRegisteredError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from "./error";
+import { Operon, OperonNull, operonNull } from "./operon.js";
+import { transaction_outputs } from "../schemas/user_db_schema.js";
+import { OperonTransaction, TransactionContext } from "./transaction.js";
+import { OperonCommunicator, CommunicatorContext } from "./communicator.js";
+import { OperonError, OperonNotRegisteredError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from "./error.js";
 import { serializeError, deserializeError } from "serialize-error";
-import { sleep } from "./utils";
-import { SystemDatabase } from "./system_database";
-import { UserDatabaseClient } from "./user_database";
+import { sleep } from "./utils.js";
+import { SystemDatabase } from "./system_database.js";
+import { UserDatabaseClient } from "./user_database.js";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContext } from './context.js';
 
 const defaultRecvTimeoutSec = 60;
 

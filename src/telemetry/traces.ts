@@ -3,8 +3,8 @@ import { Resource } from "@opentelemetry/resources";
 import opentelemetry from "@opentelemetry/api";
 import { hrTimeToMicroseconds } from "@opentelemetry/core";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
-import { TelemetryCollector } from "./collector";
-import { TelemetrySignal } from "./signals";
+import { TelemetryCollector } from "./collector.js";
+import { TelemetrySignal } from "./signals.js";
 
 export function spanToString(span: ReadableSpan): string {
   return JSON.stringify({

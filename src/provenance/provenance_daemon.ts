@@ -5,9 +5,9 @@ import {
   POSTGRES_EXPORTER,
   PostgresExporter,
   TelemetryCollector
-} from "../telemetry";
-import { OperonConfig } from "src/operon";
-import { ProvenanceSignal } from "src/telemetry/signals";
+} from "../telemetry/index.js";
+import { OperonConfig } from "../operon.js";
+import { ProvenanceSignal } from "../telemetry/signals.js";
 
 interface wal2jsonRow {
   xid: string;

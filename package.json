@@ -4,6 +4,7 @@
   "description": "Operon",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "type": "module",
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "build-fdb": "tsc --project tsconfig.build-fdb.json",
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "@prisma/client": "^5.1.1",
+    "@tsconfig/node18": "^18.2.1",
     "@types/jest": "^29.5.3",
     "@types/lodash": "^4.14.197",
     "@types/pg": "^8.10.2",

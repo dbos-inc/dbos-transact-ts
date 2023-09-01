@@ -1,7 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger } from "./telemetry";
-import { WorkflowContext } from "./workflow";
-import { OperonContext } from "./context";
+import { Logger } from "./telemetry/index.js";
+import { WorkflowContext } from "./workflow.js";
+import { OperonContext } from "./context.js";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;

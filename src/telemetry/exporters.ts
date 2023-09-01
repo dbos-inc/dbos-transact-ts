@@ -1,12 +1,12 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
-import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
-import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
-import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
+import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "../decorators.js";
+import { OperonPostgresExporterError, OperonJaegerExporterError } from "../error.js";
+import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals.js";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
-import { spanToString } from "./traces";
+import { spanToString } from "./traces.js";
 
 export interface ITelemetryExporter<T, U> {
   export(signal: OperonSignal[]): Promise<T>;

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
-import { PrismaClient, UserDatabaseName, UserDatabaseClient } from "./user_database";
-import { Logger } from "./telemetry";
-import { ValuesOf } from "./utils";
-import { WorkflowContext } from "./workflow";
+import { PrismaClient, UserDatabaseName, UserDatabaseClient } from "./user_database.js";
+import { Logger } from "./telemetry/index.js";
+import { ValuesOf } from "./utils.js";
+import { WorkflowContext } from "./workflow.js";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContext } from './context.js';
 import { EntityManager } from "typeorm";
 
 // Can we call it OperonTransactionFunction

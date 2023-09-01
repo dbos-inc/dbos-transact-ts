@@ -4,10 +4,10 @@ import {
   OperonConfig,
   TransactionContext,
   WorkflowContext,
-} from "src/";
+} from "../src/index.js";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { sleep } from "../src/utils.js";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers.js";
 
 describe("concurrency-tests", () => {
   let operon: Operon;

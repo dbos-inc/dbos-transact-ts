@@ -20,11 +20,11 @@
 import "reflect-metadata";
 
 import * as crypto from "crypto";
-import { TransactionConfig, TransactionContext } from "./transaction";
-import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { CommunicatorContext } from "./communicator";
-import { OperonContext } from "./context";
-import { OperonDataValidationError } from "./error";
+import { TransactionConfig, TransactionContext } from "./transaction.js";
+import { WorkflowConfig, WorkflowContext } from "./workflow.js";
+import { CommunicatorContext } from "./communicator.js";
+import { OperonContext } from "./context.js";
+import { OperonDataValidationError } from "./error.js";
 
 /**
  * Any column type column can be.

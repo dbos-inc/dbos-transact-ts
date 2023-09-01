@@ -6,8 +6,8 @@ import {
   WorkflowContext,
   WorkflowConfig,
   WorkflowParams,
-} from "src/";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+} from "../src/index.js";
+import { generateOperonTestConfig, setupOperonTestDb } from "./helpers.js";
 
 describe("authorization", () => {
   let operon: Operon;

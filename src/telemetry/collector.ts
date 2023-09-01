@@ -1,5 +1,5 @@
-import { ITelemetryExporter } from "./exporters";
-import { OperonSignal } from "./signals";
+import { ITelemetryExporter } from "./exporters.js";
+import { OperonSignal } from "./signals.js";
 
 class SignalsQueue {
   data: OperonSignal[] = [];

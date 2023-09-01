@@ -1,9 +1,9 @@
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
-import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry";
-import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
-import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src";
-import { PgTransactionId } from "../../src/workflow";
+import { generateOperonTestConfig, setupOperonTestDb } from "../helpers.js";
+import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon.js";
+import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry/index.js";
+import { OperonTransaction, OperonWorkflow } from "../../src/decorators.js";
+import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src/index.js";
+import { PgTransactionId } from "../../src/workflow.js";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";

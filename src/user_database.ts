@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "pg";
-import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
-import { IsolationLevel, TransactionConfig } from "./transaction";
-import { ValuesOf } from "./utils";
+import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema.js";
+import { IsolationLevel, TransactionConfig } from "./transaction.js";
+import { ValuesOf } from "./utils.js";
 import { DataSource as TypeORMDataSource, EntityManager as TypeORMEntityManager, QueryFailedError } from "typeorm";
 
 export interface UserDatabase {

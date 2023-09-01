@@ -7,7 +7,7 @@ import {
   ArgName,
   SkipLogging,
   LogMask,
-} from "src/decorators";
+} from "../src/decorators.js";
 
 class TestFunctions {
   @Traced

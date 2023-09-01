@@ -6,16 +6,16 @@ import {
   CommunicatorContext,
   WorkflowParams,
   WorkflowHandle,
-} from "src/";
+} from "../src/index.js";
 import {
   generateOperonTestConfig,
   setupOperonTestDb,
   TestKvTable,
-} from "./helpers";
+} from "./helpers.js";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
-import { WorkflowConfig, StatusString } from "src/workflow";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { sleep } from "../src/utils.js";
+import { WorkflowConfig, StatusString } from "../src/workflow.js";
+import { CONSOLE_EXPORTER } from "../src/telemetry/index.js";
 
 describe("operon-tests", () => {
   const testTableName = "operon_test_kv";

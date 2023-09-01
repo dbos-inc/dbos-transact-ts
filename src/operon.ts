@@ -5,7 +5,7 @@ import {
   OperonInitializationError,
   OperonWorkflowConflictUUIDError,
   OperonNotRegisteredError,
-} from './error';
+} from './error.js';
 import {
   InvokedHandle,
   OperonWorkflow,
@@ -14,11 +14,11 @@ import {
   WorkflowHandle,
   WorkflowParams,
   RetrievedHandle,
-} from './workflow';
+} from './workflow.js';
 
-import { OperonTransaction, TransactionConfig } from './transaction';
-import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { readFileSync } from './utils';
+import { OperonTransaction, TransactionConfig } from './transaction.js';
+import { CommunicatorConfig, OperonCommunicator } from './communicator.js';
+import { readFileSync } from './utils.js';
 
 import {
   TelemetryCollector,
@@ -30,14 +30,14 @@ import {
   JaegerExporter,
   Logger,
   Tracer,
-} from './telemetry';
+} from './telemetry/index.js';
 import { PoolConfig } from 'pg';
-import { transaction_outputs } from '../schemas/user_db_schema';
-import { SystemDatabase, PostgresSystemDatabase } from './system_database';
+import { transaction_outputs } from '../schemas/user_db_schema.js';
+import { SystemDatabase, PostgresSystemDatabase } from './system_database.js';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeOrmDatabase } from './user_database';
-import { forEachMethod } from './decorators';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeOrmDatabase } from './user_database.js';
+import { forEachMethod } from './decorators.js';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { DataSource } from "typeorm"
 
