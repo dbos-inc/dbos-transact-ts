@@ -176,7 +176,6 @@ describe("foundationdb-operon", () => {
       const message1 = await ctxt.recv<string>();
       const message2 = await ctxt.recv<string>();
       const fail = await ctxt.recv("fail", 0);
-      console.log(message1, message2, fail);
       return message1 === "message1" && message2 === "message2" && fail === null;
     };
     operon.registerWorkflow(receiveWorkflow);
