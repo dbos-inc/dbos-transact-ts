@@ -172,15 +172,27 @@ describe("foundationdb-operon", () => {
   });
 
   test("fdb-notifications", async () => {
-    const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
-      return ctxt.recv<string>(topic, timeout);
+    const receiveWorkflow = async (ctxt: WorkflowContext) => {
+      const message1 = await ctxt.recv<string>();
+      const message2 = await ctxt.recv<string>();
+      const fail = await ctxt.recv("fail", 0);
+      console.log(message1, message2, fail);
+      return message1 === "message1" && message2 === "message2" && fail === null;
     };
     operon.registerWorkflow(receiveWorkflow);
-    const result = operon.workflow(receiveWorkflow, {}, "test-topic", 60);
-    await expect(
-      operon.send({}, result.getWorkflowUUID(), "test-message", "test-topic")
-    ).resolves.not.toThrow();
-    await expect(result.getResult()).resolves.toBe("test-message");
+
+    const sendWorkflow = async (ctxt: WorkflowContext, destinationUUID: string) => {
+      await ctxt.send(destinationUUID, "message1");
+      await ctxt.send(destinationUUID, "message2");
+    };
+    operon.registerWorkflow(sendWorkflow);
+
+    const workflowUUID = uuidv1();
+    const handle = operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID });
+    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).getResult();
+    expect(await handle.getResult()).toBe(true);
+    const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).getResult();
+    expect(retry).toBe(true);
   });
 
   test("fdb-duplicate-communicator", async () => {

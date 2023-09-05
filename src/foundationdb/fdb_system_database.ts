@@ -180,7 +180,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
         notifications.set([destinationUUID, topic], [message]);
       } else {
         // Append to the existing message queue.
-        notifications.set([destinationUUID, topic], exists.push(message));
+        exists.push(message);
+        console.log(exists);
+        notifications.set([destinationUUID, topic], exists);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
@@ -205,6 +207,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
       const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
+      console.log(messages);
       const message = messages === undefined ? undefined : messages.shift() as T;
       if (message === undefined) {
         return null;
@@ -214,6 +217,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
+      notifications.set([workflowUUID, topic], messages);  // Update the message table.
       return message;
     });
   }
