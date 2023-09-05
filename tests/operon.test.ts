@@ -302,14 +302,14 @@ describe("operon-tests", () => {
 
   test("simple-workflow-notifications", async () => {
     const receiveWorkflow = async (ctxt: WorkflowContext) => {
-      const test = await ctxt.recv<number>("succeed", 2);
+      const message = await ctxt.recv<string>();
       const fail = await ctxt.recv("fail", 0);
-      return test === 0 && fail === null;
+      return message === "message" && fail === null;
     };
     operon.registerWorkflow(receiveWorkflow);
 
     const sendWorkflow = async (ctxt: WorkflowContext, destinationUUID: string) => {
-      return await ctxt.send(destinationUUID, 0, "succeed");
+      return await ctxt.send(destinationUUID, "message");
     };
     operon.registerWorkflow(sendWorkflow);
 

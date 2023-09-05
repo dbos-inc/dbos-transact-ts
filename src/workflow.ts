@@ -341,7 +341,7 @@ export class WorkflowContext extends OperonContext {
    * Send a message to a key, returning true if successful.
    * If a message is already associated with the key, do nothing and return false.
    */
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string | null = null): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -357,7 +357,7 @@ export class WorkflowContext extends OperonContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  async recv<T extends NonNullable<any>>(topic: string, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {

@@ -24,8 +24,8 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
-  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string, message: T): Promise<void>;
-  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, timeout: number): Promise<T | null>;
+  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
+  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeout: number): Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -151,7 +151,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string, message: T): Promise<void> {
+  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -170,7 +170,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string, timeoutSeconds: number): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null> {
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
@@ -182,7 +182,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.listenerMap[`${workflowUUID}::${topic}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    const payload = topic === null ? workflowUUID : `${workflowUUID}::${topic}`;
+    this.listenerMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
@@ -192,7 +193,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([messagePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE destination_uuid=$1 AND topic=$2", [workflowUUID, topic])).rows;
+    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE destination_uuid=$1 AND (topic=$2 OR $2 IS NULL);", [workflowUUID, topic])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
@@ -206,7 +207,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         SELECT destination_uuid, topic, message, inserted_at
         FROM operon.notifications
         WHERE destination_uuid = $1
-          AND topic = $2
+          AND (topic = $2 OR $2 IS NULL)
         ORDER BY inserted_at ASC
         LIMIT 1
       )
@@ -214,7 +215,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       DELETE FROM operon.notifications
       USING oldest_entry
       WHERE operon.notifications.destination_uuid = oldest_entry.destination_uuid
-        AND operon.notifications.topic = oldest_entry.topic
+        AND (operon.notifications.topic = oldest_entry.topic OR oldest_entry.topic IS NULL)
         AND operon.notifications.inserted_at = oldest_entry.inserted_at
       RETURNING operon.notifications.*;`,
       [workflowUUID, topic])).rows;
