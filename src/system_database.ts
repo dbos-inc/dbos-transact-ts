@@ -151,7 +151,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  readonly nullTopic = "__null__topic__";
+
   async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void> {
+    topic = topic === null ? this.nullTopic : topic;
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -171,6 +174,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null> {
+    topic = topic === null ? this.nullTopic : topic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
@@ -193,7 +197,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([messagePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE destination_uuid=$1 AND (topic=$2 OR $2 IS NULL);", [workflowUUID, topic])).rows;
+    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE destination_uuid=$1 AND topic=$2;", [workflowUUID, topic])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
@@ -207,7 +211,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         SELECT destination_uuid, topic, message, inserted_at
         FROM operon.notifications
         WHERE destination_uuid = $1
-          AND (topic = $2 OR $2 IS NULL)
+          AND topic = $2
         ORDER BY inserted_at ASC
         LIMIT 1
       )
@@ -215,7 +219,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       DELETE FROM operon.notifications
       USING oldest_entry
       WHERE operon.notifications.destination_uuid = oldest_entry.destination_uuid
-        AND (operon.notifications.topic = oldest_entry.topic OR oldest_entry.topic IS NULL)
+        AND operon.notifications.topic = oldest_entry.topic
         AND operon.notifications.inserted_at = oldest_entry.inserted_at
       RETURNING operon.notifications.*;`,
       [workflowUUID, topic])).rows;

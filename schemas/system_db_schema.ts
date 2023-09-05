@@ -65,7 +65,6 @@ export const systemDBSchema = `
     BEGIN
         -- Publish a notification for all keys
         PERFORM pg_notify('operon_notifications_channel', payload);
-        PERFORM pg_notify('operon_notifications_channel', NEW.destination_uuid);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;

@@ -338,8 +338,8 @@ export class WorkflowContext extends OperonContext {
   }
 
   /**
-   * Send a message to a key, returning true if successful.
-   * If a message is already associated with the key, do nothing and return false.
+   * Send a message to a workflow identified by a UUID.
+   * The message can optionally be tagged with a topic.
    */
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string | null = null): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
@@ -353,9 +353,9 @@ export class WorkflowContext extends OperonContext {
   }
 
   /**
-   * Receive and consume a message from a key, returning the message.
-   * Waits until the message arrives or a timeout is reached.
-   * If the timeout is reached, return null.
+   * Consume and return the oldest unconsumed message sent to your UUID.
+   * If a topic is specified, retrieve the oldest message tagged with that topic.
+   * Otherwise, retrieve the oldest message with no topic.
    */
   async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
