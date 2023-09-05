@@ -36,7 +36,8 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase, UserDatabase, TypeORMDataSource, TypeOrmDatabase } from './user_database';
+import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase,
+         UserDatabase, TypeORMDataSource, TypeORMDatabase, } from './user_database';
 import { forEachMethod } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 
@@ -183,13 +184,13 @@ export class Operon {
   }
 
   // TODO: Create an interface for ds that has the high level things we expect from typeorm
-  useTypeOrm(ds: unknown) {
+  useTypeORM(ds: unknown) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
 
     if (ds) {
-      this.userDatabase = new TypeOrmDatabase(ds as TypeORMDataSource);
+      this.userDatabase = new TypeORMDatabase(ds as TypeORMDataSource);
       return;
     }
   }
