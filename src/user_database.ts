@@ -193,27 +193,19 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 }
 
-export interface DataSource {
+export interface TypeORMDataSource {
 
   readonly isInitialized: boolean;
-  readonly manager: EntityManager;
+  readonly manager: TypeORMEntityManager;
   initialize(): Promise<this>;
   query<T=any>(query: string): Promise<T>;
   destroy(): Promise<void>;
 } 
 
-export type TypeORMDataSource = DataSource;
-
-export interface EntityManager {
+export interface TypeORMEntityManager {
   query<T = any>(query: string, parameters?: any[]): Promise<T>
-  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager:EntityManager) => Promise<T>) : Promise<T>
-
-  // methods not needed but added so that cast is not needed
-
-
+  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager:TypeORMEntityManager) => Promise<T>) : Promise<T>
 }
-
-export type TypeORMEntityManager = EntityManager;
 
 export interface QueryFailedError<T> {
   driverError: T
