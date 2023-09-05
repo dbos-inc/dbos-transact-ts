@@ -173,9 +173,14 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       if (output !== undefined) {
         return;
       }
-      const success = (await notifications.get([destinationUUID, topic])) === undefined;
-      if (success) {
-        notifications.set([destinationUUID, topic], message);
+
+      // Retrieve the message queue.
+      const exists = (await notifications.get([destinationUUID, topic])) as Array<unknown> | undefined;
+      if (exists === undefined) {
+        notifications.set([destinationUUID, topic], [message]);
+      } else {
+        // Append to the existing message queue.
+        notifications.set([destinationUUID, topic], exists.push(message));
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
@@ -199,7 +204,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const message = (await notifications.get([workflowUUID, topic])) as T | undefined;
+      const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
+      const message = messages === undefined ? undefined : messages.shift() as T;
       if (message === undefined) {
         return null;
       }
