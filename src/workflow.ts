@@ -3,7 +3,7 @@ import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { OperonTransaction, TransactionContext } from "./transaction";
 import { OperonCommunicator, CommunicatorContext } from "./communicator";
-import { OperonError, OperonNotRegisteredError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from "./error";
+import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
 import { SystemDatabase } from "./system_database";

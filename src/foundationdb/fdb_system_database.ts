@@ -45,7 +45,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .withValueEncoding(fdb.encoders.json); // and values using JSON
     this.notificationsDB = this.dbRoot
       .at(Tables.Notifications)
-      .withKeyEncoding(fdb.encoders.tuple) // We use [topic, key] as the key
+      .withKeyEncoding(fdb.encoders.tuple) // We use [destinationUUID, topic] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
 
@@ -165,29 +165,28 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async send<T>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
+  async send<T>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string, message: T): Promise<void> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
       const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
       if (output !== undefined) {
-        return output.output;
+        return;
       }
-      const success = (await notifications.get([topic, key])) === undefined;
+      const success = (await notifications.get([destinationUUID, topic])) === undefined;
       if (success) {
-        notifications.set([topic, key], message);
+        notifications.set([destinationUUID, topic], message);
       }
-      operationOutputs.set([workflowUUID, functionID], { error: null, output: success });
-      return success;
+      operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
   }
 
-  async recv<T>(workflowUUID: string, functionID: number, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async recv<T>(workflowUUID: string, functionID: number, topic: string, timeoutSeconds: number): Promise<T | null> {
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;
     if (output !== undefined) {
       return output.output;
     }
-    const watch = await this.notificationsDB.getAndWatch([topic, key]);
+    const watch = await this.notificationsDB.getAndWatch([workflowUUID, topic]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
         watch.cancel();
@@ -200,7 +199,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const message = (await notifications.get([topic, key])) as T | undefined;
+      const message = (await notifications.get([workflowUUID, topic])) as T | undefined;
       if (message === undefined) {
         return null;
       }
