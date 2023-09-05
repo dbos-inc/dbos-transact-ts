@@ -341,21 +341,15 @@ export class WorkflowContext extends OperonContext {
    * Send a message to a key, returning true if successful.
    * If a message is already associated with the key, do nothing and return false.
    */
-  async send<T extends NonNullable<any>>(topic: string, key: string, message: T): Promise<boolean> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
-
-    // Is this receiver permitted to read from this topic?
-    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
-    if (!hasTopicPermissions) {
-      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-    }
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
     }, {});
 
-    return this.#operon.systemDatabase.send(this.workflowUUID, functionID, topic, key, message);
+    this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
   }
 
   /**
@@ -363,32 +357,15 @@ export class WorkflowContext extends OperonContext {
    * Waits until the message arrives or a timeout is reached.
    * If the timeout is reached, return null.
    */
-  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-
-    // Is this receiver permitted to read from this topic?
-    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
-    if (!hasTopicPermissions) {
-      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-    }
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
     }, {});
 
-    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, key, timeoutSeconds);
-  }
-
-  hasTopicPermissions(requestedTopic: string): boolean {
-    const topicAllowedRoles = this.#operon.topicConfigMap.get(requestedTopic);
-    if (topicAllowedRoles === undefined) {
-      throw new OperonError(`unregistered topic: ${requestedTopic}`);
-    }
-    if (topicAllowedRoles.length === 0) {
-      return true;
-    }
-    return topicAllowedRoles.includes(this.runAs);
+    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
 }
 
