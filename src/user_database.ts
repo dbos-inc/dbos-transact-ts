@@ -207,6 +207,10 @@ export type TypeORMDataSource = DataSource;
 export interface EntityManager {
   query<T = any>(query: string, parameters?: any[]): Promise<T>
   transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager:EntityManager) => Promise<T>) : Promise<T>
+
+  // methods not needed but added so that cast is not needed
+
+
 }
 
 export type TypeORMEntityManager = EntityManager;
@@ -276,18 +280,10 @@ export class TypeOrmDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    /* TODO: this does not compile 
-      if (!(error instanceof QueryFailedError)) {
-      return false;
-    } */
     return this.getPostgresErrorCode(error) === "40001";
   }
 
   isKeyConflictError(error: unknown): boolean {
-    /* TODO : this does not compile
-      if (!(error instanceof QueryFailedError)) {
-      return false;
-    } */
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
   }
