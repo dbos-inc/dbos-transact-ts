@@ -147,33 +147,35 @@ describe("concurrency-tests", () => {
   });
 
   test("duplicate-notifications", async () => {
+    const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
+      return ctxt.recv<string>(topic, timeout);
+    };
+    operon.registerWorkflow(receiveWorkflow);
     // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
-
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
-    operon.registerTopic("testTopic", ["defaultRole"]);
     const recvResPromise = Promise.allSettled([
-      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
-      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
 
     await expect(
-      operon.send({ workflowUUID: sendUUID }, "testTopic", "testmsg", "hello")
-    ).resolves.toBe(true);
+      operon.send({ workflowUUID: sendUUID }, recvUUID, "testmsg", "testTopic")
+    ).resolves.toBeFalsy();
 
     const recvRes = await recvResPromise;
-    expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
-    expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
+    expect((recvRes[0] as PromiseFulfilledResult<string | null>).value).toBe("testmsg");
+    expect((recvRes[1] as PromiseFulfilledResult<string | null>).value).toBe("testmsg");
 
     // Make sure we retrieve results correctly.
     const sendHandle = operon.retrieveWorkflow(sendUUID);
-    await expect(sendHandle.getResult()).resolves.toBe(true);
+    await expect(sendHandle.getResult()).resolves.toBeFalsy();
 
     const recvHandle = operon.retrieveWorkflow(recvUUID);
-    await expect(recvHandle.getResult()).resolves.toBe("hello");
+    await expect(recvHandle.getResult()).resolves.toBe("testmsg");
   });
 });

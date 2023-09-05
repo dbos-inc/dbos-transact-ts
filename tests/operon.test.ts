@@ -16,7 +16,6 @@ import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
 import { WorkflowConfig, StatusString } from "src/workflow";
 import { CONSOLE_EXPORTER } from "src/telemetry";
-import { StringIterator } from "lodash";
 
 describe("operon-tests", () => {
   const testTableName = "operon_test_kv";
@@ -325,58 +324,30 @@ describe("operon-tests", () => {
     expect(retry).toBe(true);
   });
 
-  // test("simple-operon-notifications", async () => {
-  //   // Send and have a receiver waiting.
-  //   const promise = operon.recv({}, "testTopic", "test", 2);
-  //   const send = await operon.send({}, "testTopic", "test", 123);
-  //   expect(send).toBe(true);
-  //   expect(await promise).toBe(123);
+  test("notification-oaoo", async () => {
+    const sendWorkflowUUID = uuidv1();
+    const recvWorkflowUUID = uuidv1();
+    const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
+      return ctxt.recv<string>(topic, timeout);
+    };
+    operon.registerWorkflow(receiveWorkflow);
+    const promise = operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult();
+    await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123,  "testTopic")).resolves.toBeFalsy();
 
-  //   // Send and then receive.
-  //   await expect(operon.send({}, "testTopic", "test2", 456)).resolves.toBe(
-  //     true
-  //   );
-  //   await sleep(10);
-  //   await expect(operon.recv({}, "testTopic", "test2", 1)).resolves.toBe(456);
-  // });
+    await expect(promise).resolves.toBe(123);
 
-  // test("notification-oaoo", async () => {
-  //   const sendWorkflowUUID = uuidv1();
-  //   const recvWorkflowUUID = uuidv1();
-  //   const promise = operon.recv(
-  //     { workflowUUID: recvWorkflowUUID },
-  //     "testTopic",
-  //     "test",
-  //     1
-  //   );
-  //   const send = await operon.send(
-  //     { workflowUUID: sendWorkflowUUID },
-  //     "testTopic",
-  //     "test",
-  //     123
-  //   );
-  //   expect(send).toBe(true);
+    // Send again with the same UUID but different input.
+    // Even we sent it twice, it should still be 123.
+    await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123,  "testTopic")).resolves.toBeFalsy();
 
-  //   expect(await promise).toBe(123);
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult()).resolves.toBe(123);
 
-  //   // Send again with the same UUID but different input.
-  //   // Even we sent it twice, it should still be 123.
-  //   await expect(
-  //     operon.send({ workflowUUID: sendWorkflowUUID }, "testTopic", "test", 123)
-  //   ).resolves.toBe(true);
+    // Receive again with the same workflowUUID, should get the same result.
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult()).resolves.toBe(123);
 
-  //   await expect(
-  //     operon.recv({ workflowUUID: recvWorkflowUUID }, "testTopic", "test", 1)
-  //   ).resolves.toBe(123);
-
-  //   // Receive again with the same workflowUUID, should get the same result.
-  //   await expect(
-  //     operon.recv({ workflowUUID: recvWorkflowUUID }, "testTopic", "test", 1)
-  //   ).resolves.toBe(123);
-
-  //   // Receive again with the different workflowUUID.
-  //   await expect(operon.recv({}, "testTopic", "test", 2)).resolves.toBeNull();
-  // });
+    // Receive again with the different workflowUUID.
+    await expect(operon.workflow(receiveWorkflow, {}, "testTopic", 1).getResult()).resolves.toBeNull();
+  });
 
   test("endtoend-oaoo", async () => {
     let num = 0;

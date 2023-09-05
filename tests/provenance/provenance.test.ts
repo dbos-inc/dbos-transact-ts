@@ -22,7 +22,6 @@ describe("operon-provenance", () => {
     operon.useNodePostgres();
     operon.registerDecoratedWT();
     await operon.init();
-    operon.registerTopic("testTopic", ["defaultRole"]);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
