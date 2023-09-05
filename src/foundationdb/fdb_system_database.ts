@@ -206,10 +206,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
       const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
-      const message = messages === undefined ? undefined : messages.shift() as T;
-      if (message === undefined) {
-        return null;
-      }
+      const message = (messages ? messages.shift() as T : undefined) ?? null;  // Force the message to be null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
