@@ -42,7 +42,7 @@ export const systemDBSchema = `
     destination_uuid TEXT NOT NULL,
     topic TEXT,
     message TEXT NOT NULL,
-    inserted_at timestamp with time zone DEFAULT current_timestamp
+    created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
   DO $$ 

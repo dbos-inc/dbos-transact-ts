@@ -208,11 +208,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
     const finalRecvRows = (await client.query<notifications>(
       `WITH oldest_entry AS (
-        SELECT destination_uuid, topic, message, inserted_at
+        SELECT destination_uuid, topic, message, created_at_epoch_ms
         FROM operon.notifications
         WHERE destination_uuid = $1
           AND topic = $2
-        ORDER BY inserted_at ASC
+        ORDER BY created_at_epoch_ms ASC
         LIMIT 1
       )
 
@@ -220,7 +220,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       USING oldest_entry
       WHERE operon.notifications.destination_uuid = oldest_entry.destination_uuid
         AND operon.notifications.topic = oldest_entry.topic
-        AND operon.notifications.inserted_at = oldest_entry.inserted_at
+        AND operon.notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
       RETURNING operon.notifications.*;`,
       [workflowUUID, topic])).rows;
     let message: T | null = null;

@@ -169,6 +169,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
+      // For OAOO, check if the send already ran.
       const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
       if (output !== undefined) {
         return;
@@ -188,10 +189,12 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async recv<T>(workflowUUID: string, functionID: number, topic: string, timeoutSeconds: number): Promise<T | null> {
+    // For OAOO, check if the recv already ran.
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;
     if (output !== undefined) {
       return output.output;
     }
+    // Check if there is a message in the queue, waiting for one to arrive if not.
     const watch = await this.notificationsDB.getAndWatch([workflowUUID, topic]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
@@ -202,11 +205,12 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     } else {
       watch.cancel();
     }
+    // Consume and return the message, recording the operation for OAOO.
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
       const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
-      const message = (messages ? messages.shift() as T : undefined) ?? null;  // Force the message to be null.
+      const message = (messages ? messages.shift() as T : undefined) ?? null;  // If no message is found, return null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
