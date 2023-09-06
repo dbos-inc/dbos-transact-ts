@@ -1,5 +1,5 @@
 // import { PrismaClient, testkv } from "@prisma/client";
-import { DataSource, EntityManager, Entity, PrimaryColumn, Column} from "typeorm";
+import { DataSource, Entity, EntityManager, PrimaryColumn, Column} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Operon, OperonConfig, TransactionContext } from "src";
 import { v1 as uuidv1 } from "uuid";
@@ -35,7 +35,7 @@ const testTxn = async (
   id: string,
   value: string
 ) => {
-  const p: EntityManager = txnCtxt.typeormEM ;
+  const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
   const kv: KV = new KV();
   kv.id = id;
   kv.value = value;
