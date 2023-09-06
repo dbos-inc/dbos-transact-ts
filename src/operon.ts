@@ -164,6 +164,11 @@ export class Operon {
           const tx = ro.origFunction as OperonTransaction<any, any>;
           this.registerTransaction(tx, ro.txnConfig);
           break;
+        } else if (arg.argType.name === "CommunicationContext") {
+          const comm = ro.origFunction as OperonCommunicator<any, any>;
+          this.registerCommunicator(comm, ro.commConfig);
+        } else {
+          // should we be erroring here?
         }
       }
     });

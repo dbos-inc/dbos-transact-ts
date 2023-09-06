@@ -22,7 +22,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { CommunicatorContext } from "./communicator";
+import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonContext } from "./context";
 import { OperonDataValidationError } from "./error";
 
@@ -198,6 +198,7 @@ export interface OperonMethodRegistrationBase {
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
+  commConfig?: CommunicatorConfig;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   origFunction: Function;
@@ -229,6 +230,7 @@ implements OperonMethodRegistrationBase
   replacementFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
+  commConfig?: CommunicatorConfig;
 
   invoke(pthis:This, args: Args) : Promise<Return> {
     return this.replacementFunction!.call(pthis, ...args);
@@ -560,4 +562,18 @@ export function OperonTransaction(config: TransactionConfig={}) {
     return descriptor;
   }
   return decorator;
+}
+
+export function OperonCommunicator(config: CommunicatorConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.commConfig = config;
+    return descriptor;
+  }
+  return decorator;
+
 }
