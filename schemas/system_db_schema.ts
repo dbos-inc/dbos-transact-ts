@@ -39,18 +39,32 @@ export const systemDBSchema = `
   );
 
   CREATE TABLE IF NOT EXISTS operon.notifications (
-    topic TEXT NOT NULL,
-    key TEXT NOT NULL,
+    destination_uuid TEXT NOT NULL,
+    topic TEXT,
     message TEXT NOT NULL,
-    PRIMARY KEY (topic, key)
+    created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
+
+  DO $$ 
+  BEGIN 
+      IF NOT EXISTS (
+          SELECT 1
+          FROM   pg_indexes 
+          WHERE  schemaname = 'operon'
+          AND    tablename  = 'notifications'
+          AND    indexname  = 'idx_workflow_topic'
+      ) THEN
+          CREATE INDEX idx_workflow_topic ON operon.notifications (destination_uuid, topic);
+      END IF;
+  END 
+  $$;
 
   CREATE OR REPLACE FUNCTION operon.notifications_function() RETURNS TRIGGER AS $$
     DECLARE
-        topic_key text := NEW.topic || '::' || NEW.key;
+        payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
         -- Publish a notification for all keys
-        PERFORM pg_notify('operon_notifications_channel', topic_key);
+        PERFORM pg_notify('operon_notifications_channel', payload);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;

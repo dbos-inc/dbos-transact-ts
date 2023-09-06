@@ -45,7 +45,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .withValueEncoding(fdb.encoders.json); // and values using JSON
     this.notificationsDB = this.dbRoot
       .at(Tables.Notifications)
-      .withKeyEncoding(fdb.encoders.tuple) // We use [topic, key] as the key
+      .withKeyEncoding(fdb.encoders.tuple) // We use [destinationUUID, topic] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
 
@@ -165,29 +165,37 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async send<T>(workflowUUID: string, functionID: number, topic: string, key: string, message: T): Promise<boolean> {
+  async send<T>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string, message: T): Promise<void> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
+      // For OAOO, check if the send already ran.
       const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
       if (output !== undefined) {
-        return output.output;
+        return;
       }
-      const success = (await notifications.get([topic, key])) === undefined;
-      if (success) {
-        notifications.set([topic, key], message);
+
+      // Retrieve the message queue.
+      const exists = (await notifications.get([destinationUUID, topic])) as Array<unknown> | undefined;
+      if (exists === undefined) {
+        notifications.set([destinationUUID, topic], [message]);
+      } else {
+        // Append to the existing message queue.
+        exists.push(message);
+        notifications.set([destinationUUID, topic], exists);
       }
-      operationOutputs.set([workflowUUID, functionID], { error: null, output: success });
-      return success;
+      operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
   }
 
-  async recv<T>(workflowUUID: string, functionID: number, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async recv<T>(workflowUUID: string, functionID: number, topic: string, timeoutSeconds: number): Promise<T | null> {
+    // For OAOO, check if the recv already ran.
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;
     if (output !== undefined) {
       return output.output;
     }
-    const watch = await this.notificationsDB.getAndWatch([topic, key]);
+    // Check if there is a message in the queue, waiting for one to arrive if not.
+    const watch = await this.notificationsDB.getAndWatch([workflowUUID, topic]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
         watch.cancel();
@@ -197,18 +205,22 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     } else {
       watch.cancel();
     }
+    // Consume and return the message, recording the operation for OAOO.
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const message = (await notifications.get([topic, key])) as T | undefined;
-      if (message === undefined) {
-        return null;
-      }
+      const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
+      const message = (messages ? messages.shift() as T : undefined) ?? null;  // If no message is found, return null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
+      if (messages && messages.length > 0) {
+        notifications.set([workflowUUID, topic], messages);  // Update the message table.
+      } else {
+        notifications.clear([workflowUUID, topic]);
+      }
       return message;
     });
   }

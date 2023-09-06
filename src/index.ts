@@ -29,7 +29,6 @@ export {
 export {
   OperonError,
   OperonInitializationError,
-  OperonTopicPermissionDeniedError,
   OperonWorkflowPermissionDeniedError,
   OperonDataValidationError,
 } from './error';

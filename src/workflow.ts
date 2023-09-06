@@ -3,7 +3,7 @@ import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { OperonTransaction, TransactionContext } from "./transaction";
 import { OperonCommunicator, CommunicatorContext } from "./communicator";
-import { OperonError, OperonNotRegisteredError, OperonTopicPermissionDeniedError, OperonWorkflowConflictUUIDError } from "./error";
+import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
 import { SystemDatabase } from "./system_database";
@@ -338,57 +338,34 @@ export class WorkflowContext extends OperonContext {
   }
 
   /**
-   * Send a message to a key, returning true if successful.
-   * If a message is already associated with the key, do nothing and return false.
+   * Send a message to a workflow identified by a UUID.
+   * The message can optionally be tagged with a topic.
    */
-  async send<T extends NonNullable<any>>(topic: string, key: string, message: T): Promise<boolean> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string | null = null): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
-
-    // Is this receiver permitted to read from this topic?
-    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
-    if (!hasTopicPermissions) {
-      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-    }
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
     }, {});
 
-    return this.#operon.systemDatabase.send(this.workflowUUID, functionID, topic, key, message);
+    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
   }
 
   /**
-   * Receive and consume a message from a key, returning the message.
-   * Waits until the message arrives or a timeout is reached.
-   * If the timeout is reached, return null.
+   * Consume and return the oldest unconsumed message sent to your UUID.
+   * If a topic is specified, retrieve the oldest message tagged with that topic.
+   * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string, key: string, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-
-    // Is this receiver permitted to read from this topic?
-    const hasTopicPermissions: boolean = this.hasTopicPermissions(topic);
-    if (!hasTopicPermissions) {
-      throw new OperonTopicPermissionDeniedError(topic, this.workflowUUID, functionID, this.runAs);
-    }
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
       this.resultBuffer.clear();
     }, {});
 
-    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, key, timeoutSeconds);
-  }
-
-  hasTopicPermissions(requestedTopic: string): boolean {
-    const topicAllowedRoles = this.#operon.topicConfigMap.get(requestedTopic);
-    if (topicAllowedRoles === undefined) {
-      throw new OperonError(`unregistered topic: ${requestedTopic}`);
-    }
-    if (topicAllowedRoles.length === 0) {
-      return true;
-    }
-    return topicAllowedRoles.includes(this.runAs);
+    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
 }
 

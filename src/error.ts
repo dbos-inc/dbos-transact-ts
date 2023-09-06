@@ -75,8 +75,8 @@ export class OperonInitializationError extends OperonError {
 
 const TopicPermissionDeniedError = 4;
 export class OperonTopicPermissionDeniedError extends OperonError {
-  constructor(topic: string, workflowUUID: string, functionID: number, runAs: string) {
-    const msg = `Subject ${runAs} does not have permission on topic ${topic}.` + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
+  constructor(destinationUUID: string, workflowUUID: string, functionID: number, runAs: string) {
+    const msg = `Subject ${runAs} does not have permission on destination UUID ${destinationUUID}.` + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
     super(msg, TopicPermissionDeniedError);
   }
 }

@@ -172,16 +172,26 @@ describe("foundationdb-operon", () => {
   });
 
   test("fdb-notifications", async () => {
-    operon.registerTopic("test-topic");
-    const result = operon.recv({}, "test-topic", "test-key", 60);
-    const success = await operon.send(
-      {},
-      "test-topic",
-      "test-key",
-      "test-message"
-    );
-    expect(success).toBe(true);
-    await expect(result).resolves.toBe("test-message");
+    const receiveWorkflow = async (ctxt: WorkflowContext) => {
+      const message1 = await ctxt.recv<string>();
+      const message2 = await ctxt.recv<string>();
+      const fail = await ctxt.recv("fail", 0);
+      return message1 === "message1" && message2 === "message2" && fail === null;
+    };
+    operon.registerWorkflow(receiveWorkflow);
+
+    const sendWorkflow = async (ctxt: WorkflowContext, destinationUUID: string) => {
+      await ctxt.send(destinationUUID, "message1");
+      await ctxt.send(destinationUUID, "message2");
+    };
+    operon.registerWorkflow(sendWorkflow);
+
+    const workflowUUID = uuidv1();
+    const handle = operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID });
+    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).getResult();
+    expect(await handle.getResult()).toBe(true);
+    const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).getResult();
+    expect(retry).toBe(true);
   });
 
   test("fdb-duplicate-communicator", async () => {
@@ -219,28 +229,30 @@ describe("foundationdb-operon", () => {
   });
 
   test("fdb-duplicate-notifications", async () => {
+    const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
+      return ctxt.recv<string>(topic, timeout);
+    };
+    operon.registerWorkflow(receiveWorkflow);
+
     // Run two send/recv concurrently with the same UUID, both should succeed.
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
-    operon.registerTopic("testTopic", ["defaultRole"]);
     const recvResPromise = Promise.allSettled([
-      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
-      operon.recv({ workflowUUID: recvUUID }, "testTopic", "testmsg", 2),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
     ]);
 
     // Send would trigger both to receive, but only one can delete the message.
     await expect(
-      operon.send({ workflowUUID: sendUUID }, "testTopic", "testmsg", "hello")
-    ).resolves.toBe(true);
+      operon.send({ workflowUUID: sendUUID }, recvUUID, "hello", "testTopic")
+    ).resolves.not.toThrow();
 
     const recvRes = await recvResPromise;
-    expect((recvRes[0] as PromiseFulfilledResult<boolean>).value).toBe("hello");
-    expect((recvRes[1] as PromiseFulfilledResult<boolean>).value).toBe("hello");
+    expect((recvRes[0] as PromiseFulfilledResult<string>).value).toBe("hello");
+    expect((recvRes[1] as PromiseFulfilledResult<string>).value).toBe("hello");
 
     // Make sure we retrieve results correctly.
-    await expect(operon.retrieveWorkflow(sendUUID).getResult()).resolves.toBe(
-      true
-    );
+    await expect(operon.retrieveWorkflow(sendUUID).getResult()).resolves.not.toThrow();
     await expect(operon.retrieveWorkflow(recvUUID).getResult()).resolves.toBe(
       "hello"
     );

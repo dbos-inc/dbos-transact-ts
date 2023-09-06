@@ -270,10 +270,6 @@ export class Operon {
 
   /* WORKFLOW OPERATIONS */
 
-  registerTopic(topic: string, rolesThatCanPubSub: string[] = []) {
-    this.topicConfigMap.set(topic, rolesThatCanPubSub);
-  }
-
   registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`);
@@ -374,20 +370,12 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, message: T): Promise<boolean> {
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
     // Create a workflow and call send.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, topic: string, key: string, message: T) => {
-      return await ctxt.send<T>(topic, key, message);
+    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
+      return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return await this.workflow(operon_temp_workflow, params, topic, key, message).getResult();
-  }
-
-  async recv<T extends NonNullable<any>>(params: WorkflowParams, topic: string, key: string, timeoutSeconds: number): Promise<T | null> {
-    // Create a workflow and call recv.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, topic: string, key: string, timeoutSeconds: number) => {
-      return await ctxt.recv<T>(topic, key, timeoutSeconds);
-    };
-    return await this.workflow(operon_temp_workflow, params, topic, key, timeoutSeconds).getResult();
+    return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
   }
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
