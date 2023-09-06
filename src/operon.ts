@@ -183,16 +183,12 @@ export class Operon {
     this.userDatabase = new PrismaUserDatabase(client);
   }
 
-  // TODO: Create an interface for ds that has the high level things we expect from typeorm
   useTypeORM(ds: TypeORMDataSource) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
-
-    
-    this.userDatabase = new TypeORMDatabase(ds as TypeORMDataSource);
+    this.userDatabase = new TypeORMDatabase(ds);
     return;
-    
   }
 
   async init(): Promise<void> {

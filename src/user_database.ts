@@ -200,7 +200,7 @@ export interface TypeORMDataSource {
   initialize(): Promise<this>;
   query<T=any>(query: string): Promise<T>;
   destroy(): Promise<void>;
-} 
+}
 
 export interface TypeORMEntityManager {
   query<T = any>(query: string, parameters?: any[]): Promise<T>
@@ -267,8 +267,12 @@ export class TypeORMDatabase implements UserDatabase {
 
   getPostgresErrorCode(error: unknown): string | null {
     const typeormErr = error as QueryFailedError<PGDatabaseError>;
-    const dbErr = typeormErr.driverError ;
-    return dbErr.code ? dbErr.code : null;
+    if (typeormErr.driverError) {
+      const dbErr = typeormErr.driverError;
+      return dbErr.code ? dbErr.code : null;
+    } else {
+      return null;
+    }
   }
 
   isRetriableTransactionError(error: unknown): boolean {
