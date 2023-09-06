@@ -349,7 +349,7 @@ export class WorkflowContext extends OperonContext {
       this.resultBuffer.clear();
     }, {});
 
-    this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
+    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
   }
 
   /**
