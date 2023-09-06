@@ -162,8 +162,6 @@ export class Operon {
           break;
         } else if (arg.argType.name === "TransactionContext") {
           const tx = ro.origFunction as OperonTransaction<any, any>;
-          console.log("Operon registering transaction");
-          console.log("txn name " + tx.name);
           this.registerTransaction(tx, ro.txnConfig);
           break;
         }
@@ -186,7 +184,7 @@ export class Operon {
   }
 
   // TODO: Create an interface for ds that has the high level things we expect from typeorm
-  useTypeORM(ds: unknown) {
+  useTypeORM(ds: TypeORMDataSource) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
