@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
-import { APITypes, ArgSources, forEachMethod } from '../decorators';
+import { APITypes, ArgSources, forEachMethod } from "../decorators";
 import { OperonContext } from "../context";
 import { OperonTransaction, TransactionContext } from "../transaction";
 import { OperonWorkflow, WorkflowContext } from "../workflow";
@@ -30,7 +30,7 @@ export class OperonHttpServer {
 
   /**
    * Register Operon endpoints and attach to the app. Then start the server at the given port.
-   * @param port 
+   * @param port
    */
   listen(port: number) {
     // Start the HTTP server.
@@ -53,11 +53,8 @@ export class OperonHttpServer {
           // Parse the arguments.
           const args: unknown[] = [];
           ro.args.forEach((marg, idx) => {
-            if (idx === 0 && (marg.argType === TransactionContext
-              || marg.argType === WorkflowContext
-              || marg.argType === CommunicatorContext
-              || marg.argType === OperonContext)) {
-              return;  // Do not parse the context.
+            if (idx === 0 && (marg.argType === TransactionContext || marg.argType === WorkflowContext || marg.argType === CommunicatorContext || marg.argType === OperonContext)) {
+              return; // Do not parse the context.
             }
 
             let foundArg = undefined;
@@ -73,7 +70,6 @@ export class OperonHttpServer {
               // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
               foundArg = req.body[marg.name];
               if (foundArg) {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 args.push(foundArg);
               }
             }
