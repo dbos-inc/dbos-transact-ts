@@ -10,7 +10,6 @@ interface WorkflowOutput<R> {
   status: string;
   error: string;
   output: R;
-  updatedAtEpochMs: number;
 }
 
 interface OperationOutput<R> {
@@ -69,6 +68,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
+  async bufferWorkflowStatus(workflowUUID: string): Promise<void> {
+    this.workflowOutputBuffer.set(workflowUUID, operonNull);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
   async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
     this.workflowOutputBuffer.set(workflowUUID, output);
   }
@@ -79,12 +83,22 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {
-        txn.set(workflowUUID, {
-          status: StatusString.SUCCESS,
-          error: null,
-          output: output,
-          updatedAtEpochMs: Math.floor(new Date().getTime() / 1000),
-        });
+        if (output === operonNull) {
+          const present = await txn.get(workflowUUID);
+          if (present === undefined) {
+            txn.set(workflowUUID, {
+              status: StatusString.PENDING,
+              error: null,
+              output: null,
+            });
+          }
+        } else {
+          txn.set(workflowUUID, {
+            status: StatusString.SUCCESS,
+            error: null,
+            output: output,
+          });
+        }
       }
     });
     return Array.from(localBuffer.keys());
@@ -142,9 +156,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
-      return { status: StatusString.UNKNOWN, updatedAtEpochMs: -1 };
+      return { status: StatusString.UNKNOWN };
     }
-    return { status: output.status, updatedAtEpochMs: output.updatedAtEpochMs };
+    return { status: output.status };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
@@ -223,5 +237,13 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       return message;
     });
+  }
+
+  set<T extends unknown>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+
+  get<T extends unknown>(workflowUUID: string, key: string, timeout: number): Promise<T | null> {
+    throw new Error("Method not implemented.");
   }
 }

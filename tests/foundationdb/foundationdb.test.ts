@@ -145,6 +145,16 @@ describe("foundationdb-operon", () => {
 
   test("fdb-workflow-status", async () => {
     let counter = 0;
+    
+    let innerResolve: () => void;
+    const innerPromise = new Promise<void>((r) => {
+      innerResolve = r;
+    });
+
+    let outerResolve: () => void;
+    const outerPromise = new Promise<void>((r) => {
+      outerResolve = r;
+    });
 
     // eslint-disable-next-line @typescript-eslint/require-await
     const testFunction = async (txnCtxt: TransactionContext) => {
@@ -153,17 +163,25 @@ describe("foundationdb-operon", () => {
       return 3;
     };
     const testWorkflow = async (ctxt: WorkflowContext) => {
-      return ctxt.transaction(testFunction);
+      const result = ctxt.transaction(testFunction);
+      outerResolve();
+      await(innerPromise);
+      return result;
     };
     operon.registerTransaction(testFunction);
     operon.registerWorkflow(testWorkflow);
 
     const uuid = uuidv1();
-    await expect(
-      operon.workflow(testWorkflow, { workflowUUID: uuid }).getResult()
-    ).resolves.toBe(3);
-
+    const invokedHandle = operon.workflow(testWorkflow, { workflowUUID: uuid });
+    await outerPromise;
+    await operon.systemDatabase.flushWorkflowStatusBuffer();
     const retrievedHandle = operon.retrieveWorkflow(uuid);
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    innerResolve!();
+    await expect(invokedHandle.getResult()).resolves.toBe(3);
+    await operon.systemDatabase.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
