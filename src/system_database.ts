@@ -105,7 +105,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else {
         await client.query(
           `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
           [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
         );
       }
@@ -119,7 +119,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const serialErr = JSON.stringify(serializeError(error));
     await this.pool.query(
       `INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
       [workflowUUID, StatusString.ERROR, serialErr]
     );
   }
@@ -267,11 +267,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, updated_at_epoch_ms FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return { status: StatusString.UNKNOWN, updatedAtEpochMs: -1 };
+      return { status: StatusString.UNKNOWN };
     }
-    return { status: rows[0].status, updatedAtEpochMs: rows[0].updated_at_epoch_ms };
+    return { status: rows[0].status };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

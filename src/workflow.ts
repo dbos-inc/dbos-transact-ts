@@ -29,7 +29,6 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string;
-  updatedAtEpochMs: number;
 }
 
 export interface PgTransactionId {
@@ -389,7 +388,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return { status: StatusString.PENDING, updatedAtEpochMs: Date.now() };
+      return { status: StatusString.PENDING };
     } else {
       return status;
     }

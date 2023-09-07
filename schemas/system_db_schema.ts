@@ -34,8 +34,7 @@ export const systemDBSchema = `
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
     output TEXT,
-    error TEXT,
-    updated_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
+    error TEXT
   );
 
   CREATE TABLE IF NOT EXISTS operon.notifications (
