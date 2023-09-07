@@ -5,7 +5,7 @@ import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status, updates } from "../schemas/system_db_schema";
+import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_values } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
@@ -37,7 +37,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
-  readonly updatesMap: Record<string, () => void> = {};
+  readonly workflowValuesMap: Record<string, () => void> = {};
 
   readonly workflowOutputBuffer: Map<string, any> = new Map();
 
@@ -281,7 +281,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return;
     }
     ( { rows } = await client.query(
-      `INSERT INTO operon.updates (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      `INSERT INTO operon.workflow_values (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
       [workflowUUID, key, JSON.stringify(message)]
     ));
     if (rows.length === 0) {
@@ -300,7 +300,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const valuePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.updatesMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    this.workflowValuesMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
@@ -310,14 +310,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<updates>("SELECT key FROM operon.updates WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_values>("SELECT key FROM operon.workflow_values WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    const finalRecvRows = (await this.pool.query<updates>("SELECT value FROM operon.updates WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const finalRecvRows = (await this.pool.query<workflow_values>("SELECT value FROM operon.workflow_values WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     let value: T | null = null;
     if (finalRecvRows.length > 0) {
       value = JSON.parse(finalRecvRows[0].value) as T;
@@ -358,15 +358,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async listenForNotifications() {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query("LISTEN operon_notifications_channel;");
-    await this.notificationsClient.query("LISTEN operon_updates_channel;");
+    await this.notificationsClient.query("LISTEN operon_workflow_values_channel;");
     const handler = (msg: Notification) => {
       if (msg.channel === 'operon_notifications_channel') {
         if (msg.payload && msg.payload in this.notificationsMap) {
           this.notificationsMap[msg.payload]();
         }
       } else {
-        if (msg.payload && msg.payload in this.updatesMap) {
-          this.updatesMap[msg.payload]();
+        if (msg.payload && msg.payload in this.workflowValuesMap) {
+          this.workflowValuesMap[msg.payload]();
         }
       }
     };
