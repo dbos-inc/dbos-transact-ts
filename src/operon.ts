@@ -187,7 +187,6 @@ export class Operon {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
     }
-
     this.userDatabase = new TypeORMDatabase(ds);
     return;
   }

@@ -2,7 +2,7 @@
 
 export class OperonContext {
   rawContext: unknown;  // Raw context from HTTP server. For example, Koa.Context.
-  request: unknown
+  request: unknown;
   response: unknown;
 
   authUser: string = '';
