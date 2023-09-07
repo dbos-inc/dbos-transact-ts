@@ -5,7 +5,7 @@ import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status } from "../schemas/system_db_schema";
+import { systemDBSchema, notifications, operation_outputs, workflow_status, updates } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
@@ -294,9 +294,36 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async get<T extends unknown>(workflowUUID: string, key: string, timeout: number): Promise<T | null> {
-    throw new Error("Method not implemented.");
-  }
+  async get<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+    // Register the key with the global notifications listener.
+    let resolveNotification: () => void;
+    const valuePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    this.updatesMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        resolve();
+      }, timeoutSeconds * 1000);
+    });
+    const received = Promise.race([valuePromise, timeoutPromise]);
+
+    // Check if the key is already in the DB, then wait for the notification if it isn't.
+    const initRecvRows = (await this.pool.query<updates>("SELECT key FROM operon.updates WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    if (initRecvRows.length === 0) {
+      await received;
+    }
+    clearTimeout(timer!);
+
+    // Return the value if it's in the DB, otherwise return null.
+    const finalRecvRows = (await this.pool.query<updates>("SELECT value FROM operon.updates WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    let value: T | null = null;
+    if (finalRecvRows.length > 0) {
+      value = JSON.parse(finalRecvRows[0].value) as T;
+    }
+    return value;
+   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);

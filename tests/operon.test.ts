@@ -431,11 +431,17 @@ describe("operon-tests", () => {
   test("simple-workflow-updates", async () => {
     const sendWorkflow = async (ctxt: WorkflowContext) => {
       await ctxt.set("key1", "value1");
-      await ctxt.set("key2", "message2");
+      await ctxt.set("key2", "value2");
+      return 0;
     };
     operon.registerWorkflow(sendWorkflow);
 
-    await operon.workflow(sendWorkflow, {}).getResult();
+    const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
+    await expect(handle.get("key1")).resolves.toBe("value1");
+    await expect(handle.get("key2")).resolves.toBe("value2");
+    await expect(handle.get("fail", 0)).resolves.toBe(null);
+    await handle.getResult();
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: handle.getWorkflowUUID()}).getResult()).resolves.toBe(0);
   });
 
   test("readonly-recording", async () => {

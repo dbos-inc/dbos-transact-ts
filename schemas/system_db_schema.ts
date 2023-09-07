@@ -7,9 +7,15 @@ export interface workflow_status {
 }
 
 export interface notifications {
+  destination_uuid: string;
   topic: string;
-  key: string;
   message: string;
+}
+
+export interface updates {
+  workflow_uuid: string;
+  key: string;
+  value: string;
 }
 
 export interface operation_outputs {

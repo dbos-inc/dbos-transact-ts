@@ -383,6 +383,7 @@ export class WorkflowContext extends OperonContext {
 export interface WorkflowHandle<R> {
   getStatus(): Promise<WorkflowStatus>;
   getResult(): Promise<R>;
+  get<T extends NonNullable<any>>(key: string, timeoutSeconds?: number): Promise<T | null>;
   getWorkflowUUID(): string;
 }
 
@@ -405,6 +406,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     }
   }
 
+  async get<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+    return this.systemDatabase.get(this.workflowUUID, key, timeoutSeconds);
+  }
+
   async getResult(): Promise<R> {
     return this.workflowPromise;
   }
@@ -424,6 +429,10 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getStatus(): Promise<WorkflowStatus> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+  }
+
+  async get<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+    return this.systemDatabase.get(this.workflowUUID, key, timeoutSeconds);
   }
 
   async getResult(): Promise<R> {
