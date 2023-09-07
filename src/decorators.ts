@@ -381,14 +381,15 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-      console.log(`${methReg.traceLevel}: ${mn}: Invoked - ` + sLogRec.toString());
+      // console.log(`${methReg.traceLevel}: ${mn}: Invoked - ` + sLogRec.toString());
+      // eslint-disable-next-line no-useless-catch
       try {
         // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
         const result = await methReg.origFunction.call(this, ...args);
-        console.log(`${methReg.traceLevel}: ${mn}: Returned`);
+        // console.log(`${methReg.traceLevel}: ${mn}: Returned`);
         return result;
       } catch (e) {
-        console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
+        // console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
         throw e;
       }
     };
