@@ -101,7 +101,7 @@ export class Operon {
     ],
   ]);
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
-  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
+  readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
 
   readonly initialEpochTimeMs: number;
@@ -164,12 +164,9 @@ export class Operon {
           this.registerTransaction(tx, ro.txnConfig);
           break;
         } else if (arg.argType.name === "CommunicatorContext") {
-          // communicatorConfigMap uses the decorated function as the key, so we have to use 
-          // ro.replacementFunction instead of ro.origFunction here.
-          const comm = ro.replacementFunction as OperonCommunicator<any, any>;
+          const comm = ro.origFunction as OperonCommunicator<any, any>;
           this.registerCommunicator(comm, ro.commConfig);
-        } else {
-          // should we be erroring here?
+          break;
         }
       }
     });
@@ -288,11 +285,17 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig = {}) {
+    if (this.transactionConfigMap.has(txn.name)) {
+      throw new OperonError(`Repeated Transaction name: ${txn.name}`);
+    }
     this.transactionConfigMap.set(txn.name, params);
   }
 
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig = {}) {
-    this.communicatorConfigMap.set(comm, params);
+    if (this.communicatorConfigMap.has(comm.name)) {
+      throw new OperonError(`Repeated Commmunicator name: ${comm.name}`);
+    }
+    this.communicatorConfigMap.set(comm.name, params);
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
