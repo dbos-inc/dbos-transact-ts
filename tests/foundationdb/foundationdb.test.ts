@@ -5,6 +5,7 @@ import {
   CommunicatorContext,
   WorkflowContext,
   StatusString,
+  WorkflowHandle,
 } from "src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "src/foundationdb/fdb_system_database";
@@ -210,6 +211,22 @@ describe("foundationdb-operon", () => {
     expect(await handle.getResult()).toBe(true);
     const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).getResult();
     expect(retry).toBe(true);
+  });
+
+  test("fdb-simple-workflow-values", async () => {
+    const sendWorkflow = async (ctxt: WorkflowContext) => {
+      await ctxt.set("key1", "value1");
+      await ctxt.set("key2", "value2");
+      return 0;
+    };
+    operon.registerWorkflow(sendWorkflow);
+
+    const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
+    await expect(handle.get("key1")).resolves.toBe("value1");
+    await expect(handle.get("key2")).resolves.toBe("value2");
+    await expect(handle.get("fail", 0)).resolves.toBe(null);
+    await handle.getResult();
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: handle.getWorkflowUUID()}).getResult()).resolves.toBe(0);
   });
 
   test("fdb-duplicate-communicator", async () => {

@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonError, OperonWorkflowConflictUUIDError } from "./error";
+import { OperonDuplicateWorkflowValuesError, OperonError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_values } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
@@ -287,7 +287,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       await client.query("ROLLBACK");
       client.release();
-      throw new OperonError(`Workflow ${workflowUUID} has already set key ${key}`)
+      throw new OperonDuplicateWorkflowValuesError(workflowUUID, key);
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
