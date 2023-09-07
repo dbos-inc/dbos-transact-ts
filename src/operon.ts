@@ -153,8 +153,7 @@ export class Operon {
     // Register user declared operations
     // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
     // Also, why the original function?  It should get logged...
-    forEachMethod((registeredOperation) => {
-      const ro = registeredOperation;
+    forEachMethod((ro) => {
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.origFunction as OperonWorkflow<any, any>;
@@ -164,8 +163,10 @@ export class Operon {
           const tx = ro.origFunction as OperonTransaction<any, any>;
           this.registerTransaction(tx, ro.txnConfig);
           break;
-        } else if (arg.argType.name === "CommunicationContext") {
-          const comm = ro.origFunction as OperonCommunicator<any, any>;
+        } else if (arg.argType.name === "CommunicatorContext") {
+          // communicatorConfigMap uses the decorated function as the key, so we have to use 
+          // ro.replacementFunction instead of ro.origFunction here.
+          const comm = ro.replacementFunction as OperonCommunicator<any, any>;
           this.registerCommunicator(comm, ro.commConfig);
         } else {
           // should we be erroring here?
