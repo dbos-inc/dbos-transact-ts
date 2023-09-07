@@ -98,13 +98,17 @@ export class OperonHttpServer {
               // Directly invoke the handler code.
               retValue = await ro.invoke(undefined, [oc, ...args]);
             }
-            res.status(200).send(retValue);
+            if (!res.headersSent) {
+              // If the headers have been sent, it means the program has responded, then we don't send anything.
+              res.status(200).send(retValue);
+            }
           } catch (e) {
-            console.error(e);
-            if (e instanceof Error) {
-              res.status(500).send(e.message);
-            } else {
-              res.status(500).send(e);
+            if (!res.headersSent) {
+              if (e instanceof Error) {
+                res.status(500).send(e.message);
+              } else {
+                res.status(500).send(e);
+              }
             }
           }
         };
