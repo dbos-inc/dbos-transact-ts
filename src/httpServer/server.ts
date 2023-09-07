@@ -1,5 +1,7 @@
-import express, { Request, Response, NextFunction } from "express";
-import cors from "cors";
+import Koa from 'koa';
+import Router from '@koa/router';
+import { bodyParser } from '@koa/bodyparser';
+import cors from "@koa/cors";
 import { APITypes, ArgSources, forEachMethod } from "../decorators";
 import { OperonContext } from "../context";
 import { OperonTransaction, TransactionContext } from "../transaction";
@@ -9,7 +11,8 @@ import { OperonDataValidationError } from "src/error";
 import { Operon } from "src/operon";
 
 export class OperonHttpServer {
-  readonly app: express.Application;
+  readonly app = new Koa();
+  readonly router = new Router();
 
   /**
    * Create an Express app.
@@ -17,15 +20,14 @@ export class OperonHttpServer {
    * TODO: maybe call operon.init() somewhere in this class?
    */
   constructor(readonly operon: Operon) {
-    this.app = express();
     // Use default middlewares.
     // TODO: support customized middlewares.
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
+    this.app.use(bodyParser());
     this.app.use(cors());
 
     // Register operon endpoints.
     this.#registerDecoratedEndpoints();
+    this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
   /**
@@ -45,10 +47,11 @@ export class OperonHttpServer {
       const ro = registeredOperation;
       if (ro.apiURL) {
         // Wrapper function that parses request and send response.
-        const wrappedHandler = async (req: Request, res: Response) => {
+        const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: OperonContext = new OperonContext();
-          oc.request = req;
-          oc.response = res;
+          oc.rawContext = koaCtxt;
+          oc.request = koaCtxt.request;
+          oc.response = koaCtxt.response;
 
           // Parse the arguments.
           const args: unknown[] = [];
@@ -59,16 +62,16 @@ export class OperonHttpServer {
 
             let foundArg = undefined;
             if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
-              foundArg = req.query[marg.name];
+              foundArg = koaCtxt.request.query[marg.name];
               if (foundArg) {
                 args.push(foundArg);
               }
             } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
-              if (!req.body) {
+              if (!koaCtxt.request.body) {
                 throw new OperonDataValidationError(`Argument ${marg.name} requires a method body.`);
               }
               // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-              foundArg = req.body[marg.name];
+              foundArg = koaCtxt.request.body[marg.name];
               if (foundArg) {
                 args.push(foundArg);
               }
@@ -76,7 +79,8 @@ export class OperonHttpServer {
 
             // Try to parse the argument from the URL if nothing found.
             if (!foundArg) {
-              args.push(req.params[marg.name]);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              args.push(koaCtxt.params[marg.name]);
             }
           });
 
@@ -94,32 +98,31 @@ export class OperonHttpServer {
               // Directly invoke the handler code.
               retValue = await ro.invoke(undefined, [oc, ...args]);
             }
-            if (!res.headersSent) {
+            if (koaCtxt.body === undefined) {
               // If the headers have been sent, it means the program has responded, then we don't send anything.
-              res.status(200).send(retValue);
+              koaCtxt.body = retValue;
+              koaCtxt.status = 200;
             }
           } catch (e) {
-            if (!res.headersSent) {
+            if (koaCtxt.body === undefined) {
               if (e instanceof Error) {
-                res.status(500).send(e.message);
-              } else {
-                res.status(500).send(e);
+                koaCtxt.message = e.message;
               }
+              koaCtxt.body = e;
+              koaCtxt.status = 500;
             }
+          } finally {
+            await koaNext();
           }
         };
 
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
-          this.app.get(ro.apiURL, asyncHandler(wrappedHandler));
+          this.router.get(ro.apiURL, wrappedHandler);
         } else if (ro.apiType === APITypes.POST) {
-          this.app.post(ro.apiURL, asyncHandler(wrappedHandler));
+          this.router.post(ro.apiURL, wrappedHandler);
         }
       }
     });
   }
 }
-
-const asyncHandler = (fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
-};

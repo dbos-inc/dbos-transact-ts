@@ -18,7 +18,7 @@ import {
   setupOperonTestDb,
 } from "tests/helpers";
 import request from "supertest";
-import { Response } from "express";
+import Koa from 'koa';
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -42,6 +42,9 @@ describe("httpserver-tests", () => {
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
     );
     httpServer = new OperonHttpServer(operon);
+    // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
+    // For example, if we use logger() after we register routes, the logger cannot correctly log the request before the function executes.
+    // httpServer.app.use(logger());
   });
 
   afterEach(async () => {
@@ -49,25 +52,25 @@ describe("httpserver-tests", () => {
   });
 
   test("get-hello", async () => {
-    const response = await request(httpServer.app).get("/hello");
+    const response = await request(httpServer.app.callback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
   });
 
   test("get-url", async () => {
-    const response = await request(httpServer.app).get("/hello/qian");
+    const response = await request(httpServer.app.callback()).get("/hello/qian");
     expect(response.statusCode).toBe(301);
     expect(response.text).toBe("wow qian");
   });
 
   test("get-query", async () => {
-    const response = await request(httpServer.app).get("/query?name=qian");
+    const response = await request(httpServer.app.callback()).get("/query?name=qian");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello qian");
   });
 
   test("post-test", async () => {
-    const response = await request(httpServer.app)
+    const response = await request(httpServer.app.callback())
       .post("/testpost")
       .send({ name: "qian" });
     expect(response.statusCode).toBe(200);
@@ -75,13 +78,13 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-transaction", async () => {
-    const response = await request(httpServer.app).post("/transaction/qian");
+    const response = await request(httpServer.app.callback()).post("/transaction/qian");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
 
   test("endpoint-workflow", async () => {
-    const response = await request(httpServer.app)
+    const response = await request(httpServer.app.callback())
       .post("/workflow")
       .send({ name: "qian" });
     expect(response.statusCode).toBe(200);
@@ -89,7 +92,7 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-error", async () => {
-    const response = await request(httpServer.app)
+    const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "qian" });
     expect(response.statusCode).toBe(500);
@@ -107,10 +110,10 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello/:id")
     static async helloUrl(_ctx: OperonContext, id: string) {
-      void _ctx;
-      const res = _ctx.response as Response;
+      const koaCtxt = _ctx.rawContext as Koa.Context;
       // Customize status code and response.
-      res.status(301).send(`wow ${id}`);
+      koaCtxt.body = `wow ${id}`;
+      koaCtxt.status = 301;
       return `hello ${id}`;
     }
 
