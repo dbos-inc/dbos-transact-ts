@@ -60,16 +60,26 @@ export class OperonHttpServer {
               return;  // Do not parse the context.
             }
 
+            let foundArg = undefined;
             if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
-              args.push(req.query[marg.name]);
+              foundArg = req.query[marg.name];
+              if (foundArg) {
+                args.push(foundArg);
+              }
             } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
               if (!req.body) {
                 throw new OperonDataValidationError(`Argument ${marg.name} requires a method body.`);
               }
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              args.push(req.body[marg.name]);
-            } else {
-              // Try to parse the argument from the URL.
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+              foundArg = req.body[marg.name];
+              if (foundArg) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                args.push(foundArg);
+              }
+            }
+
+            // Try to parse the argument from the URL if nothing found.
+            if (!foundArg) {
               args.push(req.params[marg.name]);
             }
           });
@@ -90,6 +100,7 @@ export class OperonHttpServer {
             }
             res.status(200).send(retValue);
           } catch (e) {
+            console.error(e);
             if (e instanceof Error) {
               res.status(500).send(e.message);
             } else {
