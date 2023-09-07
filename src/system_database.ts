@@ -13,8 +13,9 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
+  bufferWorkflowStatus(workflowUUID: string): Promise<void>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void>;
-  flushWorkflowOutputBuffer(): Promise<Array<string>>;
+  flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
@@ -78,8 +79,40 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
+  async bufferWorkflowStatus(workflowUUID: string): Promise<void> {
+    this.workflowOutputBuffer.set(workflowUUID, operonNull);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
   async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
     this.workflowOutputBuffer.set(workflowUUID, output);
+  }
+
+  /**
+   * Flush the workflow output buffer to the database.
+   */
+  async flushWorkflowStatusBuffer() {
+    const localBuffer = new Map(this.workflowOutputBuffer);
+    this.workflowOutputBuffer.clear();
+    const client: PoolClient = await this.pool.connect();
+    await client.query("BEGIN");
+    for (const [workflowUUID, output] of localBuffer) {
+      if (output === operonNull) {
+        await client.query(
+          `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) DO NOTHING`,
+          [workflowUUID, StatusString.PENDING, null]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
+          [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
+        );
+      }
+    }
+    await client.query("COMMIT");
+    client.release();
+    return Array.from(localBuffer.keys());
   }
 
   async recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
@@ -256,26 +289,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       await sleep(pollingIntervalMs);
     }
-  }
-
-  /**
-   * Flush the workflow output buffer to the database.
-   */
-  async flushWorkflowOutputBuffer() {
-    const localBuffer = new Map(this.workflowOutputBuffer);
-    this.workflowOutputBuffer.clear();
-    const client: PoolClient = await this.pool.connect();
-    await client.query("BEGIN");
-    for (const [workflowUUID, output] of localBuffer) {
-      await client.query(
-        `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at_epoch_ms=(EXTRACT(EPOCH FROM now())*1000)::bigint;`,
-        [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
-      );
-    }
-    await client.query("COMMIT");
-    client.release();
-    return Array.from(localBuffer.keys());
   }
 
   /* BACKGROUND PROCESSES */

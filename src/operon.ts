@@ -341,6 +341,8 @@ export class Operon {
         this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
+      // Asynchronously set the workflow's status to PENDING.
+      await this.systemDatabase.bufferWorkflowStatus(workflowUUID);
       // Record inputs for OAOO. Not needed for temporary workflows.
       const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
@@ -422,7 +424,7 @@ export class Operon {
    */
   async flushWorkflowOutputBuffer() {
     if (this.initialized) {
-      await this.systemDatabase.flushWorkflowOutputBuffer();
+      await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }
 }

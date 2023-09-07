@@ -38,6 +38,7 @@ export interface PgTransactionId {
 
 export const StatusString = {
   UNKNOWN: "UNKNOWN",
+  PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
 } as const;
@@ -388,7 +389,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return { status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now() };
+      return { status: StatusString.PENDING, updatedAtEpochMs: Date.now() };
     } else {
       return status;
     }

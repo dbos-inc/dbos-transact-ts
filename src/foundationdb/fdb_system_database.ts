@@ -73,7 +73,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     this.workflowOutputBuffer.set(workflowUUID, output);
   }
 
-  async flushWorkflowOutputBuffer(): Promise<string[]> {
+  async flushWorkflowStatusBuffer(): Promise<string[]> {
     const localBuffer = new Map(this.workflowOutputBuffer);
     this.workflowOutputBuffer.clear();
     // eslint-disable-next-line @typescript-eslint/require-await

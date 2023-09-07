@@ -83,7 +83,7 @@ describe("operon-tests", () => {
     );
     expect(typeof workflowHandle.getWorkflowUUID()).toBe("string");
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.UNKNOWN,
+      status: StatusString.PENDING,
     });
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
@@ -546,7 +546,7 @@ describe("operon-tests", () => {
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.UNKNOWN,
+      status: StatusString.PENDING,
     });
 
     // Retrieve handle, should get the unknown status.
