@@ -156,11 +156,11 @@ export class Operon {
     forEachMethod((ro) => {
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.origFunction as OperonWorkflow<any, any>;
+          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
           this.registerWorkflow(wf, ro.workflowConfig);
           break;
         } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.origFunction as OperonTransaction<any, any>;
+          const tx = ro.registeredFunction as OperonTransaction<any, any>;
           this.registerTransaction(tx, ro.txnConfig);
           break;
         } else if (arg.argType.name === "CommunicatorContext") {

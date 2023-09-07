@@ -4,7 +4,6 @@ import {
   GetApi,
   Operon,
   OperonConfig,
-  OperonContext,
   OperonTransaction,
   OperonWorkflow,
   PostApi,
@@ -18,7 +17,7 @@ import {
   setupOperonTestDb,
 } from "tests/helpers";
 import request from "supertest";
-import Koa from 'koa';
+import { HandlerContext } from "src/httpServer/handler";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -58,27 +57,27 @@ describe("httpserver-tests", () => {
   });
 
   test("get-url", async () => {
-    const response = await request(httpServer.app.callback()).get("/hello/qian");
+    const response = await request(httpServer.app.callback()).get("/hello/alice");
     expect(response.statusCode).toBe(301);
-    expect(response.text).toBe("wow qian");
+    expect(response.text).toBe("wow alice");
   });
 
   test("get-query", async () => {
-    const response = await request(httpServer.app.callback()).get("/query?name=qian");
+    const response = await request(httpServer.app.callback()).get("/query?name=alice");
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe("hello qian");
+    expect(response.text).toBe("hello alice");
   });
 
   test("post-test", async () => {
     const response = await request(httpServer.app.callback())
       .post("/testpost")
-      .send({ name: "qian" });
+      .send({ name: "alice" });
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe("hello qian");
+    expect(response.text).toBe("hello alice");
   });
 
   test("endpoint-transaction", async () => {
-    const response = await request(httpServer.app.callback()).post("/transaction/qian");
+    const response = await request(httpServer.app.callback()).post("/transaction/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
@@ -86,7 +85,7 @@ describe("httpserver-tests", () => {
   test("endpoint-workflow", async () => {
     const response = await request(httpServer.app.callback())
       .post("/workflow")
-      .send({ name: "qian" });
+      .send({ name: "alice" });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
@@ -94,41 +93,52 @@ describe("httpserver-tests", () => {
   test("endpoint-error", async () => {
     const response = await request(httpServer.app.callback())
       .post("/error")
-      .send({ name: "qian" });
+      .send({ name: "alice" });
     expect(response.statusCode).toBe(500);
+  });
+
+  test("endpoint-handler", async () => {
+    const response = await request(httpServer.app.callback()).get("/handler/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpoints {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
-    static async hello(_ctx: OperonContext) {
+    static async hello(_ctx: HandlerContext) {
       void _ctx;
       return { message: "hello!" };
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello/:id")
-    static async helloUrl(_ctx: OperonContext, id: string) {
-      const koaCtxt = _ctx.rawContext as Koa.Context;
+    static async helloUrl(_ctx: HandlerContext, id: string) {
       // Customize status code and response.
-      koaCtxt.body = `wow ${id}`;
-      koaCtxt.status = 301;
+      _ctx.koaContext.body = `wow ${id}`;
+      _ctx.koaContext.status = 301;
       return `hello ${id}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
-    static async helloQuery(_ctx: OperonContext, name: string) {
+    static async helloQuery(_ctx: HandlerContext, name: string) {
       void _ctx;
       return `hello ${name}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/testpost")
-    static async testpost(_ctx: OperonContext, name: string) {
+    static async testpost(_ctx: HandlerContext, name: string) {
       void _ctx;
       return `hello ${name}`;
+    }
+
+    @GetApi("/handler/:name")
+    static async testHandler(ctxt: HandlerContext, name: string) {
+      // Invoke a workflow using the provided Operon instance.
+      return ctxt.operon.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
     }
 
     @PostApi("/transaction/:name")
