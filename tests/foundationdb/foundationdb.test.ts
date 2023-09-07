@@ -49,7 +49,7 @@ describe("foundationdb-operon", () => {
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).resolves.toBe(5);
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).resolves.toBe(5);
@@ -70,7 +70,7 @@ describe("foundationdb-operon", () => {
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).rejects.toThrow("fail");
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).rejects.toThrow("fail");

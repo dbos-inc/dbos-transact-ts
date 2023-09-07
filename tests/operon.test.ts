@@ -88,7 +88,7 @@ describe("operon-tests", () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
 
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -417,7 +417,7 @@ describe("operon-tests", () => {
     ).resolves.toBe(11);
     expect(num).toBe(1);
 
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     // Run it again with the same UUID, should get the same output.
     await expect(
       operon
@@ -549,10 +549,11 @@ describe("operon-tests", () => {
       status: StatusString.PENDING,
     });
 
-    // Retrieve handle, should get the unknown status.
+    // Flush and retrieve handle, should get the pending status.
+    await operon.flushWorkflowStatusBuffer();
     await expect(
       operon.retrieveWorkflow<string>(workflowUUID).getStatus()
-    ).resolves.toMatchObject({ status: StatusString.UNKNOWN });
+    ).resolves.toMatchObject({ status: StatusString.PENDING });
 
     resolve1!();
     await promise3;
@@ -562,7 +563,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);

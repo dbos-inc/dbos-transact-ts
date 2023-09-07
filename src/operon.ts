@@ -126,7 +126,7 @@ export class Operon {
       this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
     }
     this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowOutputBuffer();
+      void this.flushWorkflowStatusBuffer();
     }, this.flushBufferIntervalMs);
 
     // Parse requested exporters
@@ -217,7 +217,7 @@ export class Operon {
 
   async destroy() {
     clearInterval(this.flushBufferID);
-    await this.flushWorkflowOutputBuffer();
+    await this.flushWorkflowStatusBuffer();
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
@@ -422,7 +422,7 @@ export class Operon {
   /**
    * Periodically flush the workflow output buffer to the system database.
    */
-  async flushWorkflowOutputBuffer() {
+  async flushWorkflowStatusBuffer() {
     if (this.initialized) {
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
