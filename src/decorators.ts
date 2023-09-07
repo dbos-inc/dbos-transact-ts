@@ -123,18 +123,6 @@ export enum LogMasks {
   SKIP = "SKIP",
 }
 
-export enum APITypes {
-  GET = 'GET',
-  POST = 'POST',
-}
-
-export enum ArgSources {
-  DEFAULT = 'DEFAULT',
-  BODY = 'BODY',
-  QUERY = 'QUERY',
-  URL = 'URL',
-}
-
 export enum TraceEventTypes {
   METHOD_ENTER = "METHOD_ENTER",
   METHOD_EXIT = "METHOD_EXIT",
@@ -165,12 +153,11 @@ class BaseTraceEvent {
   }
 }
 
-class OperonParameter {
+export class OperonParameter {
   name: string = "";
   required: boolean = false;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
-  argSource: ArgSources = ArgSources.DEFAULT;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
@@ -189,9 +176,6 @@ export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;
 
-  apiType: APITypes;
-  apiURL: string;
-
   args: OperonParameter[];
 
   requiredRole: string [];
@@ -206,14 +190,11 @@ export interface OperonMethodRegistrationBase {
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
-class OperonMethodRegistration <This, Args extends unknown[], Return>
+export class OperonMethodRegistration <This, Args extends unknown[], Return>
 implements OperonMethodRegistrationBase
 {
   name: string = "";
   traceLevel: TraceLevels = TraceLevels.INFO;
-
-  apiType: APITypes = APITypes.GET;
-  apiURL: string = '';
 
   requiredRole: string[] = [];
 
@@ -243,7 +224,7 @@ export function forEachMethod(f: (m: OperonMethodRegistrationBase) => void) {
   methodRegistry.forEach(f);
 }
 
-function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
+export function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
   let mParameters: OperonParameter[] = (Reflect.getOwnMetadata(operonParamMetadataKey, target, propertyKey) as OperonParameter[]) || [];
 
   if (!mParameters.length) {
@@ -394,7 +375,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
   return methReg;
 }
 
-function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of operon decorator when original method is undefined");
   }
@@ -445,15 +426,6 @@ export function ArgDate() { // TODO a little more info about it
   };
 }
 
-export function ArgSource(source: ArgSources) {
-  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    curParam.argSource = source;
-  };
-}
-
 /*
 type MethodDecorator = <T>(
   target: Object,
@@ -493,35 +465,6 @@ export function TraceLevel(level: TraceLevels) {
 
 export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
-}
-
-export function GetApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.GET;
-
-    return descriptor;
-  }
-  return apidec;
-}
-
-export function PostApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.POST;
-    return descriptor;
-  }
-  return apidec;
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {

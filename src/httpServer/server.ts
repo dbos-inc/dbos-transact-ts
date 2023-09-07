@@ -2,7 +2,8 @@ import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
-import { APITypes, ArgSources, forEachMethod } from "../decorators";
+import { forEachMethod } from "../decorators";
+import { APITypes, ArgSources, OperonHandlerParameter, OperonHandlerRegistration } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "src/error";
@@ -43,7 +44,7 @@ export class OperonHttpServer {
   #registerDecoratedEndpoints() {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     forEachMethod((registeredOperation) => {
-      const ro = registeredOperation;
+      const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
@@ -53,7 +54,8 @@ export class OperonHttpServer {
 
           // Parse the arguments.
           const args: unknown[] = [];
-          ro.args.forEach((marg, idx) => {
+          ro.args.forEach((baseArg, idx) => {
+            const marg = baseArg as OperonHandlerParameter;
             if (idx === 0) {
               return; // Do not parse the context.
             }
@@ -99,6 +101,7 @@ export class OperonHttpServer {
               koaCtxt.status = 200;
             }
           } catch (e) {
+            console.log(e);
             if (koaCtxt.body === undefined) {
               if (e instanceof Error) {
                 koaCtxt.message = e.message;
