@@ -368,6 +368,11 @@ export class WorkflowContext extends OperonContext {
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
 
+  /**
+   * Associate a key-value pair with this workflow execution.
+   * Keys and values are immutable once set.
+   * Values can be queried from workflow handles.
+   */
   async set<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
@@ -380,10 +385,27 @@ export class WorkflowContext extends OperonContext {
   }
 }
 
+/**
+ * Object representing an active or completed workflow execution, identified by the workflow UUID.
+ * Allows retrieval of information about the workflow.
+ */
 export interface WorkflowHandle<R> {
+  /**
+   * Retrieve the workflow's status.
+   * Statuses are updated asynchronously.
+   */
   getStatus(): Promise<WorkflowStatus>;
+  /**
+   * Await workflow completion and return its result.
+   */
   getResult(): Promise<R>;
+  /**
+   * Wait for a value to be set by a workflow, then return it.
+   */
   get<T extends NonNullable<any>>(key: string, timeoutSeconds?: number): Promise<T | null>;
+  /**
+   * Return the workflow's UUID.
+   */
   getWorkflowUUID(): string;
 }
 
