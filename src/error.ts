@@ -129,6 +129,6 @@ export class OperonDataValidationError extends OperonError {
 const DuplicateWorkflowValues = 10;
 export class OperonDuplicateWorkflowValuesError extends OperonError {
   constructor(workflowUUID: string, key: string) {
-    super(`Workflow ${workflowUUID} has already set key ${key}`);
+    super(`Workflow ${workflowUUID} has already set key ${key}`, DuplicateWorkflowValues);
   }
 }

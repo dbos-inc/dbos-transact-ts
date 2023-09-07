@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, operonNull, OperonNull } from "./operon";
+import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonDuplicateWorkflowValuesError, OperonError, OperonWorkflowConflictUUIDError } from "./error";
+import { OperonDuplicateWorkflowValuesError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_values } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
@@ -26,10 +26,10 @@ export interface SystemDatabase {
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
-  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeout: number): Promise<T | null>;
+  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null>;
 
   set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
-  get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeout: number) : Promise<T | null>;
+  get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -195,7 +195,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    let { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    const { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
@@ -270,7 +270,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async set<T extends unknown>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -294,7 +294,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async get<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // Register the key with the global notifications listener.
     let resolveNotification: () => void;
     const valuePromise = new Promise<void>((resolve) => {
