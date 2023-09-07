@@ -44,6 +44,13 @@ export const systemDBSchema = `
     created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
+  CREATE TABLE IF NOT EXISTS operon.updates (
+    workflow_uuid TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (workflow_uuid, key)
+  );
+
   DO $$ 
   BEGIN 
       IF NOT EXISTS (
@@ -76,6 +83,28 @@ export const systemDBSchema = `
               CREATE TRIGGER operon_notifications_trigger
               AFTER INSERT ON operon.notifications
               FOR EACH ROW EXECUTE FUNCTION operon.notifications_function()';
+        END IF;
+    END
+    $$;
+
+    CREATE OR REPLACE FUNCTION operon.updates_function() RETURNS TRIGGER AS $$
+    DECLARE
+        payload text := NEW.workflow_uuid || '::' || NEW.key;
+    BEGIN
+        -- Publish a notification for all keys
+        PERFORM pg_notify('operon_updates_channel', payload);
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DO
+    $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_updates_trigger') THEN
+          EXECUTE '
+              CREATE TRIGGER operon_updates_trigger
+              AFTER INSERT ON operon.updates
+              FOR EACH ROW EXECUTE FUNCTION operon.updates_function()';
         END IF;
     END
     $$;

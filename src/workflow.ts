@@ -367,6 +367,17 @@ export class WorkflowContext extends OperonContext {
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
+
+  async set<T extends NonNullable<any>>(key: string, value: T) {
+    const functionID: number = this.functionIDGetIncrement();
+
+    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await this.flushResultBuffer(client);
+      this.resultBuffer.clear();
+    }, {});
+
+    await this.#operon.systemDatabase.set(this.workflowUUID, functionID, key, value);
+  }
 }
 
 export interface WorkflowHandle<R> {

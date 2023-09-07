@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull } from "./operon";
+import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonWorkflowConflictUUIDError } from "./error";
+import { OperonError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
@@ -27,13 +27,17 @@ export interface SystemDatabase {
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeout: number): Promise<T | null>;
+
+  set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
+  get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeout: number) : Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
 
   notificationsClient: PoolClient | null = null;
-  readonly listenerMap: Record<string, () => void> = {};
+  readonly notificationsMap: Record<string, () => void> = {};
+  readonly updatesMap: Record<string, () => void> = {};
 
   readonly workflowOutputBuffer: Map<string, any> = new Map();
 
@@ -197,10 +201,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
       return;
     }
-    ({ rows } = await client.query(
+    await client.query(
       `INSERT INTO operon.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
       [destinationUUID, topic, JSON.stringify(message)]
-    ));
+    );
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
     client.release();
@@ -220,7 +224,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       resolveNotification = resolve;
     });
     const payload = topic === null ? workflowUUID : `${workflowUUID}::${topic}`;
-    this.listenerMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
@@ -266,6 +270,34 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
+  async set<T extends unknown>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+
+    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    let { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    if (rows.length > 0) {
+      await client.query("ROLLBACK");
+      client.release();
+      return;
+    }
+    ( { rows } = await client.query(
+      `INSERT INTO operon.updates (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      [workflowUUID, key, JSON.stringify(message)]
+    ));
+    if (rows.length === 0) {
+      await client.query("ROLLBACK");
+      client.release();
+      throw new OperonError(`Workflow ${workflowUUID} has already set key ${key}`)
+    }
+    await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
+    await client.query("COMMIT");
+    client.release();
+  }
+
+  async get<T extends unknown>(workflowUUID: string, key: string, timeout: number): Promise<T | null> {
+    throw new Error("Method not implemented.");
+  }
+
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
@@ -299,9 +331,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async listenForNotifications() {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query("LISTEN operon_notifications_channel;");
+    await this.notificationsClient.query("LISTEN operon_updates_channel;");
     const handler = (msg: Notification) => {
-      if (msg.payload && msg.payload in this.listenerMap) {
-        this.listenerMap[msg.payload]();
+      if (msg.channel === 'operon_notifications_channel') {
+        if (msg.payload && msg.payload in this.notificationsMap) {
+          this.notificationsMap[msg.payload]();
+        }
+      } else {
+        if (msg.payload && msg.payload in this.updatesMap) {
+          this.updatesMap[msg.payload]();
+        }
       }
     };
     this.notificationsClient.on("notification", handler);

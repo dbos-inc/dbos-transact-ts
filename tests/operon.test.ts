@@ -428,6 +428,16 @@ describe("operon-tests", () => {
     expect(num).toBe(1);
   });
 
+  test("simple-workflow-updates", async () => {
+    const sendWorkflow = async (ctxt: WorkflowContext) => {
+      await ctxt.set("key1", "value1");
+      await ctxt.set("key2", "message2");
+    };
+    operon.registerWorkflow(sendWorkflow);
+
+    await operon.workflow(sendWorkflow, {}).getResult();
+  });
+
   test("readonly-recording", async () => {
     let num = 0;
     let workflowCnt = 0;
