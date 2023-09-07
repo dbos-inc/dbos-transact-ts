@@ -130,6 +130,7 @@ describe("httpserver-tests", () => {
     @PostApi("/error")
     @OperonWorkflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
+      // This workflow should encounter duplicate primary key error.
       let res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
       res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
       return res;
