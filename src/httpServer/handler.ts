@@ -29,6 +29,8 @@ export class OperonHandlerRegistration <This, Args extends unknown[], Return>
 extends OperonMethodRegistration<This, Args, Return> {
   apiType: APITypes = APITypes.GET;
   apiURL: string = '';
+
+  args: OperonHandlerParameter[] = [];
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
     super(origFunc);
   } 

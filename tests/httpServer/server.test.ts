@@ -95,6 +95,7 @@ describe("httpserver-tests", () => {
       .post("/error")
       .send({ name: "alice" });
     expect(response.statusCode).toBe(500);
+    expect(response.body.code).toBe('23505');  // Should be the expected error.
   });
 
   test("endpoint-handler", async () => {
