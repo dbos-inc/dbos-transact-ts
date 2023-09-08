@@ -428,7 +428,7 @@ describe("operon-tests", () => {
     expect(num).toBe(1);
   });
 
-  test("simple-workflow-values", async () => {
+  test("simple-workflow-events", async () => {
     const sendWorkflow = async (ctxt: WorkflowContext) => {
       await ctxt.setEvent("key1", "value1");
       await ctxt.setEvent("key2", "value2");
