@@ -373,7 +373,7 @@ export class WorkflowContext extends OperonContext {
    * Keys and values are immutable once set.
    * Values can be queried from workflow handles.
    */
-  async set<T extends NonNullable<any>>(key: string, value: T) {
+  async setValue<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -381,7 +381,7 @@ export class WorkflowContext extends OperonContext {
       this.resultBuffer.clear();
     }, {});
 
-    await this.#operon.systemDatabase.set(this.workflowUUID, functionID, key, value);
+    await this.#operon.systemDatabase.setValue(this.workflowUUID, functionID, key, value);
   }
 }
 
@@ -402,7 +402,7 @@ export interface WorkflowHandle<R> {
   /**
    * Wait for a value to be set by a workflow, then return it.
    */
-  get<T extends NonNullable<any>>(key: string, timeoutSeconds?: number): Promise<T | null>;
+  getValue<T extends NonNullable<any>>(key: string, timeoutSeconds?: number): Promise<T | null>;
   /**
    * Return the workflow's UUID.
    */
@@ -428,8 +428,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     }
   }
 
-  async get<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
-    return this.systemDatabase.get(this.workflowUUID, key, timeoutSeconds);
+  async getValue<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+    return this.systemDatabase.getValue(this.workflowUUID, key, timeoutSeconds);
   }
 
   async getResult(): Promise<R> {
@@ -453,8 +453,8 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 
-  async get<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
-    return this.systemDatabase.get(this.workflowUUID, key, timeoutSeconds);
+  async getValue<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+    return this.systemDatabase.getValue(this.workflowUUID, key, timeoutSeconds);
   }
 
   async getResult(): Promise<R> {

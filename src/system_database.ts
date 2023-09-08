@@ -28,8 +28,8 @@ export interface SystemDatabase {
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null>;
 
-  set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
-  get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
+  setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
+  getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -268,7 +268,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -292,7 +292,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // Register the key with the global notifications listener.
     let resolveNotification: () => void;
     const valuePromise = new Promise<void>((resolve) => {

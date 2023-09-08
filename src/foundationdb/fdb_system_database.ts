@@ -245,7 +245,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async set<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
+  async setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const workflowValues = txn.at(this.workflowValuesDB);
@@ -266,7 +266,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async get<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // Check if the value is present, otherwise wait for it to arrive.
     const watch = await this.workflowValuesDB.getAndWatch([workflowUUID, key]);
     if (watch.value === undefined) {
