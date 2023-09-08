@@ -5,7 +5,7 @@ import { OperonNull, operonNull } from "../operon";
 import { SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
-import { OperonDuplicateWorkflowValuesError, OperonWorkflowConflictUUIDError } from "../error";
+import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 
 interface WorkflowOutput<R> {
@@ -23,7 +23,7 @@ const Tables = {
   WorkflowStatus: "operon_workflow_status",
   OperationOutputs: "operon_operation_outputs",
   Notifications: "operon_notifications",
-  WorkflowValues: "workflow_values"
+  WorkflowEvents: "workflow_events"
 } as const;
 
 export class FoundationDBSystemDatabase implements SystemDatabase {
@@ -31,7 +31,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   workflowStatusDB: fdb.Database<string, string, unknown, unknown>;
   operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
-  workflowValuesDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
+  workflowEventsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
 
   readonly workflowStatusBuffer: Map<string, unknown> = new Map();
 
@@ -50,8 +50,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .at(Tables.Notifications)
       .withKeyEncoding(fdb.encoders.tuple) // We use [destinationUUID, topic] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
-    this.workflowValuesDB = this.dbRoot
-    .at(Tables.WorkflowValues)
+    this.workflowEventsDB = this.dbRoot
+    .at(Tables.WorkflowEvents)
     .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, key] as the key
     .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
@@ -245,30 +245,30 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
+  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
-      const workflowValues = txn.at(this.workflowValuesDB);
+      const workflowEvents = txn.at(this.workflowEventsDB);
       // For OAOO, check if the set already ran.
       const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
       if (output !== undefined) {
         return;
       }
 
-      const exists = await workflowValues.get([workflowUUID, key]);
+      const exists = await workflowEvents.get([workflowUUID, key]);
       if (exists === undefined) {
-        workflowValues.set([workflowUUID, key], value);
+        workflowEvents.set([workflowUUID, key], value);
       } else {
-        throw new OperonDuplicateWorkflowValuesError(workflowUUID, key);
+        throw new OperonDuplicateWorkflowEventError(workflowUUID, key);
       }
       // For OAOO, record the set.
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
   }
 
-  async getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // Check if the value is present, otherwise wait for it to arrive.
-    const watch = await this.workflowValuesDB.getAndWatch([workflowUUID, key]);
+    const watch = await this.workflowEventsDB.getAndWatch([workflowUUID, key]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
         watch.cancel();
@@ -279,6 +279,6 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       watch.cancel();
     }
     // Return the value, or null if none exists.
-    return (await this.workflowValuesDB.get([workflowUUID, key])) as T ?? null;
+    return (await this.workflowEventsDB.get([workflowUUID, key])) as T ?? null;
   }
 }

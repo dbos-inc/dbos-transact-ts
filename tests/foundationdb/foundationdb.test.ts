@@ -215,16 +215,16 @@ describe("foundationdb-operon", () => {
 
   test("fdb-simple-workflow-values", async () => {
     const sendWorkflow = async (ctxt: WorkflowContext) => {
-      await ctxt.setValue("key1", "value1");
-      await ctxt.setValue("key2", "value2");
+      await ctxt.setEvent("key1", "value1");
+      await ctxt.setEvent("key2", "value2");
       return 0;
     };
     operon.registerWorkflow(sendWorkflow);
 
     const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
-    await expect(handle.getValue("key1")).resolves.toBe("value1");
-    await expect(handle.getValue("key2")).resolves.toBe("value2");
-    await expect(handle.getValue("fail", 0)).resolves.toBe(null);
+    await expect(handle.getEvent("key1")).resolves.toBe("value1");
+    await expect(handle.getEvent("key2")).resolves.toBe("value2");
+    await expect(handle.getEvent("fail", 0)).resolves.toBe(null);
     await handle.getResult();
     await expect(operon.workflow(sendWorkflow, {workflowUUID: handle.getWorkflowUUID()}).getResult()).resolves.toBe(0);
   });

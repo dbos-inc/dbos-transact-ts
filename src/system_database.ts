@@ -3,9 +3,9 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonDuplicateWorkflowValuesError, OperonWorkflowConflictUUIDError } from "./error";
+import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_values } from "../schemas/system_db_schema";
+import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
@@ -28,8 +28,8 @@ export interface SystemDatabase {
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null>;
 
-  setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
-  getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
+  setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -268,7 +268,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async setValue<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -279,20 +279,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return;
     }
     ( { rows } = await client.query(
-      `INSERT INTO operon.workflow_values (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      `INSERT INTO operon.workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
       [workflowUUID, key, JSON.stringify(message)]
     ));
     if (rows.length === 0) {
       await client.query("ROLLBACK");
       client.release();
-      throw new OperonDuplicateWorkflowValuesError(workflowUUID, key);
+      throw new OperonDuplicateWorkflowEventError(workflowUUID, key);
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
     client.release();
   }
 
-  async getValue<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
     // Register the key with the global notifications listener.
     let resolveNotification: () => void;
     const valuePromise = new Promise<void>((resolve) => {
@@ -308,14 +308,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_values>("SELECT key FROM operon.workflow_values WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key FROM operon.workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    const finalRecvRows = (await this.pool.query<workflow_values>("SELECT value FROM operon.workflow_values WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM operon.workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     let value: T | null = null;
     if (finalRecvRows.length > 0) {
       value = JSON.parse(finalRecvRows[0].value) as T;
@@ -356,7 +356,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async listenForNotifications() {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query("LISTEN operon_notifications_channel;");
-    await this.notificationsClient.query("LISTEN operon_workflow_values_channel;");
+    await this.notificationsClient.query("LISTEN operon_workflow_events_channel;");
     const handler = (msg: Notification) => {
       if (msg.channel === 'operon_notifications_channel') {
         if (msg.payload && msg.payload in this.notificationsMap) {
