@@ -49,12 +49,6 @@ export {
   TraceLevel,
   Traced,
   RequiredRole,
-  ArgSource,
-  ArgSources,
-
-  APITypes,
-  GetApi,
-  PostApi,
 
   OperonTransaction,
   OperonWorkflow,
@@ -62,3 +56,12 @@ export {
 
   forEachMethod,
 } from "./decorators";
+
+export {
+  ArgSource,
+  ArgSources,
+
+  APITypes,
+  GetApi,
+  PostApi,
+} from "./httpServer/handler";

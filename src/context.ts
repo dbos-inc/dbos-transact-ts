@@ -1,7 +1,6 @@
 //import { Span } from "@opentelemetry/sdk-trace-base";
 
 export class OperonContext {
-  rawContext: unknown;  // Raw context from HTTP server. For example, Koa.Context.
   request: unknown;
   response: unknown;
 
@@ -19,7 +18,6 @@ export class OperonContext {
   }
 
   copyBaseFields(other: OperonContext) {
-    this.rawContext = other.rawContext;
     this.request = other.request;
     this.response = other.response;
     this.authRoles = other.authRoles;

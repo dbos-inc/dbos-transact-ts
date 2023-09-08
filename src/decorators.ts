@@ -123,18 +123,6 @@ export enum LogMasks {
   SKIP = "SKIP",
 }
 
-export enum APITypes {
-  GET = 'GET',
-  POST = 'POST',
-}
-
-export enum ArgSources {
-  DEFAULT = 'DEFAULT',
-  BODY = 'BODY',
-  QUERY = 'QUERY',
-  URL = 'URL',
-}
-
 export enum TraceEventTypes {
   METHOD_ENTER = "METHOD_ENTER",
   METHOD_EXIT = "METHOD_EXIT",
@@ -165,12 +153,11 @@ class BaseTraceEvent {
   }
 }
 
-class OperonParameter {
+export class OperonParameter {
   name: string = "";
   required: boolean = false;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
-  argSource: ArgSources = ArgSources.DEFAULT;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
@@ -189,9 +176,6 @@ export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;
 
-  apiType: APITypes;
-  apiURL: string;
-
   args: OperonParameter[];
 
   requiredRole: string [];
@@ -201,21 +185,16 @@ export interface OperonMethodRegistrationBase {
   commConfig?: CommunicatorConfig;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  origFunction: Function;
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  replacementFunction: Function | undefined;
+  registeredFunction: Function | undefined;
 
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
-class OperonMethodRegistration <This, Args extends unknown[], Return>
+export class OperonMethodRegistration <This, Args extends unknown[], Return>
 implements OperonMethodRegistrationBase
 {
   name: string = "";
   traceLevel: TraceLevels = TraceLevels.INFO;
-
-  apiType: APITypes = APITypes.GET;
-  apiURL: string = '';
 
   requiredRole: string[] = [];
 
@@ -227,18 +206,13 @@ implements OperonMethodRegistrationBase
   }
   needInitialized: boolean = true;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
-  replacementFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
+  registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
 
   invoke(pthis:This, args: Args) : Promise<Return> {
-    return this.replacementFunction!.call(pthis, ...args);
-  }
-
-  // CB - Why would you do this?
-  invokeOriginal(pthis:This, args: Args) : Promise<Return> {
-    return this.origFunction.call(pthis, ...args);
+    return this.registeredFunction!.call(pthis, ...args);
   }
 
   // TODO: Permissions, attachment point, error handling, etc.
@@ -250,7 +224,7 @@ export function forEachMethod(f: (m: OperonMethodRegistrationBase) => void) {
   methodRegistry.forEach(f);
 }
 
-function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
+export function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
   let mParameters: OperonParameter[] = (Reflect.getOwnMetadata(operonParamMetadataKey, target, propertyKey) as OperonParameter[]) || [];
 
   if (!mParameters.length) {
@@ -307,12 +281,9 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
       //        And skip/mask arguments
       methReg.args.forEach((v, idx) => {
-        if (v.argType === TransactionContext
-            || v.argType === WorkflowContext
-            || v.argType === CommunicatorContext
-            || v.argType === OperonContext)
+        if (idx === 0)
         {
-          // Context
+          // Context, may find a more robust way.
           return;
         }
 
@@ -350,12 +321,9 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       sLogRec.eventLevel = methReg.traceLevel;
 
       args.forEach((v, idx) => {
-        const ad = methReg.args[idx];
         let isCtx = false;
-        if (ad.argType === TransactionContext
-          || ad.argType === WorkflowContext
-          || ad.argType === CommunicatorContext
-          || ad.argType === OperonContext)
+        // TODO: we assume the first argument is always a context, need a more robust way to test it.
+        if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
           const ctx = v as OperonContext;
@@ -386,10 +354,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       // console.log(`${methReg.traceLevel}: ${mn}: Invoked - ` + sLogRec.toString());
       // eslint-disable-next-line no-useless-catch
       try {
-        // It is unclear if this is the right thing to do about async... in some contexts await may not be desired
-        const result = await methReg.origFunction.call(this, ...args);
+        return methReg.origFunction.call(this, ...args);
         // console.log(`${methReg.traceLevel}: ${mn}: Returned`);
-        return result;
       } catch (e) {
         // console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
         throw e;
@@ -400,7 +366,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     });
 
     descriptor.value = nmethod;
-    methReg.replacementFunction = nmethod;
+    methReg.registeredFunction = nmethod;
 
     methReg.needInitialized = false;
     methodRegistry.push(methReg);
@@ -409,7 +375,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
   return methReg;
 }
 
-function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of operon decorator when original method is undefined");
   }
@@ -460,15 +426,6 @@ export function ArgDate() { // TODO a little more info about it
   };
 }
 
-export function ArgSource(source: ArgSources) {
-  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    curParam.argSource = source;
-  };
-}
-
 /*
 type MethodDecorator = <T>(
   target: Object,
@@ -508,35 +465,6 @@ export function TraceLevel(level: TraceLevels) {
 
 export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
-}
-
-export function GetApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.GET;
-
-    return descriptor;
-  }
-  return apidec;
-}
-
-export function PostApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.apiURL = url;
-    registration.apiType = APITypes.POST;
-    return descriptor;
-  }
-  return apidec;
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {

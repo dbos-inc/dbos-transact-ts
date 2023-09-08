@@ -2,13 +2,12 @@ import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
-import { APITypes, ArgSources, forEachMethod } from "../decorators";
-import { OperonContext } from "../context";
-import { OperonTransaction, TransactionContext } from "../transaction";
-import { OperonWorkflow, WorkflowContext } from "../workflow";
-import { CommunicatorContext } from "../communicator";
-import { OperonDataValidationError } from "src/error";
-import { Operon } from "src/operon";
+import { forEachMethod } from "../decorators";
+import { APITypes, ArgSources, OperonHandlerRegistration, HandlerContext } from "./handler";
+import { OperonTransaction } from "../transaction";
+import { OperonWorkflow } from "../workflow";
+import { OperonDataValidationError } from "../error";
+import { Operon } from "../operon";
 
 export class OperonHttpServer {
   readonly app = new Koa();
@@ -44,19 +43,19 @@ export class OperonHttpServer {
   #registerDecoratedEndpoints() {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     forEachMethod((registeredOperation) => {
-      const ro = registeredOperation;
+      const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: OperonContext = new OperonContext();
-          oc.rawContext = koaCtxt;
+          const oc: HandlerContext = new HandlerContext(this.operon, koaCtxt);
           oc.request = koaCtxt.request;
           oc.response = koaCtxt.response;
 
           // Parse the arguments.
           const args: unknown[] = [];
           ro.args.forEach((marg, idx) => {
-            if (idx === 0 && (marg.argType === TransactionContext || marg.argType === WorkflowContext || marg.argType === CommunicatorContext || marg.argType === OperonContext)) {
+            marg.argSource = marg.argSource ?? ArgSources.DEFAULT;  // Assign a default value.
+            if (idx === 0) {
               return; // Do not parse the context.
             }
 
@@ -89,17 +88,14 @@ export class OperonHttpServer {
           try {
             let retValue;
             if (ro.txnConfig) {
-              // TODO: should we call the replacement function instead?
-              // For now call the original function because we registered it.
-              retValue = await this.operon.transaction(ro.origFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
+              retValue = await this.operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
-              retValue = await this.operon.workflow(ro.origFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
+              retValue = await this.operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
             } else {
               // Directly invoke the handler code.
               retValue = await ro.invoke(undefined, [oc, ...args]);
             }
             if (koaCtxt.body === undefined) {
-              // If the headers have been sent, it means the program has responded, then we don't send anything.
               koaCtxt.body = retValue;
               koaCtxt.status = 200;
             }
