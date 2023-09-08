@@ -12,7 +12,7 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
 
-const defaultRecvTimeoutSec = 60;
+const defaultNotificationTimeoutSec = 60;
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -239,8 +239,8 @@ export class WorkflowContext extends OperonContext {
         await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
           await this.recordGuardedError(client, funcId, e);
-          this.resultBuffer.clear();
         }, {});
+        this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         throw err;
       } finally {
@@ -278,8 +278,8 @@ export class WorkflowContext extends OperonContext {
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
@@ -346,8 +346,8 @@ export class WorkflowContext extends OperonContext {
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
   }
@@ -357,13 +357,13 @@ export class WorkflowContext extends OperonContext {
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
@@ -378,8 +378,8 @@ export class WorkflowContext extends OperonContext {
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
   }
@@ -428,7 +428,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     }
   }
 
-  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = defaultNotificationTimeoutSec) : Promise<T | null> {
     return this.systemDatabase.getEvent(this.workflowUUID, key, timeoutSeconds);
   }
 
@@ -453,7 +453,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = 60) : Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = defaultNotificationTimeoutSec) : Promise<T | null> {
     return this.systemDatabase.getEvent(this.workflowUUID, key, timeoutSeconds);
   }
 
