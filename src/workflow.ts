@@ -12,8 +12,6 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
 
-const defaultNotificationTimeoutSec = 60;
-
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
@@ -357,7 +355,7 @@ export class WorkflowContext extends OperonContext {
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = this.#operon.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -369,9 +367,8 @@ export class WorkflowContext extends OperonContext {
   }
 
   /**
-   * Associate a key-value pair with this workflow execution.
-   * Keys and values are immutable once set.
-   * Values can be queried from workflow handles.
+   * Emit a workflow event, represented as a key-value pair.
+   * Events are immutable once set.
    */
   async setEvent<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
@@ -400,10 +397,6 @@ export interface WorkflowHandle<R> {
    */
   getResult(): Promise<R>;
   /**
-   * Wait for a value to be set by a workflow, then return it.
-   */
-  getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds?: number): Promise<T | null>;
-  /**
    * Return the workflow's UUID.
    */
   getWorkflowUUID(): string;
@@ -428,10 +421,6 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     }
   }
 
-  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = defaultNotificationTimeoutSec) : Promise<T | null> {
-    return this.systemDatabase.getEvent(this.workflowUUID, key, timeoutSeconds);
-  }
-
   async getResult(): Promise<R> {
     return this.workflowPromise;
   }
@@ -451,10 +440,6 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getStatus(): Promise<WorkflowStatus> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-  }
-
-  async getEvent<T extends NonNullable<any>>(key: string, timeoutSeconds: number = defaultNotificationTimeoutSec) : Promise<T | null> {
-    return this.systemDatabase.getEvent(this.workflowUUID, key, timeoutSeconds);
   }
 
   async getResult(): Promise<R> {

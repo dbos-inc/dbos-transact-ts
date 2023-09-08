@@ -213,7 +213,7 @@ describe("foundationdb-operon", () => {
     expect(retry).toBe(true);
   });
 
-  test("fdb-simple-workflow-values", async () => {
+  test("fdb-simple-workflow-events", async () => {
     const sendWorkflow = async (ctxt: WorkflowContext) => {
       await ctxt.setEvent("key1", "value1");
       await ctxt.setEvent("key2", "value2");
@@ -222,11 +222,12 @@ describe("foundationdb-operon", () => {
     operon.registerWorkflow(sendWorkflow);
 
     const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
-    await expect(handle.getEvent("key1")).resolves.toBe("value1");
-    await expect(handle.getEvent("key2")).resolves.toBe("value2");
-    await expect(handle.getEvent("fail", 0)).resolves.toBe(null);
+    const workflowUUID = handle.getWorkflowUUID();
+    await expect(operon.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
+    await expect(operon.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
+    await expect(operon.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(operon.workflow(sendWorkflow, {workflowUUID: handle.getWorkflowUUID()}).getResult()).resolves.toBe(0);
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).getResult()).resolves.toBe(0);
   });
 
   test("fdb-duplicate-communicator", async () => {

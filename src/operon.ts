@@ -110,6 +110,8 @@ export class Operon {
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
+  readonly defaultNotificationTimeoutSec = 60;
+
   readonly logger: Logger;
   readonly tracer: Tracer;
 
@@ -389,6 +391,16 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
   }
 
+  /**
+   * Wait for a workflow to emit an event, then return its value.
+   */
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec) : Promise<T | null> {
+    return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  /**
+   * Retrieve a handle for a workflow UUID.
+   */
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
     return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
