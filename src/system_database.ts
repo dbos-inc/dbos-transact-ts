@@ -37,7 +37,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
-  readonly workflowValuesMap: Record<string, () => void> = {};
+  readonly workflowEventsMap: Record<string, () => void> = {};
 
   readonly workflowStatusBuffer: Map<string, any> = new Map();
 
@@ -298,7 +298,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const valuePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.workflowValuesMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {
       timer = setTimeout(() => {
@@ -363,8 +363,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
           this.notificationsMap[msg.payload]();
         }
       } else {
-        if (msg.payload && msg.payload in this.workflowValuesMap) {
-          this.workflowValuesMap[msg.payload]();
+        if (msg.payload && msg.payload in this.workflowEventsMap) {
+          this.workflowEventsMap[msg.payload]();
         }
       }
     };
