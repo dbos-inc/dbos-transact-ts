@@ -342,13 +342,13 @@ export class Operon {
         return previousOutput as R;
       }
       // Asynchronously set the workflow's status to PENDING.
-      await this.systemDatabase.bufferWorkflowStatus(workflowUUID);
+      this.systemDatabase.bufferWorkflowStatus(workflowUUID);
       // Record inputs for OAOO. Not needed for temporary workflows.
       const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
-        await this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {

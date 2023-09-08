@@ -33,7 +33,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   workflowValuesDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
 
-  readonly workflowOutputBuffer: Map<string, unknown> = new Map();
+  readonly workflowStatusBuffer: Map<string, unknown> = new Map();
 
   constructor() {
     fdb.setAPIVersion(710, 710);
@@ -75,19 +75,17 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async bufferWorkflowStatus(workflowUUID: string): Promise<void> {
-    this.workflowOutputBuffer.set(workflowUUID, operonNull);
+  bufferWorkflowStatus(workflowUUID: string) {
+    this.workflowStatusBuffer.set(workflowUUID, operonNull);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
-    this.workflowOutputBuffer.set(workflowUUID, output);
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
+    this.workflowStatusBuffer.set(workflowUUID, output);
   }
 
   async flushWorkflowStatusBuffer(): Promise<string[]> {
-    const localBuffer = new Map(this.workflowOutputBuffer);
-    this.workflowOutputBuffer.clear();
+    const localBuffer = new Map(this.workflowStatusBuffer);
+    this.workflowStatusBuffer.clear();
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {

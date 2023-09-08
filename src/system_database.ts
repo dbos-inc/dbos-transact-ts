@@ -13,8 +13,8 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
-  bufferWorkflowStatus(workflowUUID: string): Promise<void>;
-  bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void>;
+  bufferWorkflowStatus(workflowUUID: string): void;
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
@@ -39,7 +39,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowValuesMap: Record<string, () => void> = {};
 
-  readonly workflowOutputBuffer: Map<string, any> = new Map();
+  readonly workflowStatusBuffer: Map<string, any> = new Map();
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
     const poolConfig = { ...pgPoolConfig };
@@ -82,22 +82,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async bufferWorkflowStatus(workflowUUID: string): Promise<void> {
-    this.workflowOutputBuffer.set(workflowUUID, operonNull);
+  bufferWorkflowStatus(workflowUUID: string) {
+    this.workflowStatusBuffer.set(workflowUUID, operonNull);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
-    this.workflowOutputBuffer.set(workflowUUID, output);
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
+    this.workflowStatusBuffer.set(workflowUUID, output);
   }
 
   /**
    * Flush the workflow output buffer to the database.
    */
   async flushWorkflowStatusBuffer() {
-    const localBuffer = new Map(this.workflowOutputBuffer);
-    this.workflowOutputBuffer.clear();
+    const localBuffer = new Map(this.workflowStatusBuffer);
+    this.workflowStatusBuffer.clear();
     const client: PoolClient = await this.pool.connect();
     await client.query("BEGIN");
     for (const [workflowUUID, output] of localBuffer) {
