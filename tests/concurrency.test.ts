@@ -38,17 +38,17 @@ describe("concurrency-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     let cnt = 0;
-    const testFunction = async (txnCtxt: TransactionContext, id: number) => {
+    const testReadWriteFunction = async (txnCtxt: TransactionContext, id: number) => {
       await sleep(10);
       cnt += 1;
       return id;
     };
-    operon.registerTransaction(testFunction);
+    operon.registerTransaction(testReadWriteFunction);
 
     const workflowUUID = uuidv1();
     let results = await Promise.allSettled([
-      operon.transaction(testFunction, { workflowUUID: workflowUUID }, 10),
-      operon.transaction(testFunction, { workflowUUID: workflowUUID }, 10),
+      operon.transaction(testReadWriteFunction, { workflowUUID: workflowUUID }, 10),
+      operon.transaction(testReadWriteFunction, { workflowUUID: workflowUUID }, 10),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
@@ -56,11 +56,16 @@ describe("concurrency-tests", () => {
 
     // Read-only transactions would execute twice.
     cnt = 0;
-    operon.registerTransaction(testFunction, { readOnly: true });
+    const testReadOnlyFunction = async (txnCtxt: TransactionContext, id: number) => {
+      await sleep(10);
+      cnt += 1;
+      return id;
+    };
+    operon.registerTransaction(testReadOnlyFunction, { readOnly: true });
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      operon.transaction(testFunction, { workflowUUID: readUUID }, 12),
-      operon.transaction(testFunction, { workflowUUID: readUUID }, 12),
+      operon.transaction(testReadOnlyFunction, { workflowUUID: readUUID }, 12),
+      operon.transaction(testReadOnlyFunction, { workflowUUID: readUUID }, 12),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);

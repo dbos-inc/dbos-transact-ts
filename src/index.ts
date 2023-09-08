@@ -58,6 +58,7 @@ export {
 
   OperonTransaction,
   OperonWorkflow,
+  OperonCommunicator,
 
   forEachMethod,
 } from "./decorators";

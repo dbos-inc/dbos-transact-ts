@@ -101,7 +101,7 @@ export class Operon {
     ],
   ]);
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
-  readonly communicatorConfigMap: WeakMap<OperonCommunicator<any, any>, CommunicatorConfig> = new WeakMap();
+  readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
 
   readonly initialEpochTimeMs: number;
@@ -153,8 +153,7 @@ export class Operon {
     // Register user declared operations
     // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
     // Also, why the original function?  It should get logged...
-    forEachMethod((registeredOperation) => {
-      const ro = registeredOperation;
+    forEachMethod((ro) => {
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.origFunction as OperonWorkflow<any, any>;
@@ -163,6 +162,10 @@ export class Operon {
         } else if (arg.argType.name === "TransactionContext") {
           const tx = ro.origFunction as OperonTransaction<any, any>;
           this.registerTransaction(tx, ro.txnConfig);
+          break;
+        } else if (arg.argType.name === "CommunicatorContext") {
+          const comm = ro.origFunction as OperonCommunicator<any, any>;
+          this.registerCommunicator(comm, ro.commConfig);
           break;
         }
       }
@@ -282,11 +285,17 @@ export class Operon {
   }
 
   registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig = {}) {
+    if (this.transactionConfigMap.has(txn.name)) {
+      throw new OperonError(`Repeated Transaction name: ${txn.name}`);
+    }
     this.transactionConfigMap.set(txn.name, params);
   }
 
   registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig = {}) {
-    this.communicatorConfigMap.set(comm, params);
+    if (this.communicatorConfigMap.has(comm.name)) {
+      throw new OperonError(`Repeated Commmunicator name: ${comm.name}`);
+    }
+    this.communicatorConfigMap.set(comm.name, params);
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {

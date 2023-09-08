@@ -255,7 +255,7 @@ export class WorkflowContext extends OperonContext {
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
-    const commConfig = this.#operon.communicatorConfigMap.get(commFn);
+    const commConfig = this.#operon.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new OperonNotRegisteredError(commFn.name);
     }
