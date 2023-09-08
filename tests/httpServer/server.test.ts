@@ -17,7 +17,7 @@ import {
   setupOperonTestDb,
 } from "tests/helpers";
 import request from "supertest";
-import { HandlerContext } from "src/httpServer/handler";
+import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -84,8 +84,7 @@ describe("httpserver-tests", () => {
 
   test("endpoint-workflow", async () => {
     const response = await request(httpServer.app.callback())
-      .post("/workflow")
-      .send({ name: "alice" });
+      .post("/workflow?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
@@ -154,7 +153,7 @@ describe("httpserver-tests", () => {
 
     @PostApi("/workflow")
     @OperonWorkflow()
-    static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
+    static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
       const res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
       return res;
     }
