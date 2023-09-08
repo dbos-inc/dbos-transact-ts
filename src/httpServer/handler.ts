@@ -1,39 +1,36 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // TODO: should we support log function in handler?
-import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction } from "../decorators";
+import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration } from "../decorators";
 import { OperonContext } from "../context";
 import { Operon } from "../operon";
-import Koa from 'koa';
-import { getOrCreateOperonMethodArgsRegistration } from "src/decorators";
+import Koa from "koa";
 
 export class HandlerContext extends OperonContext {
-  constructor(readonly operon: Operon,
-    readonly koaContext: Koa.Context) {
+  constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
     super();
   }
 }
 
 export enum APITypes {
-  GET = 'GET',
-  POST = 'POST'
+  GET = "GET",
+  POST = "POST",
 }
 
 export enum ArgSources {
-  DEFAULT = 'DEFAULT',
-  BODY = 'BODY',
-  QUERY = 'QUERY',
-  URL = 'URL'
+  DEFAULT = "DEFAULT",
+  BODY = "BODY",
+  QUERY = "QUERY",
+  URL = "URL",
 }
 
-export class OperonHandlerRegistration <This, Args extends unknown[], Return>
-extends OperonMethodRegistration<This, Args, Return> {
+export class OperonHandlerRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistration<This, Args, Return> {
   apiType: APITypes = APITypes.GET;
-  apiURL: string = '';
+  apiURL: string = "";
 
   args: OperonHandlerParameter[] = [];
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
     super(origFunc);
-  } 
+  }
 }
 
 export class OperonHandlerParameter extends OperonParameter {
@@ -49,7 +46,8 @@ export function GetApi(url: string) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+  ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as OperonHandlerRegistration<This, Args, Return>;
     handlerRegistration.apiURL = url;
@@ -64,7 +62,8 @@ export function PostApi(url: string) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+  ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as OperonHandlerRegistration<This, Args, Return>;
     handlerRegistration.apiURL = url;
@@ -83,4 +82,3 @@ export function ArgSource(source: ArgSources) {
     curParam.argSource = source;
   };
 }
-
