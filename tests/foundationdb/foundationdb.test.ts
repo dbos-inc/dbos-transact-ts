@@ -5,6 +5,7 @@ import {
   CommunicatorContext,
   WorkflowContext,
   StatusString,
+  WorkflowHandle,
 } from "src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "src/foundationdb/fdb_system_database";
@@ -49,7 +50,7 @@ describe("foundationdb-operon", () => {
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).resolves.toBe(5);
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).resolves.toBe(5);
@@ -70,7 +71,7 @@ describe("foundationdb-operon", () => {
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).rejects.toThrow("fail");
-    await operon.flushWorkflowOutputBuffer();
+    await operon.flushWorkflowStatusBuffer();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
     ).rejects.toThrow("fail");
@@ -145,6 +146,16 @@ describe("foundationdb-operon", () => {
 
   test("fdb-workflow-status", async () => {
     let counter = 0;
+    
+    let innerResolve: () => void;
+    const innerPromise = new Promise<void>((r) => {
+      innerResolve = r;
+    });
+
+    let outerResolve: () => void;
+    const outerPromise = new Promise<void>((r) => {
+      outerResolve = r;
+    });
 
     // eslint-disable-next-line @typescript-eslint/require-await
     const testFunction = async (txnCtxt: TransactionContext) => {
@@ -153,17 +164,25 @@ describe("foundationdb-operon", () => {
       return 3;
     };
     const testWorkflow = async (ctxt: WorkflowContext) => {
-      return ctxt.transaction(testFunction);
+      const result = ctxt.transaction(testFunction);
+      outerResolve();
+      await(innerPromise);
+      return result;
     };
     operon.registerTransaction(testFunction);
     operon.registerWorkflow(testWorkflow);
 
     const uuid = uuidv1();
-    await expect(
-      operon.workflow(testWorkflow, { workflowUUID: uuid }).getResult()
-    ).resolves.toBe(3);
-
+    const invokedHandle = operon.workflow(testWorkflow, { workflowUUID: uuid });
+    await outerPromise;
+    await operon.systemDatabase.flushWorkflowStatusBuffer();
     const retrievedHandle = operon.retrieveWorkflow(uuid);
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    innerResolve!();
+    await expect(invokedHandle.getResult()).resolves.toBe(3);
+    await operon.systemDatabase.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -192,6 +211,23 @@ describe("foundationdb-operon", () => {
     expect(await handle.getResult()).toBe(true);
     const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).getResult();
     expect(retry).toBe(true);
+  });
+
+  test("fdb-simple-workflow-events", async () => {
+    const sendWorkflow = async (ctxt: WorkflowContext) => {
+      await ctxt.setEvent("key1", "value1");
+      await ctxt.setEvent("key2", "value2");
+      return 0;
+    };
+    operon.registerWorkflow(sendWorkflow);
+
+    const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
+    const workflowUUID = handle.getWorkflowUUID();
+    await expect(operon.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
+    await expect(operon.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
+    await expect(operon.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+    await handle.getResult();
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).getResult()).resolves.toBe(0);
   });
 
   test("fdb-duplicate-communicator", async () => {

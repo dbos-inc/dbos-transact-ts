@@ -12,8 +12,6 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
 
-const defaultRecvTimeoutSec = 60;
-
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 export interface WorkflowParams {
@@ -29,7 +27,6 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string;
-  updatedAtEpochMs: number;
 }
 
 export interface PgTransactionId {
@@ -38,6 +35,7 @@ export interface PgTransactionId {
 
 export const StatusString = {
   UNKNOWN: "UNKNOWN",
+  PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
 } as const;
@@ -239,8 +237,8 @@ export class WorkflowContext extends OperonContext {
         await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
           await this.recordGuardedError(client, funcId, e);
-          this.resultBuffer.clear();
         }, {});
+        this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         throw err;
       } finally {
@@ -278,8 +276,8 @@ export class WorkflowContext extends OperonContext {
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
@@ -346,8 +344,8 @@ export class WorkflowContext extends OperonContext {
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
   }
@@ -357,21 +355,50 @@ export class WorkflowContext extends OperonContext {
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = defaultRecvTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = this.#operon.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-      this.resultBuffer.clear();
     }, {});
+    this.resultBuffer.clear();
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
+
+  /**
+   * Emit a workflow event, represented as a key-value pair.
+   * Events are immutable once set.
+   */
+  async setEvent<T extends NonNullable<any>>(key: string, value: T) {
+    const functionID: number = this.functionIDGetIncrement();
+
+    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await this.flushResultBuffer(client);
+    }, {});
+    this.resultBuffer.clear();
+
+    await this.#operon.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
+  }
 }
 
+/**
+ * Object representing an active or completed workflow execution, identified by the workflow UUID.
+ * Allows retrieval of information about the workflow.
+ */
 export interface WorkflowHandle<R> {
+  /**
+   * Retrieve the workflow's status.
+   * Statuses are updated asynchronously.
+   */
   getStatus(): Promise<WorkflowStatus>;
+  /**
+   * Await workflow completion and return its result.
+   */
   getResult(): Promise<R>;
+  /**
+   * Return the workflow's UUID.
+   */
   getWorkflowUUID(): string;
 }
 
@@ -388,7 +415,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getStatus(): Promise<WorkflowStatus> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
     if (status.status === StatusString.UNKNOWN) {
-      return { status: StatusString.UNKNOWN, updatedAtEpochMs: Date.now() };
+      return { status: StatusString.PENDING };
     } else {
       return status;
     }

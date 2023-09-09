@@ -110,6 +110,8 @@ export class Operon {
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
+  readonly defaultNotificationTimeoutSec = 60;
+
   readonly logger: Logger;
   readonly tracer: Tracer;
 
@@ -126,7 +128,7 @@ export class Operon {
       this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
     }
     this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowOutputBuffer();
+      void this.flushWorkflowStatusBuffer();
     }, this.flushBufferIntervalMs);
 
     // Parse requested exporters
@@ -217,7 +219,7 @@ export class Operon {
 
   async destroy() {
     clearInterval(this.flushBufferID);
-    await this.flushWorkflowOutputBuffer();
+    await this.flushWorkflowStatusBuffer();
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
@@ -341,12 +343,14 @@ export class Operon {
         this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
+      // Asynchronously set the workflow's status to PENDING.
+      this.systemDatabase.bufferWorkflowStatus(workflowUUID);
       // Record inputs for OAOO. Not needed for temporary workflows.
       const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
       try {
         result = await wf(wCtxt, ...input);
-        await this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof OperonWorkflowConflictUUIDError) {
@@ -387,6 +391,16 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
   }
 
+  /**
+   * Wait for a workflow to emit an event, then return its value.
+   */
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec) : Promise<T | null> {
+    return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  /**
+   * Retrieve a handle for a workflow UUID.
+   */
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
     return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
@@ -420,9 +434,9 @@ export class Operon {
   /**
    * Periodically flush the workflow output buffer to the system database.
    */
-  async flushWorkflowOutputBuffer() {
+  async flushWorkflowStatusBuffer() {
     if (this.initialized) {
-      await this.systemDatabase.flushWorkflowOutputBuffer();
+      await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }
 }

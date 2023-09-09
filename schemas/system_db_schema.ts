@@ -7,9 +7,15 @@ export interface workflow_status {
 }
 
 export interface notifications {
+  destination_uuid: string;
   topic: string;
-  key: string;
   message: string;
+}
+
+export interface workflow_events {
+  workflow_uuid: string;
+  key: string;
+  value: string;
 }
 
 export interface operation_outputs {
@@ -34,8 +40,7 @@ export const systemDBSchema = `
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
     output TEXT,
-    error TEXT,
-    updated_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
+    error TEXT
   );
 
   CREATE TABLE IF NOT EXISTS operon.notifications (
@@ -43,6 +48,13 @@ export const systemDBSchema = `
     topic TEXT,
     message TEXT NOT NULL,
     created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
+  );
+
+  CREATE TABLE IF NOT EXISTS operon.workflow_events (
+    workflow_uuid TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (workflow_uuid, key)
   );
 
   DO $$ 
@@ -77,6 +89,28 @@ export const systemDBSchema = `
               CREATE TRIGGER operon_notifications_trigger
               AFTER INSERT ON operon.notifications
               FOR EACH ROW EXECUTE FUNCTION operon.notifications_function()';
+        END IF;
+    END
+    $$;
+
+    CREATE OR REPLACE FUNCTION operon.workflow_events_function() RETURNS TRIGGER AS $$
+    DECLARE
+        payload text := NEW.workflow_uuid || '::' || NEW.key;
+    BEGIN
+        -- Publish a notification for all keys
+        PERFORM pg_notify('operon_workflow_events_channel', payload);
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DO
+    $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_workflow_events_trigger') THEN
+          EXECUTE '
+              CREATE TRIGGER operon_workflow_events_trigger
+              AFTER INSERT ON operon.workflow_events
+              FOR EACH ROW EXECUTE FUNCTION operon.workflow_events_function()';
         END IF;
     END
     $$;

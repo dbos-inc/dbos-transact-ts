@@ -125,3 +125,10 @@ export class OperonDataValidationError extends OperonError {
     super(msg, DataValidationError);
   }
 }
+
+const DuplicateWorkflowEvent = 10;
+export class OperonDuplicateWorkflowEventError extends OperonError {
+  constructor(workflowUUID: string, key: string) {
+    super(`Workflow ${workflowUUID} has already emitted an event with key ${key}`, DuplicateWorkflowEvent);
+  }
+}

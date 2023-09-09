@@ -1,16 +1,17 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { deserializeError, serializeError } from "serialize-error";
 import { OperonNull, operonNull } from "../operon";
 import { SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
-import { OperonWorkflowConflictUUIDError } from "../error";
+import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 
 interface WorkflowOutput<R> {
   status: string;
   error: string;
   output: R;
-  updatedAtEpochMs: number;
 }
 
 interface OperationOutput<R> {
@@ -22,6 +23,7 @@ const Tables = {
   WorkflowStatus: "operon_workflow_status",
   OperationOutputs: "operon_operation_outputs",
   Notifications: "operon_notifications",
+  WorkflowEvents: "workflow_events"
 } as const;
 
 export class FoundationDBSystemDatabase implements SystemDatabase {
@@ -29,8 +31,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   workflowStatusDB: fdb.Database<string, string, unknown, unknown>;
   operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
+  workflowEventsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
 
-  readonly workflowOutputBuffer: Map<string, unknown> = new Map();
+  readonly workflowStatusBuffer: Map<string, unknown> = new Map();
 
   constructor() {
     fdb.setAPIVersion(710, 710);
@@ -47,6 +50,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .at(Tables.Notifications)
       .withKeyEncoding(fdb.encoders.tuple) // We use [destinationUUID, topic] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
+    this.workflowEventsDB = this.dbRoot
+    .at(Tables.WorkflowEvents)
+    .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, key] as the key
+    .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -68,23 +75,36 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async bufferWorkflowOutput<R>(workflowUUID: string, output: R): Promise<void> {
-    this.workflowOutputBuffer.set(workflowUUID, output);
+  bufferWorkflowStatus(workflowUUID: string) {
+    this.workflowStatusBuffer.set(workflowUUID, operonNull);
   }
 
-  async flushWorkflowOutputBuffer(): Promise<string[]> {
-    const localBuffer = new Map(this.workflowOutputBuffer);
-    this.workflowOutputBuffer.clear();
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
+    this.workflowStatusBuffer.set(workflowUUID, output);
+  }
+
+  async flushWorkflowStatusBuffer(): Promise<string[]> {
+    const localBuffer = new Map(this.workflowStatusBuffer);
+    this.workflowStatusBuffer.clear();
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {
-        txn.set(workflowUUID, {
-          status: StatusString.SUCCESS,
-          error: null,
-          output: output,
-          updatedAtEpochMs: Math.floor(new Date().getTime() / 1000),
-        });
+        if (output === operonNull) {
+          const present = await txn.get(workflowUUID);
+          if (present === undefined) {
+            txn.set(workflowUUID, {
+              status: StatusString.PENDING,
+              error: null,
+              output: null,
+            });
+          }
+        } else {
+          txn.set(workflowUUID, {
+            status: StatusString.SUCCESS,
+            error: null,
+            output: output,
+          });
+        }
       }
     });
     return Array.from(localBuffer.keys());
@@ -142,9 +162,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
-      return { status: StatusString.UNKNOWN, updatedAtEpochMs: -1 };
+      return { status: StatusString.UNKNOWN };
     }
-    return { status: output.status, updatedAtEpochMs: output.updatedAtEpochMs };
+    return { status: output.status };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
@@ -223,5 +243,42 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       return message;
     });
+  }
+
+  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
+    return this.dbRoot.doTransaction(async (txn) => {
+      const operationOutputs = txn.at(this.operationOutputsDB);
+      const workflowEvents = txn.at(this.workflowEventsDB);
+      // For OAOO, check if the set already ran.
+      const output = (await operationOutputs.get([workflowUUID, functionID])) as OperationOutput<boolean>;
+      if (output !== undefined) {
+        return;
+      }
+
+      const exists = await workflowEvents.get([workflowUUID, key]);
+      if (exists === undefined) {
+        workflowEvents.set([workflowUUID, key], value);
+      } else {
+        throw new OperonDuplicateWorkflowEventError(workflowUUID, key);
+      }
+      // For OAOO, record the set.
+      operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
+    });
+  }
+
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+    // Check if the value is present, otherwise wait for it to arrive.
+    const watch = await this.workflowEventsDB.getAndWatch([workflowUUID, key]);
+    if (watch.value === undefined) {
+      const timeout = setTimeout(() => {
+        watch.cancel();
+      }, timeoutSeconds * 1000);
+      await watch.promise;
+      clearInterval(timeout);
+    } else {
+      watch.cancel();
+    }
+    // Return the value, or null if none exists.
+    return (await this.workflowEventsDB.get([workflowUUID, key])) as T ?? null;
   }
 }
