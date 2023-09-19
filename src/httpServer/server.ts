@@ -8,7 +8,6 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
-import { MetadataWithSuchNameAlreadyExistsError } from 'typeorm';
 
 export interface ResponseError extends Error {
   status?: number;
@@ -129,7 +128,7 @@ export class OperonHttpServer {
                 const st = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
                 koaCtxt.response.status = st;
                 koaCtxt.body = {
-                  status: MetadataWithSuchNameAlreadyExistsError,
+                  status: st,
                   message: e.message,
                   details: e,
                 }
