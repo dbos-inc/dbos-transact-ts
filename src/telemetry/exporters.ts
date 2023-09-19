@@ -1,6 +1,6 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
-import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
+// import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
 import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -69,12 +69,12 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     this.pgClient = new Client(pgClientConfig);
   }
 
-  static getPGDataType(t: OperonDataType): string {
-    if (t.dataType === "double") {
-      return "double precision"; // aka "float8"
-    }
-    return t.formatAsString();
-  }
+  // static getPGDataType(t: OperonDataType): string {
+  //   if (t.dataType === "double") {
+  //     return "double precision"; // aka "float8"
+  //   }
+  //   return t.formatAsString();
+  // }
 
   async init() {
     const pgSystemClient: Client = new Client(this.poolConfig);
@@ -91,42 +91,43 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    const registeredOperations: OperonMethodRegistrationBase[] = [];
-    forEachMethod((o) => {
-      registeredOperations.push(o);
-    });
-    for (const registeredOperation of registeredOperations) {
-      const tableName = `signal_${registeredOperation.name}`;
-      let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
-        workflow_uuid TEXT NOT NULL,
-        function_id INT NOT NULL,
-        function_name TEXT NOT NULL,
-        run_as TEXT NOT NULL,
-        timestamp BIGINT NOT NULL,
-        transaction_id TEXT DEFAULT NULL,
-        severity TEXT DEFAULT NULL,
-        log_message TEXT DEFAULT NULL,
-        trace_id TEXT DEFAULT NULL,
-        trace_span JSONB DEFAULT NULL,\n`;
+    throw new Error('PostgresExporter.init not implemented')
+    // const registeredOperations: OperonMethodRegistrationBase[] = [];
+    // forEachMethod((o) => {
+    //   registeredOperations.push(o);
+    // });
+    // for (const registeredOperation of registeredOperations) {
+    //   const tableName = `signal_${registeredOperation.name}`;
+    //   let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+    //     workflow_uuid TEXT NOT NULL,
+    //     function_id INT NOT NULL,
+    //     function_name TEXT NOT NULL,
+    //     run_as TEXT NOT NULL,
+    //     timestamp BIGINT NOT NULL,
+    //     transaction_id TEXT DEFAULT NULL,
+    //     severity TEXT DEFAULT NULL,
+    //     log_message TEXT DEFAULT NULL,
+    //     trace_id TEXT DEFAULT NULL,
+    //     trace_span JSONB DEFAULT NULL,\n`;
 
-      for (const arg of registeredOperation.args) {
-        if (arg.logMask === LogMasks.SKIP) {
-          continue;
-        } else if (arg.logMask === LogMasks.HASH) {
-          const row = `${arg.name} VARCHAR(64) DEFAULT NULL,\n`;
-          createSignalTableQuery = createSignalTableQuery.concat(row);
-        } else {
-          const row = `${arg.name} ${PostgresExporter.getPGDataType(arg.dataType)} DEFAULT NULL,\n`;
-          createSignalTableQuery = createSignalTableQuery.concat(row);
-        }
-      }
+    //   for (const arg of registeredOperation.args) {
+    //     if (arg.logMask === LogMasks.SKIP) {
+    //       continue;
+    //     } else if (arg.logMask === LogMasks.HASH) {
+    //       const row = `${arg.name} VARCHAR(64) DEFAULT NULL,\n`;
+    //       createSignalTableQuery = createSignalTableQuery.concat(row);
+    //     } else {
+    //       const row = `${arg.name} ${PostgresExporter.getPGDataType(arg.dataType)} DEFAULT NULL,\n`;
+    //       createSignalTableQuery = createSignalTableQuery.concat(row);
+    //     }
+    //   }
       // Trim last comma and line feed
-      createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
-      await this.pgClient.query(createSignalTableQuery);
+      // createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
+      // await this.pgClient.query(createSignalTableQuery);
 
       // Create a table for provenance logs.
       // TODO: create a secondary index.
-    }
+    // }
     await this.pgClient.query(`CREATE TABLE IF NOT EXISTS provenance_logs (
       transaction_id TEXT NOT NULL,
       kind TEXT,

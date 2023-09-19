@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // TODO: should we support log function in handler?
-import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration } from "../decorators";
 import { OperonContext } from "../context";
 import { Operon } from "../operon";
 import Koa from "koa";
@@ -23,62 +22,54 @@ export enum ArgSources {
   URL = "URL",
 }
 
-export class OperonHandlerRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistration<This, Args, Return> {
-  apiType: APITypes = APITypes.GET;
-  apiURL: string = "";
-
-  args: OperonHandlerParameter[] = [];
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
-    super(origFunc);
-  }
+export interface HttpEnpoint {
+  type: APITypes, 
+  url: string,
 }
 
-export class OperonHandlerParameter extends OperonParameter {
-  argSource: ArgSources = ArgSources.DEFAULT;
+// export class OperonHandlerRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistration<This, Args, Return> {
+//   apiType: APITypes = APITypes.GET;
+//   apiURL: string = "";
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(idx: number, at: Function) {
-    super(idx, at);
-  }
-}
+//   args: OperonHandlerParameter[] = [];
+//   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
+//     super(origFunc);
+//   }
+// }
+
+// export class OperonHandlerParameter extends OperonParameter {
+//   argSource: ArgSources = ArgSources.DEFAULT;
+
+//   // eslint-disable-next-line @typescript-eslint/ban-types
+//   constructor(idx: number, at: Function) {
+//     super(idx, at);
+//   }
+// }
 
 export function GetApi(url: string) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as OperonHandlerRegistration<This, Args, Return>;
-    handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = APITypes.GET;
-
-    return descriptor;
+    Reflect.defineMetadata("operon:http-server", { type: APITypes.GET, url}, target, propertyKey);
   }
   return apidec;
 }
 
 export function PostApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+  return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as OperonHandlerRegistration<This, Args, Return>;
-    handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = APITypes.POST;
-
-    return descriptor;
+    Reflect.defineMetadata("operon:http-server", { type: APITypes.POST, url}, target, propertyKey);
   }
-  return apidec;
 }
 
 export function ArgSource(source: ArgSources) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
-
-    const curParam = existingParameters[parameterIndex] as OperonHandlerParameter;
-    curParam.argSource = source;
+    const params = Reflect.getOwnMetadata("operon:http-arg-source", target, propertyKey) as Array<ArgSources> ?? [];
+    params[parameterIndex] = source;
   };
 }

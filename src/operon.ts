@@ -36,12 +36,13 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase,
-         UserDatabase, TypeORMDataSource, TypeORMDatabase, } from './user_database';
-import { forEachMethod } from './decorators';
+import {
+  PGNodeUserDatabase, PrismaClient, PrismaUserDatabase,
+  UserDatabase, TypeORMDataSource, TypeORMDatabase,
+} from './user_database';
 import { SpanStatusCode } from '@opentelemetry/api';
 
-export interface OperonNull {}
+export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
@@ -151,28 +152,58 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
-  registerDecoratedWT() {
-    // Register user declared operations
-    // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
-    // Also, why the original function?  It should get logged...
-    forEachMethod((ro) => {
-      for (const arg of ro.args) {
-        if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
+  private registerClass(cls: object) {
+
+    for (const name of Object.getOwnPropertyNames(cls)) {
+      const mdKeys = Reflect.getOwnMetadataKeys(cls, name) as string[];
+      const mdContextKeys = mdKeys.filter(v => v.startsWith("operon:context:"));
+      if (mdContextKeys.length === 0) continue;
+      if (mdContextKeys.length > 2) throw new Error(`Invalid Operon context registration ${name}`);
+      const contextKey = mdContextKeys[0];
+      const propDescValue = Object.getOwnPropertyDescriptor(cls, name)?.value;
+      if (!propDescValue) throw new Error(`invalid property descriptor ${name}`);
+      const context = Reflect.getOwnMetadata(contextKey, cls, name);
+      switch (contextKey) {
+        case "operon:context:workflow":
+          this.registerWorkflow(propDescValue, context);
           break;
-        } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.registeredFunction as OperonTransaction<any, any>;
-          this.registerTransaction(tx, ro.txnConfig);
+        case "operon:context:transaction":
+          this.registerTransaction(propDescValue, context);
           break;
-        } else if (arg.argType.name === "CommunicatorContext") {
-          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-          this.registerCommunicator(comm, ro.commConfig);
+        case "operon:context:communicator":
+          this.registerCommunicator(propDescValue, context);
           break;
-        }
+        default:
+          throw new Error(`unexpected operon:context metadata ${contextKey}`);
       }
-    });
+    }
+
+    // TODO: getOwnPropSymbols
+
   }
+
+  // registerDecoratedWT() {
+  //   // Register user declared operations
+  //   // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
+  //   // Also, why the original function?  It should get logged...
+  //   // forEachMethod((ro) => {
+  //   //   for (const arg of ro.args) {
+  //   //     if (arg.argType.name === "WorkflowContext") {
+  //   //       const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+  //   //       this.registerWorkflow(wf, ro.workflowConfig);
+  //   //       break;
+  //   //     } else if (arg.argType.name === "TransactionContext") {
+  //   //       const tx = ro.registeredFunction as OperonTransaction<any, any>;
+  //   //       this.registerTransaction(tx, ro.txnConfig);
+  //   //       break;
+  //   //     } else if (arg.argType.name === "CommunicatorContext") {
+  //   //       const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+  //   //       this.registerCommunicator(comm, ro.commConfig);
+  //   //       break;
+  //   //     }
+  //   //   }
+  //   // });
+  // }
 
   useNodePostgres() {
     if (this.userDatabase) {
@@ -196,7 +227,7 @@ export class Operon {
     return;
   }
 
-  async init(): Promise<void> {
+  async init(...classes: any[]): Promise<void> {
     if (!this.userDatabase) {
       throw new OperonInitializationError("No data source!");
     }
@@ -205,6 +236,9 @@ export class Operon {
       return;
     }
     try {
+      for (const cls of classes) {
+        this.registerClass(cls);
+      }
       await this.userDatabase.init();
       await this.telemetryCollector.init();
       await this.systemDatabase.init();
@@ -394,7 +428,7 @@ export class Operon {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec) : Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

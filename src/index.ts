@@ -34,15 +34,14 @@ export {
 } from './error';
 
 export {
-  OperonFieldType,
-  OperonDataType,
-  OperonMethodRegistrationBase,
+  // OperonFieldType,
+  // OperonDataType,
+  // OperonMethodRegistrationBase,
   TraceLevels,
   LogMasks,
-  TraceEventTypes,
+  // TraceEventTypes,
 
   // BaseLogEvent, // Would be OK to export for some uses I think?
-  Required,
   SkipLogging,
   LogMask,
   ArgName,
@@ -54,7 +53,7 @@ export {
   OperonWorkflow,
   OperonCommunicator,
 
-  forEachMethod,
+  // forEachMethod,
 } from "./decorators";
 
 export {
