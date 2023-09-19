@@ -9,8 +9,12 @@ import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
 
+export interface ResponseError extends Error {
+  status?: number;
+}
+
 export class OperonHttpServer {
-  readonly app = new Koa();
+  readonly app: Koa;
   readonly router = new Router();
 
   /**
@@ -18,14 +22,22 @@ export class OperonHttpServer {
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
-  constructor(readonly operon: Operon) {
-    // Use default middlewares.
-    // TODO: support customized middlewares.
-    this.app.use(bodyParser());
-    this.app.use(cors());
+  constructor(readonly operon: Operon, koa ?: Koa, router ?: Router) {
+    if (!router) {
+      router = new Router();
+    }
+    this.router = router;
+
+    if (!koa) {
+      koa = new Koa();
+
+      koa.use(bodyParser());
+      koa.use(cors());
+    }
+    this.app = koa;
 
     // Register operon endpoints.
-    this.#registerDecoratedEndpoints();
+    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
@@ -40,14 +52,15 @@ export class OperonHttpServer {
     });
   }
 
-  #registerDecoratedEndpoints() {
+  static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
+    const router = irouter as Router;
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     forEachMethod((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContext = new HandlerContext(this.operon, koaCtxt);
+          const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
           oc.request = koaCtxt.request;
           oc.response = koaCtxt.response;
 
@@ -88,9 +101,9 @@ export class OperonHttpServer {
           try {
             let retValue;
             if (ro.txnConfig) {
-              retValue = await this.operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
+              retValue = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
-              retValue = await this.operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
+              retValue = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
             } else {
               // Directly invoke the handler code.
               retValue = await ro.invoke(undefined, [oc, ...args]);
@@ -100,12 +113,20 @@ export class OperonHttpServer {
               koaCtxt.status = 200;
             }
           } catch (e) {
-            if (koaCtxt.body === undefined) {
-              if (e instanceof Error) {
-                koaCtxt.message = e.message;
+            if (koaCtxt.body === undefined) { // CB - this is a bad idea
+              if (e instanceof OperonDataValidationError) {
+                koaCtxt.response.status = 400;
+                koaCtxt.body = {message: e.message};
               }
-              koaCtxt.body = e;
-              koaCtxt.status = 500;
+              else if (e instanceof Error) {
+                koaCtxt.message = e.message;
+                koaCtxt.response.status = ((e as ResponseError)?.status || 500); // CB - I disagree that this is a 500 - a 500 is an internal server error
+                koaCtxt.body = e;
+              }
+              else {
+                koaCtxt.body = e;
+                koaCtxt.status = 500;
+              }
             }
           } finally {
             await koaNext();
@@ -114,9 +135,9 @@ export class OperonHttpServer {
 
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
-          this.router.get(ro.apiURL, wrappedHandler);
+          router.get(ro.apiURL, wrappedHandler);
         } else if (ro.apiType === APITypes.POST) {
-          this.router.post(ro.apiURL, wrappedHandler);
+          router.post(ro.apiURL, wrappedHandler);
         }
       }
     });
