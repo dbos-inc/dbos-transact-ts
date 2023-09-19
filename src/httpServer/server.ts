@@ -15,7 +15,7 @@ export interface ResponseError extends Error {
 
 export class OperonHttpServer {
   readonly app: Koa;
-  readonly router = new Router();
+  readonly router: Router;
 
   /**
    * Create an Express app.
