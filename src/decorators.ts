@@ -441,6 +441,7 @@ export function TraceLevel(level: TraceLevels = TraceLevels.INFO) {
 export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
+
 export function OperonWorkflow(config: WorkflowConfig={}) {
   return function <This, Args extends unknown[], Return>(
     target: object,
@@ -469,4 +470,13 @@ export function OperonCommunicator(config: CommunicatorConfig={}) {
   {
     Reflect.defineMetadata("operon:context:communicator", config, target, propertyKey);
   }
+}
+
+export function getOperonContextKind(target: { name: string }, propertyKey: string)  {
+
+  const mdKeys = Reflect.getOwnMetadataKeys(target, propertyKey) as string[];
+  const mdContextKeys = mdKeys.filter(v => v.startsWith("operon:context:"));
+  if (mdContextKeys.length === 0) return undefined;
+  if (mdContextKeys.length > 2) throw new Error(`Invalid Operon context registration ${target.name}.${propertyKey}`);
+  return mdContextKeys[0];
 }

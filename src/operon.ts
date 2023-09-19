@@ -41,6 +41,7 @@ import {
   UserDatabase, TypeORMDataSource, TypeORMDatabase,
 } from './user_database';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { getOperonContextKind } from './decorators';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -152,17 +153,17 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
-  private registerClass(cls: object) {
+  private registerClass(target: { name: string }) {
 
-    for (const name of Object.getOwnPropertyNames(cls)) {
-      const mdKeys = Reflect.getOwnMetadataKeys(cls, name) as string[];
-      const mdContextKeys = mdKeys.filter(v => v.startsWith("operon:context:"));
-      if (mdContextKeys.length === 0) continue;
-      if (mdContextKeys.length > 2) throw new Error(`Invalid Operon context registration ${name}`);
-      const contextKey = mdContextKeys[0];
-      const propDescValue = Object.getOwnPropertyDescriptor(cls, name)?.value;
-      if (!propDescValue) throw new Error(`invalid property descriptor ${name}`);
-      const context = Reflect.getOwnMetadata(contextKey, cls, name);
+    for (const propertyKey of Object.getOwnPropertyNames(target)) {
+
+      const contextKey = getOperonContextKind(target, propertyKey);
+      if (!contextKey) continue;
+
+      const context = Reflect.getOwnMetadata(contextKey, target, propertyKey);
+      const propDescValue = Object.getOwnPropertyDescriptor(target, propertyKey)?.value;
+      if (!propDescValue) throw new Error(`invalid property descriptor ${target.name}.${propertyKey}`);
+
       switch (contextKey) {
         case "operon:context:workflow":
           this.registerWorkflow(propDescValue, context);
@@ -227,7 +228,7 @@ export class Operon {
     return;
   }
 
-  async init(...classes: any[]): Promise<void> {
+  async init(...classes: { name: string }[]): Promise<void> {
     if (!this.userDatabase) {
       throw new OperonInitializationError("No data source!");
     }

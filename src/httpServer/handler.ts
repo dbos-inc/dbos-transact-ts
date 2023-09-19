@@ -7,6 +7,8 @@ import Koa from "koa";
 export class HandlerContext extends OperonContext {
   constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
     super();
+    this.request = koaContext.request;
+    this.response = koaContext.response;
   }
 }
 
@@ -52,7 +54,7 @@ export function GetApi(url: string) {
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    Reflect.defineMetadata("operon:http-server", { type: APITypes.GET, url}, target, propertyKey);
+    Reflect.defineMetadata("operon:http-endpoint", { type: APITypes.GET, url}, target, propertyKey);
   }
   return apidec;
 }
@@ -63,7 +65,7 @@ export function PostApi(url: string) {
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    Reflect.defineMetadata("operon:http-server", { type: APITypes.POST, url}, target, propertyKey);
+    Reflect.defineMetadata("operon:http-endpoint", { type: APITypes.POST, url}, target, propertyKey);
   }
 }
 
