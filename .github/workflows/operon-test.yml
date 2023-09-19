@@ -19,7 +19,7 @@ jobs:
     services:
       # Label used to access the service container.
       postgres:
-        image: postgres
+        image: postgres:15.4
         env:
           # Specify the password for Postgres superuser.
           POSTGRES_PASSWORD: dbos
