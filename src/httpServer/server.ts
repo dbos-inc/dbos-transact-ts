@@ -113,15 +113,16 @@ export class OperonHttpServer {
               koaCtxt.status = 200;
             }
           } catch (e) {
+            console.log(e); // CB - Guys!  We really need telemetry on by default!
             if (koaCtxt.body === undefined) { // CB - this is a bad idea
               if (e instanceof OperonDataValidationError) {
                 koaCtxt.response.status = 400;
-                koaCtxt.body = {message: e.message};
+                koaCtxt.message = e.message;
+                koaCtxt.body = e;
               }
               else if (e instanceof Error) {
-                koaCtxt.message = e.message;
-                koaCtxt.response.status = ((e as ResponseError)?.status || 500); // CB - I disagree that this is a 500 - a 500 is an internal server error
-                koaCtxt.body = e;
+                koaCtxt.response.status = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
+                koaCtxt.body = e.message;
               }
               else {
                 koaCtxt.body = e;
