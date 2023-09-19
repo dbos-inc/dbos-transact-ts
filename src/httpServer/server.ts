@@ -8,6 +8,7 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
+import { MetadataWithSuchNameAlreadyExistsError } from 'typeorm';
 
 export interface ResponseError extends Error {
   status?: number;
@@ -116,13 +117,22 @@ export class OperonHttpServer {
             console.log(e); // CB - Guys!  We really need telemetry on by default!
             if (koaCtxt.body === undefined) { // CB - this is a bad idea
               if (e instanceof OperonDataValidationError) {
-                koaCtxt.response.status = 400;
-                koaCtxt.message = e.message;
-                koaCtxt.body = e;
+                const st = 400;
+                koaCtxt.response.status = st;
+                koaCtxt.body = {
+                  status: st,
+                  message: e.message,
+                  details: e,
+                }
               }
               else if (e instanceof Error) {
-                koaCtxt.response.status = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
-                koaCtxt.body = e.message;
+                const st = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
+                koaCtxt.response.status = st;
+                koaCtxt.body = {
+                  status: MetadataWithSuchNameAlreadyExistsError,
+                  message: e.message,
+                  details: e,
+                }
               }
               else {
                 koaCtxt.body = e;
