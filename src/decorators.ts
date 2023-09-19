@@ -94,20 +94,23 @@ import { OperonDataValidationError } from "./error";
 // const operonParamMetadataKey = Symbol("operon:parameter");
 // const operonMethodMetadataKey = Symbol("operon:method");
 
-// /* Arguments parsing heuristic:
-//  * - Convert the function to a string
-//  * - Minify the function
-//  * - Remove everything before the first open parenthesis and after the first closed parenthesis
-//  * This will obviously not work on code that has been obfuscated or optimized as the names get
-//  *   changed to be really small and useless.
-//  **/
-// // eslint-disable-next-line @typescript-eslint/ban-types
-// function getArgNames(func: Function): string[] {
-//   let fn = func.toString();
-//   fn = fn.replace(/\s/g, "");
-//   fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
-//   return fn.split(",");
-// }
+/* Arguments parsing heuristic:
+ * - Convert the function to a string
+ * - Minify the function
+ * - Remove everything before the first open parenthesis and after the first closed parenthesis
+ * This will obviously not work on code that has been obfuscated or optimized as the names get
+ *   changed to be really small and useless.
+ * 
+ * TODO: consider using https://github.com/rphansen91/es-arguments
+ **/
+
+// eslint-disable-next-line @typescript-eslint/ban-types
+export function getArgNames(func: Function): string[] {
+  let fn = func.toString();
+  fn = fn.replace(/\s/g, "");
+  fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
+  return fn.split(",");
+}
 
 export enum TraceLevels {
   DEBUG = "DEBUG",
