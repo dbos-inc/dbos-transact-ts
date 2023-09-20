@@ -445,41 +445,53 @@ export function Traced<This, Args extends unknown[], Return>(target: object, pro
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
+
+const operonConfigMetadataKey = Symbol("operon:config");
+
+
+export type OperonConfigKind = "workflow" | "transaction" | "communicator";
+
+export interface OperonConfig {
+  kind: OperonConfigKind;
+  config: WorkflowConfig | TransactionConfig | CommunicatorConfig;
+}
+
+export function getOperonConfig(target: { name: string }, propertyKey: string) {
+  return Reflect.getOwnMetadata(operonConfigMetadataKey, target, propertyKey) as OperonConfig | undefined;
+}
+
+function defineConfigMetadata(target: { name: string }, propertyKey: string, config: OperonConfig) {
+  const existingConfig = getOperonConfig(target, propertyKey);
+  if (existingConfig !== undefined) throw Error(`${target.name}.${propertyKey} already defines ${existingConfig.kind} config`);
+  Reflect.defineMetadata(operonConfigMetadataKey, config, target, propertyKey);
+}
+
 export function OperonWorkflow(config: WorkflowConfig={}) {
   return function <This, Args extends unknown[], Return>(
-    target: object,
+    target: { name: string },
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
   {
-    Reflect.defineMetadata("operon:context:workflow", config, target, propertyKey);
+    defineConfigMetadata(target, propertyKey, { kind: "workflow", config});
   }
 }
 
 export function OperonTransaction(config: TransactionConfig={}) {
   return function <This, Args extends unknown[], Return>(
-    target: object,
+    target: { name: string },
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
   {
-    Reflect.defineMetadata("operon:context:transaction", config, target, propertyKey);
+    defineConfigMetadata(target, propertyKey, { kind: "transaction", config});
   }
 }
 
 export function OperonCommunicator(config: CommunicatorConfig={}) {
   return function <This, Args extends unknown[], Return>(
-    target: object,
+    target: { name: string },
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
   {
-    Reflect.defineMetadata("operon:context:communicator", config, target, propertyKey);
+    defineConfigMetadata(target, propertyKey, { kind: "communicator", config});
   }
-}
-
-export function getOperonContextKind(target: { name: string }, propertyKey: string)  {
-
-  const mdKeys = Reflect.getOwnMetadataKeys(target, propertyKey) as string[];
-  const mdContextKeys = mdKeys.filter(v => v.startsWith("operon:context:"));
-  if (mdContextKeys.length === 0) return undefined;
-  if (mdContextKeys.length > 2) throw new Error(`Invalid Operon context registration ${target.name}.${propertyKey}`);
-  return mdContextKeys[0];
 }
