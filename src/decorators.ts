@@ -29,70 +29,80 @@ import { OperonDataValidationError } from "./error";
 /**
  * Any column type column can be.
  */
-// export type OperonFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
+type OperonFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
 
-// export class OperonDataType {
-//   dataType: OperonFieldType = "text";
-//   length: number = -1;
-//   precision: number = -1;
-//   scale: number = -1;
+interface OperonDataType {
+  fieldType: OperonFieldType;
+  length?: number;
+  precision?: number;
+  scale?: number;
+}
 
-//   /** Varchar has length */
-//   static varchar(length: number) {
-//     const dt = new OperonDataType();
-//     dt.dataType = "varchar";
-//     dt.length = length;
-//     return dt;
-//   }
+function makeDataType(type: Function): OperonDataType {
+  if (type === String) return { fieldType: "text"};
+  if (type === Date) return { fieldType: "timestamp"}
+  if (type === Number) return { fieldType: "double"};
+  if (type === Boolean) return { fieldType: "boolean" };
+  return { fieldType: "json"};
+}
 
-//   /** Some decimal has precision / scale (as opposed to floating point decimal) */
-//   static decimal(precision: number, scale: number) {
-//     const dt = new OperonDataType();
-//     dt.dataType = "decimal";
-//     dt.precision = precision;
-//     dt.scale = scale;
+interface OperonParamMetadata {
+  name?: string;
+  readonly index: number;
+  readonly type: Function;
 
-//     return dt;
-//   }
+  logMask: LogMasks;
+  dataType: OperonDataType;
+}
 
-//   /** Take type from reflect metadata */
-//   // eslint-disable-next-line @typescript-eslint/ban-types
-//   static fromArg(arg: Function) {
-//     const dt = new OperonDataType();
+function makeParamMetadata(type: Function, index: number): OperonParamMetadata {
+  return {
+    type,
+    index,
+    logMask: LogMasks.NONE,
+    dataType: makeDataType(type)
+  }
+}
 
-//     if (arg === String) {
-//       dt.dataType = "text";
-//     } else if (arg === Date) {
-//       dt.dataType = "timestamp";
-//     } else if (arg === Number) {
-//       dt.dataType = "double";
-//     } else if (arg === Boolean) {
-//       dt.dataType = "boolean";
-//     } else {
-//       dt.dataType = "json";
-//     }
+const operonParameterMetadataKey = Symbol("operon:parameter");
 
-//     return dt;
-//   }
+function getParamMetadata(target: object, propertyKey: string | symbol): OperonParamMetadata[] {
+  let params = Reflect.getOwnMetadata(operonParameterMetadataKey, target, propertyKey) as OperonParamMetadata[] | undefined;
+  if (!params) {
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    const designParamTypes = Reflect.getMetadata("design:paramtypes", target, propertyKey) as Function[];
+    params = designParamTypes.map(makeParamMetadata);
+    Reflect.defineMetadata(operonParameterMetadataKey, params, target, propertyKey);
+  }
+  return params;
+}
 
-//   formatAsString(): string {
-//     let rv: string = this.dataType;
-//     if (this.dataType === "varchar" && this.length > 0) {
-//       rv += `(${this.length})`;
-//     }
-//     if (this.dataType === "decimal" && this.precision > 0) {
-//       if (this.scale > 0) {
-//         rv += `(${this.precision},${this.scale})`;
-//       } else {
-//         rv += `(${this.precision})`;
-//       }
-//     }
-//     return rv;
-//   }
-// }
+interface OperonMethodMetadata<This, Args extends unknown[], Return> {
+  readonly name: string;
+  readonly paramNames: string[];
+  readonly origFunction: (this: This, ...args: Args) => Promise<Return>;
+  requiredRole?: string[];
+  traceLevel?: TraceLevels;
+}
 
-// const operonParamMetadataKey = Symbol("operon:parameter");
-// const operonMethodMetadataKey = Symbol("operon:method");
+const operonMethodMetadataKey = Symbol("operon:method");
+
+function getMethodMetadata<This, Args extends unknown[], Return>(
+  target: object, 
+  propertyKey: string | symbol, 
+  func: (this: This, ...args: Args) => Promise<Return>
+): OperonMethodMetadata<This, Args, Return> {
+  let md = Reflect.getOwnMetadata(operonMethodMetadataKey, target, propertyKey) as OperonMethodMetadata<This, Args, Return> | undefined;
+  if (!md) {
+    md = {
+      name: propertyKey.toString(),
+      paramNames: getParamNames(func),
+      origFunction: func,
+    };
+    Reflect.defineMetadata(operonMethodMetadataKey, md, target, propertyKey);
+  }
+  return md;
+}
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
@@ -105,7 +115,7 @@ import { OperonDataValidationError } from "./error";
  **/
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function getArgNames(func: Function): string[] {
+export function getParamNames(func: Function): string[] {
   let fn = func.toString();
   fn = fn.replace(/\s/g, "");
   fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
@@ -174,6 +184,7 @@ export enum LogMasks {
 //     this.dataType = OperonDataType.fromArg(at);
 //   }
 // }
+
 
 // export interface OperonMethodRegistrationBase {
 //   name: string;
@@ -395,39 +406,89 @@ export enum LogMasks {
 //   curParam.required = true;
 // }
 
+
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
   LogMask(LogMasks.SKIP)(target, propertyKey, parameterIndex);
 }
 
-
 export function LogMask(mask: LogMasks) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = Reflect.getOwnMetadata("operon:log-mask", target, propertyKey) as Array<LogMasks> ?? [];
-    params[parameterIndex] = mask;
+    const params = getParamMetadata(target, propertyKey);
+    params[parameterIndex].logMask = mask;
   };
 }
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = Reflect.getOwnMetadata("operon:arg-names", target, propertyKey) as Array<string> ?? [];
-    params[parameterIndex] = name;
+    const params = getParamMetadata(target, propertyKey);
+    params[parameterIndex].name = name;
   };
 }
 
-export function ArgDate() { // TODO a little more info about it
+export function ArgInteger() {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = Reflect.getOwnMetadata("operon:arg-types", target, propertyKey) as Array<string> ?? [];
-    params[parameterIndex] = "timestamp";
+    const params = getParamMetadata(target, propertyKey);
+    const param = params[parameterIndex];
+    if (param.type !== Number) throw new Error(`Invalid Integer Typescript Type ${param.type}`);
+    params[parameterIndex].dataType.fieldType = "integer";
   };
 }
+
+export function ArgDecimal(precision: number, scale: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const params = getParamMetadata(target, propertyKey);
+    const param = params[parameterIndex];
+    if (param.type !== Number) throw new Error(`Invalid Decimal Typescript Type ${param.type}`);
+    param.dataType.fieldType = "decimal";
+    param.dataType.precision = precision;
+    param.dataType.scale = scale;
+  };
+}
+
+export function ArgVarChar(length: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const params = getParamMetadata(target, propertyKey);
+    const param = params[parameterIndex];
+    // TODO: Should we automatically use toString on non-string types?
+    if (param.type !== String) throw new Error(`Invalid VarChar Typescript Type ${param.type}`);
+    param.dataType.fieldType = "varchar";
+    param.dataType.length = length;
+  };
+}
+
+function createDecoratorWrapper<This, Args extends unknown[], Return>(
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  mdUpdate: (md: OperonMethodMetadata<This, Args, Return>) => void
+) {
+  const md = getMethodMetadata<This, Args, Return>(target, propertyKey, descriptor.value! as any)
+  mdUpdate(md);
+
+  return async function (this: This, ...args: Args) {
+    // TODO valiadate md.requiredRole
+    // TODO validate args
+    // TODO trace
+
+    try {
+      return md.origFunction.call(this, ...args);
+    } catch (error) {
+      // TODO: log error
+      throw error;
+    }
+  }
+}
+
 
 export function RequiredRole(anyOf: string[]) {
   return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+    descriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
-    Reflect.defineMetadata("operon:required-role", anyOf, target, propertyKey);
+    createDecoratorWrapper(target, propertyKey, descriptor, (md) => {
+      md.requiredRole = anyOf;
+    })
   }
 }
 
@@ -435,9 +496,11 @@ export function TraceLevel(level: TraceLevels = TraceLevels.INFO) {
   return function <This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    _inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
   {
-    Reflect.defineMetadata("operon:trace-level", level, target, propertyKey);
+    createDecoratorWrapper(target, propertyKey, descriptor, (md) => {
+      md.traceLevel = level;
+    })
   }
 }
 
@@ -445,9 +508,7 @@ export function Traced<This, Args extends unknown[], Return>(target: object, pro
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
-
 const operonConfigMetadataKey = Symbol("operon:config");
-
 
 export type OperonConfigKind = "workflow" | "transaction" | "communicator";
 
@@ -470,7 +531,7 @@ export function OperonWorkflow(config: WorkflowConfig={}) {
   return function <This, Args extends unknown[], Return>(
     target: { name: string },
     propertyKey: string,
-    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
+    _descriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
   {
     defineConfigMetadata(target, propertyKey, { kind: "workflow", config});
   }
@@ -480,7 +541,7 @@ export function OperonTransaction(config: TransactionConfig={}) {
   return function <This, Args extends unknown[], Return>(
     target: { name: string },
     propertyKey: string,
-    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
+    _descriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
   {
     defineConfigMetadata(target, propertyKey, { kind: "transaction", config});
   }
@@ -490,7 +551,7 @@ export function OperonCommunicator(config: CommunicatorConfig={}) {
   return function <This, Args extends unknown[], Return>(
     target: { name: string },
     propertyKey: string,
-    _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
+    _descriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
   {
     defineConfigMetadata(target, propertyKey, { kind: "communicator", config});
   }

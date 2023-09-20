@@ -7,7 +7,7 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
-import { getArgNames, getOperonConfig } from 'src/decorators';
+import { getParamNames, getOperonConfig } from 'src/decorators';
 
 export interface ResponseError extends Error {
   status?: number;
@@ -94,7 +94,7 @@ export class OperonHttpServer {
           throw new Error(`unexpected Operon config kind ${configKind} on ${target.name}.${propertyKey}`);
       }
 
-      const paramNames = getArgNames(propDescValue);
+      const paramNames = getParamNames(propDescValue);
       const argSources = Reflect.getOwnMetadata("operon:http-arg-source", target, propertyKey) as ArgSources[] | undefined ?? [];
 
       const handler = async (koaCtxt: Koa.Context, next: Koa.Next) => {
