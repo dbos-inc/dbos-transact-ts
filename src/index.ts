@@ -63,6 +63,8 @@ export {
   APITypes,
   GetApi,
   PostApi,
+
+  HandlerContext
 } from "./httpServer/handler";
 
 export {
