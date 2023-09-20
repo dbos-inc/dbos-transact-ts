@@ -124,7 +124,7 @@ export class OperonJaegerExporterError extends OperonError {
   }
 }
 
-export const DataValidationError = 9;
+const DataValidationError = 9;
 export class OperonDataValidationError extends OperonError {
   constructor(msg: string) {
     super(msg, DataValidationError);
