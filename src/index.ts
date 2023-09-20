@@ -31,6 +31,7 @@ export {
   OperonInitializationError,
   OperonWorkflowPermissionDeniedError,
   OperonDataValidationError,
+  OperonResponseError,
 } from './error';
 
 export {
@@ -67,7 +68,7 @@ export {
 
   OperonHandlerRegistrationBase,
   OperonHandlerParameter,
-  HandlerContext
+  HandlerContext,
 } from "./httpServer/handler";
 
 export {

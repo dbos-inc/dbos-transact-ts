@@ -4,6 +4,7 @@ import {
   GetApi,
   Operon,
   OperonConfig,
+  OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
   PostApi,
@@ -93,7 +94,7 @@ describe("httpserver-tests", () => {
     const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "alice" });
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe('23505');  // Should be the expected error.
   });
 
@@ -101,6 +102,24 @@ describe("httpserver-tests", () => {
     const response = await request(httpServer.app.callback()).get("/handler/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
+  });
+
+  test("response-error", async () => {
+    const response = await request(httpServer.app.callback()).get("/operon-error");
+    expect(response.statusCode).toBe(503);
+    expect(response.body.message).toBe("customize error");
+  });
+
+  test("datavalidation-error", async () => {
+    const response = await request(httpServer.app.callback()).get("/query");
+    expect(response.statusCode).toBe(400);
+    expect(response.body.details.operonErrorCode).toBe(9);
+  });
+
+  test("operon-redirect", async () => {
+    const response = await request(httpServer.app.callback()).get("/redirect");
+    expect(response.statusCode).toBe(301);
+    expect(response.headers.location).toBe('/redirect-operon');
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -122,6 +141,14 @@ describe("httpserver-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/redirect")
+    static async redirectUrl(_ctx: HandlerContext) {
+      _ctx.koaContext.status = 301;
+      const url = _ctx.request?.url || "bad url"; // Get the raw url from request.
+      _ctx.koaContext.redirect(url + '-operon');
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(_ctx: HandlerContext, name: string) {
       void _ctx;
@@ -133,6 +160,13 @@ describe("httpserver-tests", () => {
     static async testpost(_ctx: HandlerContext, name: string) {
       void _ctx;
       return `hello ${name}`;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/operon-error")
+    static async operonErr(_ctx: HandlerContext) {
+      void _ctx;
+      throw new OperonResponseError("customize error", 503);
     }
 
     @GetApi("/handler/:name")

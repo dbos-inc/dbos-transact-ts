@@ -6,12 +6,8 @@ import { forEachMethod } from "../decorators";
 import { APITypes, ArgSources, OperonHandlerRegistration, HandlerContext } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
-import { OperonDataValidationError } from "../error";
+import { OperonDataValidationError, OperonError, OperonResponseError, isOperonClientError } from "../error";
 import { Operon } from "../operon";
-
-export interface ResponseError extends Error {
-  status?: number;
-}
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -61,8 +57,7 @@ export class OperonHttpServer {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
-          oc.request = koaCtxt.request;
-          oc.response = koaCtxt.response;
+          oc.request = koaCtxt.req;
 
           // Parse the arguments.
           const args: unknown[] = [];
@@ -97,46 +92,38 @@ export class OperonHttpServer {
           });
 
           // Finally, invoke the transaction/workflow/plain function.
-          // Return the function return value with 200, or server error with 500.
           try {
-            let retValue;
+            // For transaction/workflow or handler that hasn't set the body, set the body to the function return value.
             if (ro.txnConfig) {
-              retValue = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
+              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
-              retValue = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
+              koaCtxt.body = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
             } else {
               // Directly invoke the handler code.
-              retValue = await ro.invoke(undefined, [oc, ...args]);
-            }
-            if (koaCtxt.body === undefined) {
-              koaCtxt.body = retValue;
-              koaCtxt.status = 200;
+              const retValue = await ro.invoke(undefined, [oc, ...args]);
+
+              // If the handler already set the response body, we ignore the return value.
+              if (koaCtxt.body === undefined) {
+                koaCtxt.body = retValue;
+              }
             }
           } catch (e) {
             console.log(e); // CB - Guys!  We really need telemetry on by default!
-            if (koaCtxt.body === undefined) { // CB - this is a bad idea
-              if (e instanceof OperonDataValidationError) {
-                const st = 400;
-                koaCtxt.response.status = st;
-                koaCtxt.body = {
-                  status: st,
-                  message: e.message,
-                  details: e,
-                }
+            if (e instanceof Error) {
+              let st = ((e as OperonResponseError)?.statusCode || 500);
+              const operonErrorCode = (e as OperonError)?.operonErrorCode;
+              if (operonErrorCode && isOperonClientError(operonErrorCode)) {
+                st = 400;  // Set to 400: client-side error.
               }
-              else if (e instanceof Error) {
-                const st = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
-                koaCtxt.response.status = st;
-                koaCtxt.body = {
-                  status: st,
-                  message: e.message,
-                  details: e,
-                }
+              koaCtxt.status = st;
+              koaCtxt.body = {
+                status: st,
+                message: e.message,
+                details: e,
               }
-              else {
-                koaCtxt.body = e;
-                koaCtxt.status = 500;
-              }
+            } else {
+              koaCtxt.body = e;
+              koaCtxt.status = 500;
             }
           } finally {
             await koaNext();
