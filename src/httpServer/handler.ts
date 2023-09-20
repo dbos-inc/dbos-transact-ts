@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // TODO: should we support log function in handler?
-import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration } from "../decorators";
+import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase } from "../decorators";
 import { OperonContext } from "../context";
 import { Operon } from "../operon";
 import Koa from "koa";
@@ -21,6 +21,13 @@ export enum ArgSources {
   BODY = "BODY",
   QUERY = "QUERY",
   URL = "URL",
+}
+
+export interface OperonHandlerRegistrationBase extends OperonMethodRegistrationBase
+{
+  apiType: APITypes;
+  apiURL: string;
+  args: OperonHandlerParameter[];
 }
 
 export class OperonHandlerRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistration<This, Args, Return> {

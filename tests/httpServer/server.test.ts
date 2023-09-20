@@ -93,8 +93,8 @@ describe("httpserver-tests", () => {
     const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "alice" });
-    expect(response.statusCode).toBe(500);
-    expect(response.body.code).toBe('23505');  // Should be the expected error.
+    expect(response.statusCode).toBe(400);
+    expect(response.body.details.code).toBe('23505');  // Should be the expected error.
   });
 
   test("endpoint-handler", async () => {
