@@ -15,7 +15,7 @@ export class OperonHttpServer {
   readonly router: Router;
 
   /**
-   * Create an Express app.
+   * Create a Koa app.
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
@@ -103,7 +103,7 @@ export class OperonHttpServer {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
 
-              // If the handler already set the response body, we ignore the return value.
+              // Set the body to the return value unless the body is already set by the handler.
               if (koaCtxt.body === undefined) {
                 koaCtxt.body = retValue;
               }
