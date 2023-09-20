@@ -29,13 +29,20 @@ export interface HttpEnpoint {
   url: string,
 }
 
+const operonHttpEndpointMetadataKey = Symbol("operon:http-endpoint");
+
+export function getHttpEndpoint(target: object, propertyKey: string) {
+  return Reflect.getOwnMetadata(operonHttpEndpointMetadataKey, target, propertyKey) as HttpEnpoint | undefined;
+
+}
+
 export function GetApi(url: string) {
   return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    Reflect.defineMetadata("operon:http-endpoint", { type: APITypes.GET, url}, target, propertyKey);
+    Reflect.defineMetadata(operonHttpEndpointMetadataKey, { type: APITypes.GET, url}, target, propertyKey);
   }
 }
 
@@ -45,7 +52,7 @@ export function PostApi(url: string) {
     propertyKey: string,
     _inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    Reflect.defineMetadata("operon:http-endpoint", { type: APITypes.POST, url}, target, propertyKey);
+    Reflect.defineMetadata(operonHttpEndpointMetadataKey, { type: APITypes.POST, url}, target, propertyKey);
   }
 }
 

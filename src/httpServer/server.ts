@@ -2,12 +2,12 @@ import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
-import { APITypes, ArgSources, HandlerContext, HttpEnpoint } from "./handler";
+import { APITypes, ArgSources, HandlerContext, HttpEnpoint, getHttpEndpoint } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
-import { getArgNames, getOperonContextKind } from 'src/decorators';
+import { getArgNames, getOperonConfig } from 'src/decorators';
 
 export interface ResponseError extends Error {
   status?: number;
@@ -64,35 +64,34 @@ export class OperonHttpServer {
   #registerClass(target: { name: string }) {
     for (const propertyKey of Object.getOwnPropertyNames(target)) {
 
-      const mdEndpoint = Reflect.getOwnMetadata("operon:http-endpoint", target, propertyKey) as HttpEnpoint | undefined;
+      const mdEndpoint = getHttpEndpoint(target, propertyKey);
       if (!mdEndpoint) continue;
 
-      const contextKey = getOperonContextKind(target, propertyKey);
+      const configKind = getOperonConfig(target, propertyKey)?.kind;
       const propDescValue = Object.getOwnPropertyDescriptor(target, propertyKey)?.value as Function | undefined;
       if (!propDescValue) throw new Error(`invalid property descriptor ${target.name}.${propertyKey}`);
 
       let endpointInvoker: (ctx: HandlerContext, args: any[]) => Promise<any>;
-      switch (contextKey) {
-        case 'operon:context:workflow':
+
+      switch (configKind) {
+        case 'workflow':
           endpointInvoker = async (parentCtx: HandlerContext, args: any[]) => {
             return await this.operon.workflow(propDescValue as OperonWorkflow<any, any>, { parentCtx }, ...args).getResult();
           };
           break;
-
-        case 'operon:context:transaction':
+        case 'transaction':
           endpointInvoker = async (parentCtx: HandlerContext, args: any[]) => {
             return await this.operon.transaction(propDescValue as OperonTransaction<any, any>, { parentCtx }, ...args);
           };
           break;
-
         case undefined:
           endpointInvoker = async (parentCtx: HandlerContext, args: any[]) => {
             return await propDescValue.call(undefined, [parentCtx, ...args]);
           };
           break;
-
         default:
-          throw new Error(`unexpected Operon context type ${contextKey} on ${target.name}.${propertyKey}`);
+          // TODO: should we allow communicator methods to be invoked via Http endpoint directly? 
+          throw new Error(`unexpected Operon config kind ${configKind} on ${target.name}.${propertyKey}`);
       }
 
       const paramNames = getArgNames(propDescValue);
