@@ -425,37 +425,6 @@ export function ArgName(name: string) {
   };
 }
 
-export function ArgInteger() {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = getParamMetadata(target, propertyKey);
-    const param = params[parameterIndex];
-    if (param.type !== Number) throw new Error(`Invalid Integer Typescript Type ${param.type}`);
-    params[parameterIndex].dataType.fieldType = "integer";
-  };
-}
-
-export function ArgDecimal(precision: number, scale: number) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = getParamMetadata(target, propertyKey);
-    const param = params[parameterIndex];
-    if (param.type !== Number) throw new Error(`Invalid Decimal Typescript Type ${param.type}`);
-    param.dataType.fieldType = "decimal";
-    param.dataType.precision = precision;
-    param.dataType.scale = scale;
-  };
-}
-
-export function ArgVarChar(length: number) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const params = getParamMetadata(target, propertyKey);
-    const param = params[parameterIndex];
-    // TODO: Should we automatically use toString on non-string types?
-    if (param.type !== String) throw new Error(`Invalid VarChar Typescript Type ${param.type}`);
-    param.dataType.fieldType = "varchar";
-    param.dataType.length = length;
-  };
-}
-
 function createDecoratorWrapper<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
