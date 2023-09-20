@@ -164,7 +164,8 @@ describe("httpserver-tests", () => {
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/operon-error")
-    static async operonErr(_ctx: HandlerContext) {
+    @OperonTransaction()
+    static async operonErr(_ctx: TransactionContext) {
       void _ctx;
       throw new OperonResponseError("customize error", 503);
     }
