@@ -466,6 +466,8 @@ function createDecoratorWrapper<This, Args extends unknown[], Return>(
   mdUpdate(md);
 
   return async function (this: This, ...args: Args) {
+    const mdParams = getParamMetadata(target, propertyKey);
+
     // TODO valiadate md.requiredRole
     // TODO validate args
     // TODO trace
@@ -478,7 +480,6 @@ function createDecoratorWrapper<This, Args extends unknown[], Return>(
     }
   }
 }
-
 
 export function RequiredRole(anyOf: string[]) {
   return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
