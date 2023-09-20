@@ -152,7 +152,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(_ctx: HandlerContext, name: string) {
-      void _ctx;
+      _ctx.log("INFO", `query with name ${name}`);  // Test logging.
       return `hello ${name}`;
     }
 
