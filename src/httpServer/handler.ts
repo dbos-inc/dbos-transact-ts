@@ -17,6 +17,7 @@ export enum APITypes {
   POST = "POST",
 }
 
+// TODO: add option retrieving raw body 
 export enum ArgSources {
   DEFAULT = "DEFAULT",
   BODY = "BODY",
@@ -33,7 +34,6 @@ const operonHttpEndpointMetadataKey = Symbol("operon:http-endpoint");
 
 export function getHttpEndpoint(target: object, propertyKey: string) {
   return Reflect.getOwnMetadata(operonHttpEndpointMetadataKey, target, propertyKey) as HttpEnpoint | undefined;
-
 }
 
 export function GetApi(url: string) {

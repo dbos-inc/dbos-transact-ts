@@ -59,7 +59,7 @@ export class OperonHttpServer {
     });
   }
 
-  // static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
+  // TODO: static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
 
   #registerClass(target: { name: string }) {
     for (const propertyKey of Object.getOwnPropertyNames(target)) {
