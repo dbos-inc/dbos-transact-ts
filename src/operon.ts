@@ -41,7 +41,7 @@ import {
   UserDatabase, TypeORMDataSource, TypeORMDatabase,
 } from './user_database';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { getOperonContextKind } from './decorators';
+import { getOperonConfig } from './decorators';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -157,25 +157,24 @@ export class Operon {
 
     for (const propertyKey of Object.getOwnPropertyNames(target)) {
 
-      const contextKey = getOperonContextKind(target, propertyKey);
-      if (!contextKey) continue;
+      const mdConfig = getOperonConfig(target, propertyKey);
+      if (!mdConfig) continue;
 
-      const context = Reflect.getOwnMetadata(contextKey, target, propertyKey);
       const propDescValue = Object.getOwnPropertyDescriptor(target, propertyKey)?.value;
       if (!propDescValue) throw new Error(`invalid property descriptor ${target.name}.${propertyKey}`);
 
-      switch (contextKey) {
-        case "operon:context:workflow":
-          this.registerWorkflow(propDescValue, context);
+      switch (mdConfig.kind) {
+        case "workflow":
+          this.registerWorkflow(propDescValue, mdConfig.config as WorkflowConfig);
           break;
-        case "operon:context:transaction":
-          this.registerTransaction(propDescValue, context);
+        case "transaction":
+          this.registerTransaction(propDescValue, mdConfig.config as TransactionConfig);
           break;
-        case "operon:context:communicator":
-          this.registerCommunicator(propDescValue, context);
+        case "communicator":
+          this.registerCommunicator(propDescValue, mdConfig.config as CommunicatorConfig);
           break;
         default:
-          throw new Error(`unexpected operon:context metadata ${contextKey}`);
+          throw new Error(`unexpected operon:context metadata ${mdConfig.kind}`);
       }
     }
 

@@ -63,9 +63,6 @@ export {
   APITypes,
   GetApi,
   PostApi,
-
-  OperonHandlerRegistrationBase,
-  OperonHandlerParameter,
 } from "./httpServer/handler";
 
 export {
