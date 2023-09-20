@@ -119,7 +119,7 @@ describe("httpserver-tests", () => {
 
   test("operon-redirect", async () => {
     const response = await request(httpServer.app.callback()).get("/redirect");
-    expect(response.statusCode).toBe(301);
+    expect(response.statusCode).toBe(302);
     expect(response.headers.location).toBe('/redirect-operon');
   });
 
@@ -144,7 +144,6 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/redirect")
     static async redirectUrl(_ctx: HandlerContext) {
-      _ctx.koaContext.status = 301;
       const url = _ctx.request?.url || "bad url"; // Get the raw url from request.
       _ctx.koaContext.redirect(url + '-operon');
     }
