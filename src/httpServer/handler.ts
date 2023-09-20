@@ -29,6 +29,13 @@ export interface HttpEnpoint {
   url: string,
 }
 
+// export interface OperonHandlerRegistrationBase extends OperonMethodRegistrationBase
+// {
+//   apiType: APITypes;
+//   apiURL: string;
+//   args: OperonHandlerParameter[];
+// }
+
 // export class OperonHandlerRegistration<This, Args extends unknown[], Return> extends OperonMethodRegistration<This, Args, Return> {
 //   apiType: APITypes = APITypes.GET;
 //   apiURL: string = "";

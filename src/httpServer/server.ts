@@ -9,25 +9,42 @@ import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
 import { getArgNames, getOperonContextKind } from 'src/decorators';
 
+export interface ResponseError extends Error {
+  status?: number;
+}
+
+export interface OperonHttpServerOptions {
+  classes?: { name: string }[]
+  koa?: Koa;
+  router?: Router;
+}
+
 export class OperonHttpServer {
-  readonly app = new Koa();
-  readonly router = new Router();
+  readonly app: Koa;
+  readonly router: Router;
 
   /**
    * Create an Express app.
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
-  constructor(readonly operon: Operon, ...classes: { name: string }[]) {
-    // Use default middlewares.
-    // TODO: support customized middlewares.
-    this.app.use(bodyParser());
-    this.app.use(cors());
+  constructor(readonly operon: Operon, { classes, koa, router }: OperonHttpServerOptions) {
+    this.router = router ?? new Router();
+
+    if (!koa) {
+      koa = new Koa();
+      koa.use(bodyParser());
+      koa.use(cors());
+    }
+    this.app = koa;
 
     // Register operon endpoints.
-    for (const cls of classes) {
+    for (const cls of classes ?? []) {
       this.#registerClass(cls);
     }
+
+    // Register operon endpoints.
+    // OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
@@ -41,6 +58,8 @@ export class OperonHttpServer {
       console.log(`[Operon Server]: Server is running at http://localhost:${port}`);
     });
   }
+
+  // static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
 
   #registerClass(target: { name: string }) {
     for (const propertyKey of Object.getOwnPropertyNames(target)) {
@@ -79,8 +98,8 @@ export class OperonHttpServer {
       const paramNames = getArgNames(propDescValue);
       const argSources = Reflect.getOwnMetadata("operon:http-arg-source", target, propertyKey) as ArgSources[] | undefined ?? [];
 
-      const handler = async (koaCtx: Koa.Context, next: Koa.Next) => {
-        const handlerCtx = new HandlerContext(this.operon, koaCtx);
+      const handler = async (koaCtxt: Koa.Context, next: Koa.Next) => {
+        const handlerCtx = new HandlerContext(this.operon, koaCtxt);
 
         // TODO: look to see if there's an existing HTTP request parsing library that we can reuse
 
@@ -94,36 +113,54 @@ export class OperonHttpServer {
 
           let arg: unknown;
           if ((mdEndpoint.type === APITypes.GET && src === ArgSources.DEFAULT) || src === ArgSources.QUERY) {
-            arg = koaCtx.request.query[name];
+            arg = koaCtxt.request.query[name];
           } else if ((mdEndpoint.type === APITypes.POST && src === ArgSources.DEFAULT) || src === ArgSources.BODY) {
-            if (!koaCtx.request.body) {
+            if (!koaCtxt.request.body) {
               throw new OperonDataValidationError(`Argument ${name} requires a method body.`);
             }
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-            arg = koaCtx.req.body[name];
+            arg = koaCtxt.req.body[name];
           }
 
           if (arg) {
             args.push(arg);
           } else {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-            args.push(koaCtx.params[name]);
+            args.push(koaCtxt.params[name]);
           }
         });
 
         try {
           const result = await endpointInvoker(handlerCtx, args);
-          if (koaCtx.body === undefined) {
-            koaCtx.body = result;
-            koaCtx.status = 200;
+          if (koaCtxt.body === undefined) {
+            koaCtxt.body = result;
+            koaCtxt.status = 200;
           }
         } catch (e) {
-          if (koaCtx.body === undefined) {
-            if (e instanceof Error) {
-              koaCtx.message = e.message;
+          console.log(e); // CB - Guys!  We really need telemetry on by default!
+          if (koaCtxt.body === undefined) { // CB - this is a bad idea
+            if (e instanceof OperonDataValidationError) {
+              const st = 400;
+              koaCtxt.response.status = st;
+              koaCtxt.body = {
+                status: st,
+                message: e.message,
+                details: e,
+              }
             }
-            koaCtx.body = e;
-            koaCtx.status = 500;
+            else if (e instanceof Error) {
+              const st = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
+              koaCtxt.response.status = st;
+              koaCtxt.body = {
+                status: st,
+                message: e.message,
+                details: e,
+              }
+            }
+            else {
+              koaCtxt.body = e;
+              koaCtxt.status = 500;
+            }
           }
         } finally {
           await next();
