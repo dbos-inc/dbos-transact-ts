@@ -19,6 +19,7 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
+import { CONSOLE_EXPORTER } from "src/telemetry";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -28,7 +29,7 @@ describe("httpserver-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
     await setupOperonTestDb(config);
   });
 

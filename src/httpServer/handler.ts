@@ -4,10 +4,25 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { OperonContext } from "../context";
 import { Operon } from "../operon";
 import Koa from "koa";
+import { WorkflowContext } from "src/workflow";
 
 export class HandlerContext extends OperonContext {
+  readonly operationName: string;  // This is the URL.
+  readonly runAs: string = "HTTPDefaultRole"; // TODO: add auth later.
+
+  // TODO: Need to decide the semantics for those fields.
+  readonly workflowUUID: string = 'N/A';
+  readonly functionID: number = -1;
+
   constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
     super();
+    this.operationName = koaContext.url;
+  }
+
+  log(severity: string, message: string): void {
+    // TODO: need to clean up the logging interface.
+    // `log` expects workflowUUID and other fields to be set so we need to convert.
+    this.operon.logger.log(this as unknown as WorkflowContext, severity, message);
   }
 }
 

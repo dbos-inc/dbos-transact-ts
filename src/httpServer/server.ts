@@ -8,6 +8,7 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError, OperonError, OperonResponseError, isOperonClientError } from "../error";
 import { Operon } from "../operon";
+import { serializeError } from 'serialize-error';
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -108,7 +109,7 @@ export class OperonHttpServer {
               }
             }
           } catch (e) {
-            console.log(e); // CB - Guys!  We really need telemetry on by default!
+            oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
             if (e instanceof Error) {
               let st = ((e as OperonResponseError)?.statusCode || 500);
               const operonErrorCode = (e as OperonError)?.operonErrorCode;
