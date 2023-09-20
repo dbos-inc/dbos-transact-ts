@@ -67,6 +67,7 @@ export {
 
   OperonHandlerRegistrationBase,
   OperonHandlerParameter,
+  HandlerContext
 } from "./httpServer/handler";
 
 export {
