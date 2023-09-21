@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { IncomingMessage } from "http";
 import {
   GetApi,
   Operon,
@@ -24,24 +23,6 @@ import {
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
 import { CONSOLE_EXPORTER } from "src/telemetry";
-
-function getQueryParams(req: IncomingMessage): Record<string, string> {
-  // Ensure there's a URL to parse
-  if (!req.url) {
-      throw new Error("No URL");
-  }
-
-  // Parse the URL
-  const parsedUrl = new URL(req.url, "http://baseurl.biz");
-
-  // Convert the URLSearchParams object to a plain object
-  const queryParams: Record<string, string> = {};
-  for (const [key, value] of parsedUrl.searchParams.entries()) {
-      queryParams[key] = value;
-  }
-
-  return queryParams;
-}
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -73,7 +54,7 @@ describe("httpserver-tests", () => {
                 throw new Error("No request");
               }
 
-              const { userid } = getQueryParams(ctx.request);
+              const { userid } = ctx.koaContext.request.query
               const uid = userid?.toString();
 
               if (!uid || uid.length === 0) {
