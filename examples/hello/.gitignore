@@ -1,0 +1,32 @@
+# Logs
+**/.DS_Store
+logs
+*.log
+npm-debug.log*
+
+# TypeScript build
+dist/
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# node-waf configuration
+.lock-wscript
+
+# Dependency directories
+node_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
