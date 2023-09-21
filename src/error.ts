@@ -51,6 +51,11 @@ function formatPgDatabaseError(err: DatabaseError): string {
   return msg;
 }
 
+// Return if the error is caused by client request or by server internal.
+export function isOperonClientError(operonErrorCode: number) {
+  return (operonErrorCode === DataValidationError) || (operonErrorCode === WorkflowPermissionDeniedError) || (operonErrorCode === TopicPermissionDeniedError) || (operonErrorCode === ConflictingUUIDError) || (operonErrorCode === NotRegisteredError);
+}
+
 export class OperonError extends Error {
   // TODO: define a better coding system.
   constructor(msg: string, readonly operonErrorCode: number = 1) {
@@ -130,5 +135,13 @@ const DuplicateWorkflowEvent = 10;
 export class OperonDuplicateWorkflowEventError extends OperonError {
   constructor(workflowUUID: string, key: string) {
     super(`Workflow ${workflowUUID} has already emitted an event with key ${key}`, DuplicateWorkflowEvent);
+  }
+}
+
+// This error is thrown by applications.
+const ResponseError = 11;
+export class OperonResponseError extends OperonError {
+  constructor(msg: string, readonly status: number = 500) {
+    super(msg, ResponseError);
   }
 }

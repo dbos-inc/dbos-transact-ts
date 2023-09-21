@@ -5,19 +5,16 @@ import cors from "@koa/cors";
 import { APITypes, ArgSources, OperonHandlerRegistration, HandlerContext } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
-import { OperonDataValidationError } from "../error";
+import { OperonDataValidationError, OperonError, OperonResponseError, isOperonClientError } from "../error";
 import { Operon } from "../operon";
-
-export interface ResponseError extends Error {
-  status?: number;
-}
+import { serializeError } from 'serialize-error';
 
 export class OperonHttpServer {
   readonly app: Koa;
   readonly router: Router;
 
   /**
-   * Create an Express app.
+   * Create a Koa app.
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
@@ -61,8 +58,6 @@ export class OperonHttpServer {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
-          oc.request = koaCtxt.request;
-          oc.response = koaCtxt.response;
 
           // Parse the arguments.
           const args: unknown[] = [];
@@ -96,47 +91,43 @@ export class OperonHttpServer {
             }
           });
 
-          // Finally, invoke the transaction/workflow/plain function.
-          // Return the function return value with 200, or server error with 500.
+          // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
+          // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
+          // In case of an exception:
+          // - If an Operon client-side error is thrown, we return 400.
+          // - If an error contains a `status` field, we return the specified status code.
+          // - Otherwise, we return 500.
           try {
-            let retValue;
             if (ro.txnConfig) {
-              retValue = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
+              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
-              retValue = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
+              koaCtxt.body = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
             } else {
               // Directly invoke the handler code.
-              retValue = await ro.invoke(undefined, [oc, ...args]);
-            }
-            if (koaCtxt.body === undefined) {
-              koaCtxt.body = retValue;
-              koaCtxt.status = 200;
+              const retValue = await ro.invoke(undefined, [oc, ...args]);
+
+              // Set the body to the return value unless the body is already set by the handler.
+              if (koaCtxt.body === undefined) {
+                koaCtxt.body = retValue;
+              }
             }
           } catch (e) {
-            console.log(e); // CB - Guys!  We really need telemetry on by default!
-            if (koaCtxt.body === undefined) { // CB - this is a bad idea
-              if (e instanceof OperonDataValidationError) {
-                const st = 400;
-                koaCtxt.response.status = st;
-                koaCtxt.body = {
-                  status: st,
-                  message: e.message,
-                  details: e,
-                }
+            oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
+            if (e instanceof Error) {
+              let st = ((e as OperonResponseError)?.status || 500);
+              const operonErrorCode = (e as OperonError)?.operonErrorCode;
+              if (operonErrorCode && isOperonClientError(operonErrorCode)) {
+                st = 400;  // Set to 400: client-side error.
               }
-              else if (e instanceof Error) {
-                const st = ((e as ResponseError)?.status || 400); // CB - I disagree that this is a 500 - a 500 means go fix the server, 400 means go fix your request
-                koaCtxt.response.status = st;
-                koaCtxt.body = {
-                  status: st,
-                  message: e.message,
-                  details: e,
-                }
+              koaCtxt.status = st;
+              koaCtxt.body = {
+                status: st,
+                message: e.message,
+                details: e,
               }
-              else {
-                koaCtxt.body = e;
-                koaCtxt.status = 500;
-              }
+            } else {
+              koaCtxt.body = e;
+              koaCtxt.status = 500;
             }
           } finally {
             await koaNext();
