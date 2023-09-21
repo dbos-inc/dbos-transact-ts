@@ -186,9 +186,7 @@ export class Operon {
   #registerClass(cls: object) {
     const registeredOps = getRegisteredOperations(cls);
     this._registeredOperations.push(...registeredOps);
-
     console.log(`Registering ...`)
-
     for (const ro of registeredOps) {
       console.log(`Registering ${ro.name} ${ro.args[0].argType.name}`)
       for (const arg of ro.args) {

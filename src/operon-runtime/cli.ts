@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { startServer } from "./runtime";
+import { OperonRuntime } from "./runtime";
 import { Command } from 'commander';
 
 const program = new Command();
@@ -12,7 +12,8 @@ program
   .action(async (options: { port: string }) => {
     const port = parseInt(options.port);
     console.log(`Starting server on port: ${port}`);
-    await startServer(port);
+    const runtime = new OperonRuntime();
+    await runtime.startServer(port);
   });
 
 program.parse(process.argv);
