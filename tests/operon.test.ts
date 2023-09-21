@@ -6,8 +6,6 @@ import {
   CommunicatorContext,
   WorkflowParams,
   WorkflowHandle,
-  OperonCommunicator,
-  OperonWorkflow,
 } from "src/";
 import {
   generateOperonTestConfig,
