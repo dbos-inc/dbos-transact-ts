@@ -31,6 +31,7 @@ export {
   OperonInitializationError,
   OperonWorkflowPermissionDeniedError,
   OperonDataValidationError,
+  OperonNotAuthorizedError,
   OperonResponseError,
 } from './error';
 

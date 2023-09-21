@@ -3,12 +3,38 @@ import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
 import { forEachMethod } from "../decorators";
-import { APITypes, ArgSources, OperonHandlerRegistration, HandlerContext } from "./handler";
+import {
+  APITypes,
+  ArgSources,
+  HandlerContext,
+  OperonHandlerRegistration,
+  OperonHandlerRegistrationBase,
+} from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
-import { OperonDataValidationError, OperonError, OperonResponseError, isOperonClientError } from "../error";
+import {
+  OperonDataValidationError,
+  OperonError,
+  OperonNotAuthorizedError,
+  OperonResponseError,
+  isOperonClientError,
+} from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
+
+/**
+ * Authentication middleware
+ * This is expected to:
+ *   Validate the request found in the context ctx
+ *   Set the current user and roles into the ctx
+ * If this succeeds, return true
+ * If this fails in a usual way, return false
+ * If this fails in an unusual way, throw an error
+ */
+export interface OperonHttpAuthMiddleware
+{
+  authenticate(handler: OperonHandlerRegistrationBase, ctx:HandlerContext): Promise<boolean>;
+}
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -19,19 +45,24 @@ export class OperonHttpServer {
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
-  constructor(readonly operon: Operon, koa ?: Koa, router ?: Router) {
-    if (!router) {
-      router = new Router();
+  constructor(readonly operon: Operon, config : {
+    authMiddleware ?: OperonHttpAuthMiddleware,
+    koa ?: Koa,
+    router ?: Router,
+  } = {})
+  {
+    if (!config.router) {
+      config.router = new Router();
     }
-    this.router = router;
+    this.router = config.router;
 
-    if (!koa) {
-      koa = new Koa();
+    if (!config.koa) {
+      config.koa = new Koa();
 
-      koa.use(bodyParser());
-      koa.use(cors());
+      config.koa.use(bodyParser());
+      config.koa.use(cors());
     }
-    this.app = koa;
+    this.app = config.koa;
 
     // Register operon endpoints.
     OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
@@ -49,7 +80,9 @@ export class OperonHttpServer {
     });
   }
 
-  static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
+  static registerDecoratedEndpoints(operon : Operon, irouter : unknown,
+    middlewares ?: {auth ?: OperonHttpAuthMiddleware})
+  {
     const router = irouter as Router;
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     forEachMethod((registeredOperation) => {
@@ -58,6 +91,35 @@ export class OperonHttpServer {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
+
+          // Check for auth first
+          if (middlewares && middlewares.auth) {
+            try {
+              const res = await middlewares.auth.authenticate(ro, oc);
+              if (!res) {
+                throw new OperonNotAuthorizedError("Unauthorized", 401);
+              }
+            }
+            catch (e) {
+              // TODO: This escaping gobbledygook ought to be centralized not C+P
+              oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
+
+              if (e instanceof Error) {
+                const st = ((e as OperonResponseError)?.status || 500);
+                koaCtxt.status = st;
+                koaCtxt.body = {
+                  status: st,
+                  message: e.message,
+                  details: e,
+                }
+              } else {
+                koaCtxt.body = e;
+                koaCtxt.status = 500;
+              }
+              await koaNext();
+              return;
+            }
+          }
 
           // Parse the arguments.
           const args: unknown[] = [];
