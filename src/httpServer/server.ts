@@ -91,9 +91,13 @@ export class OperonHttpServer {
             }
           });
 
-          // Finally, invoke the transaction/workflow/plain function.
+          // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
+          // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
+          // In case of an exception:
+          // - If an Operon client-side error is thrown, we return 400.
+          // - If an error contains a `status` field, we return the specified status code.
+          // - Otherwise, we return 500.
           try {
-            // For transaction/workflow or handler that hasn't set the body, set the body to the function return value.
             if (ro.txnConfig) {
               koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
