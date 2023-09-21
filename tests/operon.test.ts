@@ -290,7 +290,9 @@ describe("operon-tests", () => {
       }
     }
 
-    operon.registerClass(TestClass);    
+    operon = new Operon(config);
+    operon.useNodePostgres();
+    await operon.init(TestClass);
 
     const workflowUUID: string = uuidv1();
 

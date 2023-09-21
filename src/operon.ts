@@ -179,7 +179,7 @@ export class Operon {
     return;
   }
 
-  registerClass(cls: object) {
+  #registerClass(cls: object) {
     const registeredOps = getRegisteredOperations(cls);
     this._registeredOperations.push(...registeredOps);
 
@@ -214,7 +214,7 @@ export class Operon {
       await this.userDatabase.init();
 
       for (const cls of classes) {
-        this.registerClass(cls);
+        this.#registerClass(cls);
       }
 
       await this.telemetryCollector.init(this.registeredOperations);
