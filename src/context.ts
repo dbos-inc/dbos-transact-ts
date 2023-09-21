@@ -1,8 +1,8 @@
 //import { Span } from "@opentelemetry/sdk-trace-base";
+import { IncomingMessage } from 'http';
 
 export class OperonContext {
-  request: unknown;
-  response: unknown;
+  request?: IncomingMessage;  // Raw incoming HTTP request.
 
   authUser: string = '';
   authRole: string = ''; // Role in use
@@ -19,7 +19,6 @@ export class OperonContext {
 
   copyBaseFields(other: OperonContext) {
     this.request = other.request;
-    this.response = other.response;
     this.authRoles = other.authRoles;
     this.authRole = other.authRole;
     this.authUser = other.authUser;

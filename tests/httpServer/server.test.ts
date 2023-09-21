@@ -4,6 +4,7 @@ import {
   GetApi,
   Operon,
   OperonConfig,
+  OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
   PostApi,
@@ -18,6 +19,7 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
+import { CONSOLE_EXPORTER } from "src/telemetry";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -27,7 +29,7 @@ describe("httpserver-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
     await setupOperonTestDb(config);
   });
 
@@ -93,7 +95,7 @@ describe("httpserver-tests", () => {
     const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "alice" });
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe('23505');  // Should be the expected error.
   });
 
@@ -103,36 +105,66 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
+  test("response-error", async () => {
+    const response = await request(httpServer.app.callback()).get("/operon-error");
+    expect(response.statusCode).toBe(503);
+    expect(response.body.message).toBe("customize error");
+  });
+
+  test("datavalidation-error", async () => {
+    const response = await request(httpServer.app.callback()).get("/query");
+    expect(response.statusCode).toBe(400);
+    expect(response.body.details.operonErrorCode).toBe(9);
+  });
+
+  test("operon-redirect", async () => {
+    const response = await request(httpServer.app.callback()).get("/redirect");
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/redirect-operon');
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpoints {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      void _ctx;
       return { message: "hello!" };
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello/:id")
-    static async helloUrl(_ctx: HandlerContext, id: string) {
+    static async helloUrl(ctx: HandlerContext, id: string) {
       // Customize status code and response.
-      _ctx.koaContext.body = `wow ${id}`;
-      _ctx.koaContext.status = 301;
+      ctx.koaContext.body = `wow ${id}`;
+      ctx.koaContext.status = 301;
       return `hello ${id}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/redirect")
+    static async redirectUrl(ctx: HandlerContext) {
+      const url = ctx.request?.url || "bad url"; // Get the raw url from request.
+      ctx.koaContext.redirect(url + '-operon');
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
-    static async helloQuery(_ctx: HandlerContext, name: string) {
-      void _ctx;
+    static async helloQuery(ctx: HandlerContext, name: string) {
+      ctx.log("INFO", `query with name ${name}`);  // Test logging.
       return `hello ${name}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/testpost")
     static async testpost(_ctx: HandlerContext, name: string) {
-      void _ctx;
       return `hello ${name}`;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/operon-error")
+    @OperonTransaction()
+    static async operonErr(_ctx: TransactionContext) {
+      throw new OperonResponseError("customize error", 503);
     }
 
     @GetApi("/handler/:name")
