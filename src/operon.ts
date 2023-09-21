@@ -37,8 +37,12 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import {
-  PGNodeUserDatabase, PrismaClient, PrismaUserDatabase,
-  UserDatabase, TypeORMDataSource, TypeORMDatabase,
+  PGNodeUserDatabase,
+  PrismaClient,
+  PrismaUserDatabase,
+  UserDatabase,
+  TypeORMDataSource,
+  TypeORMDatabase,
 } from './user_database';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
@@ -108,7 +112,7 @@ export class Operon {
   private readonly _registeredOperations: Array<OperonMethodRegistrationBase> = [];
   get registeredOperations(): ReadonlyArray<OperonMethodRegistrationBase> {
     return this._registeredOperations;
-  } 
+  }
 
   readonly initialEpochTimeMs: number;
 
