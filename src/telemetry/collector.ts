@@ -1,3 +1,4 @@
+import { OperonMethodRegistrationBase } from "src";
 import { ITelemetryExporter } from "./exporters";
 import { OperonSignal } from "./signals";
 
@@ -32,10 +33,10 @@ export class TelemetryCollector {
     }, this.processAndExportSignalsIntervalMs);
   }
 
-  async init() {
+  async init(registeredOperations: ReadonlyArray<OperonMethodRegistrationBase> = []) {
     for (const exporter of this.exporters) {
       if (exporter.init) {
-        await exporter.init();
+        await exporter.init(registeredOperations);
       }
     }
   }

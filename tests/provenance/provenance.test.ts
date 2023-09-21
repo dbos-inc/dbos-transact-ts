@@ -20,8 +20,7 @@ describe("operon-provenance", () => {
   beforeEach(async () => {
     operon = new Operon(config);
     operon.useNodePostgres();
-    operon.registerDecoratedWT();
-    await operon.init();
+    await operon.init(TestFunctions);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`

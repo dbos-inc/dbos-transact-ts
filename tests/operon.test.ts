@@ -290,7 +290,7 @@ describe("operon-tests", () => {
       }
     }
 
-    operon.registerDecoratedWT();
+    operon.registerClass(TestClass);    
 
     const workflowUUID: string = uuidv1();
 
