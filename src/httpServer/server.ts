@@ -65,7 +65,9 @@ export class OperonHttpServer {
     this.app = config.koa;
 
     // Register operon endpoints.
-    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
+    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router, {
+      auth : config.authMiddleware,
+    });
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
