@@ -141,7 +141,7 @@ export class OperonDuplicateWorkflowEventError extends OperonError {
 // This error is thrown by applications.
 const ResponseError = 11;
 export class OperonResponseError extends OperonError {
-  constructor(msg: string, readonly statusCode: number) {
+  constructor(msg: string, readonly status: number = 500) {
     super(msg, ResponseError);
   }
 }

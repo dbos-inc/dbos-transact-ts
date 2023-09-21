@@ -17,6 +17,7 @@ export class HandlerContext extends OperonContext {
   constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
     super();
     this.operationName = koaContext.url;
+    this.request = koaContext.req;
   }
 
   log(severity: string, message: string): void {

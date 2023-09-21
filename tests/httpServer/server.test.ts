@@ -128,37 +128,35 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      void _ctx;
       return { message: "hello!" };
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello/:id")
-    static async helloUrl(_ctx: HandlerContext, id: string) {
+    static async helloUrl(ctx: HandlerContext, id: string) {
       // Customize status code and response.
-      _ctx.koaContext.body = `wow ${id}`;
-      _ctx.koaContext.status = 301;
+      ctx.koaContext.body = `wow ${id}`;
+      ctx.koaContext.status = 301;
       return `hello ${id}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/redirect")
-    static async redirectUrl(_ctx: HandlerContext) {
-      const url = _ctx.request?.url || "bad url"; // Get the raw url from request.
-      _ctx.koaContext.redirect(url + '-operon');
+    static async redirectUrl(ctx: HandlerContext) {
+      const url = ctx.request?.url || "bad url"; // Get the raw url from request.
+      ctx.koaContext.redirect(url + '-operon');
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
-    static async helloQuery(_ctx: HandlerContext, name: string) {
-      _ctx.log("INFO", `query with name ${name}`);  // Test logging.
+    static async helloQuery(ctx: HandlerContext, name: string) {
+      ctx.log("INFO", `query with name ${name}`);  // Test logging.
       return `hello ${name}`;
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/testpost")
     static async testpost(_ctx: HandlerContext, name: string) {
-      void _ctx;
       return `hello ${name}`;
     }
 
@@ -166,7 +164,6 @@ describe("httpserver-tests", () => {
     @GetApi("/operon-error")
     @OperonTransaction()
     static async operonErr(_ctx: TransactionContext) {
-      void _ctx;
       throw new OperonResponseError("customize error", 503);
     }
 

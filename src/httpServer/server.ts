@@ -58,7 +58,6 @@ export class OperonHttpServer {
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
-          oc.request = koaCtxt.req;
 
           // Parse the arguments.
           const args: unknown[] = [];
@@ -111,7 +110,7 @@ export class OperonHttpServer {
           } catch (e) {
             oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
             if (e instanceof Error) {
-              let st = ((e as OperonResponseError)?.statusCode || 500);
+              let st = ((e as OperonResponseError)?.status || 500);
               const operonErrorCode = (e as OperonError)?.operonErrorCode;
               if (operonErrorCode && isOperonClientError(operonErrorCode)) {
                 st = 400;  // Set to 400: client-side error.
