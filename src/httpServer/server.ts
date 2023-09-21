@@ -7,7 +7,6 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
 import { OperonDataValidationError } from "../error";
 import { Operon } from "../operon";
-import { OperonMethodRegistrationBase } from 'src/decorators';
 
 export interface ResponseError extends Error {
   status?: number;
