@@ -335,8 +335,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = '';
-      sLogRec.authorizedRole = '';
+      sLogRec.authorizedUser = opCtx?.authUser || '';
+      sLogRec.authorizedRole = opCtx?.authRole || '';
       sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;
@@ -347,9 +347,6 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
-          const ctx = v as OperonContext;
-          sLogRec.authorizedUser = ctx.authUser;
-          sLogRec.authorizedRole = ctx.authRole;
           isCtx = true;
         }
 
