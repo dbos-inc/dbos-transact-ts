@@ -44,8 +44,8 @@ import {
   TypeORMDataSource,
   TypeORMDatabase,
 } from './user_database';
-import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
