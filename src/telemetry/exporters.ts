@@ -1,6 +1,6 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
-import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
+import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
 import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -11,7 +11,7 @@ import { spanToString } from "./traces";
 export interface ITelemetryExporter<T, U> {
   export(signal: OperonSignal[]): Promise<T>;
   process?(signal: OperonSignal[]): U;
-  init?(): Promise<void>;
+  init?(registeredOperations?: ReadonlyArray<OperonMethodRegistrationBase>): Promise<void>;
   destroy?(): Promise<void>;
 }
 
@@ -76,7 +76,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return t.formatAsString();
   }
 
-  async init() {
+  async init(registeredOperations: ReadonlyArray<OperonMethodRegistrationBase> = []) {
     const pgSystemClient: Client = new Client(this.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
@@ -91,10 +91,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    const registeredOperations: OperonMethodRegistrationBase[] = [];
-    forEachMethod((o) => {
-      registeredOperations.push(o);
-    });
     for (const registeredOperation of registeredOperations) {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (

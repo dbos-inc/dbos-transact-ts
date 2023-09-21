@@ -2,7 +2,6 @@ import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
-import { forEachMethod } from "../decorators";
 import { APITypes, ArgSources, OperonHandlerRegistration, HandlerContext } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
@@ -51,8 +50,9 @@ export class OperonHttpServer {
 
   static registerDecoratedEndpoints(operon : Operon, irouter : unknown) {
     const router = irouter as Router;
+
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
-    forEachMethod((registeredOperation) => {
+    operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Wrapper function that parses request and send response.
