@@ -1,49 +1,72 @@
-import { CommunicatorContext, Operon, OperonCommunicator, OperonWorkflow, WorkflowContext } from "src";
+import { CommunicatorContext, Operon, OperonCommunicator, OperonConfig, OperonWorkflow, WorkflowContext } from "src";
 import { CONSOLE_EXPORTER } from "src/telemetry";
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 
+class TestClass {
+  static #counter = 0;
+  static get counter() { return TestClass.#counter; }
+  @OperonCommunicator()
+  static async testCommunicator(commCtxt: CommunicatorContext) {
+    void commCtxt;
+    await sleep(1);
+    return TestClass.#counter++;
+  }
+
+  @OperonWorkflow()
+  static async testWorkflow(workflowCtxt: WorkflowContext) {
+    const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
+    return funcResult ?? -1;
+  }
+}
+
 describe("decorator-tests", () => {
 
-    test("simple-communicator-decorator", async () => {
-        let counter = 0;
-        class TestClass {
-            @OperonCommunicator()
-            static async testCommunicator(commCtxt: CommunicatorContext) {
-                void commCtxt;
-                await sleep(1);
-                return counter++;
-            }
+  const testTableName = "operon_test_kv";
 
-            @OperonWorkflow()
-            static async testWorkflow(workflowCtxt: WorkflowContext) {
-                const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
-                return funcResult ?? -1;
-            }
-        }
+  let operon: Operon;
+  let username: string;
+  let config: OperonConfig;
 
-        const config = generateOperonTestConfig([CONSOLE_EXPORTER]);
-        await setupOperonTestDb(config);
-    
-        const operon = new Operon(config);
-        operon.useNodePostgres();
-        await operon.init(TestClass);
+  beforeAll(async () => {
+    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    username = config.poolConfig.user || "postgres";
+    await setupOperonTestDb(config);
+  })
 
-        const workflowUUID: string = uuidv1();
 
-        let result: number = await operon
-            .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
-            .getResult();
-        expect(result).toBe(0);
+  beforeEach(async () => {
+    operon = new Operon(config);
+    operon.useNodePostgres();
+    await operon.init(TestClass);
+    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await operon.userDatabase.query(
+      `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
+    );
+  });
 
-        // Test OAOO. Should return the original result.
-        result = await operon
-            .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
-            .getResult();
-        expect(result).toBe(0);
+  afterEach(async () => {
+    await operon.destroy();
+  });
 
-        await operon.destroy();
-    })
+  test("simple-communicator-decorator", async () => {
+
+    const workflowUUID: string = uuidv1();
+    const initialCounter = TestClass.counter;
+
+    let result: number = await operon
+      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
+      .getResult();
+    expect(result).toBe(initialCounter);
+    expect(TestClass.counter).toBe(initialCounter + 1);
+
+    // Test OAOO. Should return the original result.
+    result = await operon
+      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
+      .getResult();
+    expect(result).toBe(initialCounter);
+    expect(TestClass.counter).toBe(initialCounter + 1);
+  })
 
 });
