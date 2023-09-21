@@ -39,7 +39,7 @@ describe("failures-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("operon-error", async () => {

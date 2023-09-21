@@ -75,14 +75,16 @@ describe("operon-telemetry", () => {
       CONSOLE_EXPORTER,
       POSTGRES_EXPORTER,
     ]);
+    // TODO: Move to using await when ts-jest is updated to support TS 5.2
     const operon = new Operon(operonConfig);
     operon.useNodePostgres();
     await operon.init();
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("collector handles errors gracefully", async () => {
     const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+    // TODO: Move to using await when ts-jest is updated to support TS 5.2
     const operon = new Operon(operonConfig);
     operon.useNodePostgres();
     await operon.init(TestClass);
@@ -99,7 +101,7 @@ describe("operon-telemetry", () => {
       operon.telemetryCollector.processAndExportSignals()
     ).resolves.not.toThrow();
 
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   describe("Console exporter", () => {
@@ -113,8 +115,8 @@ describe("operon-telemetry", () => {
     });
 
     afterEach(async () => {
-      await collector.destroy();
-      await operon.destroy();
+      await collector[Symbol.asyncDispose]();
+      await operon[Symbol.asyncDispose]();
     });
 
     test("console.log is called with the correct messages", async () => {
@@ -166,7 +168,7 @@ describe("operon-telemetry", () => {
     });
 
     afterAll(async () => {
-      await operon.destroy();
+      await operon[Symbol.asyncDispose]();
       // This attempts to clear all our DBs, including the observability one
       await setupOperonTestDb(operonConfig);
     });

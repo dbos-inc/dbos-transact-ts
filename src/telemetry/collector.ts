@@ -19,7 +19,7 @@ class SignalsQueue {
 }
 
 // TODO: Handle temporary workflows properly.
-export class TelemetryCollector {
+export class TelemetryCollector implements AsyncDisposable {
   // Signals buffer management
   private readonly signals: SignalsQueue = new SignalsQueue();
   private readonly signalBufferID: NodeJS.Timeout;
@@ -41,13 +41,11 @@ export class TelemetryCollector {
     }
   }
 
-  async destroy() {
+  async [Symbol.asyncDispose]() {
     clearInterval(this.signalBufferID);
     await this.processAndExportSignals();
     for (const exporter of this.exporters) {
-      if (exporter.destroy) {
-        await exporter.destroy();
-      }
+      await exporter[Symbol.asyncDispose]();
     }
   }
 

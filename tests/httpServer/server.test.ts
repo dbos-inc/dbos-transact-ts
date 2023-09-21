@@ -48,7 +48,7 @@ describe("httpserver-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("get-hello", async () => {

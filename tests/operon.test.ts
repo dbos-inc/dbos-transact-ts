@@ -41,7 +41,7 @@ describe("operon-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("simple-function", async () => {

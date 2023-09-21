@@ -72,7 +72,7 @@ describe("typeorm-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("simple-typeorm", async () => {
