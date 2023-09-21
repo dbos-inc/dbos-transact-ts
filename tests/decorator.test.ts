@@ -1,8 +1,10 @@
-import { CommunicatorContext, Operon, OperonCommunicator, OperonConfig, OperonWorkflow, WorkflowContext } from "src";
+import { CommunicatorContext, Operon, OperonCommunicator, OperonConfig, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "src";
 import { CONSOLE_EXPORTER } from "src/telemetry";
 import { sleep } from "src/utils";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
+
+const testTableName = "operon_test_kv";
 
 class TestClass {
   static #counter = 0;
@@ -15,15 +17,49 @@ class TestClass {
   }
 
   @OperonWorkflow()
-  static async testWorkflow(workflowCtxt: WorkflowContext) {
+  static async testCommWorkflow(workflowCtxt: WorkflowContext) {
     const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
     return funcResult ?? -1;
+  }
+
+  @OperonTransaction()
+  static async testInsertTx(txnCtxt: TransactionContext, name: string) {
+    const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
+      [name]
+    );
+    return Number(rows[0].id);
+  }
+
+  @OperonTransaction({readOnly: true})
+  static async testReadTx(txnCtxt: TransactionContext,id: number) {
+    const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      `SELECT id FROM ${testTableName} WHERE id=$1`,
+      [id]
+    );
+    if (rows.length > 0) {
+      return Number(rows[0].id);
+    } else {
+      // Cannot find, return a negative number.
+      return -1;
+    }
+  }
+
+  @OperonWorkflow()
+  static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
+    const funcResult: number = await wfCtxt.transaction(
+      TestClass.testInsertTx,
+      name
+    );
+    const checkResult: number = await wfCtxt.transaction(
+      TestClass.testReadTx,
+      funcResult
+    );
+    return checkResult;
   }
 }
 
 describe("decorator-tests", () => {
-
-  const testTableName = "operon_test_kv";
 
   let operon: Operon;
   let username: string;
@@ -56,17 +92,39 @@ describe("decorator-tests", () => {
     const initialCounter = TestClass.counter;
 
     let result: number = await operon
-      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
+      .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
       .getResult();
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
 
     // Test OAOO. Should return the original result.
     result = await operon
-      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
+      .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
       .getResult();
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
   })
 
+  test("wf-decorator-ooao", async () => {
+    let workflowResult: number;
+    const uuidArray: string[] = [];
+
+    for (let i = 0; i < 10; i++) {
+      const workflowUUID: string = uuidv1();
+      uuidArray.push(workflowUUID);
+      workflowResult = await operon
+        .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
+        .getResult();
+      expect(workflowResult).toEqual(i + 1);
+    }
+
+    // Rerunning with the same workflow UUID should return the same output.
+    for (let i = 0; i < 10; i++) {
+      const workflowUUID: string = uuidArray[i];
+      const workflowResult: number = await operon
+        .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
+        .getResult();
+      expect(workflowResult).toEqual(i + 1);
+    }
+  })
 });
