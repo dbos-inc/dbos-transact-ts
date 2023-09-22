@@ -61,7 +61,7 @@ describe("runtime-tests", () => {
     try {
       await waitForMessage;
       await sleep(100);
-      const response = await axios.get('http://localhost:3000/greeting/operon');
+      const response = await axios.get('http://127.0.0.1:3000/greeting/operon');
       expect(response.status).toBe(200);
     } finally {
       command.stdin.end();
