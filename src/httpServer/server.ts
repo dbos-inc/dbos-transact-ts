@@ -7,7 +7,6 @@ import {
   ArgSources,
   HandlerContext,
   OperonHandlerRegistration,
-  OperonHandlerRegistrationBase,
 } from "./handler";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow } from "../workflow";
@@ -20,6 +19,7 @@ import {
 } from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
+import { OperonRegistrationMetadata } from 'src/decorators';
 
 /**
  * Authentication middleware
@@ -32,7 +32,7 @@ import { serializeError } from 'serialize-error';
  */
 export interface OperonHttpAuthMiddleware
 {
-  authenticate(handler: OperonHandlerRegistrationBase, ctx:HandlerContext): Promise<boolean>;
+  authenticate(handler: OperonRegistrationMetadata, ctx:HandlerContext): Promise<boolean>;
 }
 
 export class OperonHttpServer {

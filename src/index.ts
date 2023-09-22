@@ -38,6 +38,7 @@ export {
 export {
   OperonFieldType,
   OperonDataType,
+  OperonRegistrationMetadata,
   OperonMethodRegistrationBase,
   TraceLevels,
   LogMasks,
