@@ -2,14 +2,30 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import axios from "axios";
 import { spawn, execSync } from "child_process";
+import { Client } from "pg";
 import { OperonRuntime } from "src/operon-runtime/runtime";
 import { sleep } from "src/utils";
+import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
 
 describe("runtime-tests", () => {
 
   let runtime: OperonRuntime;
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    const config = generateOperonTestConfig();
+    config.poolConfig.database = "hello";
+    await setupOperonTestDb(config);
+    const pgSystemClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: "hello",
+    });
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS OperonHello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);`);
+    await pgSystemClient.end();
+
     process.chdir('examples/hello');
     execSync('npm i');
     execSync('npm run build');
