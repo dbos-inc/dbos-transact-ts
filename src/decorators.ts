@@ -291,7 +291,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       // Validate the user authentication and populate the role field
       if (methReg.requiredRole.length > 0) {
         opCtx = args[0] as OperonContext;
-        const curRoles = opCtx.authRoles;
+        const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         let authRole = ''
         const set = new Set(curRoles);
@@ -305,7 +305,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           const err = new OperonNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
           throw err;
         }
-        opCtx.authRole = authRole;
+        opCtx.assumedRole = authRole;
       }
 
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
@@ -345,8 +345,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = opCtx?.authUser || '';
-      sLogRec.authorizedRole = opCtx?.authRole || '';
+      sLogRec.authorizedUser = opCtx?.authenticatedUser || '';
+      sLogRec.authorizedRole = opCtx?.assumedRole || '';
       sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;

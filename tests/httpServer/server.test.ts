@@ -64,8 +64,8 @@ describe("httpserver-tests", () => {
                 if (uid === 'go_away') {
                   return Promise.resolve(false);
                 }
-                ctx.authUser = uid;
-                ctx.authRoles = (uid === 'a_real_user' ? ['user'] : ['other']);
+                ctx.authenticatedUser = uid;
+                ctx.authenticatedRoles = (uid === 'a_real_user' ? ['user'] : ['other']);
               }
             }
 
