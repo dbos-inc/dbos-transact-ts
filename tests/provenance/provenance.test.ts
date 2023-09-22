@@ -30,8 +30,8 @@ describe("operon-provenance", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
-    await provDaemon.stop();
+    await operon[Symbol.asyncDispose]();
+    await provDaemon[Symbol.asyncDispose]();
   });
 
   class TestFunctions {

@@ -83,7 +83,7 @@ describe("decorator-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("simple-communicator-decorator", async () => {

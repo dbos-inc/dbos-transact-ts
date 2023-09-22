@@ -31,7 +31,7 @@ describe("concurrency-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("duplicate-transaction", async () => {
