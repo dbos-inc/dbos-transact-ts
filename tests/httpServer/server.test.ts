@@ -8,7 +8,7 @@ import {
   OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
-  OperonHandlerRegistrationBase,
+  OperonRegistrationMetadata,
   PostApi,
   RequiredRole,
   TransactionContext,
@@ -47,7 +47,7 @@ describe("httpserver-tests", () => {
     httpServer = new OperonHttpServer(operon,
       {
         authMiddleware: {
-          authenticate(handler: OperonHandlerRegistrationBase, ctx: HandlerContext) : Promise<boolean> {
+          authenticate(handler: OperonRegistrationMetadata, ctx: HandlerContext) : Promise<boolean> {
             if (handler.requiredRole.length > 0) {
               if (!ctx.request) {
                 throw new Error("No request");
