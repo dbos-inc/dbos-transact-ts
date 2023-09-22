@@ -8,8 +8,9 @@ import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 
-export interface SystemDatabase extends AsyncDisposable{
+export interface SystemDatabase {
   init(): Promise<void>;
+  destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
   bufferWorkflowStatus(workflowUUID: string): void;
@@ -61,7 +62,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
-  async [Symbol.asyncDispose]() {
+  async destroy() {
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
       this.notificationsClient.release();

@@ -23,7 +23,7 @@ describe("authorization", () => {
   });
 
   afterEach(async () => {
-    await operon[Symbol.asyncDispose]();
+    await operon.destroy();
   });
 
   describe("workflow authorization", () => {

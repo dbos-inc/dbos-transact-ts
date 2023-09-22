@@ -84,7 +84,7 @@ interface WorkflowInput<T extends any[]> {
   input: T;
 }
 
-export class Operon implements AsyncDisposable {
+export class Operon {
   initialized: boolean;
   readonly config: OperonConfig;
   // User Database
@@ -235,16 +235,12 @@ export class Operon implements AsyncDisposable {
     this.initialized = true;
   }
 
-  async dispose() {
+  async destroy() {
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
-    await this.systemDatabase[Symbol.asyncDispose]();
-    await this.userDatabase[Symbol.asyncDispose]();
-    await this.telemetryCollector[Symbol.asyncDispose]();
-  }
-
-  async [Symbol.asyncDispose]() {
-    return this.dispose();
+    await this.systemDatabase.destroy();
+    await this.userDatabase.destroy();
+    await this.telemetryCollector.destroy();
   }
 
   generateOperonConfig(): OperonConfig {

@@ -82,7 +82,7 @@ describe("httpserver-tests", () => {
   });
 
   afterEach(async () => {
-    await operon[Symbol.asyncDispose]();
+    await operon.destroy();
   });
 
   test("get-hello", async () => {
