@@ -97,7 +97,7 @@ export class OperonHttpServer {
           // Check for auth first
           if (middlewares && middlewares.auth) {
             try {
-              const res = await middlewares.auth.authenticate(ro, oc);
+              const res = await middlewares.auth.authenticate({name: ro.name, requiredRole: ro.requiredRole}, oc);
               if (!res) {
                 throw new OperonNotAuthorizedError("Unauthorized", 401);
               }
