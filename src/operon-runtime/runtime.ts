@@ -58,6 +58,6 @@ export class OperonRuntime {
    */
   async destroy() {
     this.server?.close();
-    await this.operon?.destroy();
+    await this.operon?.dispose();
   }
 }
