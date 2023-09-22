@@ -3,13 +3,10 @@
 import axios from "axios";
 import { spawn, execSync } from "child_process";
 import { Client } from "pg";
-import { OperonRuntime } from "src/operon-runtime/runtime";
 import { sleep } from "src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
 
 describe("runtime-tests", () => {
-
-  let runtime: OperonRuntime;
 
   beforeAll(async () => {
     const config = generateOperonTestConfig();
@@ -52,10 +49,6 @@ describe("runtime-tests", () => {
 
       command.on('error', (error) => {
         reject(error);  // Reject promise on command error
-      });
-
-      command.stderr.on('data', (data) => {
-        process.stderr.write(data.toString());
       });
     });
     try {
