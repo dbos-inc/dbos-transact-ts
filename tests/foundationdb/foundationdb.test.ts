@@ -33,7 +33,7 @@ describe("foundationdb-operon", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("fdb-operon", async () => {

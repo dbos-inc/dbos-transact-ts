@@ -218,10 +218,15 @@ implements OperonMethodRegistrationBase
   // TODO: Permissions, attachment point, error handling, etc.
 }
 
-// Quick and dirty method registration list...
-const methodRegistry: OperonMethodRegistrationBase[] = [];
-export function forEachMethod(f: (m: OperonMethodRegistrationBase) => void) {
-  methodRegistry.forEach(f);
+export function getRegisteredOperations(target: object): ReadonlyArray<OperonMethodRegistrationBase> {
+  const registeredOperations: OperonMethodRegistrationBase[] = [];
+
+  for (const name of Object.getOwnPropertyNames(target)) {
+    const operation = Reflect.getOwnMetadata(operonMethodMetadataKey, target, name) as OperonMethodRegistrationBase | undefined;
+    if (operation) { registeredOperations.push(operation); }
+  }
+
+  return registeredOperations;
 }
 
 export function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
@@ -387,7 +392,6 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     methReg.registeredFunction = nmethod;
 
     methReg.needInitialized = false;
-    methodRegistry.push(methReg);
   }
 
   return methReg;

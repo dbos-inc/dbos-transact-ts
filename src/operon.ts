@@ -36,12 +36,18 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
-import { PGNodeUserDatabase, PrismaClient, PrismaUserDatabase,
-         UserDatabase, TypeORMDataSource, TypeORMDatabase, } from './user_database';
-import { forEachMethod } from './decorators';
+import {
+  PGNodeUserDatabase,
+  PrismaClient,
+  PrismaUserDatabase,
+  UserDatabase,
+  TypeORMDataSource,
+  TypeORMDatabase,
+} from './user_database';
+import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 
-export interface OperonNull {}
+export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
@@ -78,7 +84,7 @@ interface WorkflowInput<T extends any[]> {
   input: T;
 }
 
-export class Operon {
+export class Operon implements AsyncDisposable {
   initialized: boolean;
   readonly config: OperonConfig;
   // User Database
@@ -103,6 +109,10 @@ export class Operon {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
+  private readonly _registeredOperations: Array<OperonMethodRegistrationBase> = [];
+  get registeredOperations(): ReadonlyArray<OperonMethodRegistrationBase> {
+    return this._registeredOperations;
+  }
 
   readonly initialEpochTimeMs: number;
 
@@ -151,29 +161,6 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
-  registerDecoratedWT() {
-    // Register user declared operations
-    // TODO: This is not detailed or careful enough; wrong time, wrong function, etc
-    // Also, why the original function?  It should get logged...
-    forEachMethod((ro) => {
-      for (const arg of ro.args) {
-        if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
-          break;
-        } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.registeredFunction as OperonTransaction<any, any>;
-          this.registerTransaction(tx, ro.txnConfig);
-          break;
-        } else if (arg.argType.name === "CommunicatorContext") {
-          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-          this.registerCommunicator(comm, ro.commConfig);
-          break;
-        }
-      }
-    });
-  }
-
   useNodePostgres() {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
@@ -196,7 +183,30 @@ export class Operon {
     return;
   }
 
-  async init(): Promise<void> {
+  #registerClass(cls: object) {
+    const registeredOps = getRegisteredOperations(cls);
+    this._registeredOperations.push(...registeredOps);
+
+    for (const ro of registeredOps) {
+      for (const arg of ro.args) {
+        if (arg.argType.name === "WorkflowContext") {
+          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+          this.registerWorkflow(wf, ro.workflowConfig);
+          break;
+        } else if (arg.argType.name === "TransactionContext") {
+          const tx = ro.registeredFunction as OperonTransaction<any, any>;
+          this.registerTransaction(tx, ro.txnConfig);
+          break;
+        } else if (arg.argType.name === "CommunicatorContext") {
+          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+          this.registerCommunicator(comm, ro.commConfig);
+          break;
+        }
+      }
+    }
+  }
+
+  async init(...classes: object[]): Promise<void> {
     if (!this.userDatabase) {
       throw new OperonInitializationError("No data source!");
     }
@@ -206,7 +216,12 @@ export class Operon {
     }
     try {
       await this.userDatabase.init();
-      await this.telemetryCollector.init();
+
+      for (const cls of classes) {
+        this.#registerClass(cls);
+      }
+
+      await this.telemetryCollector.init(this.registeredOperations);
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
@@ -217,12 +232,12 @@ export class Operon {
     this.initialized = true;
   }
 
-  async destroy() {
+  async [Symbol.asyncDispose]() {
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
-    await this.systemDatabase.destroy();
-    await this.userDatabase.destroy();
-    await this.telemetryCollector.destroy();
+    await this.systemDatabase[Symbol.asyncDispose]();
+    await this.userDatabase[Symbol.asyncDispose]();
+    await this.telemetryCollector[Symbol.asyncDispose]();
   }
 
   generateOperonConfig(): OperonConfig {
@@ -394,7 +409,7 @@ export class Operon {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec) : Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

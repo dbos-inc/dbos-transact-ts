@@ -39,8 +39,7 @@ describe("httpserver-tests", () => {
   beforeEach(async () => {
     operon = new Operon(config);
     operon.useNodePostgres();
-    operon.registerDecoratedWT();
-    await operon.init();
+    await operon.init(TestEndpoints);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
@@ -83,7 +82,7 @@ describe("httpserver-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("get-hello", async () => {

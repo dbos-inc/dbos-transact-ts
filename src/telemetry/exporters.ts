@@ -1,6 +1,6 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
-import { forEachMethod, LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
+import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
 import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -8,11 +8,10 @@ import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { spanToString } from "./traces";
 
-export interface ITelemetryExporter<T, U> {
+export interface ITelemetryExporter<T, U> extends AsyncDisposable {
   export(signal: OperonSignal[]): Promise<T>;
   process?(signal: OperonSignal[]): U;
-  init?(): Promise<void>;
-  destroy?(): Promise<void>;
+  init?(registeredOperations?: ReadonlyArray<OperonMethodRegistrationBase>): Promise<void>;
 }
 
 export const JAEGER_EXPORTER = "JaegerExporter";
@@ -23,6 +22,8 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
       url: process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
     });
   }
+
+  async [Symbol.asyncDispose](): Promise<void> { }
 
   async export(rawSignals: OperonSignal[]): Promise<void> {
     // Note: it is not compatible with provenance signal.
@@ -46,6 +47,8 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
+  async [Symbol.asyncDispose](): Promise<void> { }
+
   async export(rawSignals: OperonSignal[]): Promise<void> {
     const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
@@ -76,7 +79,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return t.formatAsString();
   }
 
-  async init() {
+  async init(registeredOperations: ReadonlyArray<OperonMethodRegistrationBase> = []) {
     const pgSystemClient: Client = new Client(this.poolConfig);
     await pgSystemClient.connect();
     // First check if the log database exists using operon pgSystemClient.
@@ -91,10 +94,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     await this.pgClient.connect();
 
     // Configure tables for registered workflows
-    const registeredOperations: OperonMethodRegistrationBase[] = [];
-    forEachMethod((o) => {
-      registeredOperations.push(o);
-    });
     for (const registeredOperation of registeredOperations) {
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
@@ -138,7 +137,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     );`);
   }
 
-  async destroy(): Promise<void> {
+  async [Symbol.asyncDispose](): Promise<void> {
     await this.pgClient.end();
   }
 

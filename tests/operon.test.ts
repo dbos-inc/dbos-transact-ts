@@ -6,8 +6,6 @@ import {
   CommunicatorContext,
   WorkflowParams,
   WorkflowHandle,
-  OperonCommunicator,
-  OperonWorkflow,
 } from "src/";
 import {
   generateOperonTestConfig,
@@ -43,7 +41,7 @@ describe("operon-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await operon[Symbol.asyncDispose]();
   });
 
   test("simple-function", async () => {
@@ -272,39 +270,6 @@ describe("operon-tests", () => {
       expect(workflowResult).toEqual(i + 1);
     }
   });
-
-  test("simple-communicator-decorator", async () => {
-    let counter = 0;
-    class TestClass {
-      @OperonCommunicator()
-      static async testCommunicator(commCtxt: CommunicatorContext) {
-        void commCtxt;
-        await sleep(1);
-        return counter++;
-      }
-
-      @OperonWorkflow()
-      static async testWorkflow(workflowCtxt: WorkflowContext) {
-        const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
-        return funcResult ?? -1;
-      }
-    }
-
-    operon.registerDecoratedWT();
-
-    const workflowUUID: string = uuidv1();
-
-    let result: number = await operon
-      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
-    expect(result).toBe(0);
-
-    // Test OAOO. Should return the original result.
-    result = await operon
-      .workflow(TestClass.testWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
-    expect(result).toBe(0);
-  })
 
   test("simple-communicator", async () => {
     let counter = 0;

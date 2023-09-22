@@ -1,12 +1,12 @@
 import {
   TraceLevels,
-  LogMasks,
-  forEachMethod,
+  LogMasks,  
   Traced,
   TraceLevel,
   ArgName,
   SkipLogging,
   LogMask,
+  getRegisteredOperations,
 } from "src/decorators";
 
 class TestFunctions {
@@ -45,7 +45,8 @@ function quoteSqlString(value: string): string {
 
 describe("operon-logging", () => {
   test("Decorators", async () => {
-    forEachMethod((m) => {
+    const ops = getRegisteredOperations(TestFunctions);
+    ops.forEach((m) => {
       // This is not how you build SQL obviously.  It is up to the collector to do it, schema evolution, etc.
       let cts = `CREATE PGTABLEISH ${quoteSqlIdentifier(
         "operon_log_" + m.name
