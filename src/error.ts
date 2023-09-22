@@ -145,3 +145,10 @@ export class OperonResponseError extends OperonError {
     super(msg, ResponseError);
   }
 }
+
+const NotAuthorizedError = 12;
+export class OperonNotAuthorizedError extends OperonError {
+  constructor(msg: string, readonly status: number = 403) {
+    super(msg, NotAuthorizedError);
+  }
+}

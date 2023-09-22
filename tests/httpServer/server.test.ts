@@ -4,10 +4,13 @@ import {
   GetApi,
   Operon,
   OperonConfig,
+  OperonNotAuthorizedError,
   OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
+  OperonRegistrationMetadata,
   PostApi,
+  RequiredRole,
   TransactionContext,
   WorkflowContext,
 } from "src";
@@ -41,10 +44,41 @@ describe("httpserver-tests", () => {
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
     );
-    httpServer = new OperonHttpServer(operon);
+    httpServer = new OperonHttpServer(operon,
+      {
+        authMiddleware: {
+          authenticate(handler: OperonRegistrationMetadata, ctx: HandlerContext) : Promise<boolean> {
+            if (handler.requiredRole.length > 0) {
+              if (!ctx.request) {
+                throw new Error("No request");
+              }
+
+              const { userid } = ctx.koaContext.request.query
+              const uid = userid?.toString();
+
+              if (!uid || uid.length === 0) {
+                const err = new OperonNotAuthorizedError("Not logged in.", 401);
+                throw err;
+              }
+              else {
+                if (uid === 'go_away') {
+                  return Promise.resolve(false);
+                }
+                ctx.authenticatedUser = uid;
+                ctx.authenticatedRoles = (uid === 'a_real_user' ? ['user'] : ['other']);
+              }
+            }
+
+            return Promise.resolve(true);
+          }
+        }
+      }
+    );
     // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
     // For example, if we use logger() after we register routes, the logger cannot correctly log the request before the function executes.
     // httpServer.app.use(logger());
+    // In some cases, the aspects often covered by middleware can be made more explicit and more dev-friendly at the same time.
+    //  We would run those at the appropriate time.
   });
 
   afterEach(async () => {
@@ -122,6 +156,26 @@ describe("httpserver-tests", () => {
     expect(response.headers.location).toBe('/redirect-operon');
   });
 
+  test("not-authenticated", async () => {
+    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-you", async () => {
+    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-authorized", async () => {
+    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
+    expect(response.statusCode).toBe(403);
+  });
+
+  test("authorized", async () => {
+    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=a_real_user");
+    expect(response.statusCode).toBe(200);
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpoints {
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -196,6 +250,13 @@ describe("httpserver-tests", () => {
       let res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
       res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
       return res;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/requireduser")
+    @RequiredRole(['user'])
+    static async testAuth(_ctxt: HandlerContext, name: string) {
+      return `Please say hello to ${name}`;
     }
   }
 });

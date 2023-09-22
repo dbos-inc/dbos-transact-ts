@@ -24,7 +24,7 @@ import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonContext } from "./context";
-import { OperonDataValidationError } from "./error";
+import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
 
 /**
  * Any column type column can be.
@@ -172,6 +172,11 @@ export class OperonParameter {
   }
 }
 
+export interface OperonRegistrationMetadata {
+  name: string;
+  requiredRole: string [];
+}
+
 export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;
@@ -281,7 +286,27 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     const nmethod = async function (this: This, ...args: Args) {
       const mn = methReg.name;
 
-      // TODO: Validate the user authentication
+      let opCtx : OperonContext | undefined = undefined;
+
+      // Validate the user authentication and populate the role field
+      if (methReg.requiredRole.length > 0) {
+        opCtx = args[0] as OperonContext;
+        const curRoles = opCtx.authenticatedRoles;
+        let authorized = false;
+        let authRole = ''
+        const set = new Set(curRoles);
+        for (const str of methReg.requiredRole) {
+          if (set.has(str)) {
+            authorized = true;
+            authRole = str;
+          }
+        }
+        if (!authorized) {
+          const err = new OperonNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
+          throw err;
+        }
+        opCtx.assumedRole = authRole;
+      }
 
       // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
       //        And skip/mask arguments
@@ -289,6 +314,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context, may find a more robust way.
+          opCtx = args[idx] as OperonContext;
           return;
         }
 
@@ -319,8 +345,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       // Here let's log the structured record
       const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = '';
-      sLogRec.authorizedRole = '';
+      sLogRec.authorizedUser = opCtx?.authenticatedUser || '';
+      sLogRec.authorizedRole = opCtx?.assumedRole || '';
       sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;
@@ -331,9 +357,6 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
-          const ctx = v as OperonContext;
-          sLogRec.authorizedUser = ctx.authUser;
-          sLogRec.authorizedRole = ctx.authRole;
           isCtx = true;
         }
 

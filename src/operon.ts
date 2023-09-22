@@ -187,7 +187,10 @@ export class Operon implements AsyncDisposable {
     const registeredOps = getRegisteredOperations(cls);
     this._registeredOperations.push(...registeredOps);
 
+    console.log(`Registering ...`)
+
     for (const ro of registeredOps) {
+      console.log(`Registering ${ro.name} ${ro.args[0].argType.name}`)
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.registeredFunction as OperonWorkflow<any, any>;
@@ -232,12 +235,16 @@ export class Operon implements AsyncDisposable {
     this.initialized = true;
   }
 
-  async [Symbol.asyncDispose]() {
+  async dispose() {
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
     await this.systemDatabase[Symbol.asyncDispose]();
     await this.userDatabase[Symbol.asyncDispose]();
     await this.telemetryCollector[Symbol.asyncDispose]();
+  }
+
+  async [Symbol.asyncDispose]() {
+    return this.dispose();
   }
 
   generateOperonConfig(): OperonConfig {

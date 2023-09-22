@@ -31,12 +31,14 @@ export {
   OperonInitializationError,
   OperonWorkflowPermissionDeniedError,
   OperonDataValidationError,
+  OperonNotAuthorizedError,
   OperonResponseError,
 } from './error';
 
 export {
   OperonFieldType,
   OperonDataType,
+  OperonRegistrationMetadata,
   OperonMethodRegistrationBase,
   TraceLevels,
   LogMasks,

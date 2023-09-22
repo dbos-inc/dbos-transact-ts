@@ -4,13 +4,12 @@ import { IncomingMessage } from 'http';
 export class OperonContext {
   request?: IncomingMessage;  // Raw incoming HTTP request.
 
-  authUser: string = '';
-  authRole: string = ''; // Role in use
-  authRoles: string[] = []; // All roles the user has
+  authenticatedUser: string = ''; ///< The user that has been authenticated
+  authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
+  assumedRole: string = ''; ///< Role in use - that user has and provided authorization to current function
 
   //readonly span: Span;
 
-  // TODO: Validate the parameters.
   constructor(args ?: {parentCtx?:OperonContext}) {
     if (args && args.parentCtx) {
       this.copyBaseFields(args.parentCtx);
@@ -19,8 +18,8 @@ export class OperonContext {
 
   copyBaseFields(other: OperonContext) {
     this.request = other.request;
-    this.authRoles = other.authRoles;
-    this.authRole = other.authRole;
-    this.authUser = other.authUser;
+    this.authenticatedUser = other.authenticatedUser;
+    this.authenticatedRoles = other.authenticatedRoles;
+    this.assumedRole = other.assumedRole;
   }
 }
