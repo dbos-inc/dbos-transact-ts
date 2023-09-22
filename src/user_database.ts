@@ -4,8 +4,9 @@ import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
 
-export interface UserDatabase extends AsyncDisposable {
+export interface UserDatabase {
   init(): Promise<void>;
+  destroy(): Promise<void>;
 
   getName(): UserDatabaseName;
 
@@ -43,7 +44,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     await this.pool.query(userDBSchema);
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  async destroy(): Promise<void> {
     await this.pool.end();
   }
 
@@ -137,7 +138,7 @@ export class PrismaUserDatabase implements UserDatabase {
     await this.prisma.$queryRawUnsafe(userDBSchema);
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  async destroy(): Promise<void> {
     await this.prisma.$disconnect();
   }
 
@@ -192,7 +193,6 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 }
 
-// Note: TypeORMDataSource has to be compatible w/ TypeORM's DataSource class, which uses destroy instead of AsyncDisposable
 export interface TypeORMDataSource {
 
   readonly isInitialized: boolean;
@@ -231,7 +231,7 @@ export class TypeORMDatabase implements UserDatabase {
     await this.dataSource.query(userDBSchema);
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  async destroy(): Promise<void> {
     if (this.dataSource.isInitialized) {
       await this.dataSource.destroy();
     }

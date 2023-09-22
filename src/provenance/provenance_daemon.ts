@@ -40,7 +40,7 @@ interface wal2jsonChange {
  * Because the daemon depends on Postgres logical replication, it can only export information on updates and deletes in tables
  * whose rows are uniquely identifiable, either because the table has a primary key or a replica identity.
  */
-export class ProvenanceDaemon implements AsyncDisposable {
+export class ProvenanceDaemon {
   readonly client;
   readonly daemonID;
   readonly recordProvenanceIntervalMs = 1000;
@@ -66,7 +66,7 @@ export class ProvenanceDaemon implements AsyncDisposable {
         }
       }
     }
-
+    
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
   }
 
@@ -109,9 +109,9 @@ export class ProvenanceDaemon implements AsyncDisposable {
     }
   }
 
-  async [Symbol.asyncDispose]() {
+  async stop() {
     clearInterval(this.daemonID);
     await this.client.end();
-    await this.telemetryCollector[Symbol.asyncDispose]();
+    await this.telemetryCollector.destroy();
   }
 }

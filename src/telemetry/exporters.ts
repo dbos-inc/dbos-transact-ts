@@ -8,10 +8,11 @@ import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { spanToString } from "./traces";
 
-export interface ITelemetryExporter<T, U> extends AsyncDisposable {
+export interface ITelemetryExporter<T, U> {
   export(signal: OperonSignal[]): Promise<T>;
   process?(signal: OperonSignal[]): U;
   init?(registeredOperations?: ReadonlyArray<OperonMethodRegistrationBase>): Promise<void>;
+  destroy?(): Promise<void>;
 }
 
 export const JAEGER_EXPORTER = "JaegerExporter";
@@ -22,8 +23,6 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
       url: process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
     });
   }
-
-  async [Symbol.asyncDispose](): Promise<void> { }
 
   async export(rawSignals: OperonSignal[]): Promise<void> {
     // Note: it is not compatible with provenance signal.
@@ -47,8 +46,6 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
 
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
-  async [Symbol.asyncDispose](): Promise<void> { }
-
   async export(rawSignals: OperonSignal[]): Promise<void> {
     const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
@@ -137,7 +134,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     );`);
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  async destroy(): Promise<void> {
     await this.pgClient.end();
   }
 

@@ -60,7 +60,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   async init(): Promise<void> {}
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async [Symbol.asyncDispose](): Promise<void> {
+  async destroy(): Promise<void> {
     this.dbRoot.close();
   }
 

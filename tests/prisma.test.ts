@@ -61,7 +61,7 @@ describe("prisma-tests", () => {
   });
 
   afterEach(async () => {
-    await operon[Symbol.asyncDispose]();
+    await operon.destroy();
   });
 
   test("simple-prisma", async () => {
