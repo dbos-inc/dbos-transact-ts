@@ -20,7 +20,6 @@ export class OperonRuntime {
    */
   private async loadFunctions(): Promise<ModuleExports | null> {
     const workingDirectory = process.cwd();
-    console.log("Current directory:", workingDirectory);
     const userFunctions = workingDirectory + "/dist/userFunctions.js";
     if (fs.existsSync(userFunctions)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
@@ -38,7 +37,6 @@ export class OperonRuntime {
     if (exports === null) {
       throw new OperonError("userFunctions not found");
     }
-    console.log(exports);
 
     const classes: object[] = [];
     for (const key in exports) {
@@ -49,7 +47,6 @@ export class OperonRuntime {
     // Initialize Operon.
     this.operon = new Operon();
     this.operon.useNodePostgres();
-    console.log(classes);
     await this.operon.init(...classes);
 
     const server = new OperonHttpServer(this.operon)

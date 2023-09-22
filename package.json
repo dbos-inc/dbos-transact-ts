@@ -6,7 +6,7 @@
   "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.build.json && chmod +x ./dist/src/operon-runtime/cli.js",
-    "build-fdb": "tsc --project tsconfig.build-fdb.json && && chmod +x ./dist/src/operon-runtime/cli.js",
+    "build-fdb": "tsc --project tsconfig.build-fdb.json && chmod +x ./dist/src/operon-runtime/cli.js",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
     "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=tests/foundationdb/*",

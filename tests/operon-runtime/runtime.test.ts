@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { execSync } from "child_process";
-import { OperonRuntime } from "src/operon-runtime/runtime";
 import axios from "axios";
+import { spawn, execSync } from "child_process";
+import { OperonRuntime } from "src/operon-runtime/runtime";
+import { sleep } from "src/utils";
 
 describe("runtime-tests", () => {
 
@@ -10,24 +11,47 @@ describe("runtime-tests", () => {
 
   beforeAll(() => {
     process.chdir('examples/hello');
-    execSync('npm run build').toString();
+    execSync('npm i');
+    execSync('npm run build');
   });
 
   afterAll(() => {
     process.chdir('../..');
   });
 
-  beforeEach(async () => {
-    runtime = new OperonRuntime();
-    await runtime.startServer(3000);
-  });
-
-  afterEach(async () => {
-    await runtime.destroy();
-  });
-
-
   test("runtime-hello", async () => {
-    const bob = await axios.get('http://localhost:3000/greeting/operon');
+    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start']);
+
+    const waitForMessage = new Promise<void>((resolve, reject) => {
+      const onData = (data: Buffer) => {
+        const message = data.toString();
+        process.stdout.write(message);
+        if (message.includes('Starting server on port: 3000')) {
+          command.stdout.off('data', onData);  // remove listener
+          resolve();
+        }
+      };
+
+      command.stdout.on('data', onData);
+
+      command.on('error', (error) => {
+        reject(error);  // Reject promise on command error
+      });
+
+      command.stderr.on('data', (data) => {
+        process.stderr.write(data.toString());
+      });
+    });
+    try {
+      await waitForMessage;
+      await sleep(100);
+      const response = await axios.get('http://localhost:3000/greeting/operon');
+      expect(response.status).toBe(200);
+    } finally {
+      command.stdin.end();
+      command.stdout.destroy();
+      command.stderr.destroy();
+      command.kill();
+    }
   });
 });
