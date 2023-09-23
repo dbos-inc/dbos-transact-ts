@@ -39,7 +39,7 @@ describe("runtime-tests", () => {
       const onData = (data: Buffer) => {
         const message = data.toString();
         process.stdout.write(message);
-        if (message.includes('Starting server on port: 3000')) {
+        if (message.includes('Server is running at')) {
           command.stdout.off('data', onData);  // remove listener
           resolve();
         }
@@ -53,7 +53,6 @@ describe("runtime-tests", () => {
     });
     try {
       await waitForMessage;
-      await sleep(1000);
       const response = await axios.get('http://127.0.0.1:3000/greeting/operon');
       expect(response.status).toBe(200);
     } finally {
