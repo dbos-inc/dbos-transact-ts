@@ -227,9 +227,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<OperonMet
   const registeredOperations: OperonMethodRegistrationBase[] = [];
 
   for (const name of Object.getOwnPropertyNames(target)) {
-    console.log(name);
     const operation = Reflect.getOwnMetadata(operonMethodMetadataKey, target, name) as OperonMethodRegistrationBase | undefined;
-    console.log(operation);
     if (operation) { registeredOperations.push(operation); }
   }
 
