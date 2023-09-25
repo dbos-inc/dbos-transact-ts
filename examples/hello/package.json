@@ -1,0 +1,18 @@
+{
+  "name": "hello-function",
+  "version": "1.0.0",
+  "description": "Simple functions",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "operon": "../.."
+  }
+}

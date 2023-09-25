@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+      "target": "esnext",
+      "module": "commonjs",
+      "baseUrl": "./",
+      "declaration": true,
+      "declarationMap": true,
+      "sourceMap": true,
+      "outDir": "./dist",
+      "newLine": "lf",
+      "esModuleInterop": true,
+      "forceConsistentCasingInFileNames": true,
+
+      "strict": true,
+      "skipLibCheck": true ,
+      "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+    }
+  }
