@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { deploy } from "./deploy";
 import { OperonRuntime } from "./runtime";
 import { Command } from 'commander';
 
@@ -19,9 +20,14 @@ program
 program
   .command('deploy')
   .description('Deploy an application')
+  .option('-n, --name <type>', 'Specify the app name')
   .option('-h, --host <type>', 'Specify the host', 'localhost')
-  .action(async (options: { host: string }) => {
-    console.log(`DEPLOY ${options.host}`);
+  .action(async (options: { name: string, host: string }) => {
+    if (!options.name) {
+      console.error('Error: the --name option is required.');
+      return;
+    }
+    deploy(options.name, options.host);
   });
 
 program.parse(process.argv);
