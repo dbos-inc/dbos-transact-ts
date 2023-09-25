@@ -1,6 +1,7 @@
 database:
-  hostname: 'localhost'
+  hostname: 'firecracker-test-db.ceagp5b7vwkp.us-east-1.rds.amazonaws.com'
   port: 5432
   username: 'postgres'
   user_database: 'hello'
   connectionTimeoutMillis: 3000
+  ssl_ca: 'rds-ca-2019-root.pem'

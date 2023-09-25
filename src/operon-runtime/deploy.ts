@@ -16,6 +16,5 @@ export async function deploy(appName: string, host: string) {
     );
     const uuid = response.data as string;
     execSync(`mkdir -p operon_deploy`);
-    execSync(`rm -rf operon_deploy/*`);
-    execSync(`zip -ry operon_deploy/${appName}.zip ./*`)
+    execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x "operon_deploy/*"`)
 }
