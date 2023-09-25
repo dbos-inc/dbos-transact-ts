@@ -7,6 +7,9 @@ npm-debug.log*
 # TypeScript build
 dist/
 
+# Operon build
+operon_deploy
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

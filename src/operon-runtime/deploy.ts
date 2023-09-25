@@ -1,4 +1,5 @@
 import axios from "axios";
+import { execSync } from "child_process";
 
 export async function deploy(appName: string, host: string) {
 
@@ -14,5 +15,7 @@ export async function deploy(appName: string, host: string) {
         },
     );
     const uuid = response.data as string;
-    console.log(uuid);
+    execSync(`mkdir -p operon_deploy`);
+    execSync(`rm -rf operon_deploy/*`);
+    execSync(`zip -ry operon_deploy/${appName}.zip ./*`)
 }
