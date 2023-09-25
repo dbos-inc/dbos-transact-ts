@@ -172,11 +172,6 @@ export class OperonParameter {
   }
 }
 
-export interface OperonRegistrationMetadata {
-  name: string;
-  requiredRole: string [];
-}
-
 export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;

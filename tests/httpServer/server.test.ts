@@ -8,7 +8,7 @@ import {
   OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
-  OperonRegistrationMetadata,
+  MiddlewareContext,
   PostApi,
   RequiredRole,
   TransactionContext,
@@ -47,12 +47,8 @@ describe("httpserver-tests", () => {
     httpServer = new OperonHttpServer(operon,
       {
         // eslint-disable-next-line @typescript-eslint/require-await
-        authMiddleware: async (handler: OperonRegistrationMetadata, ctx: HandlerContext) => {
-            if (handler.requiredRole.length > 0) {
-              if (!ctx.request) {
-                throw new Error("No request");
-              }
-
+        authMiddleware: async (ctx: MiddlewareContext) => {
+            if (ctx.requiredRole.length > 0) {
               const { userid } = ctx.koaContext.request.query
               const uid = userid?.toString();
 

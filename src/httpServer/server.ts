@@ -18,23 +18,7 @@ import {
 } from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
-import { OperonRegistrationMetadata } from 'src/decorators';
-
-/**
- * Authentication middleware that executes before a request reaches a function.
- * This is expected to:
- *   - Validate the request found in the handler context and extract auth information from the request.
- *   - Map the HTTP request to the user identity and roles defined in Operon app.
- * If this succeeds, return the current authenticated user and a list of roles.
- * If any step fails, throw an error.
- */
-// TODO: should we expose HandlerContext here or define a new context, or directly use Koa.Context? It currently contains methods to invoke transactions and other fields.
-export type OperonHttpAuthMiddleware = (metadata: OperonRegistrationMetadata, ctx: HandlerContext) => Promise<OperonHttpAuthReturn | void>;
-
-export interface OperonHttpAuthReturn {
-  authenticatedUser: string;
-  authenticatedRoles: string[];
-}
+import { OperonHttpAuthMiddleware } from './middleware';
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -98,7 +82,7 @@ export class OperonHttpServer {
           // Check for auth first
           if (middlewares && middlewares.auth) {
             try {
-              const res = await middlewares.auth({name: ro.name, requiredRole: ro.requiredRole}, oc);
+              const res = await middlewares.auth({name: ro.name, requiredRole: ro.requiredRole, koaContext: koaCtxt});
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;
                 oc.authenticatedRoles = res.authenticatedRoles;
