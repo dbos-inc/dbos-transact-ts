@@ -13,7 +13,6 @@ import { OperonWorkflow } from "../workflow";
 import {
   OperonDataValidationError,
   OperonError,
-  OperonNotAuthorizedError,
   OperonResponseError,
   isOperonClientError,
 } from "../error";
@@ -22,17 +21,19 @@ import { serializeError } from 'serialize-error';
 import { OperonRegistrationMetadata } from 'src/decorators';
 
 /**
- * Authentication middleware
+ * Authentication middleware that executes before a request reaches a function.
  * This is expected to:
- *   Validate the request found in the context ctx
- *   Set the current user and roles into the ctx
- * If this succeeds, return true
- * If this fails in a usual way, return false
- * If this fails in an unusual way, throw an error
+ *   - Validate the request found in the handler context and extract auth information from the request.
+ *   - Map the HTTP request to the user identity and roles defined in Operon app.
+ * If this succeeds, return the current authenticated user and a list of roles.
+ * If any step fails, throw an error.
  */
-export interface OperonHttpAuthMiddleware
-{
-  authenticate(handler: OperonRegistrationMetadata, ctx:HandlerContext): Promise<boolean>;
+// TODO: should we expose HandlerContext here or define a new context, or directly use Koa.Context? It currently contains methods to invoke transactions and other fields.
+export type OperonHttpAuthMiddleware = (metadata: OperonRegistrationMetadata, ctx: HandlerContext) => Promise<OperonHttpAuthReturn | void>;
+
+export interface OperonHttpAuthReturn {
+  authenticatedUser: string;
+  authenticatedRoles: string[];
 }
 
 export class OperonHttpServer {
@@ -97,9 +98,10 @@ export class OperonHttpServer {
           // Check for auth first
           if (middlewares && middlewares.auth) {
             try {
-              const res = await middlewares.auth.authenticate({name: ro.name, requiredRole: ro.requiredRole}, oc);
-              if (!res) {
-                throw new OperonNotAuthorizedError("Unauthorized", 401);
+              const res = await middlewares.auth({name: ro.name, requiredRole: ro.requiredRole}, oc);
+              if (res) {
+                oc.authenticatedUser = res.authenticatedUser;
+                oc.authenticatedRoles = res.authenticatedRoles;
               }
             }
             catch (e) {

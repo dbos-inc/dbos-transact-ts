@@ -46,8 +46,8 @@ describe("httpserver-tests", () => {
     );
     httpServer = new OperonHttpServer(operon,
       {
-        authMiddleware: {
-          authenticate(handler: OperonRegistrationMetadata, ctx: HandlerContext) : Promise<boolean> {
+        // eslint-disable-next-line @typescript-eslint/require-await
+        authMiddleware: async (handler: OperonRegistrationMetadata, ctx: HandlerContext) => {
             if (handler.requiredRole.length > 0) {
               if (!ctx.request) {
                 throw new Error("No request");
@@ -62,16 +62,16 @@ describe("httpserver-tests", () => {
               }
               else {
                 if (uid === 'go_away') {
-                  return Promise.resolve(false);
+                  throw new OperonNotAuthorizedError("Go away.", 401);
                 }
-                ctx.authenticatedUser = uid;
-                ctx.authenticatedRoles = (uid === 'a_real_user' ? ['user'] : ['other']);
+                return {
+                  authenticatedUser: uid,
+                  authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
+                };
               }
             }
-
-            return Promise.resolve(true);
+            return;
           }
-        }
       }
     );
     // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
