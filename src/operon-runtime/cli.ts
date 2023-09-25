@@ -21,7 +21,7 @@ program
   .description('Deploy an application')
   .option('-h, --host <type>', 'Specify the host', 'localhost')
   .action(async (options: { host: string }) => {
-    console.log(`START ${options.host}`);
+    console.log(`DEPLOY ${options.host}`);
   });
 
 program.parse(process.argv);
