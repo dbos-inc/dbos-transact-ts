@@ -16,6 +16,14 @@ program
     await runtime.startServer(port);
   });
 
+program
+  .command('deploy')
+  .description('Deploy an application')
+  .option('-h, --host <type>', 'Specify the host', 'localhost')
+  .action(async (options: { host: string }) => {
+    console.log(`START ${options.host}`);
+  });
+
 program.parse(process.argv);
 
 // If no arguments provided, display help by default
