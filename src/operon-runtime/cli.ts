@@ -6,6 +6,7 @@ import { Command } from 'commander';
 
 const program = new Command();
 
+/* LOCAL DEVELOPMENT */
 program
   .command('start')
   .description('Start the server')
@@ -17,9 +18,10 @@ program
     await runtime.startServer(port);
   });
 
+/* CLOUD DEPLOYMENT */
 program
   .command('deploy')
-  .description('Deploy an application')
+  .description('Deploy an application to the cloud')
   .option('-n, --name <type>', 'Specify the app name')
   .option('-h, --host <type>', 'Specify the host', 'localhost')
   .action(async (options: { name: string, host: string }) => {
@@ -27,7 +29,7 @@ program
       console.error('Error: the --name option is required.');
       return;
     }
-    deploy(options.name, options.host);
+    await deploy(options.name, options.host);
   });
 
 program.parse(process.argv);
