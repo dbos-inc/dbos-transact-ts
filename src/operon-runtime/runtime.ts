@@ -50,7 +50,18 @@ export class OperonRuntime {
     await this.operon.init(...classes);
 
     const server = new OperonHttpServer(this.operon)
+
+    if (port === 0 && this.operon.config.httpServer) {
+      port = this.operon.config.httpServer.port ;
+    } else if (port === 0) {
+      port = 3000;
+    }
+    console.log(`Starting server on port: ${port}`);
+    console.log("In server less payment is " + this.operon.config.application.PAYMENT_SERVICE_URL);
+
+
     this.server = server.listen(port);
+    console.log("Welcome to the serverless runtime in the operon directory")
   }
 
   /**

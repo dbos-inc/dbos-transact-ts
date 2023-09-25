@@ -18,6 +18,9 @@ export class HandlerContext extends OperonContext {
     super();
     this.operationName = koaContext.url;
     this.request = koaContext.req;
+    if (operon.config.application) {
+      this.applicationConfig = operon.config.application;
+    }
   }
 
   log(severity: string, message: string): void {

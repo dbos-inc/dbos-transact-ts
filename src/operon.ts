@@ -58,6 +58,8 @@ export interface OperonConfig {
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
+  readonly application?: any;
+  readonly httpServer?: any ;
 }
 
 interface ConfigFile {
@@ -72,6 +74,10 @@ interface ConfigFile {
     observability_database: string;
   };
   telemetryExporters?: string[];
+  application: any;
+  httpServer?: {
+    port: number;
+  }
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -270,11 +276,16 @@ export class Operon {
     if (config.database.ssl_ca) {
       poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
     }
+
+
+
     return {
       poolConfig: poolConfig,
       telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined
+      observability_database: config.database.observability_database || undefined,
+      application: config.application || undefined,
+      httpServer: config.httpServer || undefined
     };
   }
 

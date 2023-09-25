@@ -40,7 +40,7 @@ export class TransactionContext extends OperonContext {
     private readonly logger: Logger,
     readonly span: Span,
     readonly functionID: number,
-    readonly operationName: string
+    readonly operationName: string,
   ) {
     super({parentCtx: workflowContext});
     void config;
@@ -53,6 +53,7 @@ export class TransactionContext extends OperonContext {
     }
     this.workflowUUID = workflowContext.workflowUUID;
     this.runAs = workflowContext.runAs;
+    this.applicationConfig = workflowContext.applicationConfig;
   }
 
   log(severity: string, message: string): void {

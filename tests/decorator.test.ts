@@ -11,6 +11,7 @@ class TestClass {
   static get counter() { return TestClass.#counter; }
   @OperonCommunicator()
   static async testCommunicator(commCtxt: CommunicatorContext) {
+    expect(commCtxt.applicationConfig.counter).toBe(3);
     void commCtxt;
     await sleep(1);
     return TestClass.#counter++;
@@ -18,12 +19,14 @@ class TestClass {
 
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
+    expect(workflowCtxt.applicationConfig.counter).toBe(3);
     const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
     return funcResult ?? -1;
   }
 
   @OperonTransaction()
   static async testInsertTx(txnCtxt: TransactionContext, name: string) {
+    expect(txnCtxt.applicationConfig.counter).toBe(3);
     const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name]
@@ -47,6 +50,7 @@ class TestClass {
 
   @OperonWorkflow()
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
+    expect(wfCtxt.applicationConfig.counter).toBe(3);
     const funcResult: number = await wfCtxt.transaction(
       TestClass.testInsertTx,
       name

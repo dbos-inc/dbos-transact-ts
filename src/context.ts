@@ -8,6 +8,8 @@ export class OperonContext {
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
   assumedRole: string = ''; ///< Role in use - that user has and provided authorization to current function
 
+  applicationConfig?: any; // applicationConfiguration
+
   //readonly span: Span;
 
   constructor(args ?: {parentCtx?:OperonContext}) {

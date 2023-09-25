@@ -68,6 +68,9 @@ export class WorkflowContext extends OperonContext {
       runAs: params.runAs,
       functionID: 0,
     });
+    if (operon.config.application) {
+      this.applicationConfig = operon.config.application;
+    }
   }
 
   functionIDGetIncrement(): number {
@@ -181,7 +184,8 @@ export class WorkflowContext extends OperonContext {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, span, funcId, txn.name);
+        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, 
+                            span, funcId, txn.name);
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
