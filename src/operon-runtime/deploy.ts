@@ -29,7 +29,7 @@ export async function deploy(appName: string, host: string) {
                 ...formData.getHeaders(),
             },
         });
-        console.log(`Deploying ${appName} successful`);
+        console.log(`Successfully deployed: ${appName}`);
         console.log(`${appName} ID: ${uuid}`)
     } catch (e) {
         console.log(`Deploying ${appName} failed`);
