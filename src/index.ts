@@ -38,7 +38,6 @@ export {
 export {
   OperonFieldType,
   OperonDataType,
-  OperonRegistrationMetadata,
   OperonMethodRegistrationBase,
   TraceLevels,
   LogMasks,
@@ -74,3 +73,9 @@ export {
 export {
   OperonHttpServer,
 } from "./httpServer/server";
+
+export {
+  OperonHttpAuthMiddleware,
+  OperonHttpAuthReturn,
+  MiddlewareContext,
+} from "./httpServer/middleware";
