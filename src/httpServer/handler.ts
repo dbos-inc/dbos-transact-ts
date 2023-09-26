@@ -2,7 +2,7 @@
 // TODO: should we support log function in handler?
 import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase } from "../decorators";
 import { OperonContext } from "../context";
-import { ExtendedWorkflowParams, Operon } from "../operon";
+import { InternalWorkflowParams, Operon } from "../operon";
 import Koa from "koa";
 import { OperonWorkflow, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction } from "../transaction";
@@ -27,7 +27,7 @@ export class HandlerContext extends OperonContext {
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
-    const augmentedParams = params as ExtendedWorkflowParams;
+    const augmentedParams = params as InternalWorkflowParams;
     augmentedParams.parentCtx = this;
     return this.#operon.workflow(wf, augmentedParams, ...args);
   }

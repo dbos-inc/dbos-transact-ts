@@ -92,8 +92,7 @@ interface WorkflowInput<T extends any[]> {
   input: T;
 }
 
-// This interface allows us to pass workflow params with additional fields.
-export interface ExtendedWorkflowParams extends WorkflowParams {
+export interface InternalWorkflowParams extends WorkflowParams {
   parentCtx?: OperonContext;
 }
 
@@ -331,7 +330,7 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: ExtendedWorkflowParams, ...args: T): WorkflowHandle<R> {
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: InternalWorkflowParams, ...args: T): WorkflowHandle<R> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
@@ -397,7 +396,7 @@ export class Operon {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
   }
 
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: ExtendedWorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: InternalWorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
@@ -405,7 +404,7 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: ExtendedWorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(params: InternalWorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
