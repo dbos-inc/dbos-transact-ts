@@ -11,12 +11,11 @@ import {
 } from "src";
 import { OperonHttpServer } from "src/httpServer/server";
 import {
-  TestKvTable,
   generateOperonTestConfig,
   setupOperonTestDb,
 } from "tests/helpers";
 import request from "supertest";
-import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
+import { HandlerContext } from "src/httpServer/handler";
 import { CONSOLE_EXPORTER } from "src/telemetry";
 
 describe("httpserver-defsec-tests", () => {

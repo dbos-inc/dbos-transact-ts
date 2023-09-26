@@ -176,7 +176,7 @@ export class OperonParameter {
 export interface OperonRegistrationDefaults
 {
   name: string;
-  requiredRole: string[];
+  requiredRole: string[] | undefined;
 }
 
 export interface OperonMethodRegistrationBase {
@@ -207,7 +207,7 @@ implements OperonMethodRegistrationBase
   name: string = "";
   traceLevel: TraceLevels = TraceLevels.INFO;
 
-  requiredRole: string[] = [];
+  requiredRole: string[] | undefined = undefined;
 
   args: OperonParameter[] = [];
 
@@ -227,7 +227,7 @@ implements OperonMethodRegistrationBase
   }
 
   getRequiredRoles() {
-    if (this.requiredRole && this.requiredRole.length) {
+    if (this.requiredRole) {
       return this.requiredRole;
     }
     return this.defaults?.requiredRole || [];
@@ -237,7 +237,7 @@ implements OperonMethodRegistrationBase
 export class OperonClassRegistration <CT extends { new (...args: any[]) : {} }> implements OperonRegistrationDefaults
 {
   name: string = "";
-  requiredRole: string[] = [];
+  requiredRole: string[] | undefined;
   needsInitialized: boolean = true;
 
   ctor: CT;
@@ -449,7 +449,7 @@ function getOrCreateOperonClassRegistration<CT extends { new (...args: any[]) : 
 
     const ops = getRegisteredOperations(ctor);
     ops.forEach((op) => {
-
+      op.defaults = clsReg;
     });
   }
   return clsReg;
