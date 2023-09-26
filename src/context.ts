@@ -1,4 +1,4 @@
-//import { Span } from "@opentelemetry/sdk-trace-base";
+import { Span } from "@opentelemetry/sdk-trace-base";
 import { IncomingMessage } from 'http';
 
 export class OperonContext {
@@ -11,10 +11,9 @@ export class OperonContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any; // applicationConfiguration
 
-  //readonly span: Span;
   workflowUUID: string = '';
 
-  constructor(readonly operationName: string, parentCtx ?: OperonContext) {
+  constructor(readonly operationName: string, readonly span: Span, parentCtx ?: OperonContext) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;

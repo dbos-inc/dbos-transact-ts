@@ -105,6 +105,7 @@ export class OperonHttpServer {
                 koaCtxt.status = 500;
               }
               await koaNext();
+              operon.tracer.endSpan(oc.span)
               return;
             }
           }
@@ -114,6 +115,7 @@ export class OperonHttpServer {
           ro.args.forEach((marg, idx) => {
             marg.argSource = marg.argSource ?? ArgSources.DEFAULT;  // Assign a default value.
             if (idx === 0) {
+              operon.tracer.endSpan(oc.span)
               return; // Do not parse the context.
             }
 
@@ -180,6 +182,7 @@ export class OperonHttpServer {
               koaCtxt.status = 500;
             }
           } finally {
+            operon.tracer.endSpan(oc.span)
             await koaNext();
           }
         };

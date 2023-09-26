@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// TODO: should we support log function in handler?
 import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase } from "../decorators";
 import { OperonContext } from "../context";
 import { InternalWorkflowParams, Operon } from "../operon";
@@ -11,7 +10,11 @@ export class HandlerContext extends OperonContext {
   readonly #operon: Operon;
 
   constructor(operon: Operon, readonly koaContext: Koa.Context) {
-    super(koaContext.url);
+    const span = operon.tracer.startSpan(koaContext.url);
+    span.setAttributes({
+      operationName: koaContext.url,
+    });
+    super(koaContext.url, span);
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

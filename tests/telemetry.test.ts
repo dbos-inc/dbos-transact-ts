@@ -330,7 +330,8 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const oc = new OperonContext("testName");
+      const span = operon.tracer.startSpan("test");
+      const oc = new OperonContext("testName", span);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
       

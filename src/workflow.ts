@@ -16,7 +16,6 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentSpan?: Span;
 }
 
 export interface WorkflowConfig {
@@ -41,7 +40,6 @@ export const StatusString = {
 export class WorkflowContext extends OperonContext {
   functionID: number = 0;
   readonly #operon;
-  readonly span: Span;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
 
@@ -53,17 +51,17 @@ export class WorkflowContext extends OperonContext {
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    super(workflowName, parentCtx);
-    this.workflowUUID = workflowUUID;
-    this.#operon = operon;
-    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
-    this.span.setAttributes({
+    const span = operon.tracer.startSpan(workflowName, parentCtx?.span);
+    span.setAttributes({
       workflowUUID: workflowUUID,
       operationName: workflowName,
       runAs: parentCtx?.authenticatedUser ?? "",
       functionID: 0,
     });
+    super(workflowName, span, parentCtx);
+    this.workflowUUID = workflowUUID;
+    this.#operon = operon;
+    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;

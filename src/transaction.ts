@@ -35,11 +35,11 @@ export class TransactionContext extends OperonContext {
     config: TransactionConfig,
     workflowContext: WorkflowContext,
     private readonly logger: Logger,
-    readonly span: Span,
+    span: Span,
     readonly functionID: number,
     operationName: string,
   ) {
-    super(operationName, workflowContext);
+    super(operationName, span, workflowContext);
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
