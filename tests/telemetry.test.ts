@@ -8,9 +8,10 @@ import {
 import { TelemetrySignal } from "../src/telemetry/signals";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Traced, OperonTransaction, OperonWorkflow } from "../src/decorators";
+import { Traced, OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import { TransactionContext, WorkflowContext, WorkflowParams } from "src";
 import { WorkflowHandle } from "src/workflow";
+import { OperonContext } from "dist/src";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -51,7 +52,8 @@ class TestClass {
     return result;
   }
 
-  @OperonWorkflow({ rolesThatCanRun: ["operonAppAdmin", "operonAppUser"] })
+  @OperonWorkflow()
+  @RequiredRole(["operonAppAdmin", "operonAppUser"])
   static async test_workflow(
     workflowCtxt: WorkflowContext,
     name: string
@@ -342,9 +344,10 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const params: WorkflowParams = {
-        runAs: "operonAppAdmin",
-      };
+      const oc = new OperonContext();
+      oc.authenticatedRoles = ["operonAppAdmin"];
+      oc.authenticatedUser = "operonAppAdmin";
+      const params: WorkflowParams = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,
@@ -373,7 +376,7 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(txnLogEntry.function_id).toBe(1);
       expect(txnLogEntry.function_name).toBe("test_function");
-      expect(txnLogEntry.run_as).toBe(params.runAs);
+      expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
       expect(txnLogEntry.severity).toBe("INFO");
       expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
       expect(txnLogEntry.trace_id).toBe(null);
@@ -388,7 +391,7 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(wfLogEntry.function_id).toBe(2);
       expect(wfLogEntry.function_name).toBe("test_workflow");
-      expect(wfLogEntry.run_as).toBe(params.runAs);
+      expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
       expect(wfLogEntry.severity).toBe("INFO");
       expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
       expect(wfLogEntry.trace_id).toBe(null);
