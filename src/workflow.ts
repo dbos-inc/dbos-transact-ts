@@ -45,17 +45,16 @@ export class WorkflowContext extends OperonContext {
   readonly span: Span;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
-  readonly operationName: string;
 
   constructor(
     operon: Operon,
     params: WorkflowParams,
-    readonly workflowUUID: string,
+    workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
-    readonly workflowName: string
+    workflowName: string
   ) {
-    super ({parentCtx: params.parentCtx});
-    this.operationName = workflowName;
+    super(workflowName, params.parentCtx);
+    this.workflowUUID = workflowUUID;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
     this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
@@ -182,7 +181,7 @@ export class WorkflowContext extends OperonContext {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, 
+        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger,
                             span, funcId, txn.name);
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
@@ -274,7 +273,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, this.#operon.logger, span, commConfig);
+    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, this.#operon.logger, span, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

@@ -15,7 +15,6 @@ import { OperonContext } from "dist/src";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
-  function_id: number;
   function_name: string;
   run_as: string;
   timestamp: bigint;
@@ -130,7 +129,6 @@ describe("operon-telemetry", () => {
       const signal1: TelemetrySignal = {
         workflowUUID: "test",
         operationName: "create_user",
-        functionID: 0,
         runAs: "test",
         timestamp: Date.now(),
         severity: "INFO",
@@ -190,10 +188,6 @@ describe("operon-telemetry", () => {
           data_type: "jsonb",
         },
         {
-          column_name: "function_id",
-          data_type: "integer",
-        },
-        {
           column_name: "transaction_id",
           data_type: "text"
         },
@@ -232,10 +226,6 @@ describe("operon-telemetry", () => {
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`
       );
       const expectedStwColumns = [
-        {
-          column_name: "function_id",
-          data_type: "integer",
-        },
         {
           column_name: "trace_span",
           data_type: "jsonb",
@@ -282,10 +272,6 @@ describe("operon-telemetry", () => {
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
       );
       const expectedScuColumns = [
-        {
-          column_name: "function_id",
-          data_type: "integer",
-        },
         {
           column_name: "trace_span",
           data_type: "jsonb",
@@ -344,9 +330,10 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const oc = new OperonContext();
+      const oc = new OperonContext("testName");
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
+      
       const params: WorkflowParams = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
@@ -374,7 +361,6 @@ describe("operon-telemetry", () => {
       expect(txnLogQueryResult.rows).toHaveLength(1);
       const txnLogEntry = txnLogQueryResult.rows[0];
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
-      expect(txnLogEntry.function_id).toBe(1);
       expect(txnLogEntry.function_name).toBe("test_function");
       expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
       expect(txnLogEntry.severity).toBe("INFO");
@@ -389,7 +375,6 @@ describe("operon-telemetry", () => {
       expect(wfLogQueryResult.rows).toHaveLength(1);
       const wfLogEntry = wfLogQueryResult.rows[0];
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
-      expect(wfLogEntry.function_id).toBe(2);
       expect(wfLogEntry.function_name).toBe("test_workflow");
       expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
       expect(wfLogEntry.severity).toBe("INFO");

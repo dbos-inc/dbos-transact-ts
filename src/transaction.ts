@@ -29,8 +29,6 @@ export class TransactionContext extends OperonContext {
 
   readonly typeormEM: TypeORMEntityManager = null as unknown as TypeORMEntityManager;
 
-  readonly workflowUUID: string;
-
   constructor(
     userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
@@ -39,9 +37,9 @@ export class TransactionContext extends OperonContext {
     private readonly logger: Logger,
     readonly span: Span,
     readonly functionID: number,
-    readonly operationName: string,
+    operationName: string,
   ) {
-    super({parentCtx: workflowContext});
+    super(operationName, workflowContext);
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
@@ -50,7 +48,6 @@ export class TransactionContext extends OperonContext {
     } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
       this.typeormEM = client as TypeORMEntityManager;
     }
-    this.workflowUUID = workflowContext.workflowUUID;
 
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

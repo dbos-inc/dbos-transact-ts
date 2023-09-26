@@ -12,17 +12,15 @@ export class OperonContext {
   applicationConfig?: any; // applicationConfiguration
 
   //readonly span: Span;
+  workflowUUID: string = '';
 
-  constructor(args ?: {parentCtx?:OperonContext}) {
-    if (args && args.parentCtx) {
-      this.copyBaseFields(args.parentCtx);
+  constructor(readonly operationName: string, parentCtx ?: OperonContext) {
+    if (parentCtx) {
+      this.request = parentCtx.request;
+      this.authenticatedUser = parentCtx.authenticatedUser;
+      this.authenticatedRoles = parentCtx.authenticatedRoles;
+      this.assumedRole = parentCtx.assumedRole;
+      this.workflowUUID = parentCtx.workflowUUID;
     }
-  }
-
-  copyBaseFields(other: OperonContext) {
-    this.request = other.request;
-    this.authenticatedUser = other.authenticatedUser;
-    this.authenticatedRoles = other.authenticatedRoles;
-    this.assumedRole = other.assumedRole;
   }
 }

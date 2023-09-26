@@ -7,15 +7,9 @@ import Koa from "koa";
 import { WorkflowContext } from "src/workflow";
 
 export class HandlerContext extends OperonContext {
-  readonly operationName: string;  // This is the URL.
-
-  // TODO: Need to decide the semantics for those fields.
-  readonly workflowUUID: string = 'N/A';
-  readonly functionID: number = -1;
 
   constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
-    super();
-    this.operationName = koaContext.url;
+    super(koaContext.url);
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
