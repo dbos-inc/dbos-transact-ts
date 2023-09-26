@@ -13,6 +13,7 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
+    "jabber": "^1.5.3",
     "operon": "../.."
   }
 }
