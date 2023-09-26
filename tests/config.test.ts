@@ -31,8 +31,6 @@ describe("operon-config", () => {
     expect(operon.initialized).toBe(false);
     const operonConfig: OperonConfig = operon.config;
 
-    console.log(operonConfig);
-
     // Test pool config options
     const poolConfig: PoolConfig = operonConfig.poolConfig;
     expect(poolConfig.host).toBe("some host");
