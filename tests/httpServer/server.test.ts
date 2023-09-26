@@ -219,7 +219,7 @@ describe("httpserver-tests", () => {
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
       // Invoke a workflow using the provided Operon instance.
-      return ctxt.operon.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
+      return ctxt.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
     }
 
     @PostApi("/transaction/:name")

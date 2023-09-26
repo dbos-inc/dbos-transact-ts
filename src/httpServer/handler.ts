@@ -4,23 +4,46 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { OperonContext } from "../context";
 import { Operon } from "../operon";
 import Koa from "koa";
-import { WorkflowContext } from "src/workflow";
+import { OperonWorkflow, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonTransaction } from "../transaction";
 
 export class HandlerContext extends OperonContext {
+  readonly #operon: Operon;
 
-  constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
+  constructor(operon: Operon, readonly koaContext: Koa.Context) {
     super(koaContext.url);
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
     }
+    this.#operon = operon;
   }
 
   log(severity: string, message: string): void {
     // TODO: need to clean up the logging interface.
     // `log` expects workflowUUID and other fields to be set so we need to convert.
-    this.operon.logger.log(this as unknown as WorkflowContext, severity, message);
+    this.#operon.logger.log(this as unknown as WorkflowContext, severity, message);
+  }
+
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
+    return this.#operon.workflow(wf, params, ...args);
+  }
+
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#operon.transaction(txn, params, ...args);
+  }
+
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+    return this.#operon.send(params, destinationUUID, message, topic);
+  }
+
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
+    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
+    return this.#operon.retrieveWorkflow(workflowUUID);
   }
 }
 
