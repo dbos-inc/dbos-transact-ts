@@ -11,6 +11,8 @@ class TestClass {
   static get counter() { return TestClass.#counter; }
   @OperonCommunicator()
   static async testCommunicator(commCtxt: CommunicatorContext) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(commCtxt.applicationConfig.counter).toBe(3);
     void commCtxt;
     await sleep(1);
     return TestClass.#counter++;
@@ -18,12 +20,16 @@ class TestClass {
 
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(workflowCtxt.applicationConfig.counter).toBe(3);
     const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
     return funcResult ?? -1;
   }
 
   @OperonTransaction()
   static async testInsertTx(txnCtxt: TransactionContext, name: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(txnCtxt.applicationConfig.counter).toBe(3);
     const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name]
@@ -47,6 +53,8 @@ class TestClass {
 
   @OperonWorkflow()
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(wfCtxt.applicationConfig.counter).toBe(3);
     const funcResult: number = await wfCtxt.transaction(
       TestClass.testInsertTx,
       name

@@ -13,7 +13,6 @@ program
   .option('-p, --port <type>', 'Specify the port number', '3000')
   .action(async (options: { port: string }) => {
     const port = parseInt(options.port);
-    console.log(`Starting server on port: ${port}`);
     const runtime = new OperonRuntime();
     await runtime.startServer(port);
   });

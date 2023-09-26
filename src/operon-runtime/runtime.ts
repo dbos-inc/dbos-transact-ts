@@ -50,7 +50,18 @@ export class OperonRuntime {
     await this.operon.init(...classes);
 
     const server = new OperonHttpServer(this.operon)
+
+    const httpconfig = this.operon.config.httpServer ;
+
+    if (port === 0 && httpconfig.port != 0) {
+      port = httpconfig.port ;
+    } else if (port === 0) {
+      port = 3000;
+    }
+    
     this.server = server.listen(port);
+    console.log(`Starting server on port: ${port}`);
+    
   }
 
   /**

@@ -17,6 +17,10 @@ export class HandlerContext extends OperonContext {
     super();
     this.operationName = koaContext.url;
     this.request = koaContext.req;
+    if (operon.config.application) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      this.applicationConfig = operon.config.application;
+    }
   }
 
   log(severity: string, message: string): void {

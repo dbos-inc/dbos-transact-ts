@@ -52,11 +52,17 @@ export const operonNull: OperonNull = {};
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
 
+export interface httpConfig {
+  readonly port: number;
+}
+
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
+  readonly application?: any;
+  readonly httpServer: httpConfig ;
 }
 
 interface ConfigFile {
@@ -71,6 +77,8 @@ interface ConfigFile {
     observability_database: string;
   };
   telemetryExporters?: string[];
+  application: any;
+  httpServer?: httpConfig
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -269,11 +277,17 @@ export class Operon {
     if (config.database.ssl_ca) {
       poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
     }
+
+
+
     return {
       poolConfig: poolConfig,
       telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined
+      observability_database: config.database.observability_database || undefined,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      application: config.application || undefined,
+      httpServer: config.httpServer || {port : 3000}
     };
   }
 

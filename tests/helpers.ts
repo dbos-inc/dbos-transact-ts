@@ -18,9 +18,15 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
       // We can use another way of randomizing the DB name if needed
       database: "operontest",
     },
+    application: {
+      counter: 3
+    },
     telemetryExporters: exporters || [],
     system_database: "operontest_systemdb",
     observability_database: "operontest_observabilitydb",
+    httpServer: {
+      port: 3000
+    }
   };
 
   return operonTestConfig;
