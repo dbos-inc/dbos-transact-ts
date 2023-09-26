@@ -1,6 +1,6 @@
 {
-  "name": "operon",
-  "version": "0.0.1",
+  "name": "@dbos-inc/operon",
+  "version": "0.0.2",
   "description": "Operon",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
