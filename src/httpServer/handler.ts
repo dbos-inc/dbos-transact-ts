@@ -8,7 +8,6 @@ import { WorkflowContext } from "src/workflow";
 
 export class HandlerContext extends OperonContext {
   readonly operationName: string;  // This is the URL.
-  readonly runAs: string = "HTTPDefaultRole"; // TODO: add auth later.
 
   // TODO: Need to decide the semantics for those fields.
   readonly workflowUUID: string = 'N/A';
