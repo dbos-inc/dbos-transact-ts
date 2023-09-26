@@ -53,7 +53,11 @@ export class TransactionContext extends OperonContext {
     }
     this.workflowUUID = workflowContext.workflowUUID;
     this.runAs = workflowContext.runAs;
-    this.applicationConfig = workflowContext.applicationConfig;
+
+    if (workflowContext.applicationConfig) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      this.applicationConfig = workflowContext.applicationConfig;
+    }
   }
 
   log(severity: string, message: string): void {

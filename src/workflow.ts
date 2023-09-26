@@ -69,6 +69,7 @@ export class WorkflowContext extends OperonContext {
       functionID: 0,
     });
     if (operon.config.application) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
     }
   }

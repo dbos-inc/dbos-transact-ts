@@ -12,6 +12,9 @@ describe("operon-config", () => {
         connectionTimeoutMillis: 3000
         user_database: 'some DB'
 
+      httpServer:
+        port: 3000  
+
       application:
         payments_url: 'http://somedomain.com/payment'  
       `;
@@ -39,6 +42,7 @@ describe("operon-config", () => {
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(3000);
     expect(poolConfig.database).toBe("some DB");
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(operonConfig.application.payments_url).toBe("http://somedomain.com/payment")
     await operon.destroy();
   });
@@ -51,6 +55,7 @@ describe("operon-config", () => {
     operon.useNodePostgres();
     expect(operon.initialized).toBe(false);
     expect(operon.config).toBe(config);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(operon.config.application.counter).toBe(3);
     expect(readFileSpy).toHaveBeenCalledTimes(0);
     await operon.destroy();

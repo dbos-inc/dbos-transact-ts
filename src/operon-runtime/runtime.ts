@@ -51,8 +51,10 @@ export class OperonRuntime {
 
     const server = new OperonHttpServer(this.operon)
 
-    if (port === 0 && this.operon.config.httpServer) {
-      port = this.operon.config.httpServer.port ;
+    const httpconfig = this.operon.config.httpServer ;
+
+    if (port === 0 && httpconfig.port != 0) {
+      port = httpconfig.port ;
     } else if (port === 0) {
       port = 3000;
     }

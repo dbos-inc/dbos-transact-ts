@@ -53,13 +53,17 @@ export const operonNull: OperonNull = {};
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
 
+export interface httpConfig {
+  readonly port: number;
+}
+
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer?: any ;
+  readonly httpServer: httpConfig ;
 }
 
 interface ConfigFile {
@@ -75,9 +79,7 @@ interface ConfigFile {
   };
   telemetryExporters?: string[];
   application: any;
-  httpServer?: {
-    port: number;
-  }
+  httpServer?: httpConfig
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -284,8 +286,9 @@ export class Operon {
       telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? "operon_systemdb",
       observability_database: config.database.observability_database || undefined,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       application: config.application || undefined,
-      httpServer: config.httpServer || undefined
+      httpServer: config.httpServer || {port : 3000}
     };
   }
 
