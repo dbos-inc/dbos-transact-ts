@@ -234,7 +234,7 @@ implements OperonMethodRegistrationBase
   }
 }
 
-export class OperonClassRegistration <CT extends { new (...args: any[]) : {} }> implements OperonRegistrationDefaults
+export class OperonClassRegistration <CT extends { new (...args: unknown[]) : object }> implements OperonRegistrationDefaults
 {
   name: string = "";
   requiredRole: string[] | undefined;
@@ -436,7 +436,7 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
   return { descriptor, registration };
 }
 
-function getOrCreateOperonClassRegistration<CT extends { new (...args: any[]) : {} }>(
+function getOrCreateOperonClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
   const clsReg: OperonClassRegistration<CT> =
@@ -519,7 +519,7 @@ export function RequiredRole(anyOf: string[]) {
 }
 
 export function DefaultRequiredRole(anyOf: string[]) {
-  function clsdec<T extends { new (...args: any[]) : {} }>(ctor: T)
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
      const clsreg = getOrCreateOperonClassRegistration(ctor);
      clsreg.requiredRole = anyOf;
