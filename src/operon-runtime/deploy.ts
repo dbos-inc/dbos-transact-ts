@@ -24,7 +24,7 @@ export async function deploy(appName: string, host: string) {
         const formData = new FormData();
         formData.append('app_archive', fs.createReadStream(`operon_deploy/${uuid}.zip`));
 
-        await axios.post(`http://localhost:8080/application/${uuid}`, formData, {
+        await axios.post(`http://${host}:8080/application/${uuid}`, formData, {
             headers: {
                 ...formData.getHeaders(),
             },
