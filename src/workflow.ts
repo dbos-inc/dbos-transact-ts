@@ -17,7 +17,6 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export interface WorkflowParams {
   workflowUUID?: string;
   parentSpan?: Span;
-  parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
@@ -48,12 +47,13 @@ export class WorkflowContext extends OperonContext {
 
   constructor(
     operon: Operon,
+    parentCtx: OperonContext | undefined,
     params: WorkflowParams,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    super(workflowName, params.parentCtx);
+    super(workflowName, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
@@ -61,7 +61,7 @@ export class WorkflowContext extends OperonContext {
     this.span.setAttributes({
       workflowUUID: workflowUUID,
       operationName: workflowName,
-      runAs: params.parentCtx?.authenticatedUser ?? "",
+      runAs: parentCtx?.authenticatedUser ?? "",
       functionID: 0,
     });
     if (operon.config.application) {

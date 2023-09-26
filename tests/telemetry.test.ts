@@ -9,7 +9,7 @@ import { TelemetrySignal } from "../src/telemetry/signals";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
-import { TransactionContext, WorkflowContext, WorkflowParams } from "src";
+import { TransactionContext, WorkflowContext } from "src";
 import { WorkflowHandle } from "src/workflow";
 import { OperonContext } from "dist/src";
 
@@ -334,7 +334,7 @@ describe("operon-telemetry", () => {
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
       
-      const params: WorkflowParams = { parentCtx: oc };
+      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,
