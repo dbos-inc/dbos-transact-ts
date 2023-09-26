@@ -4,7 +4,6 @@ import {
   WorkflowContext,
   TransactionContext,
   CommunicatorContext,
-  WorkflowParams,
   WorkflowHandle,
 } from "src/";
 import {
@@ -14,7 +13,7 @@ import {
 } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
-import { WorkflowConfig, StatusString } from "src/workflow";
+import { StatusString } from "src/workflow";
 import { CONSOLE_EXPORTER } from "src/telemetry";
 
 describe("operon-tests", () => {
@@ -66,17 +65,11 @@ describe("operon-tests", () => {
       return funcResult;
     };
 
-    const testWorkflowConfig: WorkflowConfig = {
-      rolesThatCanRun: ["operonAppAdmin", "operonAppUser"],
-    };
-    operon.registerWorkflow(testWorkflow, testWorkflowConfig);
+    operon.registerWorkflow(testWorkflow);
 
-    const params: WorkflowParams = {
-      runAs: "operonAppAdmin",
-    };
     const workflowHandle: WorkflowHandle<string> = operon.workflow(
       testWorkflow,
-      params,
+      {},
       username
     );
     expect(typeof workflowHandle.getWorkflowUUID()).toBe("string");

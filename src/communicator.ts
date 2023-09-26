@@ -23,7 +23,6 @@ export class CommunicatorContext extends OperonContext
   readonly span: Span;
   readonly workflowUUID: string;
   readonly operationName: string;
-  readonly runAs: string;
   private readonly logger: Logger;
 
   // TODO: Validate the parameters.
@@ -34,7 +33,6 @@ export class CommunicatorContext extends OperonContext
     this.logger = logger;
     this.workflowUUID = workflowContext.workflowUUID;
     this.operationName = workflowContext.operationName;
-    this.runAs = workflowContext.runAs;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;

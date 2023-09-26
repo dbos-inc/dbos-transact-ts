@@ -17,7 +17,7 @@ export class Logger implements ILogger {
       workflowUUID: context.workflowUUID,
       functionID: context.functionID,
       operationName: context.operationName,
-      runAs: context.runAs,
+      runAs: context.authenticatedUser,
       timestamp: Date.now(),
       severity: severity,
       logMessage: message,

@@ -16,13 +16,12 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  runAs?: string;
   parentSpan?: Span;
   parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
-  rolesThatCanRun?: string[];
+  // TODO: add workflow config here.
 }
 
 export interface WorkflowStatus {
@@ -47,7 +46,6 @@ export class WorkflowContext extends OperonContext {
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
   readonly operationName: string;
-  readonly runAs: string;
 
   constructor(
     operon: Operon,
@@ -60,12 +58,11 @@ export class WorkflowContext extends OperonContext {
     this.operationName = workflowName;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    this.runAs = params.runAs || "defaultRole"; // runAs should have been resolved in operon.workflow()
     this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
     this.span.setAttributes({
       workflowUUID: workflowUUID,
       operationName: workflowName,
-      runAs: params.runAs,
+      runAs: params.parentCtx?.authenticatedUser ?? "",
       functionID: 0,
     });
     if (operon.config.application) {
@@ -174,7 +171,7 @@ export class WorkflowContext extends OperonContext {
     span.setAttributes({
       workflowUUID: this.workflowUUID,
       operationName: txn.name,
-      runAs: this.runAs,
+      runAs: this.authenticatedUser,
       functionID: funcId,
       readOnly: readOnly,
       isolationLevel: config.isolationLevel,
@@ -269,7 +266,7 @@ export class WorkflowContext extends OperonContext {
     span.setAttributes({
       workflowUUID: this.workflowUUID,
       operationName: commFn.name,
-      runAs: this.runAs,
+      runAs: this.authenticatedUser,
       functionID: funcID,
       retriesAllowed: commConfig.retriesAllowed,
       intervalSeconds: commConfig.intervalSeconds,

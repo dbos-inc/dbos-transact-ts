@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   OperonError,
-  OperonWorkflowPermissionDeniedError,
   OperonInitializationError,
   OperonWorkflowConflictUUIDError,
   OperonNotRegisteredError,
@@ -338,15 +337,6 @@ export class Operon {
       }
       const wConfig = wInfo.config;
 
-      // Check if the user has permission to run this workflow.
-      if (!params.runAs) {
-        params.runAs = "defaultRole";
-      }
-      const userHasPermission = this.hasPermission(params.runAs, wConfig);
-      if (!userHasPermission) {
-        throw new OperonWorkflowPermissionDeniedError(params.runAs, wf.name);
-      }
-
       const wCtxt: WorkflowContext = new WorkflowContext(this, params, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
@@ -436,26 +426,6 @@ export class Operon {
   /* INTERNAL HELPERS */
   #generateUUID(): string {
     return uuidv4();
-  }
-
-  hasPermission(role: string, workflowConfig: WorkflowConfig): boolean {
-    // An empty list of roles in the workflow config means the workflow is permission-less
-    if (!workflowConfig.rolesThatCanRun) {
-      return true;
-    } else {
-      // Default role cannot run permissioned workflows
-      if (role === "defaultRole") {
-        return false;
-      }
-      // Check if the user's role is in the list of roles that can run the workflow
-      for (const roleThatCanRun of workflowConfig.rolesThatCanRun) {
-        if (role === roleThatCanRun) {
-          return true;
-        }
-      }
-    }
-    // Reject by default
-    return false;
   }
 
   /* BACKGROUND PROCESSES */

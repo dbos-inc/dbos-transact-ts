@@ -30,7 +30,6 @@ export class TransactionContext extends OperonContext {
   readonly typeormEM: TypeORMEntityManager = null as unknown as TypeORMEntityManager;
 
   readonly workflowUUID: string;
-  readonly runAs: string;
 
   constructor(
     userDatabaseName: UserDatabaseName,
@@ -52,7 +51,6 @@ export class TransactionContext extends OperonContext {
       this.typeormEM = client as TypeORMEntityManager;
     }
     this.workflowUUID = workflowContext.workflowUUID;
-    this.runAs = workflowContext.runAs;
 
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
