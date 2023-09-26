@@ -82,7 +82,7 @@ export class OperonHttpServer {
           // Check for auth first
           if (middlewares && middlewares.auth) {
             try {
-              const res = await middlewares.auth({name: ro.name, requiredRole: ro.requiredRole, koaContext: koaCtxt});
+              const res = await middlewares.auth({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;
                 oc.authenticatedRoles = res.authenticatedRoles;

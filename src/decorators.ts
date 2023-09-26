@@ -93,6 +93,7 @@ export class OperonDataType {
 
 const operonParamMetadataKey = Symbol("operon:parameter");
 const operonMethodMetadataKey = Symbol("operon:method");
+const operonClassMetadataKey = Symbol("operon:class");
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
@@ -172,13 +173,21 @@ export class OperonParameter {
   }
 }
 
+export interface OperonRegistrationDefaults
+{
+  name: string;
+  requiredRole: string[] | undefined;
+}
+
 export interface OperonMethodRegistrationBase {
   name: string;
   traceLevel: TraceLevels;
 
   args: OperonParameter[];
 
-  requiredRole: string [];
+  defaults?: OperonRegistrationDefaults;
+
+  getRequiredRoles(): string [];
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
@@ -193,10 +202,12 @@ export interface OperonMethodRegistrationBase {
 export class OperonMethodRegistration <This, Args extends unknown[], Return>
 implements OperonMethodRegistrationBase
 {
+  defaults?: OperonRegistrationDefaults | undefined;
+
   name: string = "";
   traceLevel: TraceLevels = TraceLevels.INFO;
 
-  requiredRole: string[] = [];
+  requiredRole: string[] | undefined = undefined;
 
   args: OperonParameter[] = [];
 
@@ -215,7 +226,24 @@ implements OperonMethodRegistrationBase
     return this.registeredFunction!.call(pthis, ...args);
   }
 
-  // TODO: Permissions, attachment point, error handling, etc.
+  getRequiredRoles() {
+    if (this.requiredRole) {
+      return this.requiredRole;
+    }
+    return this.defaults?.requiredRole || [];
+  }
+}
+
+export class OperonClassRegistration <CT extends { new (...args: unknown[]) : object }> implements OperonRegistrationDefaults
+{
+  name: string = "";
+  requiredRole: string[] | undefined;
+  needsInitialized: boolean = true;
+
+  ctor: CT;
+  constructor(ctor: CT) {
+    this.ctor = ctor;
+  }
 }
 
 export function getRegisteredOperations(target: object): ReadonlyArray<OperonMethodRegistrationBase> {
@@ -283,14 +311,15 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
       let opCtx : OperonContext | undefined = undefined;
 
-      // Validate the user authentication and populate the role field
-      if (methReg.requiredRole.length > 0) {
+      // Validate the user authentication and populate the role field\
+      const rr = methReg.getRequiredRoles();
+      if (rr.length > 0) {
         opCtx = args[0] as OperonContext;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         let authRole = ''
         const set = new Set(curRoles);
-        for (const str of methReg.requiredRole) {
+        for (const str of rr) {
           if (set.has(str)) {
             authorized = true;
             authRole = str;
@@ -407,6 +436,25 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
   return { descriptor, registration };
 }
 
+function getOrCreateOperonClassRegistration<CT extends { new (...args: unknown[]) : object }>(
+  ctor: CT
+) {
+  const clsReg: OperonClassRegistration<CT> =
+    (Reflect.getOwnMetadata(operonClassMetadataKey, ctor, "opclassreg") as OperonClassRegistration<CT>) || new OperonClassRegistration<CT>(ctor);
+
+  if (clsReg.needsInitialized) {
+    clsReg.name = ctor.name;
+
+    Reflect.defineMetadata(operonClassMetadataKey, clsReg, ctor, "opclassreg");
+
+    const ops = getRegisteredOperations(ctor);
+    ops.forEach((op) => {
+      op.defaults = clsReg;
+    });
+  }
+  return clsReg;
+}
+
 export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
@@ -468,6 +516,15 @@ export function RequiredRole(anyOf: string[]) {
     return descriptor;
   }
   return apidec;
+}
+
+export function DefaultRequiredRole(anyOf: string[]) {
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     clsreg.requiredRole = anyOf;
+  }
+  return clsdec;
 }
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code

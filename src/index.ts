@@ -52,6 +52,8 @@ export {
   Traced,
   RequiredRole,
 
+  DefaultRequiredRole,
+
   OperonTransaction,
   OperonWorkflow,
   OperonCommunicator,
