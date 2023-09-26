@@ -13,27 +13,12 @@ import { OperonWorkflow } from "../workflow";
 import {
   OperonDataValidationError,
   OperonError,
-  OperonNotAuthorizedError,
   OperonResponseError,
   isOperonClientError,
 } from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
-import { OperonRegistrationMetadata } from 'src/decorators';
-
-/**
- * Authentication middleware
- * This is expected to:
- *   Validate the request found in the context ctx
- *   Set the current user and roles into the ctx
- * If this succeeds, return true
- * If this fails in a usual way, return false
- * If this fails in an unusual way, throw an error
- */
-export interface OperonHttpAuthMiddleware
-{
-  authenticate(handler: OperonRegistrationMetadata, ctx:HandlerContext): Promise<boolean>;
-}
+import { OperonHttpAuthMiddleware } from './middleware';
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -97,9 +82,10 @@ export class OperonHttpServer {
           // Check for auth first
           if (middlewares && middlewares.auth) {
             try {
-              const res = await middlewares.auth.authenticate({name: ro.name, requiredRole: ro.requiredRole}, oc);
-              if (!res) {
-                throw new OperonNotAuthorizedError("Unauthorized", 401);
+              const res = await middlewares.auth({name: ro.name, requiredRole: ro.requiredRole, koaContext: koaCtxt});
+              if (res) {
+                oc.authenticatedUser = res.authenticatedUser;
+                oc.authenticatedRoles = res.authenticatedRoles;
               }
             }
             catch (e) {
