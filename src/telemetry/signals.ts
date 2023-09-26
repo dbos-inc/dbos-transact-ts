@@ -1,6 +1,7 @@
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import { ValuesOf } from "../utils";
 
-export type OperonSignal = TelemetrySignal | ProvenanceSignal;
+export type OperonSignal = TelemetrySignal | ProvenanceSignal | LogSignal;
 
 export interface TelemetrySignal {
   workflowUUID: string;
@@ -8,10 +9,23 @@ export interface TelemetrySignal {
   runAs: string;
   timestamp: number;
   transactionID?: string;
-  severity?: string;
-  logMessage?: string;
   traceID?: string;
   traceSpan?: ReadableSpan;
+}
+
+export const LogSeverity = {
+  Debug: "DEBUG",
+  Info: "INFO",
+  Warn: "WARN",
+  Error: "ERROR",
+  Log: "LOG",
+} as const;
+export type LogSeverity = ValuesOf<typeof LogSeverity>;
+
+export interface LogSignal extends TelemetrySignal {
+  severity: LogSeverity;
+  logMessage: string;
+  stack: string;
 }
 
 export interface ProvenanceSignal {

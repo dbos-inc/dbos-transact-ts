@@ -6,6 +6,7 @@ import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
+import { LogSeverity } from "./telemetry/signals";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
@@ -55,7 +56,23 @@ export class TransactionContext extends OperonContext {
     }
   }
 
-  log(severity: string, message: string): void {
-    this.logger.log(this, severity, message);
+  info(message: string): void {
+    this.logger.log(this, LogSeverity.Info, message);
+  }
+
+  warn(message: string): void {
+    this.logger.log(this, LogSeverity.Warn, message);
+  }
+
+  log(message: string): void {
+    this.logger.log(this, LogSeverity.Log, message);
+  }
+
+  error(message: string): void {
+    this.logger.log(this, LogSeverity.Error, message);
+  }
+
+  debug(message: string): void {
+    this.logger.log(this, LogSeverity.Debug, message);
   }
 }

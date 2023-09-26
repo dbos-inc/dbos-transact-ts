@@ -11,6 +11,7 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
+import { LogSeverity } from "./telemetry/signals";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -72,8 +73,24 @@ export class WorkflowContext extends OperonContext {
     return this.functionID++;
   }
 
-  log(severity: string, message: string): void {
-    this.#operon.logger.log(this, severity, message);
+  info(message: string): void {
+    this.#operon.logger.log(this, LogSeverity.Info, message);
+  }
+
+  warn(message: string): void {
+    this.#operon.logger.log(this, LogSeverity.Warn, message);
+  }
+
+  log(message: string): void {
+    this.#operon.logger.log(this, LogSeverity.Log, message);
+  }
+
+  error(message: string): void {
+    this.#operon.logger.log(this, LogSeverity.Error, message);
+  }
+
+  debug(message: string): void {
+    this.#operon.logger.log(this, LogSeverity.Debug, message);
   }
 
   /**

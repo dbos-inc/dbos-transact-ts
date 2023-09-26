@@ -5,6 +5,7 @@ import { InternalWorkflowParams, Operon } from "../operon";
 import Koa from "koa";
 import { OperonWorkflow, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction } from "../transaction";
+import { LogSeverity } from "../telemetry/signals";
 
 export class HandlerContext extends OperonContext {
   readonly #operon: Operon;

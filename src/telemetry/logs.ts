@@ -1,5 +1,5 @@
 import { TelemetryCollector } from "./collector";
-import { TelemetrySignal } from "./signals";
+import { LogSeverity, TelemetrySignal } from "./signals";
 import { OperonContext } from "src/context";
 
 interface ILogger {
@@ -10,7 +10,7 @@ interface ILogger {
 export class Logger implements ILogger {
   constructor(readonly collector: TelemetryCollector) {}
 
-  log(context: OperonContext, severity: string, message: string): void {
+  log(context: OperonContext, severity: LogSeverity, message: string): void {
     const signal: TelemetrySignal = {
       workflowUUID: context.workflowUUID,
       operationName: context.operationName,
@@ -18,7 +18,15 @@ export class Logger implements ILogger {
       timestamp: Date.now(),
       severity: severity,
       logMessage: message,
+      stack: "",
     };
+
+    // Retrieve 3 frames above: this frame, the transaction/workflow/communicator/handler frame + 1 line for the class name ("Error")
+    const stack = new Error().stack?.split("\n")[3].trim();
+    if (stack) {
+      signal.stack = stack;
+    }
+
     this.collector.push(signal);
   }
 }

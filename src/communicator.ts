@@ -2,6 +2,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "./telemetry";
 import { WorkflowContext } from "./workflow";
 import { OperonContext } from "./context";
+import { LogSeverity } from "./telemetry/signals";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
@@ -37,7 +38,23 @@ export class CommunicatorContext extends OperonContext
     }
   }
 
-  log(severity: string, message: string): void {
-    this.logger.log(this, severity, message);
+  info(message: string): void {
+    this.logger.log(this, LogSeverity.Info, message);
+  }
+
+  warn(message: string): void {
+    this.logger.log(this, LogSeverity.Warn, message);
+  }
+
+  log(message: string): void {
+    this.logger.log(this, LogSeverity.Log, message);
+  }
+
+  error(message: string): void {
+    this.logger.log(this, LogSeverity.Error, message);
+  }
+
+  debug(message: string): void {
+    this.logger.log(this, LogSeverity.Debug, message);
   }
 }
