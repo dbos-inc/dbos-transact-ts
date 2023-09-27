@@ -20,19 +20,13 @@ export class CommunicatorContext extends OperonContext
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
   readonly backoffRate: number;
-  readonly span: Span;
-  readonly workflowUUID: string;
-  readonly operationName: string;
   private readonly logger: Logger;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig) {
-    super({parentCtx: workflowContext});
+  constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig, commName: string) {
+    super(commName, span, workflowContext);
     this.functionID = functionID;
-    this.span = span;
     this.logger = logger;
-    this.workflowUUID = workflowContext.workflowUUID;
-    this.operationName = workflowContext.operationName;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;

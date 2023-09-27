@@ -95,7 +95,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       const tableName = `signal_${registeredOperation.name}`;
       let createSignalTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
         workflow_uuid TEXT NOT NULL,
-        function_id INT NOT NULL,
         function_name TEXT NOT NULL,
         run_as TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
@@ -146,14 +145,13 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       const tableName: string = `signal_${operationName}`;
       const query = `
         INSERT INTO ${tableName}
-        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_id int, function_name text, run_as text, timestamp bigint, transaction_id text, severity text, log_message text, trace_id text, trace_span json)
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_name text, run_as text, timestamp bigint, transaction_id text, severity text, log_message text, trace_id text, trace_span json)
       `;
 
       const values: string = JSON.stringify(
         signals.map((signal) => {
           return {
             workflow_uuid: signal.workflowUUID,
-            function_id: signal.functionID,
             function_name: signal.operationName,
             run_as: signal.runAs,
             timestamp: signal.timestamp,

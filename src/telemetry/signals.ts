@@ -4,7 +4,6 @@ export type OperonSignal = TelemetrySignal | ProvenanceSignal;
 
 export interface TelemetrySignal {
   workflowUUID: string;
-  functionID: number;
   operationName: string;
   runAs: string;
   timestamp: number;
