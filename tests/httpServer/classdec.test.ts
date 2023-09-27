@@ -36,6 +36,7 @@ describe("httpserver-defsec-tests", () => {
     await operon.init(TestEndpointDefSec);
     httpServer = new OperonHttpServer(operon);
     middlewareCounter = 0;
+    middlewareCounter2 = 0;
   });
 
   afterEach(async () => {
@@ -46,7 +47,8 @@ describe("httpserver-defsec-tests", () => {
     const response = await request(httpServer.app.callback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
-    expect(middlewareCounter).toEqual(1);
+    expect(middlewareCounter).toBe(1);
+    expect(middlewareCounter2).toBe(2);  // Middleware runs from left to right.
   });
 
   test("not-authenticated", async () => {
@@ -98,10 +100,16 @@ describe("httpserver-defsec-tests", () => {
     await next();
   };
 
+  let middlewareCounter2 = 0;
+  const testMiddleware2: Middleware = async (ctx, next) => {
+    middlewareCounter2 = middlewareCounter + 1;
+    await next();
+  };  
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(['user'])
   @Authentication(authTestMiddleware)
-  @KoaMiddleware(testMiddleware)
+  @KoaMiddleware(testMiddleware, testMiddleware2)
   class TestEndpointDefSec {
     // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])
