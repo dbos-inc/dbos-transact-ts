@@ -168,7 +168,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
             timestamp: signal.timestamp,
             transaction_id: signal.transactionID,
             severity: signal.severity,
-           log_message: signal.logMessage,
+            log_message: signal.logMessage,
             trace_id: signal.traceID,
             trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : null,
           };
