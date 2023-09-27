@@ -17,7 +17,8 @@ import {
 import request from "supertest";
 import { HandlerContext } from "src/httpServer/handler";
 import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
-import { Authentication } from "src/httpServer/middleware";
+import { Authentication, KoaMiddlewares } from "src/httpServer/middleware";
+import logger from "koa-logger";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;
@@ -92,6 +93,7 @@ describe("httpserver-defsec-tests", () => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(['user'])
   @Authentication(authTestMiddleware)
+  @KoaMiddlewares(logger())
   class TestEndpointDefSec {
     // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])

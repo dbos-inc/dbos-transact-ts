@@ -72,20 +72,25 @@ export class OperonHttpServer {
     operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
+        // Check if we need to apply any Koa middleware.
+        const defaults = ro.defaults as OperonMiddlewareDefaults;
+        if (defaults?.koaMiddlewares) {
+          defaults.koaMiddlewares.forEach((koaMiddleware) => {
+            router.use(ro.apiURL, koaMiddleware);
+          })
+        }
+
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
 
           try {
             // Check for auth first
-            if (ro.defaults) {
-              const defaults = ro.defaults as OperonMiddlewareDefaults;
-              if (defaults.authMiddleware) {
-                const res = await defaults.authMiddleware({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
-                if (res) {
-                  oc.authenticatedUser = res.authenticatedUser;
-                  oc.authenticatedRoles = res.authenticatedRoles;
-                }
+            if (defaults?.authMiddleware) {
+              const res = await defaults.authMiddleware({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
+              if (res) {
+                oc.authenticatedUser = res.authenticatedUser;
+                oc.authenticatedRoles = res.authenticatedRoles;
               }
             }
 

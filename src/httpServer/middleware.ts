@@ -27,12 +27,13 @@ export interface OperonHttpAuthReturn {
 
 // Class-level decorators
 export interface OperonMiddlewareDefaults extends OperonRegistrationDefaults {
-  // koaMiddlewares: Koa.Middleware[];
+  koaMiddlewares?: Koa.Middleware[];
   authMiddleware?: OperonHttpAuthMiddleware;
 }
 
 export class OperonMiddlewareClassRegistration <CT extends { new (...args: unknown[]) : object }> extends OperonClassRegistration<CT> implements OperonMiddlewareDefaults {
   authMiddleware?: OperonHttpAuthMiddleware;
+  koaMiddlewares?: Koa.Middleware[];
 
   constructor(ctor: CT) {
     super(ctor);
@@ -45,6 +46,17 @@ export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
   {
      const clsreg = getOrCreateOperonClassRegistration(ctor) as OperonMiddlewareClassRegistration<T>;
      clsreg.authMiddleware = authMiddleware;
+  }
+  return clsdec;
+}
+
+// Koa middlewares decorator, which applies to each endpoint in the class.
+// The middlewares are applied from left to right of the parameters.
+export function KoaMiddlewares(...koaMiddlewares: Koa.Middleware[]) {
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateOperonClassRegistration(ctor) as OperonMiddlewareClassRegistration<T>;
+     clsreg.koaMiddlewares = koaMiddlewares;
   }
   return clsdec;
 }
