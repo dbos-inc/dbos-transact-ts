@@ -18,7 +18,7 @@ import request from "supertest";
 import { HandlerContext } from "src/httpServer/handler";
 import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 import { Authentication, KoaMiddlewares } from "src/httpServer/middleware";
-import logger from "koa-logger";
+import { Middleware } from "koa";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;
@@ -35,6 +35,7 @@ describe("httpserver-defsec-tests", () => {
     operon.useNodePostgres();
     await operon.init(TestEndpointDefSec);
     httpServer = new OperonHttpServer(operon);
+    middlewareCounter = 0;
   });
 
   afterEach(async () => {
@@ -45,6 +46,7 @@ describe("httpserver-defsec-tests", () => {
     const response = await request(httpServer.app.callback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
+    expect(middlewareCounter).toEqual(1);
   });
 
   test("not-authenticated", async () => {
@@ -90,10 +92,16 @@ describe("httpserver-defsec-tests", () => {
     return;
   }
 
+  let middlewareCounter = 0;
+  const testMiddleware: Middleware = async (ctx, next) => {
+    middlewareCounter++;
+    await next();
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(['user'])
   @Authentication(authTestMiddleware)
-  @KoaMiddlewares(logger())
+  @KoaMiddlewares(testMiddleware)
   class TestEndpointDefSec {
     // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])
