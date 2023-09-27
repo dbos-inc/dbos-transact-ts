@@ -5,7 +5,7 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { TelemetrySignal } from "../src/telemetry/signals";
+import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
@@ -124,14 +124,14 @@ describe("operon-telemetry", () => {
       expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
 
       await collector.init();
-      const logSpy = jest.spyOn(global.console, "info").mockImplementation(); // "mute" console.log
+      const logSpy = jest.spyOn(global.console, "log").mockImplementation(); // "mute" console.log
 
       const signal1: TelemetrySignal = {
         workflowUUID: "test",
         operationName: "create_user",
         runAs: "test",
         timestamp: Date.now(),
-        severity: "INFO",
+        severity: LogSeverity.Log,
         logMessage: "test",
         stack: "some stack trace",
       };
@@ -365,7 +365,7 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(txnLogEntry.function_name).toBe("test_function");
       expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(txnLogEntry.severity).toBe("INFO");
+      expect(txnLogEntry.severity).toBe(LogSeverity.Log);
       expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
       expect(txnLogEntry.trace_id).toBe(null);
       expect(txnLogEntry.trace_span).toBe(null);
@@ -379,7 +379,7 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(wfLogEntry.function_name).toBe("test_workflow");
       expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(wfLogEntry.severity).toBe("INFO");
+      expect(wfLogEntry.severity).toBe(LogSeverity.Log);
       expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
       expect(wfLogEntry.trace_id).toBe(null);
       expect(wfLogEntry.trace_span).toBe(null);
