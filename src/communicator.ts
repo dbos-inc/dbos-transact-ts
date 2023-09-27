@@ -2,7 +2,6 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "./telemetry";
 import { WorkflowContext } from "./workflow";
 import { OperonContext } from "./context";
-import { LogSeverity } from "./telemetry/signals";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
@@ -21,13 +20,11 @@ export class CommunicatorContext extends OperonContext
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
   readonly backoffRate: number;
-  private readonly logger: Logger;
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig, commName: string) {
-    super(commName, span, workflowContext);
+    super(commName, span, logger, workflowContext);
     this.functionID = functionID;
-    this.logger = logger;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;
@@ -36,25 +33,5 @@ export class CommunicatorContext extends OperonContext
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
        this.applicationConfig = workflowContext.applicationConfig;
     }
-  }
-
-  info(message: string): void {
-    this.logger.log(this, LogSeverity.Info, message);
-  }
-
-  warn(message: string): void {
-    this.logger.log(this, LogSeverity.Warn, message);
-  }
-
-  log(message: string): void {
-    this.logger.log(this, LogSeverity.Log, message);
-  }
-
-  error(message: string): void {
-    this.logger.log(this, LogSeverity.Error, message);
-  }
-
-  debug(message: string): void {
-    this.logger.log(this, LogSeverity.Debug, message);
   }
 }

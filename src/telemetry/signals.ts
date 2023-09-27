@@ -24,7 +24,6 @@ export type LogSeverity = ValuesOf<typeof LogSeverity>;
 
 export interface TelemetrySignal {
   workflowUUID: string;
-  functionID: number;
   operationName: string;
   runAs: string;
   timestamp: number;

@@ -59,7 +59,7 @@ export class WorkflowContext extends OperonContext {
       runAs: parentCtx?.authenticatedUser ?? "",
       functionID: 0,
     });
-    super(workflowName, span, parentCtx);
+    super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
@@ -71,26 +71,6 @@ export class WorkflowContext extends OperonContext {
 
   functionIDGetIncrement(): number {
     return this.functionID++;
-  }
-
-  info(message: string): void {
-    this.#operon.logger.log(this, LogSeverity.Info, message);
-  }
-
-  warn(message: string): void {
-    this.#operon.logger.log(this, LogSeverity.Warn, message);
-  }
-
-  log(message: string): void {
-    this.#operon.logger.log(this, LogSeverity.Log, message);
-  }
-
-  error(message: string): void {
-    this.#operon.logger.log(this, LogSeverity.Error, message);
-  }
-
-  debug(message: string): void {
-    this.#operon.logger.log(this, LogSeverity.Debug, message);
   }
 
   /**

@@ -3,9 +3,8 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { OperonContext } from "../context";
 import { InternalWorkflowParams, Operon } from "../operon";
 import Koa from "koa";
-import { OperonWorkflow, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction } from "../transaction";
-import { LogSeverity } from "../telemetry/signals";
 
 export class HandlerContext extends OperonContext {
   readonly #operon: Operon;
@@ -15,19 +14,13 @@ export class HandlerContext extends OperonContext {
     span.setAttributes({
       operationName: koaContext.url,
     });
-    super(koaContext.url, span);
+    super(koaContext.url, span, operon.logger);
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
     }
     this.#operon = operon;
-  }
-
-  log(severity: string, message: string): void {
-    // TODO: need to clean up the logging interface.
-    // `log` expects workflowUUID and other fields to be set so we need to convert.
-    this.#operon.logger.log(this as unknown as WorkflowContext, severity, message);
   }
 
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {

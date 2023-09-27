@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
 import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
-import { Logger } from "./telemetry";
-import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
-import { LogSeverity } from "./telemetry/signals";
+import { OperonContext } from "./context";
+import { ValuesOf } from "./utils";
+import { Logger } from "./telemetry";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
@@ -35,12 +34,12 @@ export class TransactionContext extends OperonContext {
     client: UserDatabaseClient,
     config: TransactionConfig,
     workflowContext: WorkflowContext,
-    private readonly logger: Logger,
+    logger: Logger,
     span: Span,
     readonly functionID: number,
-    operationName: string,
+    operationName: string
   ) {
-    super(operationName, span, workflowContext);
+    super(operationName, span, logger, workflowContext);
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
@@ -54,25 +53,5 @@ export class TransactionContext extends OperonContext {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = workflowContext.applicationConfig;
     }
-  }
-
-  info(message: string): void {
-    this.logger.log(this, LogSeverity.Info, message);
-  }
-
-  warn(message: string): void {
-    this.logger.log(this, LogSeverity.Warn, message);
-  }
-
-  log(message: string): void {
-    this.logger.log(this, LogSeverity.Log, message);
-  }
-
-  error(message: string): void {
-    this.logger.log(this, LogSeverity.Error, message);
-  }
-
-  debug(message: string): void {
-    this.logger.log(this, LogSeverity.Debug, message);
   }
 }
