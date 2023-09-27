@@ -5,7 +5,7 @@ import {
   TelemetryCollector,
   CONSOLE_EXPORTER,
 } from "../src/telemetry";
-import { LogSignal, TelemetrySignal } from "../src/telemetry/signals";
+import { TelemetrySignal } from "../src/telemetry/signals";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Traced, OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
@@ -124,9 +124,9 @@ describe("operon-telemetry", () => {
       expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
 
       await collector.init();
-      const logSpy = jest.spyOn(global.console, "log").mockImplementation(); // "mute" console.log
+      const logSpy = jest.spyOn(global.console, "info").mockImplementation(); // "mute" console.log
 
-      const signal1: LogSignal = {
+      const signal1: TelemetrySignal = {
         workflowUUID: "test",
         operationName: "create_user",
         runAs: "test",
@@ -143,11 +143,11 @@ describe("operon-telemetry", () => {
       expect(logSpy).toHaveBeenCalledTimes(2);
       expect(logSpy).toHaveBeenNthCalledWith(
         1,
-        `${signal1.logMessage} -- ${signal1.stack}`
+        `${signal1.logMessage}`
       );
       expect(logSpy).toHaveBeenNthCalledWith(
         2,
-        `${signal2.logMessage} -- ${signal2.stack}`
+        `${signal2.logMessage}`
       );
     });
   });

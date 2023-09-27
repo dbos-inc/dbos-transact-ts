@@ -2,7 +2,7 @@ import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
-import { OperonSignal, ProvenanceSignal, TelemetrySignal, LogSignal, LogSeverity } from "./signals";
+import { OperonSignal, ProvenanceSignal, TelemetrySignal, LogSeverity } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
@@ -47,21 +47,21 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
 export const CONSOLE_EXPORTER = "ConsoleExporter";
 export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
   async export(rawSignals: OperonSignal[]): Promise<void> {
-    const signals = rawSignals as LogSignal[];
+    const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
       for (const signal of signals) {
         if (signal.logMessage !== undefined) {
-          const logEntry = `${signal.logMessage} -- ${signal.stack}`;
+          const logMessageAndStack = `${signal.logMessage} -- ${signal.stack}`;
           if (signal.severity === LogSeverity.Info) {
-            console.info(logEntry);
+            console.info(signal.logMessage);
           } else if (signal.severity === LogSeverity.Warn) {
-            console.warn(logEntry);
+            console.warn(logMessageAndStack);
           } else if (signal.severity === LogSeverity.Error) {
-            console.error(logEntry);
+            console.error(logMessageAndStack);
           } else if (signal.severity === LogSeverity.Debug) {
-            console.debug(logEntry);
+            console.debug(logMessageAndStack);
           } else {
-            console.log(logEntry);
+            console.log(signal.logMessage);
           }
         }
       }
@@ -167,8 +167,8 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
             run_as: signal.runAs,
             timestamp: signal.timestamp,
             transaction_id: signal.transactionID,
-//            severity: signal.severity,
-//           log_message: signal.logMessage,
+            severity: signal.severity,
+           log_message: signal.logMessage,
             trace_id: signal.traceID,
             trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : null,
           };
