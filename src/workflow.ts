@@ -46,6 +46,7 @@ export class WorkflowContext extends OperonContext {
   constructor(
     operon: Operon,
     parentCtx: OperonContext | undefined,
+    // FIXME: seems we are not using this anymore
     params: WorkflowParams,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
@@ -175,8 +176,10 @@ export class WorkflowContext extends OperonContext {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger,
-                            span, funcId, txn.name);
+        const tCtxt = new TransactionContext(
+          this.#operon.userDatabase.getName(), client, config, this,
+          span, this.#operon.logger, funcId, txn.name,
+        );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
@@ -267,7 +270,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, this.#operon.logger, span, commConfig, commFn.name);
+    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

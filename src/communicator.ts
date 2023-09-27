@@ -22,7 +22,7 @@ export class CommunicatorContext extends OperonContext
   readonly backoffRate: number;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig, commName: string) {
+  constructor(workflowContext: WorkflowContext, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;

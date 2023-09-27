@@ -34,8 +34,8 @@ export class TransactionContext extends OperonContext {
     client: UserDatabaseClient,
     config: TransactionConfig,
     workflowContext: WorkflowContext,
-    logger: Logger,
     span: Span,
+    logger: Logger,
     readonly functionID: number,
     operationName: string
   ) {
