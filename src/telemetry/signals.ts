@@ -3,16 +3,6 @@ import { ValuesOf } from "../utils";
 
 export type OperonSignal = TelemetrySignal | ProvenanceSignal ;
 
-export interface TelemetrySignal {
-  workflowUUID: string;
-  operationName: string;
-  runAs: string;
-  timestamp: number;
-  transactionID?: string;
-  traceID?: string;
-  traceSpan?: ReadableSpan;
-}
-
 export const LogSeverity = {
   Debug: "DEBUG",
   Info: "INFO",
