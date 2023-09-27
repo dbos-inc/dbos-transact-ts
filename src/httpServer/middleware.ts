@@ -40,7 +40,9 @@ export class OperonMiddlewareClassRegistration <CT extends { new (...args: unkno
   }
 }
 
-// Auth middleware decorator.
+/**
+ * Define an authentication function for each endpoint in this class.
+ */
 export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
@@ -50,9 +52,10 @@ export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
   return clsdec;
 }
 
-// Koa middlewares decorator, which applies to each endpoint in the class.
-// The middlewares are applied from left to right of the parameters.
-export function KoaMiddlewares(...koaMiddlewares: Koa.Middleware[]) {
+/**
+ * Define Koa middleware that is applied in order to each endpoint in this class.
+ */
+export function KoaMiddleware(...koaMiddlewares: Koa.Middleware[]) {
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
      const clsreg = getOrCreateOperonClassRegistration(ctor) as OperonMiddlewareClassRegistration<T>;
