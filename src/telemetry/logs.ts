@@ -25,7 +25,7 @@ export class Logger implements ILogger {
     // + 1 line for the class name ("Error"). Also remove "at" from the beginning
     const stack = new Error().stack?.split("\n")[3].trim().substring(3);
     if (stack) {
-      signal.stack = stack;
+      signal.stack = `-- ${stack}`;
     }
 
     this.collector.push(signal);

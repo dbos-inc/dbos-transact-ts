@@ -51,7 +51,7 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
     return await new Promise<void>((resolve) => {
       for (const signal of signals) {
         if (signal.logMessage !== undefined) {
-          const logMessageAndStack = `${signal.logMessage} -- ${signal.stack}`;
+          const logMessageAndStack = `${signal.logMessage} ${signal.stack}`;
           if (signal.severity === LogSeverity.Info) {
             console.info(signal.logMessage);
           } else if (signal.severity === LogSeverity.Warn) {
