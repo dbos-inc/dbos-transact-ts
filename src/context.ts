@@ -1,7 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { IncomingMessage } from "http";
-import { Logger } from "./telemetry";
-import { LogSeverity } from "./telemetry/signals";
+import { Logger, LogSeverity } from "./telemetry";
 
 export class OperonContext {
   request?: IncomingMessage; // Raw incoming HTTP request.

@@ -4,8 +4,9 @@ import {
   POSTGRES_EXPORTER,
   TelemetryCollector,
   CONSOLE_EXPORTER,
+  LogSeverity,
 } from "../src/telemetry";
-import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
+import { TelemetrySignal } from "../src/telemetry/signals";
 import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
