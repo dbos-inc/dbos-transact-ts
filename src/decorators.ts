@@ -436,7 +436,7 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
   return { descriptor, registration };
 }
 
-function getOrCreateOperonClassRegistration<CT extends { new (...args: unknown[]) : object }>(
+export function getOrCreateOperonClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
   const clsReg: OperonClassRegistration<CT> =

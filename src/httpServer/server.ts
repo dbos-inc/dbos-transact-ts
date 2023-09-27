@@ -18,7 +18,7 @@ import {
 } from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
-import { OperonHttpAuthMiddleware } from './middleware';
+import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode } from "@opentelemetry/api";
 
 export class OperonHttpServer {
@@ -31,7 +31,6 @@ export class OperonHttpServer {
    * TODO: maybe call operon.init() somewhere in this class?
    */
   constructor(readonly operon: Operon, config : {
-    authMiddleware ?: OperonHttpAuthMiddleware,
     koa ?: Koa,
     router ?: Router,
   } = {})
@@ -50,9 +49,7 @@ export class OperonHttpServer {
     this.app = config.koa;
 
     // Register operon endpoints.
-    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router, {
-      auth : config.authMiddleware,
-    });
+    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
@@ -67,8 +64,7 @@ export class OperonHttpServer {
     });
   }
 
-  static registerDecoratedEndpoints(operon : Operon, irouter : unknown,
-    middlewares ?: {auth ?: OperonHttpAuthMiddleware})
+  static registerDecoratedEndpoints(operon : Operon, irouter : unknown)
   {
     const router = irouter as Router;
 
@@ -82,11 +78,14 @@ export class OperonHttpServer {
 
           try {
             // Check for auth first
-            if (middlewares && middlewares.auth) {
-              const res = await middlewares.auth({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
-              if (res) {
-                oc.authenticatedUser = res.authenticatedUser;
-                oc.authenticatedRoles = res.authenticatedRoles;
+            if (ro.defaults) {
+              const defaults = ro.defaults as OperonMiddlewareDefaults;
+              if (defaults.authMiddleware) {
+                const res = await defaults.authMiddleware({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
+                if (res) {
+                  oc.authenticatedUser = res.authenticatedUser;
+                  oc.authenticatedRoles = res.authenticatedRoles;
+                }
               }
             }
 

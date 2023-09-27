@@ -4,10 +4,10 @@ import {
   GetApi,
   Operon,
   OperonConfig,
-  OperonNotAuthorizedError,
-  MiddlewareContext,
   RequiredRole,
   DefaultRequiredRole,
+  MiddlewareContext,
+  OperonNotAuthorizedError,
 } from "src";
 import { OperonHttpServer } from "src/httpServer/server";
 import {
@@ -17,6 +17,7 @@ import {
 import request from "supertest";
 import { HandlerContext } from "src/httpServer/handler";
 import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
+import { Authentication } from "src/httpServer/middleware";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;
@@ -32,32 +33,7 @@ describe("httpserver-defsec-tests", () => {
     operon = new Operon(config);
     operon.useNodePostgres();
     await operon.init(TestEndpointDefSec);
-    httpServer = new OperonHttpServer(operon,
-      {
-        // eslint-disable-next-line @typescript-eslint/require-await
-        authMiddleware: async (ctx: MiddlewareContext) => {
-            if (ctx.requiredRole.length > 0) {
-              const { userid } = ctx.koaContext.request.query
-              const uid = userid?.toString();
-
-              if (!uid || uid.length === 0) {
-                const err = new OperonNotAuthorizedError("Not logged in.", 401);
-                throw err;
-              }
-              else {
-                if (uid === 'go_away') {
-                  throw new OperonNotAuthorizedError("Go away.", 401);
-                }
-                return {
-                  authenticatedUser: uid,
-                  authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
-                };
-              }
-            }
-            return;
-          }
-      }
-    );
+    httpServer = new OperonHttpServer(operon);
   });
 
   afterEach(async () => {
@@ -90,8 +66,32 @@ describe("httpserver-defsec-tests", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async function authTestMiddleware (ctx: MiddlewareContext) {
+    if (ctx.requiredRole.length > 0) {
+      const { userid } = ctx.koaContext.request.query
+      const uid = userid?.toString();
+
+      if (!uid || uid.length === 0) {
+        const err = new OperonNotAuthorizedError("Not logged in.", 401);
+        throw err;
+      }
+      else {
+        if (uid === 'go_away') {
+          throw new OperonNotAuthorizedError("Go away.", 401);
+        }
+        return {
+          authenticatedUser: uid,
+          authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
+        };
+      }
+    }
+    return;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(['user'])
+  @Authentication(authTestMiddleware)
   class TestEndpointDefSec {
     // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])
