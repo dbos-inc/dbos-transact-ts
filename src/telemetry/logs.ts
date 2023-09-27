@@ -22,7 +22,8 @@ export class Logger implements ILogger {
     };
 
     // Retrieve 3 frames above: this frame, the transaction/workflow/communicator/handler frame + 1 line for the class name ("Error")
-    const stack = new Error().stack?.split("\n")[3].trim();
+    // Also remove "at" from the beginning
+    const stack = new Error().stack?.split("\n")[3].trim().substring(3);
     if (stack) {
       signal.stack = stack;
     }
