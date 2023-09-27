@@ -43,6 +43,8 @@ export class OperonHttpServer {
     if (!config.koa) {
       config.koa = new Koa();
 
+      // Note: we definitely need bodyParser.
+      // For cors(), it doesn't work if we use it in a router, and thus we have to use it in app.
       config.koa.use(bodyParser());
       config.koa.use(cors());
     }
