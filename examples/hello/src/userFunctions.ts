@@ -13,7 +13,7 @@ export class Hello {
   @OperonWorkflow()
   @GetApi('/greeting/:name')
   static async helloWorkflow(workflowCtxt: WorkflowContext, name: string) {
-    workflowCtxt.log("Hello, world!");
+    workflowCtxt.log("Hello, workflow!");
     return await workflowCtxt.transaction(Hello.helloFunction, name);
   }
 
