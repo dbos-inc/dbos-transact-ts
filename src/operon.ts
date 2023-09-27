@@ -18,6 +18,8 @@ import {
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
+import {DataSource} from 'typeorm';
+import * as path from 'path' ;
 
 import {
   TelemetryCollector,
@@ -37,14 +39,17 @@ import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
-  PrismaClient,
+  // PrismaClient,
   PrismaUserDatabase,
   UserDatabase,
   TypeORMDataSource,
   TypeORMDatabase,
+  UserDatabaseName,
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { PrismaClient } from '@prisma/client';
+
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -58,11 +63,13 @@ export interface httpConfig {
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
+  readonly userDbclient?: string;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
   readonly httpServer: httpConfig ;
+  readonly dbClientMetadata?: any;
 }
 
 interface ConfigFile {
@@ -75,10 +82,12 @@ interface ConfigFile {
     system_database: string;
     ssl_ca?: string;
     observability_database: string;
+    user_dbclient?: string;
   };
   telemetryExporters?: string[];
   application: any;
-  httpServer?: httpConfig
+  httpServer?: httpConfig;
+  dbClientMetadata?: any;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -166,6 +175,32 @@ export class Operon {
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
+
+    this.configureDbClient(this.config) ;
+
+  }
+
+  configureDbClient(config: OperonConfig) {
+
+      const userDbClient = config.userDbclient;
+
+      if (userDbClient === UserDatabaseName.PRISMA) {
+        this.usePrisma(new PrismaClient())
+      } else if (userDbClient === UserDatabaseName.TYPEORM) {
+        console.log("typeorm config current directory ..."+ __dirname);
+        this.useTypeORM(new DataSource({
+          type: "postgres", // perhaps should move to config file
+          host: config.poolConfig.host,
+          port: config.poolConfig.port,
+          username: config.poolConfig.user,
+          password: process.env.PGPASSWORD,
+          database: config.poolConfig.database,
+          entities: config.dbClientMetadata.entities
+        }));
+      } else {
+        this.useNodePostgres()
+      }
+
   }
 
   useNodePostgres() {
@@ -185,7 +220,7 @@ export class Operon {
   useTypeORM(ds: TypeORMDataSource) {
     if (this.userDatabase) {
       throw new OperonInitializationError("Data source already initialized!");
-    }
+    } 
     this.userDatabase = new TypeORMDatabase(ds);
     return;
   }
@@ -282,6 +317,7 @@ export class Operon {
 
     return {
       poolConfig: poolConfig,
+      userDbclient: config.database.user_dbclient || UserDatabaseName.PGNODE,
       telemetryExporters: config.telemetryExporters || [],
       system_database: config.database.system_database ?? "operon_systemdb",
       observability_database: config.database.observability_database || undefined,

@@ -1,8 +1,9 @@
 import { OperonConfig } from "src";
 import { Client } from "pg";
+import { UserDatabaseName } from "src/user_database";
 
 /* DB management helpers */
-export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
+export function generateOperonTestConfig(exporters?: string[], dbClient?: string): OperonConfig {
   const dbPassword: string | undefined =
     process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
@@ -26,6 +27,10 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
     observability_database: "operontest_observabilitydb",
     httpServer: {
       port: 3000
+    },
+    userDbclient: dbClient || UserDatabaseName.PGNODE,
+    dbClientMetadata: {
+      entities: ["tests/KV.ts"]
     }
   };
 

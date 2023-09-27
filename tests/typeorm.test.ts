@@ -4,6 +4,8 @@ import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Operon, OperonConfig, TransactionContext } from "src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
+import { UserDatabaseName } from "src/user_database";
+import {KV} from './KV'
 
 
 /**
@@ -11,14 +13,14 @@ import { sleep } from "src/utils";
  */
 let globalCnt = 0;
 
-@Entity()
+/*@Entity()
 export class KV {
     @PrimaryColumn()
     id: string = "t"
 
     @Column()
     value: string = "v"
-}
+} */
 
 const typeormDs = new DataSource({
   type: "postgres", // perhaps should move to config file
@@ -27,8 +29,9 @@ const typeormDs = new DataSource({
   username: "postgres",
   password: process.env.PGPASSWORD,
   database: "operontest",
-  entities: [KV]
-});
+  // entities: [KV]
+  entities: ["tests/KV.ts"]
+}); 
 
 const testTxn = async (
   txnCtxt: TransactionContext,
@@ -56,14 +59,16 @@ describe("typeorm-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateOperonTestConfig(undefined, UserDatabaseName.TYPEORM);
     await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    operon.useTypeORM(typeormDs);
+  
+    // operon.useTypeORM(typeormDs);
+    console.log ("In the test type of KV is "+ typeof KV);
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(

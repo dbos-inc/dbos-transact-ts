@@ -31,7 +31,7 @@ describe("operon-tests", () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
-    operon.useNodePostgres();
+    // operon.useNodePostgres();
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(

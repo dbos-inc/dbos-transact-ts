@@ -24,7 +24,7 @@ describe("foundationdb-operon", () => {
     const systemDB: FoundationDBSystemDatabase =
       new FoundationDBSystemDatabase();
     operon = new Operon(config, systemDB);
-    operon.useNodePostgres();
+    // operon.useNodePostgres();
     await operon.init();
     // Clean up tables.
     await systemDB.workflowStatusDB.clearRangeStartsWith("");

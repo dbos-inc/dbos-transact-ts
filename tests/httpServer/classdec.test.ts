@@ -30,7 +30,7 @@ describe("httpserver-defsec-tests", () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
-    operon.useNodePostgres();
+    // operon.useNodePostgres();
     await operon.init(TestEndpointDefSec);
     httpServer = new OperonHttpServer(operon,
       {
