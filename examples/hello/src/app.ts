@@ -16,4 +16,6 @@ async function main(name: string) {
 const jabber = new Jabber();
 const name = jabber.createFullName(false);
 console.log(`Name:   ${name}`);
-main(name).catch(reason => { console.log(reason); });
+main(name).catch(reason => { 
+    console.log(reason); 
+});
