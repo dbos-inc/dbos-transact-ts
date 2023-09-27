@@ -19,6 +19,7 @@ import {
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
 import { OperonHttpAuthMiddleware } from './middleware';
+import { SpanStatusCode } from "@opentelemetry/api";
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -79,77 +80,54 @@ export class OperonHttpServer {
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
 
-          // Check for auth first
-          if (middlewares && middlewares.auth) {
-            try {
+          try {
+            // Check for auth first
+            if (middlewares && middlewares.auth) {
               const res = await middlewares.auth({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;
                 oc.authenticatedRoles = res.authenticatedRoles;
               }
             }
-            catch (e) {
-              // TODO: This escaping gobbledygook ought to be centralized not C+P
-              oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
 
-              if (e instanceof Error) {
-                const st = ((e as OperonResponseError)?.status || 500);
-                koaCtxt.status = st;
-                koaCtxt.body = {
-                  status: st,
-                  message: e.message,
-                  details: e,
+            // Parse the arguments.
+            const args: unknown[] = [];
+            ro.args.forEach((marg, idx) => {
+              marg.argSource = marg.argSource ?? ArgSources.DEFAULT;  // Assign a default value.
+              if (idx === 0) {
+                return; // Do not parse the context.
+              }
+
+              let foundArg = undefined;
+              if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
+                foundArg = koaCtxt.request.query[marg.name];
+                if (foundArg) {
+                  args.push(foundArg);
                 }
-              } else {
-                koaCtxt.body = e;
-                koaCtxt.status = 500;
+              } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
+                if (!koaCtxt.request.body) {
+                  throw new OperonDataValidationError(`Argument ${marg.name} requires a method body.`);
+                }
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+                foundArg = koaCtxt.request.body[marg.name];
+                if (foundArg) {
+                  args.push(foundArg);
+                }
               }
-              await koaNext();
-              operon.tracer.endSpan(oc.span)
-              return;
-            }
-          }
 
-          // Parse the arguments.
-          const args: unknown[] = [];
-          ro.args.forEach((marg, idx) => {
-            marg.argSource = marg.argSource ?? ArgSources.DEFAULT;  // Assign a default value.
-            if (idx === 0) {
-              operon.tracer.endSpan(oc.span)
-              return; // Do not parse the context.
-            }
-
-            let foundArg = undefined;
-            if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
-              foundArg = koaCtxt.request.query[marg.name];
-              if (foundArg) {
-                args.push(foundArg);
+              // Try to parse the argument from the URL if nothing found.
+              if (!foundArg) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                args.push(koaCtxt.params[marg.name]);
               }
-            } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
-              if (!koaCtxt.request.body) {
-                throw new OperonDataValidationError(`Argument ${marg.name} requires a method body.`);
-              }
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-              foundArg = koaCtxt.request.body[marg.name];
-              if (foundArg) {
-                args.push(foundArg);
-              }
-            }
+            });
 
-            // Try to parse the argument from the URL if nothing found.
-            if (!foundArg) {
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              args.push(koaCtxt.params[marg.name]);
-            }
-          });
-
-          // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
-          // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
-          // In case of an exception:
-          // - If an Operon client-side error is thrown, we return 400.
-          // - If an error contains a `status` field, we return the specified status code.
-          // - Otherwise, we return 500.
-          try {
+            // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
+            // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
+            // In case of an exception:
+            // - If an Operon client-side error is thrown, we return 400.
+            // - If an error contains a `status` field, we return the specified status code.
+            // - Otherwise, we return 500.
             if (ro.txnConfig) {
               koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
             } else if (ro.workflowConfig) {
@@ -163,9 +141,11 @@ export class OperonHttpServer {
                 koaCtxt.body = retValue;
               }
             }
+            oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
             if (e instanceof Error) {
+              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);
               const operonErrorCode = (e as OperonError)?.operonErrorCode;
               if (operonErrorCode && isOperonClientError(operonErrorCode)) {
@@ -178,6 +158,7 @@ export class OperonHttpServer {
                 details: e,
               }
             } else {
+              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: JSON.stringify(e) });
               koaCtxt.body = e;
               koaCtxt.status = 500;
             }
