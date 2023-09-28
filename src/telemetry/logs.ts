@@ -1,6 +1,6 @@
 import { TelemetryCollector } from "./collector";
 import { LogSeverity, TelemetrySignal } from "./signals";
-import { OperonContext } from "src/context";
+import { OperonContext } from "../context";
 
 interface ILogger {
   log(context: OperonContext, severity: LogSeverity, message: string): void;

@@ -7,7 +7,7 @@ import {
   SkipLogging,
   LogMask,
   getRegisteredOperations,
-} from "src/decorators";
+} from "../src/decorators";
 
 class TestFunctions {
   @Traced

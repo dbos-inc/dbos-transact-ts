@@ -1,8 +1,8 @@
 import { PrismaClient, testkv } from "@prisma/client";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonConfig, TransactionContext } from "src";
+import { Operon, OperonConfig, TransactionContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
+import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
 interface PrismaPGError {

@@ -6,9 +6,9 @@ import {
   WorkflowContext,
   StatusString,
   WorkflowHandle,
-} from "src/";
+} from "../../src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { FoundationDBSystemDatabase } from "src/foundationdb/fdb_system_database";
+import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
 
 describe("foundationdb-operon", () => {

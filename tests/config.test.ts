@@ -1,4 +1,4 @@
-import { Operon, OperonConfig, OperonInitializationError } from "src/";
+import { Operon, OperonConfig, OperonInitializationError } from "../src/";
 import { generateOperonTestConfig } from "./helpers";
 import * as utils from "../src/utils";
 import { PoolConfig } from "pg";

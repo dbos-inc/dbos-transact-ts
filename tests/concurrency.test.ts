@@ -4,9 +4,9 @@ import {
   OperonConfig,
   TransactionContext,
   WorkflowContext,
-} from "src/";
+} from "../src";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
+import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 
 describe("concurrency-tests", () => {
