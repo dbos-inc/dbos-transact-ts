@@ -97,14 +97,6 @@ database:
   connectionTimeoutMillis: 3000
 localRuntimeConfig:
   port: 6666
-application:
-  foo:
-    bar: \${BAR:default}
-  baz: 'y'
-  animals:
-    - type: 'turtle'
-      name: 'fifi'
-      age: 15
 `;
     const filePath = 'operon-config.yaml';
     fs.copyFileSync(filePath, `${filePath}.bak`);
