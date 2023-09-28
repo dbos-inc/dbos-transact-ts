@@ -1,7 +1,21 @@
-import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi } from 'operon'
+import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonCommunicator, CommunicatorContext } from 'operon'
+
+const delay = (ms:number) => new Promise(resolve => setTimeout(resolve, ms))
 
 export class Hello {
 
+  @OperonCommunicator()
+  static async helloExternal(ctxt: CommunicatorContext, encodedName: string) {
+    try {
+      const url = `https://httpbin.org/base64/${encodeURIComponent(encodedName)}`;
+      const res = await fetch(url);
+      return await res.text();
+    } catch {
+      ctxt.log("high", "httpbin/base64 failed, decoding locally");
+      return atob(encodedName);
+    }
+  }
+  
   @OperonTransaction()
   static async helloFunction(ctxt: TransactionContext, name: string) {
     const greeting = `Hello, ${name}!`
@@ -19,7 +33,9 @@ export class Hello {
 
     // TS mapping types are used create a developer friendly type signature for proxy's return value. See the top of workflow.ts for more info
 
-    return await ctxt.proxy(Hello).helloFunction(name);
+    const encodedName = btoa(name);
+    const decodedName = await ctxt.external(Hello.helloExternal, encodedName);
+    return await ctxt.proxy(Hello).helloFunction(decodedName);
   }
 }
 
