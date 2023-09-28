@@ -14,8 +14,8 @@ import {
   OperonWorkflow,
   RequiredRole,
 } from "../src/decorators";
-import { TransactionContext, WorkflowContext } from "src";
-import { WorkflowHandle } from "src/workflow";
+import { TransactionContext, WorkflowContext } from "../src";
+import { WorkflowHandle } from "../src/workflow";
 import { OperonContext } from "../src/context";
 
 type TelemetrySignalDbFields = {
