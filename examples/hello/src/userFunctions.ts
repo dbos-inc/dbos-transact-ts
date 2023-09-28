@@ -27,16 +27,18 @@ export class Hello {
   @GetApi('/greeting/:name')
   static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
     
-    // Added a new 'proxy' method to WorkflowContext that returns a developer-friendly object that enables direct invocation
-    // proxy object only includes methods decorated with @OperonTransaction + converts the direct call to an indirect call thru context.transaction
-    // Plan to add @OperonCommunicator/external support before exiting draft
+    // WorkflowContext has a new 'proxy' method that returns a developer-friendly object that enables direct invocation of transaction and communicator method;
+    // The proxy method takes a class of static Operon operations and returns an object that includes *only* transaction and communicator methods 
+    // that can be invoked directly: proxy.someMethod(param1, param2) instead of wfCtxt.transaction(Class.someMethod, param1, param2);
 
-    // TS mapping types are used create a developer friendly type signature for proxy's return value. See the top of workflow.ts for more info
+    // TS mapping types are used to filter out non-transaction and communicator methods as well as to remove the Transaction/CommunicatorContext parameter
+    // from the method signature.
 
+    const hello = wfCtxt.proxy(Hello);
     wfCtxt.log("Hello, workflow!");
     const encodedName = btoa(name);
-    const decodedName = await wfCtxt.external(Hello.helloExternal, encodedName);
-    return await wfCtxt.proxy(Hello).helloFunction(decodedName);
+    const decodedName = await hello.helloExternal(encodedName);
+    return await hello.helloFunction(decodedName);
   }
 }
 

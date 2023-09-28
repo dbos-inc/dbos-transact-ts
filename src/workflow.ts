@@ -18,12 +18,14 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 // Utility type that removes the initial parameter of a function
 type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
-// Utility type that removes the TransactionContext parameter from an OperonTransaction
-type WrappedTxFunc<T extends OperonTransaction<any[], any>> = (...args: TailParameters<T>) => ReturnType<T>;
+// local type declarations for Operon transaction and communicator functions
+type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes operon transaction functions + converts the method signature to exclude the tx context parameter
-type TxFuncs<T> = {
-  [P in keyof T as T[P] extends OperonTransaction<any[], any> ? P : never]: T[P] extends OperonTransaction<any[], any> ? WrappedTxFunc<T[P]> : never;
+// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
+type WFProxyFuncs<T> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 
 export interface WorkflowParams {
@@ -394,22 +396,23 @@ export class WorkflowContext extends OperonContext {
   /**
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
-   *
-   * TODO: support communicator / external operations as well
    */
-  proxy<T extends object>(object: T): TxFuncs<T> {
+  proxy<T extends object>(object: T): WFProxyFuncs<T> {
     const ops = getRegisteredOperations(object);
 
-    const obj: any = {};
-    for (const op of ops.filter(op => !!op.txnConfig)) {
+    const proxy: any = {};
+    for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      obj[op.name] = (...args: any[]) => {
+      proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        return this.transaction(op.registeredFunction as any, ...args)
-      };
+        ? (...args: any[]) => this.transaction(op.registeredFunction as any, ...args)
+        : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.external(op.registeredFunction as any, ...args)
+          : undefined;
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return obj;
+    return proxy;
   }
 }
 
