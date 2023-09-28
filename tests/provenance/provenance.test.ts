@@ -1,6 +1,6 @@
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
-import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry";
+import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry/exporters";
 import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
 import { Operon, OperonConfig, TransactionContext, WorkflowContext } from "../../src";
 import { PgTransactionId } from "../../src/workflow";

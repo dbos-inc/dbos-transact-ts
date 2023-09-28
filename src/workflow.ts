@@ -16,8 +16,6 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentSpan?: Span;
-  parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
@@ -42,29 +40,29 @@ export const StatusString = {
 export class WorkflowContext extends OperonContext {
   functionID: number = 0;
   readonly #operon;
-  readonly span: Span;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
-  readonly operationName: string;
 
   constructor(
     operon: Operon,
+    parentCtx: OperonContext | undefined,
+    // FIXME: seems we are not using this anymore
     params: WorkflowParams,
-    readonly workflowUUID: string,
+    workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
-    readonly workflowName: string
+    workflowName: string
   ) {
-    super ({parentCtx: params.parentCtx});
-    this.operationName = workflowName;
-    this.#operon = operon;
-    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    this.span = operon.tracer.startSpan(workflowName, params.parentSpan);
-    this.span.setAttributes({
+    const span = operon.tracer.startSpan(workflowName, parentCtx?.span);
+    span.setAttributes({
       workflowUUID: workflowUUID,
       operationName: workflowName,
-      runAs: params.parentCtx?.authenticatedUser ?? "",
+      runAs: parentCtx?.authenticatedUser ?? "",
       functionID: 0,
     });
+    super(workflowName, span, operon.logger, parentCtx);
+    this.workflowUUID = workflowUUID;
+    this.#operon = operon;
+    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
@@ -73,10 +71,6 @@ export class WorkflowContext extends OperonContext {
 
   functionIDGetIncrement(): number {
     return this.functionID++;
-  }
-
-  log(severity: string, message: string): void {
-    this.#operon.logger.log(this, severity, message);
   }
 
   /**
@@ -182,8 +176,10 @@ export class WorkflowContext extends OperonContext {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(this.#operon.userDatabase.getName(), client, config, this, this.#operon.logger, 
-                            span, funcId, txn.name);
+        const tCtxt = new TransactionContext(
+          this.#operon.userDatabase.getName(), client, config, this,
+          span, this.#operon.logger, funcId, txn.name,
+        );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
@@ -274,7 +270,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, this.#operon.logger, span, commConfig);
+    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

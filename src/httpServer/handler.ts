@@ -1,32 +1,48 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// TODO: should we support log function in handler?
 import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase } from "../decorators";
 import { OperonContext } from "../context";
-import { Operon } from "../operon";
+import { InternalWorkflowParams, Operon } from "../operon";
 import Koa from "koa";
-import { WorkflowContext } from "src/workflow";
+import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonTransaction } from "../transaction";
 
 export class HandlerContext extends OperonContext {
-  readonly operationName: string;  // This is the URL.
+  readonly #operon: Operon;
 
-  // TODO: Need to decide the semantics for those fields.
-  readonly workflowUUID: string = 'N/A';
-  readonly functionID: number = -1;
-
-  constructor(readonly operon: Operon, readonly koaContext: Koa.Context) {
-    super();
-    this.operationName = koaContext.url;
+  constructor(operon: Operon, readonly koaContext: Koa.Context) {
+    const span = operon.tracer.startSpan(koaContext.url);
+    span.setAttributes({
+      operationName: koaContext.url,
+    });
+    super(koaContext.url, span, operon.logger);
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
     }
+    this.#operon = operon;
   }
 
-  log(severity: string, message: string): void {
-    // TODO: need to clean up the logging interface.
-    // `log` expects workflowUUID and other fields to be set so we need to convert.
-    this.operon.logger.log(this as unknown as WorkflowContext, severity, message);
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
+    const augmentedParams = params as InternalWorkflowParams;
+    augmentedParams.parentCtx = this;
+    return this.#operon.workflow(wf, augmentedParams, ...args);
+  }
+
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#operon.transaction(txn, params, ...args);
+  }
+
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+    return this.#operon.send(params, destinationUUID, message, topic);
+  }
+
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
+    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
+    return this.#operon.retrieveWorkflow(workflowUUID);
   }
 }
 
@@ -68,6 +84,10 @@ export class OperonHandlerParameter extends OperonParameter {
   }
 }
 
+/////////////////////////
+/* ENDPOINT DECORATORS */
+/////////////////////////
+
 export function GetApi(url: string) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
@@ -99,6 +119,10 @@ export function PostApi(url: string) {
   }
   return apidec;
 }
+
+///////////////////////////////////
+/* ENDPOINT PARAMETER DECORATORS */
+///////////////////////////////////
 
 export function ArgSource(source: ArgSources) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {

@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
 import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
-import { Logger } from "./telemetry";
-import { ValuesOf } from "./utils";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContext } from "./context";
+import { ValuesOf } from "./utils";
+import { Logger } from "./telemetry/logs";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
@@ -29,19 +29,17 @@ export class TransactionContext extends OperonContext {
 
   readonly typeormEM: TypeORMEntityManager = null as unknown as TypeORMEntityManager;
 
-  readonly workflowUUID: string;
-
   constructor(
     userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
     config: TransactionConfig,
     workflowContext: WorkflowContext,
-    private readonly logger: Logger,
-    readonly span: Span,
+    span: Span,
+    logger: Logger,
     readonly functionID: number,
-    readonly operationName: string,
+    operationName: string
   ) {
-    super({parentCtx: workflowContext});
+    super(operationName, span, logger, workflowContext);
     void config;
     if (userDatabaseName === UserDatabaseName.PGNODE) {
       this.pgClient = client as PoolClient;
@@ -50,15 +48,10 @@ export class TransactionContext extends OperonContext {
     } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
       this.typeormEM = client as TypeORMEntityManager;
     }
-    this.workflowUUID = workflowContext.workflowUUID;
 
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = workflowContext.applicationConfig;
     }
-  }
-
-  log(severity: string, message: string): void {
-    this.logger.log(this, severity, message);
   }
 }

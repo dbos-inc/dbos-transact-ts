@@ -152,3 +152,10 @@ export class OperonNotAuthorizedError extends OperonError {
     super(msg, NotAuthorizedError);
   }
 }
+
+const UndefinedDecoratorInputError = 13;
+export class OperonUndefinedDecoratorInputError extends OperonError {
+  constructor(decoratorName: string) {
+    super(`${decoratorName} received undefined input. Possible circular dependency?`, UndefinedDecoratorInputError);
+  }
+}

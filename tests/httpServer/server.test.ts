@@ -22,7 +22,8 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
+import { Authentication } from "src/httpServer/middleware";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -44,32 +45,7 @@ describe("httpserver-tests", () => {
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
     );
-    httpServer = new OperonHttpServer(operon,
-      {
-        // eslint-disable-next-line @typescript-eslint/require-await
-        authMiddleware: async (ctx: MiddlewareContext) => {
-            if (ctx.requiredRole.length > 0) {
-              const { userid } = ctx.koaContext.request.query
-              const uid = userid?.toString();
-
-              if (!uid || uid.length === 0) {
-                const err = new OperonNotAuthorizedError("Not logged in.", 401);
-                throw err;
-              }
-              else {
-                if (uid === 'go_away') {
-                  throw new OperonNotAuthorizedError("Go away.", 401);
-                }
-                return {
-                  authenticatedUser: uid,
-                  authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
-                };
-              }
-            }
-            return;
-          }
-      }
-    );
+    httpServer = new OperonHttpServer(operon);
     // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
     // For example, if we use logger() after we register routes, the logger cannot correctly log the request before the function executes.
     // httpServer.app.use(logger());
@@ -172,7 +148,31 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async function testAuthMiddlware (ctx: MiddlewareContext) {
+    if (ctx.requiredRole.length > 0) {
+      const { userid } = ctx.koaContext.request.query
+      const uid = userid?.toString();
+
+      if (!uid || uid.length === 0) {
+        const err = new OperonNotAuthorizedError("Not logged in.", 401);
+        throw err;
+      }
+      else {
+        if (uid === 'go_away') {
+          throw new OperonNotAuthorizedError("Go away.", 401);
+        }
+        return {
+          authenticatedUser: uid,
+          authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
+        };
+      }
+    }
+    return;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  @Authentication(testAuthMiddlware)
   class TestEndpoints {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
@@ -199,7 +199,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.log("INFO", `query with name ${name}`);  // Test logging.
+      ctx.info(`query with name ${name}`);  // Test logging.
       return `hello ${name}`;
     }
 
@@ -219,7 +219,7 @@ describe("httpserver-tests", () => {
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
       // Invoke a workflow using the provided Operon instance.
-      return ctxt.operon.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
+      return ctxt.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
     }
 
     @PostApi("/transaction/:name")

@@ -49,7 +49,6 @@ export class Tracer {
     const readableSpan: ReadableSpan = span as ReadableSpan;
 
     const workflowUUID = span.attributes.workflowUUID as string;
-    const functionID = span.attributes.functionID as number;
     const operationName = span.attributes.operationName as string;
     const runAs = span.attributes.runAs as string;
     const transactionID = span.attributes.transaction_id as string;
@@ -57,7 +56,6 @@ export class Tracer {
 
     const signal: TelemetrySignal = {
       workflowUUID,
-      functionID,
       operationName,
       runAs,
       timestamp: Date.now(),

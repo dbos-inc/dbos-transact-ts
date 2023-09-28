@@ -1,5 +1,5 @@
 import { CommunicatorContext, Operon, OperonCommunicator, OperonConfig, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "src";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 import { sleep } from "src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
