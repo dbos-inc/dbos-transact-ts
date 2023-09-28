@@ -1,19 +1,21 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { IncomingMessage } from 'http';
+import { IncomingMessage } from "http";
+import { Logger } from "./telemetry/logs";
+import { LogSeverity } from "./telemetry/signals";
 
 export class OperonContext {
-  request?: IncomingMessage;  // Raw incoming HTTP request.
+  request?: IncomingMessage; // Raw incoming HTTP request.
 
-  authenticatedUser: string = ''; ///< The user that has been authenticated
+  authenticatedUser: string = ""; ///< The user that has been authenticated
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
-  assumedRole: string = ''; ///< Role in use - that user has and provided authorization to current function
+  assumedRole: string = ""; ///< Role in use - that user has and provided authorization to current function
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any; // applicationConfiguration
 
-  workflowUUID: string = '';
+  workflowUUID: string = "";
 
-  constructor(readonly operationName: string, readonly span: Span, parentCtx ?: OperonContext) {
+  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContext) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -21,5 +23,25 @@ export class OperonContext {
       this.assumedRole = parentCtx.assumedRole;
       this.workflowUUID = parentCtx.workflowUUID;
     }
+  }
+
+  info(message: string): void {
+    this.logger.log(this, LogSeverity.Info, message);
+  }
+
+  warn(message: string): void {
+    this.logger.log(this, LogSeverity.Warn, message);
+  }
+
+  log(message: string): void {
+    this.logger.log(this, LogSeverity.Log, message);
+  }
+
+  error(message: string): void {
+    this.logger.log(this, LogSeverity.Error, message);
+  }
+
+  debug(message: string): void {
+    this.logger.log(this, LogSeverity.Debug, message);
   }
 }

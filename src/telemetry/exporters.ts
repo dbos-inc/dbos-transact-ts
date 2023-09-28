@@ -2,7 +2,7 @@ import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
 import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
-import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
+import { OperonSignal, ProvenanceSignal, TelemetrySignal, LogSeverity } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
@@ -51,7 +51,18 @@ export class ConsoleExporter implements ITelemetryExporter<void, undefined> {
     return await new Promise<void>((resolve) => {
       for (const signal of signals) {
         if (signal.logMessage !== undefined) {
-          console.log(`[${signal.severity}] ${signal.logMessage}`);
+          const logMessageAndStack = `${signal.logMessage} ${signal.stack}`;
+          if (signal.severity === LogSeverity.Info) {
+            console.info(signal.logMessage);
+          } else if (signal.severity === LogSeverity.Warn) {
+            console.warn(logMessageAndStack);
+          } else if (signal.severity === LogSeverity.Error) {
+            console.error(logMessageAndStack);
+          } else if (signal.severity === LogSeverity.Debug) {
+            console.debug(logMessageAndStack);
+          } else {
+            console.log(signal.logMessage);
+          }
         }
       }
       resolve();

@@ -4,3 +4,5 @@ database:
   username: 'postgres'
   user_database: 'hello'
   connectionTimeoutMillis: 3000
+telemetryExporters:
+  - 'ConsoleExporter'

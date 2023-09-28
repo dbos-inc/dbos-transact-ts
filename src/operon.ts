@@ -20,16 +20,16 @@ import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
 
 import {
-  TelemetryCollector,
   ConsoleExporter,
   CONSOLE_EXPORTER,
   PostgresExporter,
   POSTGRES_EXPORTER,
   JAEGER_EXPORTER,
   JaegerExporter,
-  Logger,
-  Tracer,
-} from './telemetry';
+} from './telemetry/exporters';
+import { TelemetryCollector } from './telemetry/collector';
+import { Logger } from './telemetry/logs';
+import { Tracer } from './telemetry/traces';
 import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';

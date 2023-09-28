@@ -17,15 +17,16 @@ export class Hello {
   }
   
   @OperonTransaction()
-  static async helloFunction(ctxt: TransactionContext, name: string) {
+  static async helloFunction(txnCtxt: TransactionContext, name: string) {
     const greeting = `Hello, ${name}!`
-    const { rows } = await ctxt.pgClient.query<{ greeting_id: number }>("INSERT INTO OperonHello(greeting) VALUES ($1) RETURNING greeting_id", [greeting])
+    const { rows } = await txnCtxt.pgClient.query<{greeting_id: number}>("INSERT INTO OperonHello(greeting) VALUES ($1) RETURNING greeting_id", [greeting])
+    txnCtxt.warn(`Inserted greeting ${rows[0].greeting_id}: ${greeting}`)
     return `Greeting ${rows[0].greeting_id}: ${greeting}`;
   }
 
   @OperonWorkflow()
   @GetApi('/greeting/:name')
-  static async helloWorkflow(ctxt: WorkflowContext, name: string) {
+  static async helloWorkflow(workflowCtxt: WorkflowContext, name: string) {
     
     // Added a new 'proxy' method to WorkflowContext that returns a developer-friendly object that enables direct invocation
     // proxy object only includes methods decorated with @OperonTransaction + converts the direct call to an indirect call thru context.transaction
@@ -33,6 +34,7 @@ export class Hello {
 
     // TS mapping types are used create a developer friendly type signature for proxy's return value. See the top of workflow.ts for more info
 
+    workflowCtxt.log("Hello, workflow!");
     const encodedName = btoa(name);
     const decodedName = await ctxt.external(Hello.helloExternal, encodedName);
     return await ctxt.proxy(Hello).helloFunction(decodedName);

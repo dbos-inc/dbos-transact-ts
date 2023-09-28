@@ -14,7 +14,7 @@ import {
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "src/utils";
 import { StatusString } from "src/workflow";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 
 describe("operon-tests", () => {
   const testTableName = "operon_test_kv";

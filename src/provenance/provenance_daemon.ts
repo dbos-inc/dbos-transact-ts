@@ -4,8 +4,8 @@ import {
   ConsoleExporter,
   POSTGRES_EXPORTER,
   PostgresExporter,
-  TelemetryCollector
-} from "../telemetry";
+} from "../telemetry/exporters";
+import { TelemetryCollector } from "../telemetry/collector";
 import { OperonConfig } from "src/operon";
 import { ProvenanceSignal } from "src/telemetry/signals";
 
@@ -66,7 +66,7 @@ export class ProvenanceDaemon {
         }
       }
     }
-    
+
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
   }
 
