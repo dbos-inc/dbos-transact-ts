@@ -1,4 +1,4 @@
-import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonCommunicator, CommunicatorContext } from 'operon'
+import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonCommunicator, CommunicatorContext, HandlerContext } from 'operon'
 
 export class Hello {
 
@@ -24,12 +24,17 @@ export class Hello {
   }
 
   @OperonWorkflow()
-  @GetApi('/greeting/:name')
   static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
     wfCtxt.log("Hello, workflow!");
     const encodedName = btoa(name);
     const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
     return await wfCtxt.invoke(Hello).helloFunction(decodedName);
+  }
+
+  @GetApi('/greeting/:name')
+  static async helloEndpoint(ctx: HandlerContext, name: string) {
+    ctx.log("helloEndpoint");
+    return await ctx.invoke(Hello).helloWorkflow({}, name).getResult();
   }
 }
 
