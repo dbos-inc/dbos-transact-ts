@@ -59,7 +59,6 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly localRuntime?: LocalRuntimeConfig;
 }
 
 export interface OperonCloudConfig {
@@ -84,7 +83,6 @@ interface ConfigFile {
   };
   telemetryExporters?: string[];
   application: any;
-  localRuntime: LocalRuntimeConfig;
   operonCloud: OperonCloudConfig;
 }
 
@@ -298,7 +296,6 @@ export class Operon {
       observability_database: config.database.observability_database || undefined,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       application: config.application || undefined,
-      localRuntime: config.localRuntime || undefined,
     };
   }
 

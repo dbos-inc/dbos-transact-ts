@@ -53,16 +53,6 @@ export class OperonRuntime {
 
     const server = new OperonHttpServer(this.operon)
 
-    const runtimeConfig = this.operon.config.localRuntime;
-
-    if (port === 0) {
-      if (runtimeConfig && runtimeConfig.port) {
-        port = runtimeConfig.port;
-      } else {
-        port = DEFAULT_PORT;
-      }
-    }
-
     this.server = server.listen(port);
     console.log(`Starting server on port: ${port}`);
 

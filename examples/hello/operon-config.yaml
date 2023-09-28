@@ -2,16 +2,19 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
+  password: ${PGPASSWORD}
   user_database: 'hello'
   connectionTimeoutMillis: 3000
 telemetryExporters:
   - 'ConsoleExporter'
 application:
   foo:
-    bar: 'x'
+    bar: ${BAR:default}
   baz: 'y'
-localRuntime:
-    port: 3000
+  animals:
+    - type: 'turtle'
+      name: 'fifi'
+      age: 15
 operonCloud:
   secretEnvVars:
     - 'foo'

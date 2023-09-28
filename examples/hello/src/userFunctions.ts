@@ -1,5 +1,11 @@
 import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi } from 'operon'
 
+interface Animal {
+    type: string;
+    name: string;
+    age: number;
+}
+
 export class Hello {
 
   @OperonTransaction()
@@ -13,7 +19,16 @@ export class Hello {
   @OperonWorkflow()
   @GetApi('/greeting/:name')
   static async helloWorkflow(workflowCtxt: WorkflowContext, name: string) {
-    workflowCtxt.log("Hello, workflow!");
+    const fooObj = workflowCtxt.getConfig('foo');
+    workflowCtxt.log(JSON.stringify(fooObj));
+    const barVar = workflowCtxt.getConfig('foo.bar');
+    workflowCtxt.log(`bar: ${barVar}`);
+    const bazVar = workflowCtxt.getConfig('baz');
+    workflowCtxt.log(`baz: ${bazVar}`);
+    const animals = workflowCtxt.getConfig('animals') as Animal[];
+    for (const animal of animals) {
+        workflowCtxt.log(JSON.stringify(animal));
+    }
     return await workflowCtxt.transaction(Hello.helloFunction, name);
   }
 
