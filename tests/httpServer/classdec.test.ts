@@ -8,16 +8,16 @@ import {
   DefaultRequiredRole,
   MiddlewareContext,
   OperonNotAuthorizedError,
-} from "src";
-import { OperonHttpServer } from "src/httpServer/server";
+} from "../../src";
+import { OperonHttpServer } from "../../src/httpServer/server";
 import {
   generateOperonTestConfig,
   setupOperonTestDb,
-} from "tests/helpers";
+} from "../helpers";
 import request from "supertest";
-import { HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
-import { Authentication, KoaMiddleware } from "src/httpServer/middleware";
+import { HandlerContext } from "../../src/httpServer/handler";
+import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
+import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 
 describe("httpserver-defsec-tests", () => {
