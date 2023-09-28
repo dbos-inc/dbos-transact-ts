@@ -16,7 +16,7 @@ import {
 } from "../src/decorators";
 import { TransactionContext, WorkflowContext } from "src";
 import { WorkflowHandle } from "src/workflow";
-import { OperonContext } from "dist/src";
+import { OperonContext } from "../src/context";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
