@@ -50,11 +50,12 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperonContext {
+export class WorkflowContext<T extends object = object> extends OperonContext {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
+  readonly #class?: object;
 
   constructor(
     operon: Operon,
@@ -63,7 +64,8 @@ export class WorkflowContext extends OperonContext {
     params: WorkflowParams,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
-    workflowName: string
+    workflowName: string,
+    cls: object | undefined,
   ) {
     const span = operon.tracer.startSpan(workflowName, parentCtx?.span);
     span.setAttributes({
@@ -80,6 +82,7 @@ export class WorkflowContext extends OperonContext {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
     }
+    this.#class = cls;
   }
 
   functionIDGetIncrement(): number {
@@ -396,8 +399,10 @@ export class WorkflowContext extends OperonContext {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
+  invoke<TT extends object = T>(object?: TT): WFInvokeFuncs<TT> {
+    const $obj = object ?? this.#class;
+    if (!$obj) throw new Error();
+    const ops = getRegisteredOperations($obj);
 
     const proxy: any = {};
     for (const op of ops) {
@@ -410,7 +415,7 @@ export class WorkflowContext extends OperonContext {
           ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
           : undefined;
     }
-    return proxy as WFInvokeFuncs<T>;
+    return proxy as WFInvokeFuncs<TT>;
   }
 }
 

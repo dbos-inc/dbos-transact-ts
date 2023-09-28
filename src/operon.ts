@@ -85,6 +85,7 @@ interface ConfigFile {
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
   config: WorkflowConfig;
+  class?: object;
 }
 
 interface WorkflowInput<T extends any[]> {
@@ -198,7 +199,7 @@ export class Operon {
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
+          this.registerWorkflow(wf, ro.workflowConfig, cls);
           break;
         } else if (arg.argType.name === "TransactionContext") {
           const tx = ro.registeredFunction as OperonTransaction<any, any>;
@@ -301,13 +302,14 @@ export class Operon {
 
   /* WORKFLOW OPERATIONS */
 
-  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}) {
+  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}, cls?: object) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`);
     }
     const workflowInfo: WorkflowInfo<T, R> = {
       workflow: wf,
       config: config,
+      class: cls
     };
     this.workflowInfoMap.set(wf.name, workflowInfo);
   }
@@ -336,7 +338,7 @@ export class Operon {
       }
       const wConfig = wInfo.config;
 
-      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, params, workflowUUID, wConfig, wf.name);
+      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, params, workflowUUID, wConfig, wf.name, wInfo.class);
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 

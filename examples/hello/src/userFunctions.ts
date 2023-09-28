@@ -25,11 +25,11 @@ export class Hello {
 
   @OperonWorkflow()
   @GetApi('/greeting/:name')
-  static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
+  static async helloWorkflow(wfCtxt: WorkflowContext<typeof Hello>, name: string) {
     wfCtxt.log("Hello, workflow!");
     const encodedName = btoa(name);
-    const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
-    return await wfCtxt.invoke(Hello).helloFunction(decodedName);
+    const decodedName = await wfCtxt.invoke().helloExternal(encodedName);
+    return await wfCtxt.invoke().helloFunction(decodedName);
   }
 }
 
