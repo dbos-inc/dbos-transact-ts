@@ -4,8 +4,9 @@ import axios from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
-import * as utils from "src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
+import fs from "fs";
+import { sleep } from "src/utils";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
     const stdout = command.stdout as unknown as Writable;
@@ -30,8 +31,15 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
     });
     try {
       await waitForMessage;
-      const response = await axios.get(`http://127.0.0.1:${port}/greeting/operon`);
-      expect(response.status).toBe(200);
+      // Axios will throw an exception if the return status is 500
+      // Trying and catching is the only way to debug issues in this test
+      try {
+        const response = await axios.get(`http://127.0.0.1:${port}/greeting/operon`);
+        expect(response.status).toBe(200);
+      } catch (error) {
+        console.error(error);
+        throw error;
+      }
     } finally {
       stdin.end();
       stdout.destroy();
@@ -65,6 +73,7 @@ describe("runtime-tests", () => {
     process.chdir('../..');
   });
 
+  // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!
   test("runtime-hello using default runtime configuration", async () => {
     const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
       env: process.env
@@ -81,21 +90,33 @@ describe("runtime-tests", () => {
 
   test("runtime hello with port provided in configuration file", async () => {
      const mockOperonConfigYamlString = `
-      database:
-        hostname: 'localhost'
-        port: 5432
-        username: 'postgres'
-        connectionTimeoutMillis: 3000
-      localRuntimeConfig:
-          port: 1234
-    `;
-    jest
-      .spyOn(utils, "readFileSync")
-      .mockReturnValueOnce(mockOperonConfigYamlString);
+database:
+  hostname: 'localhost'
+  port: 5432
+  username: 'postgres'
+  connectionTimeoutMillis: 3000
+localRuntimeConfig:
+  port: 6666
+application:
+  foo:
+    bar: \${BAR:default}
+  baz: 'y'
+  animals:
+    - type: 'turtle'
+      name: 'fifi'
+      age: 15
+`;
+    const filePath = 'operon-config.yaml';
+    fs.copyFileSync(filePath, `${filePath}.bak`);
+    fs.writeFileSync(filePath, mockOperonConfigYamlString, 'utf-8');
 
     const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
       env: process.env
     });
-    await waitForMessageTest(command, '1234');
+    await waitForMessageTest(command, '6666');
+
+    fs.copyFileSync(`${filePath}.bak`, filePath);
+    fs.unlinkSync(`${filePath}.bak`);
+    await sleep(15);
   });
 });
