@@ -73,7 +73,7 @@ describe("runtime-tests", () => {
   });
 
   test("runtime hello with port provided as CLI parameter", async () => {
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start', '1234'], {
+    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start', '--port', '1234'], {
       env: process.env
     });
     await waitForMessageTest(command, '1234');

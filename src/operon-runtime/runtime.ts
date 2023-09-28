@@ -18,6 +18,17 @@ const defaultConfig: OperonRuntimeConfig = {
   port: 3000,
 }
 
+// Configuration file config (this.operon.config.runtimeConfig) overwrites CLI input configs, which overwrites default configs.
+// XXX: let's agree on the precedence of configs.
+function generateRuntimeConfig(
+  inputConfig: OperonRuntimeConfig,
+  fileConfig: OperonRuntimeConfig | undefined): OperonRuntimeConfig
+  {
+    return {
+      port: inputConfig.port || fileConfig?.port || defaultConfig.port,
+    }
+}
+
 export class OperonRuntime {
   private operon: Operon | null = null;
   private server: Server | null = null;
@@ -56,9 +67,7 @@ export class OperonRuntime {
     this.operon.useNodePostgres();
     await this.operon.init(...classes);
 
-    // Configuration file config (this.operon.config.runtimeConfig) overwrites CLI input configs, which overwrites default configs.
-    // XXX: let's agree on the precedence of configs.
-    const config: OperonRuntimeConfig = { ...defaultConfig, ...inputConfig, ...this.operon.config };
+    const config: OperonRuntimeConfig = generateRuntimeConfig(inputConfig, this.operon.config.runtimeConfig);
 
     const server = new OperonHttpServer(this.operon)
 

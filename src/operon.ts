@@ -220,7 +220,7 @@ export class Operon {
       throw new OperonInitializationError("No data source!");
     }
     if (this.initialized) {
-      // TODO add logging when we have a logger
+      console.log("Operon already initialized!");
       return;
     }
     try {
@@ -234,7 +234,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        console.log(err);
+        console.error(err);
         throw new OperonInitializationError(err.message);
       }
     }
