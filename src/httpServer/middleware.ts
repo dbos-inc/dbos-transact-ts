@@ -1,6 +1,6 @@
 import Koa from "koa";
 import { OperonClassRegistration, OperonRegistrationDefaults, getOrCreateOperonClassRegistration } from "../decorators";
-import { OperonUndefinedDecoratorInputError } from "src/error";
+import { OperonUndefinedDecoratorInputError } from "../error";
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
 export class MiddlewareContext {
