@@ -39,15 +39,11 @@ import {
   PGNodeUserDatabase,
   PrismaUserDatabase,
   UserDatabase,
-  TypeORMDataSource,
   TypeORMDatabase,
   UserDatabaseName,
-  UserDatabaseClient,
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-// import { PrismaClient } from '@prisma/client';
-// import { DataSource } from 'typeorm';
 import { OperonContext } from './context';
 
 
@@ -184,10 +180,14 @@ export class Operon {
 
       const userDbClient = config.userDbclient;
       if (userDbClient === UserDatabaseName.PRISMA) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const { PrismaClient }  = require('@prisma/client');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         this.userDatabase = new PrismaUserDatabase(new PrismaClient());
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const DataSourceExports = require('typeorm');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
           host: config.poolConfig.host,
@@ -195,6 +195,7 @@ export class Operon {
           username: config.poolConfig.user,
           password: process.env.PGPASSWORD,
           database: config.poolConfig.database,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           entities: config.dbClientMetadata.entities
         }))
       } else {
