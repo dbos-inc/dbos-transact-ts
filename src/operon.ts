@@ -60,7 +60,7 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly runtimeConfig?: OperonRuntimeConfig;
+  readonly localRuntimeConfig?: OperonRuntimeConfig;
 }
 
 interface ConfigFile {
@@ -290,7 +290,7 @@ export class Operon {
       observability_database: config.database.observability_database || undefined,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       application: config.application || undefined,
-      runtimeConfig: config.localRuntimeConfig || undefined,
+      localRuntimeConfig: config.localRuntimeConfig || undefined,
     };
   }
 

@@ -67,7 +67,7 @@ export class OperonRuntime {
     this.operon.useNodePostgres();
     await this.operon.init(...classes);
 
-    const config: OperonRuntimeConfig = generateRuntimeConfig(inputConfig, this.operon.config.runtimeConfig);
+    const config: OperonRuntimeConfig = generateRuntimeConfig(inputConfig, this.operon.config.localRuntimeConfig);
 
     const server = new OperonHttpServer(this.operon)
 

@@ -72,7 +72,7 @@ describe("operon-config", () => {
     expect(applicationConfig.nested.a[2].b.d).toBe("\"default.")
 
     // local runtime config
-    const localRuntimeConfig: OperonRuntimeConfig = operonConfig.runtimeConfig as OperonRuntimeConfig;
+    const localRuntimeConfig: OperonRuntimeConfig = operonConfig.localRuntimeConfig as OperonRuntimeConfig;
     expect(localRuntimeConfig.port).toBe(1234);
 
     await operon.destroy();
