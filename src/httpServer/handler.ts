@@ -84,6 +84,10 @@ export class OperonHandlerParameter extends OperonParameter {
   }
 }
 
+/////////////////////////
+/* ENDPOINT DECORATORS */
+/////////////////////////
+
 export function GetApi(url: string) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
@@ -115,6 +119,10 @@ export function PostApi(url: string) {
   }
   return apidec;
 }
+
+///////////////////////////////////
+/* ENDPOINT PARAMETER DECORATORS */
+///////////////////////////////////
 
 export function ArgSource(source: ArgSources) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {

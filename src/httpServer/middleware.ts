@@ -41,6 +41,10 @@ export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown
   }
 }
 
+/////////////////////////////////
+/* MIDDLEWARE CLASS DECORATORS */
+/////////////////////////////////
+
 /**
  * Define an authentication function for each endpoint in this class.
  */
