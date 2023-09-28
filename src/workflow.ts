@@ -270,7 +270,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContext = new CommunicatorContext(funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

@@ -22,7 +22,7 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";

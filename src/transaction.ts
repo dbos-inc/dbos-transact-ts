@@ -5,7 +5,7 @@ import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from "./context";
 import { ValuesOf } from "./utils";
-import { Logger } from "./telemetry";
+import { Logger } from "./telemetry/logs";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;

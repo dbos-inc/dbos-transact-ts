@@ -22,8 +22,8 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonContext } from "./context";
+import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
 
 /**
