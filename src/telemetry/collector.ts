@@ -33,7 +33,7 @@ export class TelemetryCollector {
     }, this.processAndExportSignalsIntervalMs);
   }
 
-  async init(registeredOperations: ReadonlyArray<OperonMethodRegistrationBase> = []) {
+  async init(registeredOperations: Array<OperonMethodRegistrationBase> = []) {
     for (const exporter of this.exporters) {
       if (exporter.init) {
         await exporter.init(registeredOperations);
