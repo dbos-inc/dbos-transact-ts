@@ -46,6 +46,7 @@ import {
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonContext } from './context';
+import { OperonRuntimeConfig } from './operon-runtime/runtime';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -59,6 +60,7 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
+  readonly runtimeConfig?: OperonRuntimeConfig;
 }
 
 interface ConfigFile {
@@ -75,6 +77,7 @@ interface ConfigFile {
   };
   telemetryExporters?: string[];
   application: any;
+  localRuntimeConfig?: OperonRuntimeConfig;
 }
 
 interface WorkflowInfo<T extends any[], R> {

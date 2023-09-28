@@ -10,8 +10,15 @@ interface ModuleExports {
   [key: string]: any;
 }
 
-export class OperonRuntime {
+export interface OperonRuntimeConfig {
+  port: number;
+}
 
+const defaultConfig: OperonRuntimeConfig = {
+  port: 3000,
+}
+
+export class OperonRuntime {
   private operon: Operon | null = null;
   private server: Server | null = null;
 
@@ -32,7 +39,7 @@ export class OperonRuntime {
   /**
    * Start an HTTP server hosting an application's Operon functions.
    */
-  async startServer(port: number) {
+  async startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
     const exports = await this.loadFunctions();
     if (exports === null) {
       throw new OperonError("userFunctions not found");
@@ -49,10 +56,14 @@ export class OperonRuntime {
     this.operon.useNodePostgres();
     await this.operon.init(...classes);
 
+    // Configuration file config (this.operon.config.runtimeConfig) overwrites CLI input configs, which overwrites default configs.
+    // XXX: let's agree on the precedence of configs.
+    const config: OperonRuntimeConfig = { ...defaultConfig, ...inputConfig, ...this.operon.config };
+
     const server = new OperonHttpServer(this.operon)
 
-    this.server = server.listen(port);
-    console.log(`Starting server on port: ${port}`);
+    this.server = server.listen(config.port);
+    console.log(`Starting server on port: ${config.port}`);
   }
 
   /**

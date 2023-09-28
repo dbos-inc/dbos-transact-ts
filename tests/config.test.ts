@@ -2,6 +2,7 @@ import { Operon, OperonConfig, OperonInitializationError } from "src/";
 import { generateOperonTestConfig } from "./helpers";
 import * as utils from "../src/utils";
 import { PoolConfig } from "pg";
+import { OperonRuntimeConfig } from "src/operon-runtime/runtime";
 
 describe("operon-config", () => {
   const mockOperonConfigYamlString = `
@@ -11,10 +12,8 @@ describe("operon-config", () => {
         username: 'some user'
         connectionTimeoutMillis: 3000
         user_database: 'some DB'
-
-      localRuntime:
-        port: 3000
-
+      localRuntimeConfig:
+        port: 1234
       application:
         payments_url: 'http://somedomain.com/payment'
         foo: '\${FOO:default}'
@@ -23,6 +22,11 @@ describe("operon-config", () => {
         nested:
             quz: '\${QUZ:default}'
             quuz: '\${QUUZ}'
+            a:
+              - 1
+              - 2
+              - b:
+                  c: '\${C:default}'
     `;
 
   afterEach(() => {
@@ -37,6 +41,7 @@ describe("operon-config", () => {
     process.env.FOO = "foo";
     process.env.BAR = "bar";
     process.env.QUUZ = "quuz";
+    process.env.C = "c";
 
     const operon: Operon = new Operon();
     operon.useNodePostgres();
@@ -51,13 +56,23 @@ describe("operon-config", () => {
     expect(poolConfig.password).toBe(process.env.PGPASSWORD);
     expect(poolConfig.connectionTimeoutMillis).toBe(3000);
     expect(poolConfig.database).toBe("some DB");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(operonConfig.application.payments_url).toBe("http://somedomain.com/payment")
-    expect(operonConfig.application.foo).toBe("foo")
-    expect(operonConfig.application.bar).toBe("bar")
-    expect(operonConfig.application.baz).toBe("${:default}") // XXX right now we don't match missing env vars
-    expect(operonConfig.application.nested.quz).toBe("default")
-    expect(operonConfig.application.nested.quuz).toBe("quuz")
+
+    // Application config
+    const applicationConfig: any = operonConfig.application;
+    expect(applicationConfig.payments_url).toBe("http://somedomain.com/payment")
+    expect(applicationConfig.foo).toBe("foo")
+    expect(applicationConfig.bar).toBe("bar")
+    expect(applicationConfig.baz).toBe("${:default}") // XXX right now we don't match missing env vars
+    expect(applicationConfig.nested.quz).toBe("default")
+    expect(applicationConfig.nested.quuz).toBe("quuz")
+    expect(applicationConfig.nested.a).toBeInstanceOf(Array)
+    expect(applicationConfig.nested.a).toHaveLength(3)
+    expect(applicationConfig.nested.a[2].b.c).toBe("c")
+
+    // local runtime config
+    const localRuntimeConfig: OperonRuntimeConfig = operonConfig.runtimeConfig as OperonRuntimeConfig;
+    expect(localRuntimeConfig.port).toBe(1234);
+
     await operon.destroy();
   });
 

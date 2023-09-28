@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { deploy } from "./deploy";
-import { OperonRuntime } from "./runtime";
+import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 
 const program = new Command();
@@ -10,11 +10,12 @@ const program = new Command();
 program
   .command('start')
   .description('Start the server')
-  .option('-p, --port <type>', 'Specify the port number', '3000')
+  .option('-p, --port <type>', 'Specify the port number')
   .action(async (options: { port: string }) => {
-    const port = parseInt(options.port);
     const runtime = new OperonRuntime();
-    await runtime.startServer(port);
+    await runtime.startServer({
+      port: parseInt(options.port),
+    });
   });
 
 /* CLOUD DEPLOYMENT */
