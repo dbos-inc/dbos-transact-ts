@@ -61,14 +61,6 @@ export interface OperonConfig {
   readonly application?: any;
 }
 
-export interface OperonCloudConfig {
-  secretEnvVars: string[];
-}
-
-export interface LocalRuntimeConfig {
-  port: number;
-}
-
 interface ConfigFile {
   database: {
     hostname: string;
@@ -83,7 +75,6 @@ interface ConfigFile {
   };
   telemetryExporters?: string[];
   application: any;
-  operonCloud: OperonCloudConfig;
 }
 
 interface WorkflowInfo<T extends any[], R> {
