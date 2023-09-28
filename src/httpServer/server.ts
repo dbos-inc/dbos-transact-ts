@@ -66,10 +66,8 @@ export class OperonHttpServer {
     });
   }
 
-  static registerDecoratedEndpoints(operon : Operon, irouter : unknown)
+  static registerDecoratedEndpoints(operon : Operon, router : Router)
   {
-    const router = irouter as Router;
-
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.getRegisteredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
