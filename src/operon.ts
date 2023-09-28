@@ -75,6 +75,7 @@ interface ConfigFile {
     hostname: string;
     port: number;
     username: string;
+    password?: string;
     connectionTimeoutMillis: number;
     user_database: string;
     system_database: string;
@@ -271,6 +272,8 @@ export class Operon {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
     }
 
+    config = this.evaluateConfig(config);
+
     // Handle "Global" pool config
     if (!config.database) {
       throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
@@ -280,7 +283,7 @@ export class Operon {
       host: config.database.hostname,
       port: config.database.port,
       user: config.database.username,
-      password: this.getDbPassword(),
+      password: config.database.password || this.getDbPassword(),
       connectionTimeoutMillis: config.database.connectionTimeoutMillis,
       database: config.database.user_database,
     };
@@ -294,13 +297,14 @@ export class Operon {
       system_database: config.database.system_database ?? "operon_systemdb",
       observability_database: config.database.observability_database || undefined,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: this.evaluateConfig(config.application) || undefined,
+      application: config.application || undefined,
       localRuntime: config.localRuntime || undefined,
     };
   }
 
   // Interpret property values of the form ${ENV_VAR:default}
-  evaluateConfig(config: any): any {
+  // Argument has to be any, because it is recursive, but we can return a type ConfigFile
+  evaluateConfig(config: any): ConfigFile {
     for (const key in config) {
       if (config.hasOwnProperty(key)) {
         if (typeof config[key] === 'string' || config[key] instanceof String) {
