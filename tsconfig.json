@@ -107,6 +107,7 @@
   },
     "include": [
       "src",
-      "schemas"
+      "schemas",
+      "tests"
     ]
 }
