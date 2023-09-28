@@ -46,7 +46,6 @@ export class OperonRuntime {
     }
     // Initialize Operon.
     this.operon = new Operon();
-    // this.operon.useNodePostgres();
     await this.operon.init(...classes);
 
     const server = new OperonHttpServer(this.operon)

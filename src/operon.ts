@@ -37,7 +37,6 @@ import { v4 as uuidv4 } from 'uuid';
 import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
-  // PrismaClient,
   PrismaUserDatabase,
   UserDatabase,
   TypeORMDataSource,
@@ -200,7 +199,6 @@ export class Operon {
       } else {
         this.useNodePostgres()
       }
-
   }
 
   useNodePostgres() {

@@ -47,7 +47,6 @@ describe("typeorm-tests", () => {
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    console.log ("In the test type of KV is "+ typeof KV);
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(

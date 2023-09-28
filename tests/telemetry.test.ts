@@ -113,7 +113,6 @@ describe("operon-telemetry", () => {
 
     beforeEach(() => {
       operon = new Operon(operonConfig);
-      // operon.useNodePostgres();
     });
 
     afterEach(async () => {
