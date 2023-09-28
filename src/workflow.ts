@@ -16,7 +16,7 @@ import { getRegisteredOperations } from "./decorators";
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
-type TailParameters<T extends Function> = T extends (arg: any, ...args: infer P) => any ? P : never;
+type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // Utility type that removes the TransactionContext parameter from an OperonTransaction
 type WrappedTxFunc<T extends OperonTransaction<any[], any>> = (...args: TailParameters<T>) => ReturnType<T>;
@@ -400,14 +400,16 @@ export class WorkflowContext extends OperonContext {
    */
   proxy<T extends object>(object: T): TxFuncs<T> {
     const ops = getRegisteredOperations(object);
-    const obj: any = {};
 
+    const obj: any = {};
     for (const op of ops.filter(op => !!op.txnConfig)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       obj[op.name] = (...args: any[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return this.transaction(op.registeredFunction as any, ...args)
       };
     }
-
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return obj;
   }
 }

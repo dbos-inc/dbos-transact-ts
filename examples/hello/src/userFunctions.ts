@@ -1,5 +1,4 @@
-import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonContext, OperonTransactionFunction } from 'operon'
-import { getRegisteredOperations } from '../../../dist/src/decorators';
+import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi } from 'operon'
 
 export class Hello {
 
