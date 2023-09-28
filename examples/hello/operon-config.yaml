@@ -6,3 +6,12 @@ database:
   connectionTimeoutMillis: 3000
 telemetryExporters:
   - 'ConsoleExporter'
+application:
+  foo:
+    bar: 'x'
+  baz: 'y'
+localRuntime:
+    port: 3000
+operonCloud:
+  secretEnvVars:
+    - 'foo'

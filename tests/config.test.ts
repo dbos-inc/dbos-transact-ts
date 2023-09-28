@@ -12,12 +12,18 @@ describe("operon-config", () => {
         connectionTimeoutMillis: 3000
         user_database: 'some DB'
 
-      httpServer:
-        port: 3000  
+      localRuntime:
+        port: 3000
 
       application:
-        payments_url: 'http://somedomain.com/payment'  
-      `;
+        payments_url: 'http://somedomain.com/payment'
+        foo: '\${FOO:default}'
+        bar: '\${BAR}'
+        baz: '\${:default}'
+        nested:
+            quz: '\${QUZ:default}'
+            quuz: '\${QUUZ}'
+    `;
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -28,6 +34,9 @@ describe("operon-config", () => {
       .spyOn(utils, "readFileSync")
       .mockReturnValueOnce(mockOperonConfigYamlString);
     jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+    process.env.FOO = "foo";
+    process.env.BAR = "bar";
+    process.env.QUUZ = "quuz";
 
     const operon: Operon = new Operon();
     operon.useNodePostgres();
@@ -44,6 +53,11 @@ describe("operon-config", () => {
     expect(poolConfig.database).toBe("some DB");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(operonConfig.application.payments_url).toBe("http://somedomain.com/payment")
+    expect(operonConfig.application.foo).toBe("foo")
+    expect(operonConfig.application.bar).toBe("bar")
+    expect(operonConfig.application.baz).toBe("${:default}")
+    expect(operonConfig.application.nested.quz).toBe("default")
+    expect(operonConfig.application.nested.quuz).toBe("quuz")
     await operon.destroy();
   });
 

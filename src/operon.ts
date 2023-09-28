@@ -53,17 +53,21 @@ export const operonNull: OperonNull = {};
 /* Interface for Operon configuration */
 const CONFIG_FILE: string = "operon-config.yaml";
 
-export interface httpConfig {
-  readonly port: number;
-}
-
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer: httpConfig ;
+  readonly localRuntime?: LocalRuntimeConfig;
+}
+
+export interface OperonCloudConfig {
+  secretEnvVars: string[];
+}
+
+export interface LocalRuntimeConfig {
+  port: number;
 }
 
 interface ConfigFile {
@@ -79,7 +83,8 @@ interface ConfigFile {
   };
   telemetryExporters?: string[];
   application: any;
-  httpServer?: httpConfig
+  localRuntime: LocalRuntimeConfig;
+  operonCloud: OperonCloudConfig;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -289,9 +294,34 @@ export class Operon {
       system_database: config.database.system_database ?? "operon_systemdb",
       observability_database: config.database.observability_database || undefined,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: config.application || undefined,
-      httpServer: config.httpServer || {port : 3000}
+      application: this.evaluateConfig(config.application) || undefined,
+      localRuntime: config.localRuntime || undefined,
     };
+  }
+
+  // Interpret property values of the form ${ENV_VAR:default}
+  evaluateConfig(config: any): any {
+    for (const key in config) {
+      if (config.hasOwnProperty(key)) {
+        if (typeof config[key] === 'string' || config[key] instanceof String) {
+          const match = config[key].match(/\${([^:]+)(?::([^}]+))?}/);
+          if (match) {
+            const envVarName = match[1];
+            const defaultValue = match[2] || '';
+
+            const envValue = process.env[envVarName];
+            if (envValue !== undefined) {
+              config[key] = envValue;
+            } else {
+              config[key] = defaultValue;
+            }
+          }
+        } else if (typeof config[key] === 'object') {
+          this.evaluateConfig(config[key]);
+        }
+      }
+    }
+    return config;
   }
 
   getDbPassword(): string {
