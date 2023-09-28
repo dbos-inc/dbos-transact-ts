@@ -16,7 +16,6 @@ import {
 } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 
@@ -26,7 +25,7 @@ describe("httpserver-defsec-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     await setupOperonTestDb(config);
   });
 

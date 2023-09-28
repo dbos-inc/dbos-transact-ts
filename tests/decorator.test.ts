@@ -74,7 +74,7 @@ describe("decorator-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     username = config.poolConfig.user || "postgres";
     await setupOperonTestDb(config);
   })

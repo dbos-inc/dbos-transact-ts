@@ -22,7 +22,6 @@ import {
 } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
 import { Authentication } from "../../src/httpServer/middleware";
 
 describe("httpserver-tests", () => {
@@ -33,7 +32,7 @@ describe("httpserver-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     await setupOperonTestDb(config);
   });
 
