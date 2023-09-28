@@ -121,9 +121,9 @@ export class Operon {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
-  private readonly _registeredOperations: Array<OperonMethodRegistrationBase> = [];
-  get registeredOperations(): ReadonlyArray<OperonMethodRegistrationBase> {
-    return this._registeredOperations;
+  private readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
+  get getRegisteredOperations(): ReadonlyArray<OperonMethodRegistrationBase> {
+    return this.registeredOperations;
   }
 
   readonly initialEpochTimeMs: number;
@@ -196,9 +196,9 @@ export class Operon {
   }
 
   #registerClass(cls: object) {
-    const registeredOps = getRegisteredOperations(cls);
-    this._registeredOperations.push(...registeredOps);
-    for (const ro of registeredOps) {
+    const registeredClassOperations = getRegisteredOperations(cls);
+    this.registeredOperations.push(...registeredClassOperations);
+    for (const ro of registeredClassOperations) {
       for (const arg of ro.args) {
         if (arg.argType.name === "WorkflowContext") {
           const wf = ro.registeredFunction as OperonWorkflow<any, any>;
@@ -232,7 +232,7 @@ export class Operon {
         this.#registerClass(cls);
       }
 
-      await this.telemetryCollector.init(this.registeredOperations);
+      await this.telemetryCollector.init(this.getRegisteredOperations);
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {

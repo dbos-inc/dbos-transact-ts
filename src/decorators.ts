@@ -1,21 +1,4 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* May make sense: eslint-disable @typescript-eslint/ban-types */
-
-// TODO List
-// General
-//   Class level decorators - defaults
-//   Field / property decorators - persistent data
-//
-//   Integrate parameter extraction / validation that currently lives in demo app repo
-//
-//   Find a way to unit test - perhaps a mock log collector?
-//     Or is it easier once there is a real log collector?
-//
-// Workflow
-//
-// Logging
-//   Integrate with Logger setup
-//   Integrate with Logger buffer
 
 import "reflect-metadata";
 
@@ -173,6 +156,10 @@ export class OperonParameter {
   }
 }
 
+//////////////////////////
+/* REGISTRATION OBJECTS */
+//////////////////////////
+
 export interface OperonRegistrationDefaults
 {
   name: string;
@@ -246,6 +233,13 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// DECORATOR REGISTRATION
+// These manage registration objects, creating them at decorator evaluation time
+// and making wrapped methods available for function registration at Operon
+// initialization time.
+////////////////////////////////////////////////////////////////////////////////
+
 export function getRegisteredOperations(target: object): ReadonlyArray<OperonMethodRegistrationBase> {
   const registeredOperations: OperonMethodRegistrationBase[] = [];
 
@@ -305,8 +299,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
     Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
 
-    // This is the replacement method
-    const nmethod = async function (this: This, ...args: Args) {
+    const wrappedMethod = async function (this: This, ...args: Args) {
       const mn = methReg.name;
 
       let opCtx : OperonContext | undefined = undefined;
@@ -332,9 +325,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         opCtx.assumedRole = authRole;
       }
 
-      // TODO: Here let's validate the arguments, being careful to log any validation errors that occur
-      //        And skip/mask arguments
-      methReg.args.forEach((v, idx) => {
+      // Input validation
+      methReg.args.forEach((argDescriptor, idx) => {
         if (idx === 0)
         {
           // Context, may find a more robust way.
@@ -344,25 +336,25 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
         // Do we have an arg at all
         if (idx >= args.length) {
-          if (v.required) {
+          if (argDescriptor.required) {
             throw new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
           }
           return;
         }
 
-        let iv = args[idx];
-        if (iv === undefined && v.required) {
-          throw new OperonDataValidationError(`Missing required argument ${v.name} calling ${methReg.name}`);
+        let argValue = args[idx];
+        if (argValue === undefined && argDescriptor.required) {
+          throw new OperonDataValidationError(`Missing required argument ${argDescriptor.name} calling ${methReg.name}`);
         }
 
-        if (iv instanceof String) {
-          iv = iv.toString();
-          args[idx] = iv;
+        if (argValue instanceof String) { // TODO: Add input validation for types other than String.
+          argValue = argValue.toString();
+          args[idx] = argValue;
         }
 
-        if (v.dataType.dataType === 'text') {
-          if ((typeof iv !== 'string')) {
-            throw new OperonDataValidationError(`Argument ${v.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+        if (argDescriptor.dataType.dataType === 'text') {
+          if ((typeof argValue !== 'string')) {
+            throw new OperonDataValidationError(`Argument ${argDescriptor.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
           }
         }
       });
@@ -375,7 +367,8 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       sLogRec.eventComponent = mn;
       sLogRec.eventLevel = methReg.traceLevel;
 
-      args.forEach((v, idx) => {
+      // Argument masking
+      args.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
         if (idx === 0)
@@ -384,41 +377,33 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           isCtx = true;
         }
 
-        let lv = v;
+        let loggedArgValue = argValue;
         if (isCtx || methReg.args[idx].logMask === LogMasks.SKIP) {
           return;
         } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
             // For now this means hash
             if (methReg.args[idx].dataType.dataType === "json") {
-              lv = generateSaltedHash(JSON.stringify(v), "JSONSALT");
+              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "JSONSALT");
             } else {
               // Yes, we are doing the same as above for now.
               //  It can be better if we have verified the type of the data
-              lv = generateSaltedHash(JSON.stringify(v), "OPERONSALT");
+              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "OPERONSALT");
             }
           }
-          sLogRec.positionalArgs.push(lv);
-          sLogRec.namedArgs[methReg.args[idx].name] = lv;
+          sLogRec.positionalArgs.push(loggedArgValue);
+          sLogRec.namedArgs[methReg.args[idx].name] = loggedArgValue;
         }
       });
 
-      // console.log(`${methReg.traceLevel}: ${mn}: Invoked - ` + sLogRec.toString());
-      // eslint-disable-next-line no-useless-catch
-      try {
-        return methReg.origFunction.call(this, ...args);
-        // console.log(`${methReg.traceLevel}: ${mn}: Returned`);
-      } catch (e) {
-        // console.log(`${methReg.traceLevel}: ${mn}: Threw`, e);
-        throw e;
-      }
+      return methReg.origFunction.call(this, ...args);
     };
-    Object.defineProperty(nmethod, "name", {
+    Object.defineProperty(wrappedMethod, "name", {
       value: methReg.name,
     });
 
-    descriptor.value = nmethod;
-    methReg.registeredFunction = nmethod;
+    descriptor.value = wrappedMethod;
+    methReg.registeredFunction = wrappedMethod;
 
     methReg.needInitialized = false;
   }
@@ -454,6 +439,10 @@ export function getOrCreateOperonClassRegistration<CT extends { new (...args: un
   }
   return clsReg;
 }
+
+//////////////////////////
+/* PARAMETER DECORATORS */
+//////////////////////////
 
 export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
@@ -496,13 +485,22 @@ export function ArgDate() { // TODO a little more info about it
   };
 }
 
-/*
-type MethodDecorator = <T>(
-  target: Object,
-  propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<T>
-) => TypedPropertyDescriptor<T> | void;
-*/
+///////////////////////
+/* CLASS DECORATORS */
+///////////////////////
+
+export function DefaultRequiredRole(anyOf: string[]) {
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     clsreg.requiredRole = anyOf;
+  }
+  return clsdec;
+}
+
+///////////////////////
+/* METHOD DECORATORS */
+///////////////////////
 
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
@@ -516,15 +514,6 @@ export function RequiredRole(anyOf: string[]) {
     return descriptor;
   }
   return apidec;
-}
-
-export function DefaultRequiredRole(anyOf: string[]) {
-  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
-  {
-     const clsreg = getOrCreateOperonClassRegistration(ctor);
-     clsreg.requiredRole = anyOf;
-  }
-  return clsdec;
 }
 
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
