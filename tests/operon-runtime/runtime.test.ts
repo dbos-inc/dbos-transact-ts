@@ -32,7 +32,9 @@ describe("runtime-tests", () => {
   });
 
   test("runtime-hello", async () => {
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start']);
+    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+      env: process.env
+    });
 
     const waitForMessage = new Promise<void>((resolve, reject) => {
       const onData = (data: Buffer) => {
