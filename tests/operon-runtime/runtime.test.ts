@@ -3,7 +3,7 @@
 import axios from "axios";
 import { spawn, execSync } from "child_process";
 import { Client } from "pg";
-import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
+import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 
 describe("runtime-tests", () => {
 

@@ -1,11 +1,12 @@
 // import { PrismaClient, testkv } from "@prisma/client";
-import { DataSource, Entity, EntityManager, PrimaryColumn, Column} from "typeorm";
+import { EntityManager} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonConfig, TransactionContext } from "src";
+import { Operon, OperonConfig, TransactionContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "src/utils";
-import { UserDatabaseName } from "src/user_database";
+import { UserDatabaseName } from "../src/user_database";
 import {KV} from './KV'
+import { sleep } from "../src/utils";
+
 
 
 /**

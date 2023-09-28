@@ -13,17 +13,17 @@ import {
   RequiredRole,
   TransactionContext,
   WorkflowContext,
-} from "src";
-import { OperonHttpServer } from "src/httpServer/server";
+} from "../../src";
+import { OperonHttpServer } from "../../src/httpServer/server";
 import {
   TestKvTable,
   generateOperonTestConfig,
   setupOperonTestDb,
-} from "tests/helpers";
+} from "../helpers";
 import request from "supertest";
-import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
-import { Authentication } from "src/httpServer/middleware";
+import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
+import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
+import { Authentication } from "../../src/httpServer/middleware";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";

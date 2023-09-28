@@ -11,8 +11,21 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext } from './context';
+import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+
+// Utility type that removes the initial parameter of a function
+type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
+
+// local type declarations for Operon transaction and communicator functions
+type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
+
+// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
+type WFInvokeFuncs<T> = {
+  [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+}
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -377,6 +390,27 @@ export class WorkflowContext extends OperonContext {
     this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
+  }
+
+  /**
+   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
+   * to use WorkflowContext.Transaction(OpClass.someMethod, param);
+   */
+  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
+    const ops = getRegisteredOperations(object);
+
+    const proxy: any = {};
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.txnConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
+        : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
+          : undefined;
+    }
+    return proxy as WFInvokeFuncs<T>;
   }
 }
 
