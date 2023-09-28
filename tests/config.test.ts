@@ -55,7 +55,7 @@ describe("operon-config", () => {
     expect(operonConfig.application.payments_url).toBe("http://somedomain.com/payment")
     expect(operonConfig.application.foo).toBe("foo")
     expect(operonConfig.application.bar).toBe("bar")
-    expect(operonConfig.application.baz).toBe("${:default}")
+    expect(operonConfig.application.baz).toBe("${:default}") // XXX right now we don't match missing env vars
     expect(operonConfig.application.nested.quz).toBe("default")
     expect(operonConfig.application.nested.quuz).toBe("quuz")
     await operon.destroy();
