@@ -24,7 +24,6 @@ type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
 type WFProxyFuncs<T> = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 
@@ -405,14 +404,13 @@ export class WorkflowContext extends OperonContext {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as any, ...args)
+        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
         : op.commConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.external(op.registeredFunction as any, ...args)
+          ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
           : undefined;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return proxy;
+    return proxy as WFProxyFuncs<T>;
   }
 }
 
