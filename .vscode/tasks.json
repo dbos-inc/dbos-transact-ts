@@ -1,0 +1,39 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "build",
+			"group": "build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"label": "npm: build",
+			"detail": "tsc --project tsconfig.build.json && chmod +x ./dist/src/operon-runtime/cli.js"
+		},
+		{
+			"type": "npm",
+			"script": "build",
+			"path": "examples/hello",
+			"group": "build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"label": "npm: build - examples/hello",
+			"detail": "tsc"
+		},
+		{
+			"label": "build example",
+			"dependsOn": [
+				"npm: build",
+				"npm: build - examples/hello"
+			],
+			"dependsOrder": "sequence",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		}
+	]
+}
