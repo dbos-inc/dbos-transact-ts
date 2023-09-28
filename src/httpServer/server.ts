@@ -143,7 +143,7 @@ export class OperonHttpServer {
             }
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
-            oc.log("ERROR", JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
+            oc.error(JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
             if (e instanceof Error) {
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);

@@ -2,16 +2,21 @@ import {
   ConsoleExporter,
   PostgresExporter,
   POSTGRES_EXPORTER,
-  TelemetryCollector,
   CONSOLE_EXPORTER,
-} from "../src/telemetry";
-import { TelemetrySignal } from "../src/telemetry/signals";
-import { Operon, OperonConfig } from "../src/operon";
+} from "../src/telemetry/exporters";
+import { TelemetryCollector } from "../src/telemetry/collector";
+import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
+import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Traced, OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
+import {
+  Traced,
+  OperonTransaction,
+  OperonWorkflow,
+  RequiredRole,
+} from "../src/decorators";
 import { TransactionContext, WorkflowContext } from "src";
 import { WorkflowHandle } from "src/workflow";
-import { OperonContext } from "dist/src";
+import { OperonContext } from "../src/context";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -47,7 +52,7 @@ class TestClass {
       [name]
     );
     const result = JSON.stringify(rows[0]);
-    txnCtxt.log("INFO", `transaction result: ${result}`);
+    txnCtxt.log(`transaction result: ${result}`);
     return result;
   }
 
@@ -61,7 +66,7 @@ class TestClass {
       TestClass.test_function,
       name
     );
-    workflowCtxt.log("INFO", `workflow result: ${funcResult}`);
+    workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
   }
 }
@@ -131,8 +136,9 @@ describe("operon-telemetry", () => {
         operationName: "create_user",
         runAs: "test",
         timestamp: Date.now(),
-        severity: "INFO",
+        severity: LogSeverity.Log,
         logMessage: "test",
+        stack: "some stack trace",
       };
       const signal2 = { ...signal1 };
       signal2.logMessage = "test2";
@@ -140,14 +146,8 @@ describe("operon-telemetry", () => {
       collector.push(signal2);
       await collector.processAndExportSignals();
       expect(logSpy).toHaveBeenCalledTimes(2);
-      expect(logSpy).toHaveBeenNthCalledWith(
-        1,
-        `[${signal1.severity}] ${signal1.logMessage}`
-      );
-      expect(logSpy).toHaveBeenNthCalledWith(
-        2,
-        `[${signal1.severity}] ${signal2.logMessage}`
-      );
+      expect(logSpy).toHaveBeenNthCalledWith(1, `${signal1.logMessage}`);
+      expect(logSpy).toHaveBeenNthCalledWith(2, `${signal2.logMessage}`);
     });
   });
 
@@ -189,7 +189,7 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "transaction_id",
-          data_type: "text"
+          data_type: "text",
         },
         {
           column_name: "severity",
@@ -220,7 +220,9 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stfQueryResult.rows).toEqual(expect.arrayContaining(expectedStfColumns));
+      expect(stfQueryResult.rows).toEqual(
+        expect.arrayContaining(expectedStfColumns)
+      );
 
       const stwQueryResult = await pgExporterPgClient.query(
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`
@@ -232,7 +234,7 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "transaction_id",
-          data_type: "text"
+          data_type: "text",
         },
         {
           column_name: "timestamp",
@@ -267,7 +269,9 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stwQueryResult.rows).toEqual(expect.arrayContaining(expectedStwColumns));
+      expect(stwQueryResult.rows).toEqual(
+        expect.arrayContaining(expectedStwColumns)
+      );
       const scuQueryResult = await pgExporterPgClient.query(
         `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
       );
@@ -282,7 +286,7 @@ describe("operon-telemetry", () => {
         },
         {
           column_name: "transaction_id",
-          data_type: "text"
+          data_type: "text",
         },
         {
           column_name: "age",
@@ -325,17 +329,19 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(scuQueryResult.rows).toEqual(expect.arrayContaining(expectedScuColumns));
+      expect(scuQueryResult.rows).toEqual(
+        expect.arrayContaining(expectedScuColumns)
+      );
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const span = operon.tracer.startSpan("test");
-      const oc = new OperonContext("testName", span);
+      const oc = new OperonContext("testName", span, operon.logger);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
-      
-      const params = { parentCtx: oc };
+
+      const params: InternalWorkflowParams = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,
@@ -364,7 +370,7 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(txnLogEntry.function_name).toBe("test_function");
       expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(txnLogEntry.severity).toBe("INFO");
+      expect(txnLogEntry.severity).toBe(LogSeverity.Log);
       expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
       expect(txnLogEntry.trace_id).toBe(null);
       expect(txnLogEntry.trace_span).toBe(null);
@@ -378,7 +384,7 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(wfLogEntry.function_name).toBe("test_workflow");
       expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(wfLogEntry.severity).toBe("INFO");
+      expect(wfLogEntry.severity).toBe(LogSeverity.Log);
       expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
       expect(wfLogEntry.trace_id).toBe(null);
       expect(wfLogEntry.trace_span).toBe(null);

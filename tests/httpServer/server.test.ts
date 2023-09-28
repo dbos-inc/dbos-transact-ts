@@ -22,7 +22,7 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -199,7 +199,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.log("INFO", `query with name ${name}`);  // Test logging.
+      ctx.info(`query with name ${name}`);  // Test logging.
       return `hello ${name}`;
     }
 

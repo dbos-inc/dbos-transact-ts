@@ -16,7 +16,7 @@ import {
 } from "tests/helpers";
 import request from "supertest";
 import { HandlerContext } from "src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "src/telemetry";
+import { CONSOLE_EXPORTER } from "src/telemetry/exporters";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;

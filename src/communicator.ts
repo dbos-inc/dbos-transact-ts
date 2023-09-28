@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger } from "./telemetry";
+import { Logger } from "./telemetry/logs";
 import { WorkflowContext } from "./workflow";
 import { OperonContext } from "./context";
 
@@ -20,13 +20,11 @@ export class CommunicatorContext extends OperonContext
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
   readonly backoffRate: number;
-  private readonly logger: Logger;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContext, functionID: number, logger: Logger, span: Span, params: CommunicatorConfig, commName: string) {
-    super(commName, span, workflowContext);
+  constructor(workflowContext: WorkflowContext, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
+    super(commName, span, logger, workflowContext);
     this.functionID = functionID;
-    this.logger = logger;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;
@@ -35,9 +33,5 @@ export class CommunicatorContext extends OperonContext
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
        this.applicationConfig = workflowContext.applicationConfig;
     }
-  }
-
-  log(severity: string, message: string): void {
-    this.logger.log(this, severity, message);
   }
 }
