@@ -23,7 +23,7 @@ type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
-type WFProxyFuncs<T> = {
+type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 
@@ -396,7 +396,7 @@ export class WorkflowContext extends OperonContext {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  proxy<T extends object>(object: T): WFProxyFuncs<T> {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
@@ -410,7 +410,7 @@ export class WorkflowContext extends OperonContext {
           ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
           : undefined;
     }
-    return proxy as WFProxyFuncs<T>;
+    return proxy as WFInvokeFuncs<T>;
   }
 }
 

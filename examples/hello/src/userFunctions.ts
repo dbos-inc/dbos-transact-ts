@@ -34,11 +34,10 @@ export class Hello {
     // TS mapping types are used to filter out non-transaction and communicator methods as well as to remove the Transaction/CommunicatorContext parameter
     // from the method signature.
 
-    const hello = wfCtxt.proxy(Hello);
     wfCtxt.log("Hello, workflow!");
     const encodedName = btoa(name);
-    const decodedName = await hello.helloExternal(encodedName);
-    return await hello.helloFunction(decodedName);
+    const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
+    return await wfCtxt.invoke(Hello).helloFunction(decodedName);
   }
 }
 
