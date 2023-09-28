@@ -20,13 +20,14 @@ describe("operon-config", () => {
         bar: '\${BAR}'
         baz: '\${:default}'
         nested:
-            quz: '\${QUZ:default}'
+            quz: '\${QUZ:"default"}'
             quuz: '\${QUUZ}'
             a:
               - 1
               - 2
               - b:
-                  c: '\${C:default}'
+                  c: '\${C:"default.}'
+                  d: '\${D:"default.}'
     `;
 
   afterEach(() => {
@@ -63,11 +64,12 @@ describe("operon-config", () => {
     expect(applicationConfig.foo).toBe("foo")
     expect(applicationConfig.bar).toBe("bar")
     expect(applicationConfig.baz).toBe("${:default}") // XXX right now we don't match missing env vars
-    expect(applicationConfig.nested.quz).toBe("default")
+    expect(applicationConfig.nested.quz).toBe("\"default\"")
     expect(applicationConfig.nested.quuz).toBe("quuz")
     expect(applicationConfig.nested.a).toBeInstanceOf(Array)
     expect(applicationConfig.nested.a).toHaveLength(3)
     expect(applicationConfig.nested.a[2].b.c).toBe("c")
+    expect(applicationConfig.nested.a[2].b.d).toBe("\"default.")
 
     // local runtime config
     const localRuntimeConfig: OperonRuntimeConfig = operonConfig.runtimeConfig as OperonRuntimeConfig;
