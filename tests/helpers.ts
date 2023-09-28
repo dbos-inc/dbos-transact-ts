@@ -3,7 +3,7 @@ import { Client } from "pg";
 import { UserDatabaseName } from "src/user_database";
 
 /* DB management helpers */
-export function generateOperonTestConfig(exporters?: string[], dbClient?: string): OperonConfig {
+export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
   const dbPassword: string | undefined =
     process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
@@ -30,7 +30,7 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: string
     },
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
-      entities: ["tests/KV.ts"]
+        entities: ["tests/KV.ts"]
     }
   };
 

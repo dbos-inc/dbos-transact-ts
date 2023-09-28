@@ -13,25 +13,6 @@ import {KV} from './KV'
  */
 let globalCnt = 0;
 
-/*@Entity()
-export class KV {
-    @PrimaryColumn()
-    id: string = "t"
-
-    @Column()
-    value: string = "v"
-} */
-
-const typeormDs = new DataSource({
-  type: "postgres", // perhaps should move to config file
-  host: "localhost",
-  port: 5432,
-  username: "postgres",
-  password: process.env.PGPASSWORD,
-  database: "operontest",
-  // entities: [KV]
-  entities: ["tests/KV.ts"]
-}); 
 
 const testTxn = async (
   txnCtxt: TransactionContext,
@@ -66,8 +47,6 @@ describe("typeorm-tests", () => {
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-  
-    // operon.useTypeORM(typeormDs);
     console.log ("In the test type of KV is "+ typeof KV);
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);

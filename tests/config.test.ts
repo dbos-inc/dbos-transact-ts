@@ -30,7 +30,6 @@ describe("operon-config", () => {
     jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
 
     const operon: Operon = new Operon();
-    // operon.useNodePostgres();
     expect(operon.initialized).toBe(false);
     const operonConfig: OperonConfig = operon.config;
 
@@ -52,7 +51,6 @@ describe("operon-config", () => {
     const readFileSpy = jest.spyOn(utils, "readFileSync");
     const config: OperonConfig = generateOperonTestConfig();
     const operon = new Operon(config);
-    // operon.useNodePostgres();
     expect(operon.initialized).toBe(false);
     expect(operon.config).toBe(config);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

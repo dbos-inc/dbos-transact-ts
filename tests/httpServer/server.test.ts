@@ -39,7 +39,6 @@ describe("httpserver-tests", () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
-    // operon.useNodePostgres();
     await operon.init(TestEndpoints);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(

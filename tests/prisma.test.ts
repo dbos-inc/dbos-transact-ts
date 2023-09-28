@@ -53,7 +53,6 @@ describe("prisma-tests", () => {
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    // operon.usePrisma(new PrismaClient());
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(

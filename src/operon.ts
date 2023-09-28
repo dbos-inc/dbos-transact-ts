@@ -18,8 +18,6 @@ import {
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
 import { readFileSync } from './utils';
-import {DataSource} from 'typeorm';
-import * as path from 'path' ;
 
 import {
   ConsoleExporter,
@@ -45,12 +43,12 @@ import {
   TypeORMDataSource,
   TypeORMDatabase,
   UserDatabaseName,
+  UserDatabaseClient,
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-
 import { PrismaClient } from '@prisma/client';
-
+import { DataSource } from 'typeorm';
 import { OperonContext } from './context';
 
 
@@ -66,7 +64,7 @@ export interface httpConfig {
 
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
-  readonly userDbclient?: string;
+  readonly userDbclient?: UserDatabaseName;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
@@ -85,7 +83,7 @@ interface ConfigFile {
     system_database: string;
     ssl_ca?: string;
     observability_database: string;
-    user_dbclient?: string;
+    user_dbclient?: UserDatabaseName;
   };
   telemetryExporters?: string[];
   application: any;
@@ -190,7 +188,6 @@ export class Operon {
       if (userDbClient === UserDatabaseName.PRISMA) {
         this.usePrisma(new PrismaClient())
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
-        console.log("typeorm config current directory ..."+ __dirname);
         this.useTypeORM(new DataSource({
           type: "postgres", // perhaps should move to config file
           host: config.poolConfig.host,
