@@ -46,8 +46,8 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { PrismaClient } from '@prisma/client';
-import { DataSource } from 'typeorm';
+// import { PrismaClient } from '@prisma/client';
+// import { DataSource } from 'typeorm';
 import { OperonContext } from './context';
 
 
@@ -183,11 +183,12 @@ export class Operon {
   configureDbClient(config: OperonConfig) {
 
       const userDbClient = config.userDbclient;
-
       if (userDbClient === UserDatabaseName.PRISMA) {
-        this.usePrisma(new PrismaClient())
+        const { PrismaClient }  = require('@prisma/client');
+        this.userDatabase = new PrismaUserDatabase(new PrismaClient());
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
-        this.useTypeORM(new DataSource({
+        const DataSourceExports = require('typeorm');
+        this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
           host: config.poolConfig.host,
           port: config.poolConfig.port,
@@ -195,32 +196,10 @@ export class Operon {
           password: process.env.PGPASSWORD,
           database: config.poolConfig.database,
           entities: config.dbClientMetadata.entities
-        }));
+        }))
       } else {
-        this.useNodePostgres()
+        this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
       }
-  }
-
-  useNodePostgres() {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
-  }
-
-  usePrisma(client: PrismaClient) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PrismaUserDatabase(client);
-  }
-
-  useTypeORM(ds: TypeORMDataSource) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    } 
-    this.userDatabase = new TypeORMDatabase(ds);
-    return;
   }
 
   #registerClass(cls: object) {
