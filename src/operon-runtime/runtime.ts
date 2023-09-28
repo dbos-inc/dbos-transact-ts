@@ -10,8 +10,6 @@ interface ModuleExports {
   [key: string]: any;
 }
 
-const DEFAULT_PORT = 3000;
-
 export class OperonRuntime {
 
   private operon: Operon | null = null;
@@ -55,7 +53,6 @@ export class OperonRuntime {
 
     this.server = server.listen(port);
     console.log(`Starting server on port: ${port}`);
-
   }
 
   /**
