@@ -69,7 +69,7 @@ export class OperonHttpServer {
   static registerDecoratedEndpoints(operon : Operon, router : Router)
   {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
-    operon.getRegisteredOperations.forEach((registeredOperation) => {
+    operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Check if we need to apply any Koa middleware.

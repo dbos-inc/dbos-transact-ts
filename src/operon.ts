@@ -121,11 +121,7 @@ export class Operon {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
-  private readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
-  get getRegisteredOperations(): ReadonlyArray<OperonMethodRegistrationBase> {
-    return this.registeredOperations;
-  }
-
+  readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
 
   readonly telemetryCollector: TelemetryCollector;
@@ -232,7 +228,7 @@ export class Operon {
         this.#registerClass(cls);
       }
 
-      await this.telemetryCollector.init(this.getRegisteredOperations);
+      await this.telemetryCollector.init(this.registeredOperations);
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
