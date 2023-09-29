@@ -17,7 +17,6 @@ import {
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { readFileSync } from './utils';
 
 import {
   ConsoleExporter,
@@ -34,7 +33,6 @@ import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
-import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
   PrismaClient,
@@ -51,35 +49,12 @@ export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
-const CONFIG_FILE: string = "operon-config.yaml";
-
-export interface httpConfig {
-  readonly port: number;
-}
-
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer?: httpConfig ;
-}
-
-interface ConfigFile {
-  database: {
-    hostname: string;
-    port: number;
-    username: string;
-    connectionTimeoutMillis: number;
-    user_database: string;
-    system_database: string;
-    ssl_ca?: string;
-    observability_database: string;
-  };
-  telemetryExporters?: string[];
-  application: any;
-  httpServer?: httpConfig
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -98,7 +73,6 @@ export interface InternalWorkflowParams extends WorkflowParams {
 
 export class Operon {
   initialized: boolean;
-  readonly config: OperonConfig;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
@@ -134,12 +108,7 @@ export class Operon {
   readonly tracer: Tracer;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
-    if (config) {
-      this.config = config;
-    } else {
-      this.config = this.generateOperonConfig();
-    }
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
     if (systemDatabase) {
       this.systemDatabase = systemDatabase;
     } else {
@@ -221,7 +190,7 @@ export class Operon {
       throw new OperonInitializationError("No data source!");
     }
     if (this.initialized) {
-      // TODO add logging when we have a logger
+      console.log("Operon already initialized!");
       return;
     }
     try {
@@ -235,7 +204,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        console.log(err);
+        console.error(err);
         throw new OperonInitializationError(err.message);
       }
     }
@@ -248,58 +217,6 @@ export class Operon {
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
-  }
-
-  generateOperonConfig(): OperonConfig {
-    // Load default configuration
-    let config: ConfigFile | undefined;
-    try {
-      const configContent = readFileSync(CONFIG_FILE);
-      config = YAML.parse(configContent) as ConfigFile;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
-      }
-    }
-    if (!config) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
-    // Handle "Global" pool config
-    if (!config.database) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
-    }
-
-    const poolConfig: PoolConfig = {
-      host: config.database.hostname,
-      port: config.database.port,
-      user: config.database.username,
-      password: this.getDbPassword(),
-      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
-      database: config.database.user_database,
-    };
-    if (config.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
-    }
-
-    return {
-      poolConfig: poolConfig,
-      telemetryExporters: config.telemetryExporters || [],
-      system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: config.application || undefined,
-      httpServer: config.httpServer || {port : 3000}
-    };
-  }
-
-  getDbPassword(): string {
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
-    }
-
-    return dbPassword;
   }
 
   /* WORKFLOW OPERATIONS */

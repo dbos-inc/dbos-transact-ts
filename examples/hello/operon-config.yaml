@@ -2,6 +2,7 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
+  password: ${PGPASSWORD}
   user_database: 'hello'
   connectionTimeoutMillis: 3000
 telemetryExporters:
