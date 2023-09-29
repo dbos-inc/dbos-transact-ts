@@ -1,5 +1,4 @@
 import { DatabaseError } from "pg";
-import { ExportResult } from "@opentelemetry/core";
 
 function formatPgDatabaseError(err: DatabaseError): string {
   let msg = "";
