@@ -1,8 +1,8 @@
-import { OperonConfig, OperonInitializationError } from "src/";
-import * as utils from "src/utils";
+import { OperonConfig, OperonInitializationError } from "../../src/";
+import * as utils from "../../src/utils";
 import { PoolConfig } from "pg";
-import { parseConfigFile } from "src/operon-runtime/config";
-import { OperonRuntimeConfig } from "src/operon-runtime/runtime";
+import { parseConfigFile } from "../../src/operon-runtime/config";
+import { OperonRuntimeConfig } from "../../src/operon-runtime/runtime";
 
 describe("operon-config", () => {
   const mockOperonConfigYamlString = `
