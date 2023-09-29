@@ -2,7 +2,7 @@
 import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { OperonCommunicator, CommunicatorContext } from "./communicator";
+import { OperonCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
@@ -291,7 +291,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

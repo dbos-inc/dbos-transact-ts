@@ -220,10 +220,11 @@ describe("failures-tests", () => {
 
   test("failing-communicator", async () => {
     let num = 0;
+    const maxAttempts = 4;
 
-    const testCommunicator = async (ctxt: CommunicatorContext) => {
+    const testCommunicator = async (_ctxt: CommunicatorContext) => {
       num += 1;
-      if (num !== ctxt.maxAttempts) {
+      if (num !== maxAttempts) {
         throw new Error("bad number");
       }
       await sleep(1);
@@ -231,7 +232,7 @@ describe("failures-tests", () => {
     };
     operon.registerCommunicator(testCommunicator, {
       intervalSeconds: 0,
-      maxAttempts: 4,
+      maxAttempts: maxAttempts,
     });
 
     const testWorkflow = async (ctxt: WorkflowContext) => {

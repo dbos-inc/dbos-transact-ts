@@ -107,18 +107,19 @@ describe("foundationdb-operon", () => {
 
   test("fdb-communicator-error", async () => {
     let num = 0;
+    const maxAttempts = 4;
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    const testCommunicator = async (ctxt: CommunicatorContext) => {
+    const testCommunicator = async (_ctxt: CommunicatorContext) => {
       num += 1;
-      if (num !== ctxt.maxAttempts) {
+      if (num !== maxAttempts) {
         throw new Error("bad number");
       }
       return num;
     };
     operon.registerCommunicator(testCommunicator, {
       intervalSeconds: 0,
-      maxAttempts: 4,
+      maxAttempts: maxAttempts,
     });
 
     const testWorkflow = async (ctxt: WorkflowContext) => {
