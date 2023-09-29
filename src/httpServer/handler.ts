@@ -90,6 +90,10 @@ export class HandlerContext extends OperonContext {
   }
 }
 
+//////////////////////////
+/* REGISTRATION OBJECTS */
+//////////////////////////
+
 export enum APITypes {
   GET = "GET",
   POST = "POST",

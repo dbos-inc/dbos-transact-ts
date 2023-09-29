@@ -261,7 +261,7 @@ export class Operon {
         const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2", workflowUUID, workflowInputID);
         if (rows.length === 0) {
           // This workflow has never executed before, so record the input.
-          wCtxt.resultBuffer.set(workflowInputID, { workflow_name: wf.name, input: input });
+          wCtxt.#resultBuffer.set(workflowInputID, { workflow_name: wf.name, input: input });
         } else {
           // Return the old recorded input
           input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
