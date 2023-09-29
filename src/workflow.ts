@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -29,7 +29,7 @@ type WFInvokeFuncs<T> = {
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentCtx?: OperonContext;
+  parentCtx?: OperonContextImpl;
 }
 
 export interface WorkflowConfig {
@@ -51,7 +51,7 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperonContext {
+export class WorkflowContext extends OperonContextImpl {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
@@ -59,7 +59,7 @@ export class WorkflowContext extends OperonContext {
 
   constructor(
     operon: Operon,
-    parentCtx: OperonContext | undefined,
+    parentCtx: OperonContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string

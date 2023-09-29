@@ -3,7 +3,7 @@ import { PoolClient } from "pg";
 import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
 import { WorkflowContext } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from "./context";
+import { OperonContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { Logger } from "./telemetry/logs";
 
@@ -23,7 +23,7 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
-export class TransactionContext extends OperonContext {
+export class TransactionContext extends OperonContextImpl {
   readonly pgClient: PoolClient = null as unknown as PoolClient;
   readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
 

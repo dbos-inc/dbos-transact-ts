@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { OperonContext } from "../context";
 import { Operon } from "../operon";
+import { OperonContextImpl } from "../context";
 import Koa from "koa";
 import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction, TransactionContext } from "../transaction";
@@ -18,7 +18,7 @@ type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => WorkflowHandle<Awaited<ReturnType<T[P]>>> : never;
 }
 
-export class HandlerContext extends OperonContext {
+export class HandlerContext extends OperonContextImpl {
   readonly #operon: Operon;
 
   constructor(operon: Operon, readonly koaContext: Koa.Context) {
@@ -136,7 +136,7 @@ export class OperonHandlerParameter extends OperonParameter {
 /////////////////////////
 
 export function GetApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends OperonContextImpl, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
@@ -152,7 +152,7 @@ export function GetApi(url: string) {
 }
 
 export function PostApi(url: string) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends OperonContextImpl, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>

@@ -43,6 +43,7 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { OperonContextImpl } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
