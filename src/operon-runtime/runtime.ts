@@ -61,7 +61,6 @@ export class OperonRuntime {
     
     this.server = server.listen(port);
     console.log(`Starting server on port: ${port}`);
-    
   }
 
   /**
