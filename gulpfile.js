@@ -1,6 +1,7 @@
-import * as gulp from "gulp";
-import { setPackageVersion } from "nerdbank-gitversioning";
+var gulp = require('gulp');
+var nbgv = require('nerdbank-gitversioning')
 
-gulp.task("setversion", function () {
-  return setPackageVersion();
+gulp.task('setVersion', function() {
+    return nbgv.setPackageVersion();
 });
+
