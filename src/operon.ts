@@ -46,7 +46,6 @@ import {
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonContext } from './context';
-import { OperonRuntimeConfig } from './operon-runtime/runtime';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -60,24 +59,6 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly localRuntimeConfig?: OperonRuntimeConfig;
-}
-
-interface ConfigFile {
-  database: {
-    hostname: string;
-    port: number;
-    username: string;
-    password?: string;
-    connectionTimeoutMillis: number;
-    user_database: string;
-    system_database: string;
-    ssl_ca?: string;
-    observability_database: string;
-  };
-  telemetryExporters?: string[];
-  application: any;
-  localRuntimeConfig?: OperonRuntimeConfig;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -96,7 +77,6 @@ export interface InternalWorkflowParams extends WorkflowParams {
 
 export class Operon {
   initialized: boolean;
-  readonly config: OperonConfig;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
@@ -136,12 +116,7 @@ export class Operon {
   readonly tracer: Tracer;
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
-    if (config) {
-      this.config = config;
-    } else {
-      this.config = this.generateOperonConfig();
-    }
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
     if (systemDatabase) {
       this.systemDatabase = systemDatabase;
     } else {
@@ -247,86 +222,6 @@ export class Operon {
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
-  }
-
-  generateOperonConfig(): OperonConfig {
-    // Load default configuration
-    let config: ConfigFile | undefined;
-    try {
-      const configContent = readFileSync(CONFIG_FILE);
-      config = YAML.parse(configContent) as ConfigFile;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
-      }
-    }
-    if (!config) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
-    config = this.evaluateConfig(config);
-
-    // Handle "Global" pool config
-    if (!config.database) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
-    }
-
-    const poolConfig: PoolConfig = {
-      host: config.database.hostname,
-      port: config.database.port,
-      user: config.database.username,
-      password: config.database.password || this.getDbPassword(),
-      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
-      database: config.database.user_database,
-    };
-    if (config.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
-    }
-
-    return {
-      poolConfig: poolConfig,
-      telemetryExporters: config.telemetryExporters || [],
-      system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: config.application || undefined,
-      localRuntimeConfig: config.localRuntimeConfig || undefined,
-    };
-  }
-
-  // Interpret property values of the form ${ENV_VAR:default}
-  // Argument has to be any, because it is recursive, but we can return a type ConfigFile
-  evaluateConfig(config: any): ConfigFile {
-    for (const key in config) {
-      if (config.hasOwnProperty(key)) {
-        if (typeof config[key] === 'string' || config[key] instanceof String) {
-          const match = config[key].match(/\${([^:]+)(?::([^}]+))?}/);
-          if (match) {
-            const envVarName = match[1];
-            const defaultValue = match[2] || '';
-
-            const envValue = process.env[envVarName];
-            if (envValue !== undefined) {
-              config[key] = envValue;
-            } else {
-              config[key] = defaultValue;
-            }
-          }
-        } else if (typeof config[key] === 'object') {
-          this.evaluateConfig(config[key]);
-        }
-      }
-    }
-    return config;
-  }
-
-  getDbPassword(): string {
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
-    }
-
-    return dbPassword;
   }
 
   /* WORKFLOW OPERATIONS */

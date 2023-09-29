@@ -9,7 +9,7 @@ telemetryExporters:
   - 'ConsoleExporter'
 application:
   foo:
-    bar: ${BAR:default}
+    bar: $BAR
   baz: 'y'
   animals:
     - type: 'turtle'

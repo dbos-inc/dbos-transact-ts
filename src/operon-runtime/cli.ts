@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
+import { parseConfigFile } from "./config";
 import { deploy } from "./deploy";
 import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
-
+import { OperonConfig } from "../operon";
 const program = new Command();
 
 /* LOCAL DEVELOPMENT */
@@ -12,7 +13,9 @@ program
   .description('Start the server')
   .option('-p, --port <type>', 'Specify the port number')
   .action(async (options: { port: string }) => {
-    const runtime = new OperonRuntime();
+    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig | undefined] = parseConfigFile();
+    const runtime = new OperonRuntime(operonConfig, runtimeConfig);
+    await runtime.init();
     await runtime.startServer({
       port: parseInt(options.port),
     });

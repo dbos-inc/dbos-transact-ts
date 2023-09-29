@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon } from '../operon';
+import { Operon, OperonConfig } from '../operon';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -18,20 +18,33 @@ const defaultConfig: OperonRuntimeConfig = {
   port: 3000,
 }
 
-// Configuration file config (this.operon.config.runtimeConfig) overwrites CLI input configs, which overwrites default configs.
-// XXX: let's agree on the precedence of configs.
-function generateRuntimeConfig(
-  inputConfig: OperonRuntimeConfig,
-  fileConfig: OperonRuntimeConfig | undefined): OperonRuntimeConfig
-  {
-    return {
-      port: inputConfig.port || fileConfig?.port || defaultConfig.port,
-    }
-}
-
 export class OperonRuntime {
-  private operon: Operon | null = null;
+  private operon: Operon;
   private server: Server | null = null;
+
+  constructor(operonConfig: OperonConfig, readonly runtimeConfig: OperonRuntimeConfig = defaultConfig) {
+    // Initialize Operon.
+    this.operon = new Operon(operonConfig);
+    this.operon.useNodePostgres();
+  }
+
+  /**
+   * Initialize the runtime by loading user functions and initiatilizing the Operon object
+   */
+  async init() {
+    const exports = await this.loadFunctions();
+    if (exports === null) {
+      throw new OperonError("userFunctions not found");
+    }
+
+    const classes: object[] = [];
+    for (const key in exports) {
+      if (isObject(exports[key])) {
+        classes.push(exports[key] as object);
+      }
+    }
+    await this.operon.init(...classes);
+  }
 
   /**
    * Load an application's Operon functions, assumed to be in src/userFunctions.ts (which is compiled to dist/userFunction.js).
@@ -51,23 +64,10 @@ export class OperonRuntime {
    * Start an HTTP server hosting an application's Operon functions.
    */
   async startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
-    const exports = await this.loadFunctions();
-    if (exports === null) {
-      throw new OperonError("userFunctions not found");
+    // CLI takes precedence over config file, which takes precedence over default config.
+    const config: OperonRuntimeConfig = {
+      port: inputConfig.port || this.runtimeConfig.port,
     }
-
-    const classes: object[] = [];
-    for (const key in exports) {
-      if (isObject(exports[key])) {
-        classes.push(exports[key] as object);
-      }
-    }
-    // Initialize Operon.
-    this.operon = new Operon();
-    this.operon.useNodePostgres();
-    await this.operon.init(...classes);
-
-    const config: OperonRuntimeConfig = generateRuntimeConfig(inputConfig, this.operon.config.localRuntimeConfig);
 
     const server = new OperonHttpServer(this.operon)
 
