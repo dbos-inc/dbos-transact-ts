@@ -19,7 +19,6 @@
   },
   "devDependencies": {
     "@prisma/client": "^5.1.1",
-    "@types/gulp": "^4.0.14",
     "@types/jest": "^29.5.3",
     "@types/koa__cors": "^4.0.0",
     "@types/koa__router": "^12.0.0",
@@ -35,7 +34,6 @@
     "prisma": "^5.1.1",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1",
-    "ts-node": "^10.9.1",
     "typeorm": "^0.3.17",
     "typescript": "^5.2.2"
   },
