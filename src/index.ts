@@ -80,4 +80,7 @@ export {
   OperonHttpAuthMiddleware,
   OperonHttpAuthReturn,
   MiddlewareContext,
+
+  Authentication,
+  KoaMiddleware,
 } from "./httpServer/middleware";

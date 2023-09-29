@@ -18,7 +18,7 @@ import {
 } from "../error";
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
-import { OperonHttpAuthMiddleware } from './middleware';
+import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode } from "@opentelemetry/api";
 
 export class OperonHttpServer {
@@ -31,7 +31,6 @@ export class OperonHttpServer {
    * TODO: maybe call operon.init() somewhere in this class?
    */
   constructor(readonly operon: Operon, config : {
-    authMiddleware ?: OperonHttpAuthMiddleware,
     koa ?: Koa,
     router ?: Router,
   } = {})
@@ -44,15 +43,15 @@ export class OperonHttpServer {
     if (!config.koa) {
       config.koa = new Koa();
 
+      // Note: we definitely need bodyParser.
+      // For cors(), it doesn't work if we use it in a router, and thus we have to use it in app.
       config.koa.use(bodyParser());
       config.koa.use(cors());
     }
     this.app = config.koa;
 
     // Register operon endpoints.
-    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router, {
-      auth : config.authMiddleware,
-    });
+    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
@@ -67,23 +66,28 @@ export class OperonHttpServer {
     });
   }
 
-  static registerDecoratedEndpoints(operon : Operon, irouter : unknown,
-    middlewares ?: {auth ?: OperonHttpAuthMiddleware})
+  static registerDecoratedEndpoints(operon : Operon, router : Router)
   {
-    const router = irouter as Router;
-
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
+        // Check if we need to apply any Koa middleware.
+        const defaults = ro.defaults as OperonMiddlewareDefaults;
+        if (defaults?.koaMiddlewares) {
+          defaults.koaMiddlewares.forEach((koaMiddleware) => {
+            router.use(ro.apiURL, koaMiddleware);
+          })
+        }
+
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
 
           try {
             // Check for auth first
-            if (middlewares && middlewares.auth) {
-              const res = await middlewares.auth({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
+            if (defaults?.authMiddleware) {
+              const res = await defaults.authMiddleware({name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt});
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;
                 oc.authenticatedRoles = res.authenticatedRoles;

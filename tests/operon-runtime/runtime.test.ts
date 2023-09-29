@@ -4,7 +4,7 @@ import axios from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
-import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
+import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import fs from "fs";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {

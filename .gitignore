@@ -34,3 +34,4 @@ node_modules/
 # Editor temp files
 *.swp
 *.swo
+examples/hello/.env

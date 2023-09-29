@@ -4,6 +4,8 @@ import {
   OperonTransaction,
   OperonWorkflow,
   GetApi,
+  OperonCommunicator,
+  CommunicatorContext,
 } from "operon";
 
 interface Animal {
@@ -13,6 +15,19 @@ interface Animal {
 }
 
 export class Hello {
+  @OperonCommunicator()
+  static async helloExternal(commCtxt: CommunicatorContext, encodedName: string) {
+    commCtxt.log(`decoding ${encodedName} via httpbin`)
+    try {
+      const url = `https://httpbin.org/base64/${encodeURIComponent(encodedName)}`;
+      const res = await fetch(url);
+      return await res.text();
+    } catch {
+      commCtxt.warn("httpbin/base64 failed, decoding locally");
+      return atob(encodedName);
+    }
+  }
+
   @OperonTransaction()
   static async helloFunction(txnCtxt: TransactionContext, name: string) {
     const greeting = `Hello, ${name}!`;
@@ -26,19 +41,18 @@ export class Hello {
 
   @OperonWorkflow()
   @GetApi("/greeting/:name")
-  static async helloWorkflow(workflowCtxt: WorkflowContext, name: string) {
-    const fooObj = workflowCtxt.getConfig("foo");
-    workflowCtxt.log(JSON.stringify(fooObj));
-    const barVar = workflowCtxt.getConfig("foo.bar");
-    workflowCtxt.log(`bar: ${barVar}`);
-    const bazVar = workflowCtxt.getConfig("baz");
-    workflowCtxt.log(`baz: ${bazVar}`);
-    const animals = workflowCtxt.getConfig("animals") as Animal[];
+  static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
+    const barVar = wfCtxt.getConfig("foo.bar");
+    wfCtxt.log(`bar: ${barVar}`);
+    const animals = wfCtxt.getConfig("animals") as Animal[];
     if (animals) {
       for (const animal of animals) {
-        workflowCtxt.log(JSON.stringify(animal));
+        wfCtxt.log(JSON.stringify(animal));
       }
     }
-    return await workflowCtxt.transaction(Hello.helloFunction, name);
+    const encodedName = btoa(name);
+    const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
+    return await wfCtxt.invoke(Hello).helloFunction(decodedName);
   }
 }
+
