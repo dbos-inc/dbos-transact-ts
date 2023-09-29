@@ -428,7 +428,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
             }
             else if (typeof argValue === 'bigint') {
               // Hum, maybe we should allow bigint as a type, number won't even do 64-bit.
-              argValue = Number(argValue).valueOf
+              argValue = Number(argValue).valueOf;
               args[idx] = argValue;
             }
             else {
