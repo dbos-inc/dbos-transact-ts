@@ -63,7 +63,7 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer: httpConfig ;
+  readonly httpServer?: httpConfig ;
 }
 
 interface ConfigFile {
