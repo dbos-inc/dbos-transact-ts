@@ -7,6 +7,7 @@ import { has, get } from "lodash";
 export interface OperonContext {
   request?: IncomingMessage;
   workflowUUID: string;
+  authenticatedUser: string;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;

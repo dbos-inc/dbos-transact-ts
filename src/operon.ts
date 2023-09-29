@@ -163,21 +163,16 @@ export class Operon {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
-      for (const arg of ro.args) {
-        if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
-          break;
-        } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.registeredFunction as OperonTransaction<any, any>;
-          this.registerTransaction(tx, ro.txnConfig);
-          break;
-        } else if (arg.argType.name === "CommunicatorContext") {
-          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-          this.registerCommunicator(comm, ro.commConfig);
-          break;
-        }
-      }
+     if (ro.workflowConfig) {
+      const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+      this.registerWorkflow(wf, ro.workflowConfig);
+     } else if (ro.txnConfig) {
+      const tx = ro.registeredFunction as OperonTransaction<any, any>;
+      this.registerTransaction(tx, ro.txnConfig);
+     } else if (ro.commConfig) {
+      const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+      this.registerCommunicator(comm, ro.commConfig);
+     }
     }
   }
 

@@ -28,8 +28,7 @@ class TestClass {
 
   @OperonTransaction()
   static async testInsertTx(txnCtxt: TransactionContext, name: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(txnCtxt.applicationConfig.counter).toBe(3);
+    expect(txnCtxt.getConfig("counter")).toBe(3);
     const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name]

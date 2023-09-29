@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { OperonTransaction, TransactionContext } from "./transaction";
+import { OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { OperonCommunicator, CommunicatorContext } from "./communicator";
 import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
@@ -188,7 +188,7 @@ export class WorkflowContext extends OperonContextImpl {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(
+        const tCtxt = new TransactionContextImpl(
           this.#operon.userDatabase.getName(), client, config, this,
           span, this.#operon.logger, funcId, txn.name,
         );

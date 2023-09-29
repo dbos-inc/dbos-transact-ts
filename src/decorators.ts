@@ -5,7 +5,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { OperonContextImpl } from "./context";
+import { OperonContext, OperonContextImpl } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
 
@@ -290,7 +290,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.argType === TransactionContext || e.argType == WorkflowContext || e.argType == CommunicatorContext) {
+        if (e.index === 0) { // The first argument is always the context.
           e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
@@ -503,7 +503,7 @@ export function DefaultRequiredRole(anyOf: string[]) {
 ///////////////////////
 
 export function RequiredRole(anyOf: string[]) {
-  function apidec<This, Ctx extends OperonContextImpl, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
@@ -519,7 +519,7 @@ export function RequiredRole(anyOf: string[]) {
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
 export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
-  function logdec<This, Ctx extends OperonContextImpl, Args extends unknown[], Return>(
+  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
@@ -531,7 +531,7 @@ export function TraceLevel(level: TraceLevels) {
   return logdec;
 }
 
-export function Traced<This, Ctx extends OperonContextImpl, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
+export function Traced<This, Ctx extends OperonContext, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
