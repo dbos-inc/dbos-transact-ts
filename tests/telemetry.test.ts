@@ -33,6 +33,7 @@ type TelemetrySignalDbFields = {
 class TestClass {
   @Traced
   static create_user(
+    _ctx: OperonContext,
     name: string,
     age: number,
     isNice: boolean,

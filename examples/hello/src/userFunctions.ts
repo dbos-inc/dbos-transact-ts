@@ -6,6 +6,7 @@ import {
   GetApi,
   OperonCommunicator,
   CommunicatorContext,
+  HandlerContext,
 } from "operon";
 
 export class Hello {
@@ -34,11 +35,16 @@ export class Hello {
   }
 
   @OperonWorkflow()
-  @GetApi("/greeting/:name")
   static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
     const encodedName = btoa(name);
     const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
     return await wfCtxt.invoke(Hello).helloFunction(decodedName);
+  }
+
+  @GetApi('/greeting/:name')
+  static async helloEndpoint(ctx: HandlerContext, name: string) {
+    ctx.log("helloEndpoint");
+    return await ctx.invoke(Hello).helloWorkflow({}, name).getResult();
   }
 }
 

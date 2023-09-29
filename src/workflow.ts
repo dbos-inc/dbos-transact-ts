@@ -16,7 +16,7 @@ import { getRegisteredOperations } from "./decorators";
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
-type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
+export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
