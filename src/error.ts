@@ -112,18 +112,6 @@ export class OperonPostgresExporterError extends OperonError {
   }
 }
 
-const JaegerExporterError = 8;
-export class OperonJaegerExporterError extends OperonError {
-  constructor(err: ExportResult) {
-    let msg = `JaegerExporter error ${err.code}`;
-    if (err.error) {
-      msg = msg.concat(`: ${err.error.message}`);
-    }
-    msg = msg.concat(`\n`);
-    super(msg, JaegerExporterError);
-  }
-}
-
 const DataValidationError = 9;
 export class OperonDataValidationError extends OperonError {
   constructor(msg: string) {
