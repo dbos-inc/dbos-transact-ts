@@ -9,7 +9,7 @@
     "build-fdb": "tsc --project tsconfig.build-fdb.json && chmod +x ./dist/src/operon-runtime/cli.js",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
-    "setversion": "gulp setversion",
+    "setversion": "gulp setVersion",
     "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
