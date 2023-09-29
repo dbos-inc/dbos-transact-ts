@@ -1,5 +1,3 @@
-import { Span } from "@opentelemetry/sdk-trace-base";
-
 import {
   TraceLevels,
   LogMasks,  
