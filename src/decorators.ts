@@ -344,19 +344,127 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
         let argValue = args[idx];
         if (argValue === undefined && argDescriptor.required) {
-          throw new OperonDataValidationError(`Missing required argument ${argDescriptor.name} calling ${methReg.name}`);
+          throw new OperonDataValidationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
         }
 
-        if (argValue instanceof String) { // TODO: Add input validation for types other than String.
+        if (argValue instanceof String) {
           argValue = argValue.toString();
           args[idx] = argValue;
         }
+        if (argValue instanceof Boolean) {
+          argValue = argValue.valueOf()
+          args[idx] = argValue;
+        }
+        if (argValue instanceof Number) {
+          argValue = argValue.valueOf()
+          args[idx] = argValue;
+        }
+        if (argValue instanceof BigInt) { // ES2020+
+          argValue = argValue.valueOf()
+          args[idx] = argValue;
+        }
 
-        if (argDescriptor.dataType.dataType === 'text') {
+        // Maybe look into https://www.npmjs.com/package/validator
+        //  We could support emails and other validations too with something like that...
+        if (argDescriptor.dataType.dataType === 'text' || argDescriptor.dataType.dataType === 'varchar') {
           if ((typeof argValue !== 'string')) {
-            throw new OperonDataValidationError(`Argument ${argDescriptor.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a string`);
+          }
+          if (argDescriptor.dataType.length > 0) {
+            if (argValue.length > argDescriptor.dataType.length) {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' with maximum length ${argDescriptor.dataType.length} but has length ${argValue.length}`);
+            }
           }
         }
+        if (argDescriptor.dataType.dataType === 'boolean') {
+          if (typeof argValue !== 'boolean') {
+            if (typeof argValue == 'number') {
+              argValue = (argValue != 0 ? true : false);
+              args[idx] = argValue;
+            }
+            else if (typeof argValue == 'string') {
+              if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true') {
+                argValue = true;
+                args[idx] = argValue;
+              }
+              else if (argValue.toLowerCase() === 'f' || argValue.toLowerCase() === 'false') {
+                argValue = false;
+                args[idx] = argValue;
+              }
+              else {
+                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
+              }
+            }
+            else {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
+            }
+          }
+        }
+        if (argDescriptor.dataType.dataType === 'decimal') {
+          // Range check precision and scale... wishing there was a bigdecimal
+          //  Floats don't really permit us to check the scale.
+          if (typeof argValue !== 'number') {
+            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+          }
+          let prec = argDescriptor.dataType.precision;
+          if (prec > 0) {
+            if (argDescriptor.dataType.scale > 0) {
+              prec = prec - argDescriptor.dataType.scale;
+            }
+            if (Math.abs(argValue) >= Math.exp(prec)) {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is out of range for type '${argDescriptor.dataType.formatAsString()}`);
+            }
+          }
+        }
+        if (argDescriptor.dataType.dataType === 'double' || argDescriptor.dataType.dataType === 'integer') {
+          if (typeof argValue !== 'number') {
+            if (typeof argValue === 'string') {
+              const n = parseFloat(argValue);
+              if (isNaN(n)) {
+                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+              }
+              argValue = n;
+              args[idx] = argValue;
+            }
+            else if (typeof argValue === 'bigint') {
+              // Hum, maybe we should allow bigint as a type, number won't even do 64-bit.
+              argValue = Number(argValue).valueOf
+              args[idx] = argValue;
+            }
+            else {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+            }
+          }
+          if (argDescriptor.dataType.dataType === 'integer') {
+            if (!Number.isInteger(argValue)) {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but has a fractional part`);
+            }
+          }
+        }
+        if (argDescriptor.dataType.dataType === 'timestamp') {
+          if (!(argValue instanceof Date)) {
+            if (typeof argValue == 'string') {
+              const d = Date.parse(argValue);
+              if (isNaN(d)) {
+                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is a string that will not parse as Date`);
+              }
+              argValue = new Date(d);
+              args[idx] = argValue;
+            }
+            else {
+              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a date or time`);
+            }
+          }
+        }
+        if (argDescriptor.dataType.dataType === 'uuid') {
+          // This validation is loose.  A tighter one would be:
+          // /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
+          // That matches UUID version 1-5.
+          if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(argValue))) {
+            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a valid UUID`);
+          }
+        }
+        // JSON can be anything.  We can validate it against a schema at some later version...
       });
 
       // Here let's log the structured record
