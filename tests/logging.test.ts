@@ -9,10 +9,16 @@ import {
   getRegisteredOperations,
 } from "../src/decorators";
 
+import {
+  OperonContext
+}
+from "../src/context"
+
 class TestFunctions {
   @Traced
   @TraceLevel(TraceLevels.INFO)
   static foo(
+    _ctx: OperonContext,
     @LogMask(LogMasks.HASH) arg1: string,
     /*@ArgDate()*/ arg2: Date,
     @SkipLogging arg3: boolean,
@@ -74,7 +80,7 @@ describe("operon-logging", () => {
       console.log(cts);
     });
 
-    await TestFunctions.foo("a", new Date(), false, 4);
+    await TestFunctions.foo(null as unknown as OperonContext, "a", new Date(), false, 4);
   });
 });
 
