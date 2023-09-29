@@ -6,7 +6,7 @@ import {
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
-import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
   Traced,
@@ -342,7 +342,7 @@ describe("operon-telemetry", () => {
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 
-      const params: InternalWorkflowParams = { parentCtx: oc };
+      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,

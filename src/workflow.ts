@@ -29,6 +29,7 @@ type WFInvokeFuncs<T> = {
 
 export interface WorkflowParams {
   workflowUUID?: string;
+  parentCtx?: OperonContext;
 }
 
 export interface WorkflowConfig {
@@ -59,8 +60,6 @@ export class WorkflowContext extends OperonContext {
   constructor(
     operon: Operon,
     parentCtx: OperonContext | undefined,
-    // FIXME: seems we are not using this anymore
-    params: WorkflowParams,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
