@@ -1,6 +1,5 @@
 import {
   Operon,
-  OperonConfig,
   TransactionContext,
   CommunicatorContext,
   WorkflowContext,
@@ -10,6 +9,7 @@ import {
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
+import { OperonConfig } from "../../src/operon";
 
 describe("foundationdb-operon", () => {
   let operon: Operon;

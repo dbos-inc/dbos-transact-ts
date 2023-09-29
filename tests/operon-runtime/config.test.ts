@@ -1,10 +1,11 @@
 /* eslint-disable */
 
-import { OperonConfig, OperonInitializationError } from "../../src/";
 import * as utils from "../../src/utils";
 import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/operon-runtime/config";
 import { OperonRuntimeConfig } from "../../src/operon-runtime/runtime";
+import { OperonInitializationError } from "../../src/error";
+import { OperonConfig } from "../../src/operon";
 
 describe("operon-config", () => {
   const mockOperonConfigYamlString = `

@@ -3,9 +3,6 @@
 import {
   GetApi,
   Operon,
-  OperonConfig,
-  OperonNotAuthorizedError,
-  OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
   MiddlewareContext,
@@ -25,6 +22,8 @@ import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
 import { v1 as uuidv1 } from "uuid";
+import { OperonConfig } from "../../src/operon";
+import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";

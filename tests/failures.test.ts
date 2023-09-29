@@ -1,9 +1,7 @@
 import {
   Operon,
-  OperonConfig,
   WorkflowContext,
   TransactionContext,
-  OperonError,
   CommunicatorContext,
 } from "../src/";
 import {
@@ -15,7 +13,8 @@ import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
-import { OperonNotRegisteredError } from "../src/error";
+import { OperonError, OperonNotRegisteredError } from "../src/error";
+import { OperonConfig } from "../src/operon";
 
 describe("failures-tests", () => {
   let operon: Operon;
