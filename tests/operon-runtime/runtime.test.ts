@@ -108,7 +108,7 @@ localRuntimeConfig:
 
     try {
         await waitForMessageTest(command, '6666');
-    } catch (error) {
+    } catch (error) {
         fs.copyFileSync(`${filePath}.bak`, filePath);
         fs.unlinkSync(`${filePath}.bak`);
         throw error;

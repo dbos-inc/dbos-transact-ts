@@ -21,12 +21,13 @@ export interface ConfigFile {
     observability_database: string;
   };
   telemetryExporters?: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
   localRuntimeConfig?: OperonRuntimeConfig;
 }
 
 export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefined] {
-  let configFile: ConfigFile;
+  let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
     const interpolatedConfig = execSync("envsubst", {
@@ -34,14 +35,20 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
       input: configFileContent,
       env: process.env, // Jest modifies process.env, so we need to pass it explicitly for testing
     });
-    configFile = YAML.parse(interpolatedConfig);
+    configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
-    throw new OperonInitializationError(`Failed to load config from ${operonConfigFilePath}: ${e}`);
+    if (e instanceof Error) {
+      throw new OperonInitializationError(`Failed to load config from ${operonConfigFilePath}: ${e.message}`);
+    }
+  }
+
+  if (!configFile) {
+    throw new OperonInitializationError(`Operon configuration file ${operonConfigFilePath} is empty`);
   }
 
   // Handle "Global" pool configFile
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configFileuration ${configFile} does not contain database configFile
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config
 `);
   }
 

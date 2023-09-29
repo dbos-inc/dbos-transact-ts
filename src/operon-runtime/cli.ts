@@ -16,7 +16,7 @@ program
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig | undefined] = parseConfigFile();
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);
     await runtime.init();
-    await runtime.startServer({
+    runtime.startServer({
       port: parseInt(options.port),
     });
   });

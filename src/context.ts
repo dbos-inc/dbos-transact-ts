@@ -26,6 +26,7 @@ export class OperonContext {
   /*** Application configuration ***/
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any; // applicationConfiguration
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any {
     if (!this.applicationConfig) {
       return undefined;

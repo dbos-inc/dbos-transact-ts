@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import { OperonConfig, OperonInitializationError } from "../../src/";
 import * as utils from "../../src/utils";
 import { PoolConfig } from "pg";
@@ -32,7 +34,7 @@ describe("operon-config", () => {
     jest.restoreAllMocks();
   });
 
-  test.only("Config is valid and is parsed as expected", async () => {
+  test("Config is valid and is parsed as expected", () => {
     jest
       .spyOn(utils, "readFileSync")
       .mockReturnValueOnce(mockOperonConfigYamlString);

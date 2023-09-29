@@ -49,12 +49,12 @@ export class OperonRuntime {
   /**
    * Load an application's Operon functions, assumed to be in src/userFunctions.ts (which is compiled to dist/userFunction.js).
    */
-  private async loadFunctions(): Promise<ModuleExports | null> {
+  private loadFunctions(): Promise<ModuleExports> | null {
     const workingDirectory = process.cwd();
     const userFunctions = workingDirectory + "/dist/userFunctions.js";
     if (fs.existsSync(userFunctions)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
-      return await import(userFunctions) as ModuleExports;
+      return import(userFunctions) as Promise<ModuleExports>;
     } else {
       return null;
     }
@@ -63,7 +63,7 @@ export class OperonRuntime {
   /**
    * Start an HTTP server hosting an application's Operon functions.
    */
-  async startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
+  startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
     // CLI takes precedence over config file, which takes precedence over default config.
     const config: OperonRuntimeConfig = {
       port: inputConfig.port || this.runtimeConfig.port,

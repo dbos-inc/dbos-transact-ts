@@ -17,7 +17,6 @@ import {
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { readFileSync } from './utils';
 
 import {
   ConsoleExporter,
@@ -34,7 +33,6 @@ import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
-import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
   PrismaClient,
@@ -51,8 +49,6 @@ export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
-const CONFIG_FILE: string = "operon-config.yaml";
-
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly telemetryExporters?: string[];
