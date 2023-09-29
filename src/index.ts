@@ -19,7 +19,9 @@ export {
   CommunicatorConfig,
 } from './communicator';
 
-export * as OperonError from './error';
+export {
+  OperonResponseError
+} from './error';
 
 export {
   TraceLevels,
