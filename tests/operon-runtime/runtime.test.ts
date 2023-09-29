@@ -93,6 +93,7 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
+  password: $PGPASSWORD
   connectionTimeoutMillis: 3000
 localRuntimeConfig:
   port: 6666
