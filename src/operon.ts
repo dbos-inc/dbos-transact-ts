@@ -46,7 +46,6 @@ import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorat
 import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonContext } from './context';
 
-
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
@@ -196,7 +195,7 @@ export class Operon {
           password: process.env.PGPASSWORD,
           database: config.poolConfig.database,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-          entities: config.dbClientMetadata.entities
+          entities: config.dbClientMetadata?.entities
         }))
       } else {
         this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
