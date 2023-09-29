@@ -59,7 +59,7 @@ export class HandlerContext extends OperonContext {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
-    const params = workflowUUID ? { workflowUUID: workflowUUID } : {};
+    const params = { workflowUUID: workflowUUID };
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig

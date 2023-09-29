@@ -13,8 +13,9 @@ import {
   RequiredRole,
   TransactionContext,
   WorkflowContext,
+  StatusString,
 } from "../../src";
-import { OperonHttpServer } from "../../src/httpServer/server";
+import { OperonHttpServer, OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
 import {
   TestKvTable,
   generateOperonTestConfig,
@@ -23,6 +24,7 @@ import {
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
+import { v1 as uuidv1 } from "uuid";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -157,6 +159,41 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  test("test-workflowUUID-header", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(httpServer.app.callback())
+      .post("/workflow?name=bob")
+      .set({"operon-workflowuuid": workflowUUID});
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    await operon.flushWorkflowStatusBuffer();
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
+
+  test("endpoint-handler-UUID", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(httpServer.app.callback()).get("/handler/bob")
+      .set({"operon-workflowuuid": workflowUUID});
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
+
   // eslint-disable-next-line @typescript-eslint/require-await
   async function testAuthMiddlware (ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
@@ -227,8 +264,9 @@ describe("httpserver-tests", () => {
 
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
-      // Invoke a workflow using the provided Operon instance.
-      return ctxt.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
+      const workflowUUID = ctxt.koaContext.get(OperonWorkflowUUIDHeader);
+      // Invoke a workflow using the given UUID.
+      return ctxt.invoke(TestEndpoints, workflowUUID).testWorkflow(name).getResult();
     }
 
     @PostApi("/transaction/:name")
