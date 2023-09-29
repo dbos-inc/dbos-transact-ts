@@ -6,7 +6,6 @@ import { Writable } from "stream";
 import { Client } from "pg";
 import { generateOperonTestConfig, setupOperonTestDb } from "tests/helpers";
 import fs from "fs";
-import { sleep } from "src/utils";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
     const stdout = command.stdout as unknown as Writable;
@@ -109,6 +108,5 @@ localRuntimeConfig:
 
     fs.copyFileSync(`${filePath}.bak`, filePath);
     fs.unlinkSync(`${filePath}.bak`);
-    await sleep(15);
   });
 });
