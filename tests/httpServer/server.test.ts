@@ -45,11 +45,6 @@ describe("httpserver-tests", () => {
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
     );
     httpServer = new OperonHttpServer(operon);
-    // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
-    // For example, if we use logger() after we register routes, the logger cannot correctly log the request before the function executes.
-    // httpServer.app.use(logger());
-    // In some cases, the aspects often covered by middleware can be made more explicit and more dev-friendly at the same time.
-    //  We would run those at the appropriate time.
   });
 
   afterEach(async () => {
