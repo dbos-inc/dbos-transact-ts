@@ -18,7 +18,15 @@ type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => WorkflowHandle<Awaited<ReturnType<T[P]>>> : never;
 }
 
-export class HandlerContext extends OperonContextImpl {
+export interface HandlerContext extends OperonContext {
+  koaContext: Koa.Context;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
+}
+
+export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
   readonly #operon: Operon;
 
   constructor(operon: Operon, readonly koaContext: Koa.Context) {

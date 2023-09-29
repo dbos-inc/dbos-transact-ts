@@ -6,6 +6,7 @@ import {
   APITypes,
   ArgSources,
   HandlerContext,
+  HandlerContextImpl,
   OperonHandlerRegistration,
 } from "./handler";
 import { OperonTransaction } from "../transaction";
@@ -84,7 +85,7 @@ export class OperonHttpServer {
 
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
+          const oc: HandlerContextImpl = new HandlerContextImpl(operon, koaCtxt);
 
           try {
             // Check for auth first
