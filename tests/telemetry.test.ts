@@ -154,7 +154,6 @@ describe("operon-telemetry", () => {
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
-      // operon.useNodePostgres();
       await operon.init(TestClass);
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
