@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "./telemetry/logs";
-import { WorkflowContext, WorkflowContextImpl } from "./workflow";
+import { WorkflowContextImpl } from "./workflow";
 import { OperonContext, OperonContextImpl } from "./context";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

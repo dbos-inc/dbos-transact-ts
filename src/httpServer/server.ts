@@ -5,7 +5,6 @@ import cors from "@koa/cors";
 import {
   APITypes,
   ArgSources,
-  HandlerContext,
   HandlerContextImpl,
   OperonHandlerRegistration,
 } from "./handler";
