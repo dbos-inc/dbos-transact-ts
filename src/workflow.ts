@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContextImpl } from './context';
+import { OperonContext, OperonContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -51,7 +51,16 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperonContextImpl {
+export interface WorkflowContext extends OperonContext {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
+  external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
+}
+
+export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext  {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();

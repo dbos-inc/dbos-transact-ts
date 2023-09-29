@@ -11,8 +11,7 @@ class TestClass {
   static get counter() { return TestClass.#counter; }
   @OperonCommunicator()
   static async testCommunicator(commCtxt: CommunicatorContext) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(commCtxt.applicationConfig.counter).toBe(3);
+    expect(commCtxt.getConfig("counter")).toBe(3);
     void commCtxt;
     await sleep(1);
     return TestClass.#counter++;
@@ -20,8 +19,7 @@ class TestClass {
 
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(workflowCtxt.applicationConfig.counter).toBe(3);
+    expect(workflowCtxt.getConfig("counter")).toBe(3);
     const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
@@ -53,7 +51,7 @@ class TestClass {
   @OperonWorkflow()
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(wfCtxt.applicationConfig.counter).toBe(3);
+    expect(wfCtxt.getConfig("counter")).toBe(3);
     const funcResult: number = await wfCtxt.invoke(TestClass).testInsertTx(name);
     const checkResult: number = await wfCtxt.invoke(TestClass).testReadTx(funcResult);
     return checkResult;

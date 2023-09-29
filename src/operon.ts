@@ -13,6 +13,7 @@ import {
   WorkflowHandle,
   WorkflowParams,
   RetrievedHandle,
+  WorkflowContextImpl,
 } from './workflow';
 
 import { OperonTransaction, TransactionConfig } from './transaction';
@@ -246,7 +247,7 @@ export class Operon {
       }
       const wConfig = wInfo.config;
 
-      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+      const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 

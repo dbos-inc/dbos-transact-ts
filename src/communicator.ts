@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger } from "./telemetry/logs";
-import { WorkflowContext } from "./workflow";
+import { WorkflowContext, WorkflowContextImpl } from "./workflow";
 import { OperonContextImpl } from "./context";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -22,7 +22,7 @@ export class CommunicatorContext extends OperonContextImpl
   readonly backoffRate: number;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContext, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
+  constructor(workflowContext: WorkflowContextImpl, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;

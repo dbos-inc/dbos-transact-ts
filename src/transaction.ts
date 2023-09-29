@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PoolClient } from "pg";
 import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
-import { WorkflowContext } from "./workflow";
+import { WorkflowContext, WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext, OperonContextImpl } from "./context";
 import { ValuesOf } from "./utils";
@@ -39,7 +39,7 @@ export class TransactionContextImpl extends OperonContextImpl implements Transac
     userDatabaseName: UserDatabaseName,
     client: UserDatabaseClient,
     config: TransactionConfig,
-    workflowContext: WorkflowContext,
+    workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,
     readonly functionID: number,
