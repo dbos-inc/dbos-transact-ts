@@ -8,12 +8,6 @@ import {
   CommunicatorContext,
 } from "operon";
 
-interface Animal {
-  type: string;
-  name: string;
-  age: number;
-}
-
 export class Hello {
   @OperonCommunicator()
   static async helloExternal(commCtxt: CommunicatorContext, encodedName: string) {
@@ -42,14 +36,6 @@ export class Hello {
   @OperonWorkflow()
   @GetApi("/greeting/:name")
   static async helloWorkflow(wfCtxt: WorkflowContext, name: string) {
-    const barVar = wfCtxt.getConfig("foo.bar");
-    wfCtxt.log(`bar: ${barVar}`);
-    const animals = wfCtxt.getConfig("animals") as Animal[];
-    if (animals) {
-      for (const animal of animals) {
-        wfCtxt.log(JSON.stringify(animal));
-      }
-    }
     const encodedName = btoa(name);
     const decodedName = await wfCtxt.invoke(Hello).helloExternal(encodedName);
     return await wfCtxt.invoke(Hello).helloFunction(decodedName);

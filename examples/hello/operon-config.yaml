@@ -7,14 +7,3 @@ database:
   connectionTimeoutMillis: 3000
 telemetryExporters:
   - 'ConsoleExporter'
-application:
-  foo:
-    bar: $BAR
-  baz: 'y'
-  animals:
-    - type: 'turtle'
-      name: 'fifi'
-      age: 15
-operonCloud:
-  secretEnvVars:
-    - 'foo'
