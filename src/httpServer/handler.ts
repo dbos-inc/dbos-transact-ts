@@ -1,10 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase } from "../decorators";
+import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase, getRegisteredOperations } from "../decorators";
 import { OperonContext } from "../context";
 import { InternalWorkflowParams, Operon } from "../operon";
 import Koa from "koa";
-import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
-import { OperonTransaction } from "../transaction";
+import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonTransaction, TransactionContext } from "../transaction";
+
+type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
+
+// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
+// TODO: Not clear WFParams is used in WFContext. https://github.com/dbos-inc/operon/blob/27255a8033b0a6e36dd79432f791f4ca7f5d5d58/src/workflow.ts#L62
+type HandlerTxFuncs<T> = {
+  [P in keyof T as T[P] extends TxFunc ? P : never]: T[P] extends TxFunc  ? (params: WorkflowParams, ...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+}
+
+type HandlerWfFuncs<T> = {
+  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (params: WorkflowParams, ...args: TailParameters<T[P]>) => WorkflowHandle<Awaited<ReturnType<T[P]>>> : never;
+}
 
 export class HandlerContext extends OperonContext {
   readonly #operon: Operon;
@@ -44,6 +57,28 @@ export class HandlerContext extends OperonContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
     return this.#operon.retrieveWorkflow(workflowUUID);
   }
+
+  /**
+   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
+   * to use WorkflowContext.Transaction(OpClass.someMethod, param);
+   */
+  invoke<T extends object>(object: T): HandlerTxFuncs<T> & HandlerWfFuncs<T> {
+    const ops = getRegisteredOperations(object);
+
+    const proxy: any = {};
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.txnConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (params: WorkflowParams, ...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, params, ...args)
+        : op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (params: WorkflowParams, ...args: any[]) => this.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
+          : undefined;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return proxy;
+  }
 }
 
 export enum APITypes {
@@ -58,8 +93,7 @@ export enum ArgSources {
   URL = "URL",
 }
 
-export interface OperonHandlerRegistrationBase extends OperonMethodRegistrationBase
-{
+export interface OperonHandlerRegistrationBase extends OperonMethodRegistrationBase {
   apiType: APITypes;
   apiURL: string;
   args: OperonHandlerParameter[];
