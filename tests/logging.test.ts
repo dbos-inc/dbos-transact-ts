@@ -49,6 +49,7 @@ function quoteSqlString(value: string): string {
   return `'${escaped}'`;
 }
 
+// FIXME: this test relies on manually reading the console log and the code doesn't check for correctness.
 describe("operon-logging", () => {
   test("Decorators", async () => {
     const ops = getRegisteredOperations(TestFunctions);

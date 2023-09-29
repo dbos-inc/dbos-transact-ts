@@ -40,6 +40,7 @@ describe("httpserver-defsec-tests", () => {
 
   afterEach(async () => {
     await operon.destroy();
+    jest.restoreAllMocks();
   });
 
   test("get-hello", async () => {
@@ -51,16 +52,22 @@ describe("httpserver-defsec-tests", () => {
   });
 
   test("not-authenticated", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
