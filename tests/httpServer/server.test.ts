@@ -22,7 +22,6 @@ import {
 } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
 import { Authentication } from "../../src/httpServer/middleware";
 
 describe("httpserver-tests", () => {
@@ -33,7 +32,7 @@ describe("httpserver-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     await setupOperonTestDb(config);
   });
 
@@ -55,6 +54,7 @@ describe("httpserver-tests", () => {
 
   afterEach(async () => {
     await operon.destroy();
+    jest.restoreAllMocks();
   });
 
   test("get-hello", async () => {
@@ -70,6 +70,8 @@ describe("httpserver-tests", () => {
   });
 
   test("get-query", async () => {
+    // "mute" console.info
+    jest.spyOn(console, "info").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/query?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
@@ -97,6 +99,8 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "alice" });
@@ -111,12 +115,16 @@ describe("httpserver-tests", () => {
   });
 
   test("response-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
     expect(response.body.message).toBe("customize error");
   });
 
   test("datavalidation-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/query");
     expect(response.statusCode).toBe(400);
     expect(response.body.details.operonErrorCode).toBe(9);
@@ -129,16 +137,22 @@ describe("httpserver-tests", () => {
   });
 
   test("not-authenticated", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
