@@ -63,10 +63,7 @@ class TestClass {
     workflowCtxt: WorkflowContext,
     name: string
   ): Promise<string> {
-    const funcResult: string = await workflowCtxt.transaction(
-      TestClass.test_function,
-      name
-    );
+    const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
   }
