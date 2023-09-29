@@ -93,8 +93,8 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
-  password: $PGPASSWORD
   connectionTimeoutMillis: 3000
+  user_database: 'hello'
 localRuntimeConfig:
   port: 6666
 `;
@@ -105,9 +105,13 @@ localRuntimeConfig:
     const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
       env: process.env
     });
-    await waitForMessageTest(command, '6666');
 
-    fs.copyFileSync(`${filePath}.bak`, filePath);
-    fs.unlinkSync(`${filePath}.bak`);
+    try {
+        await waitForMessageTest(command, '6666');
+    } catch (error) {
+        fs.copyFileSync(`${filePath}.bak`, filePath);
+        fs.unlinkSync(`${filePath}.bak`);
+        throw error;
+    }
   });
 });
