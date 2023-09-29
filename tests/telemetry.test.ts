@@ -6,7 +6,7 @@ import {
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
-import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
   Traced,
@@ -63,10 +63,7 @@ class TestClass {
     workflowCtxt: WorkflowContext,
     name: string
   ): Promise<string> {
-    const funcResult: string = await workflowCtxt.transaction(
-      TestClass.test_function,
-      name
-    );
+    const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
   }
@@ -342,7 +339,7 @@ describe("operon-telemetry", () => {
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 
-      const params: InternalWorkflowParams = { parentCtx: oc };
+      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,

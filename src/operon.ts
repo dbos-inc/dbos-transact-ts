@@ -43,7 +43,6 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { OperonContext } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -65,10 +64,6 @@ interface WorkflowInfo<T extends any[], R> {
 interface WorkflowInput<T extends any[]> {
   workflow_name: string;
   input: T;
-}
-
-export interface InternalWorkflowParams extends WorkflowParams {
-  parentCtx?: OperonContext;
 }
 
 export class Operon {
@@ -246,7 +241,7 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: InternalWorkflowParams, ...args: T): WorkflowHandle<R> {
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
@@ -256,7 +251,7 @@ export class Operon {
       }
       const wConfig = wInfo.config;
 
-      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, params, workflowUUID, wConfig, wf.name);
+      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
@@ -312,7 +307,7 @@ export class Operon {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
   }
 
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: InternalWorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
@@ -320,7 +315,7 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: InternalWorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);

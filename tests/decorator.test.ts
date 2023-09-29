@@ -21,7 +21,7 @@ class TestClass {
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(workflowCtxt.applicationConfig.counter).toBe(3);
-    const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
+    const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
 
@@ -54,14 +54,8 @@ class TestClass {
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(wfCtxt.applicationConfig.counter).toBe(3);
-    const funcResult: number = await wfCtxt.transaction(
-      TestClass.testInsertTx,
-      name
-    );
-    const checkResult: number = await wfCtxt.transaction(
-      TestClass.testReadTx,
-      funcResult
-    );
+    const funcResult: number = await wfCtxt.invoke(TestClass).testInsertTx(name);
+    const checkResult: number = await wfCtxt.invoke(TestClass).testReadTx(funcResult);
     return checkResult;
   }
 }
