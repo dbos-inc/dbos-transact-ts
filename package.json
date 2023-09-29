@@ -1,6 +1,6 @@
 {
   "name": "@dbos-inc/operon",
-  "version": "0.0.7",
+  "version": "0.0.0-placeholder",
   "description": "Operon",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -9,6 +9,7 @@
     "build-fdb": "tsc --project tsconfig.build-fdb.json && chmod +x ./dist/src/operon-runtime/cli.js",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
+    "setversion": "gulp setversion",
     "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
@@ -26,6 +27,7 @@
     "@typescript-eslint/eslint-plugin": "^6.7.2",
     "@typescript-eslint/parser": "^6.7.2",
     "eslint": "^8.49.0",
+    "gulp": "^4.0.2",
     "jest": "^29.6.1",
     "nerdbank-gitversioning": "^3.6.133",
     "prisma": "^5.1.1",
