@@ -5,6 +5,7 @@ import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import fs from "fs";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
     const stdout = command.stdout as unknown as Writable;
@@ -84,5 +85,34 @@ describe("runtime-tests", () => {
       env: process.env
     });
     await waitForMessageTest(command, '1234');
+  });
+
+  test("runtime hello with port provided in configuration file", async () => {
+     const mockOperonConfigYamlString = `
+database:
+  hostname: 'localhost'
+  port: 5432
+  username: 'postgres'
+  connectionTimeoutMillis: 3000
+  user_database: 'hello'
+localRuntimeConfig:
+  port: 6666
+`;
+    const filePath = 'operon-config.yaml';
+    fs.copyFileSync(filePath, `${filePath}.bak`);
+    fs.writeFileSync(filePath, mockOperonConfigYamlString, 'utf-8');
+
+    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+      env: process.env
+    });
+
+    try {
+        await waitForMessageTest(command, '6666');
+    } catch (error) {
+        throw error;
+    } finally {
+        fs.copyFileSync(`${filePath}.bak`, filePath);
+        fs.unlinkSync(`${filePath}.bak`);
+    }
   });
 });
