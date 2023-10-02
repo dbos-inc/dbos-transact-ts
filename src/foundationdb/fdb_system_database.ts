@@ -7,7 +7,6 @@ import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
-import { string } from "yaml/dist/schema/common/string";
 import { OperonContextImpl } from "../context";
 
 interface WorkflowOutput<R> {

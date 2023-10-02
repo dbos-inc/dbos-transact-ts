@@ -95,7 +95,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `INSERT INTO operon.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [workflowUUID, JSON.stringify(args)]
     )
-    return JSON.parse(rows[0].inputs);
+    return JSON.parse(rows[0].inputs) as T;
   }
 
   bufferWorkflowOutput<R>(workflowUUID: string, output: R) {

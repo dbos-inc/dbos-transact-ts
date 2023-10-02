@@ -18,7 +18,6 @@ import {
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-
 import {
   ConsoleExporter,
   CONSOLE_EXPORTER,
@@ -42,7 +41,6 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { OperonContext } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -61,11 +59,6 @@ export interface OperonConfig {
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
   config: WorkflowConfig;
-}
-
-interface WorkflowInput<T extends any[]> {
-  workflow_name: string;
-  input: T;
 }
 
 export class Operon {
