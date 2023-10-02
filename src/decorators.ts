@@ -582,12 +582,6 @@ export function OrmEntities(entities: Function[]) {
     console.log("decorator " + entity.name + " " + typeof entity);
   });
 
-  /* if (check(entities[0], "EntitySchema")) {
-    console.log("Valid entity");
-  } else {
-    console.log("Not Valid entity");
-  } */
-
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
      const clsreg = getOrCreateOperonClassRegistration(ctor);
@@ -598,22 +592,4 @@ export function OrmEntities(entities: Function[]) {
  
 }
 
-function check(obj: unknown, name: string) {
 
-  /* if (typeof obj === "object") {
-    console.log("It is an object");
-  } else {
-    console.log("It is not an object");
-  }
-  console.log(Symbol.for(name));
-  const v = obj as { "@instanceof": Symbol };
-  console.log(v);
-  console.log(v["@instanceof"]); */
-
-  return (
-      typeof obj === "object" &&
-      obj !== null &&
-      (obj as { "@instanceof": Symbol })["@instanceof"] ===
-          Symbol.for(name)
-  )
-}

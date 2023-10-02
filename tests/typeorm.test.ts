@@ -73,15 +73,11 @@ describe("typeorm-tests", () => {
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    console.log("before init");
     await operon.init(KVController);
-    console.log("after init");
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    console.log("dtop table");
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`
     ); 
-    console.log("done beforeEach");
   });
 
   afterEach(async () => {

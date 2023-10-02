@@ -55,29 +55,8 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  // readonly httpServer: httpConfig ;
   readonly dbClientMetadata?: any;
 }
-
-/*
-interface ConfigFile {
-  database: {
-    hostname: string;
-    port: number;
-    username: string;
-    connectionTimeoutMillis: number;
-    user_database: string;
-    system_database: string;
-    ssl_ca?: string;
-    observability_database: string;
-    user_dbclient?: UserDatabaseName;
-  };
-  telemetryExporters?: string[];
-  application: any;
-  httpServer?: httpConfig;
-  dbClientMetadata?: any;
-
-}*/
 
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
@@ -174,10 +153,7 @@ export class Operon {
         const DataSourceExports = require('typeorm');
         
         try {
-        
-        // console.log(config.dbClientMetadata?.entities);
-        console.log("In configure dbclient entities ...."+ this.entities);
-        
+   
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
@@ -195,7 +171,6 @@ export class Operon {
         console.log("error");
         console.log(s);
       }
-      // console.log("No error");
 
       } else {
         this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
@@ -231,17 +206,11 @@ export class Operon {
       type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
         const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
-        // console.log(reg.ormEntities);
         if (reg.ormEntities.length > 0 ) {
-          console.log("got entities " + reg.ormEntities);
           this.entities = this.entities.concat(reg.ormEntities) 
         } 
   
       }
-
-      this.entities.forEach((entity) => {
-        console.log("decorator " + entity.name + " " + typeof entity);
-      }); 
 
       this.configureDbClient(this.config);
 
@@ -254,7 +223,6 @@ export class Operon {
       for (const cls of classes) {
         this.#registerClass(cls);
       }
-
 
       await this.telemetryCollector.init(this.registeredOperations);
       await this.systemDatabase.init();
@@ -274,64 +242,6 @@ export class Operon {
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
   }
-
-/*
-  generateOperonConfig(): OperonConfig {
-    // Load default configuration
-    let config: ConfigFile | undefined;
-    try {
-      const configContent = readFileSync(CONFIG_FILE);
-      config = YAML.parse(configContent) as ConfigFile;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
-      }
-    }
-    if (!config) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
-    // Handle "Global" pool config
-    if (!config.database) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
-    }
-
-    const poolConfig: PoolConfig = {
-      host: config.database.hostname,
-      port: config.database.port,
-      user: config.database.username,
-      password: this.getDbPassword(),
-      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
-      database: config.database.user_database,
-    };
-    if (config.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
-    }
-
-    return {
-      poolConfig: poolConfig,
-      userDbclient: config.database.user_dbclient || UserDatabaseName.PGNODE,
-      telemetryExporters: config.telemetryExporters || [],
-      system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: config.application || undefined,
-      httpServer: config.httpServer || {port : 3000},
-      dbClientMetadata: {
-        entities: config.dbClientMetadata?.entities
-      }
-    };
-  }
- 
-  getDbPassword(): string {
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
-    }
-
-    return dbPassword;
-  }
-  */
 
   /* WORKFLOW OPERATIONS */
 
