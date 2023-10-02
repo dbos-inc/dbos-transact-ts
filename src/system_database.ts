@@ -13,7 +13,7 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
-  initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T>;
+  initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, args: T): Promise<T>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
@@ -22,7 +22,7 @@ export interface SystemDatabase {
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus>;
+  getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
@@ -81,10 +81,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, args: T): Promise<T> {
     await this.pool.query(
-      `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) DO NOTHING`,
-      [workflowUUID, StatusString.PENDING, null]
+      `INSERT INTO operon.workflow_status (workflow_uuid, status, name, authenticated_user, output) VALUES($1, $2, $3, $4, $5) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      [workflowUUID, StatusString.PENDING, name, authenticatedUser, null]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO operon.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET inputs = excluded.inputs RETURNING inputs`,
@@ -323,12 +323,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return { status: StatusString.UNKNOWN };
+      return null;
     }
-    return { status: rows[0].status };
+    return { status: rows[0].status, name: rows[0].name, authenticatedUser: rows[0].authenticated_user };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

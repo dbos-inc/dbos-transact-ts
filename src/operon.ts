@@ -43,7 +43,6 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { serializeError } from 'serialize-error';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -279,7 +278,7 @@ export class Operon {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, args);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.

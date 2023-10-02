@@ -1,9 +1,10 @@
 export interface workflow_status {
   workflow_uuid: string;
   status: string;
+  name: string;
+  authenticated_user: string;
   output: string;
   error: string;
-  updated_at_epoch_ms: number;
 }
 
 export interface notifications {
@@ -49,6 +50,8 @@ export const systemDBSchema = `
   CREATE TABLE IF NOT EXISTS operon.workflow_status (
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
+    name TEXT,
+    authenticated_user TEXT,
     output TEXT,
     error TEXT
   );

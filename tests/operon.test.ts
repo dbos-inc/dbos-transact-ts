@@ -73,6 +73,7 @@ describe("operon-tests", () => {
     expect(typeof workflowHandle.getWorkflowUUID()).toBe("string");
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
+      name: testWorkflow.name
     });
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
@@ -520,6 +521,7 @@ describe("operon-tests", () => {
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
+      name: testWorkflow.name
     });
 
     resolve1!();
@@ -528,7 +530,7 @@ describe("operon-tests", () => {
     // Retrieve handle, should get the pending status.
     await expect(
       operon.retrieveWorkflow<string>(workflowUUID).getStatus()
-    ).resolves.toMatchObject({ status: StatusString.PENDING });
+    ).resolves.toMatchObject({ status: StatusString.PENDING, name: testWorkflow.name });
 
     // Proceed to the end.
     resolve2!();
