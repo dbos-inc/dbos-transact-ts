@@ -31,7 +31,6 @@ import { TelemetryCollector } from './telemetry/collector';
 import { Logger } from './telemetry/logs';
 import { Tracer } from './telemetry/traces';
 import { PoolConfig } from 'pg';
-import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -354,6 +353,27 @@ export class Operon {
     return uuidv4();
   }
 
+  /**
+   * A recovery process that runs during Operon init time.
+   * It runs to completion all pending workflows that were executing when the previous executor failed.
+   */
+  async recoverPendingWorkflows() {
+    const pendingWorkflows = await this.systemDatabase.getPendingWorkflows();
+    const handlerArray: WorkflowHandle<any>[] = [];
+    for (const workflowUUID of pendingWorkflows) {
+      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+      const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+      if (!inputs) {
+        console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+      }
+      const wfInfo = this.workflowInfoMap.get(wfStatus!.name);
+
+      // FIXME: pass in parent context.
+      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID}))
+    }
+    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+  }
+
   /* BACKGROUND PROCESSES */
   /**
    * Periodically flush the workflow output buffer to the system database.
@@ -363,4 +383,5 @@ export class Operon {
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }
+
 }
