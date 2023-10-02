@@ -18,6 +18,9 @@ export interface SystemDatabase {
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
+  getPendingWorkflows(): Promise<Array<string>>;
+  getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
@@ -124,6 +127,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
       [workflowUUID, StatusString.ERROR, serialErr]
     );
+  }
+
+  async getPendingWorkflows(): Promise<Array<string>> {
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid FROM operon.workflow_status WHERE status=$1`,
+      [StatusString.PENDING]
+    )
+    return rows.map(i => i.workflow_uuid);
+  }
+
+  async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
+    const { rows } = await this.pool.query<workflow_inputs>(
+      `SELECT inputs FROM operon.workflow_inputs WHERE workflow_uuid=$1`,
+      [workflowUUID]
+    )
+    if (rows.length === 0) {
+      return null
+    }
+    return JSON.parse(rows[0].inputs) as T;
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
