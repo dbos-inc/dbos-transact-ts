@@ -19,6 +19,8 @@ export {
   CommunicatorConfig,
 } from './communicator';
 
+export * as Error from './error';
+
 export {
   OperonResponseError
 } from './error';
