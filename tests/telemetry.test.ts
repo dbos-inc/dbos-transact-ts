@@ -6,7 +6,7 @@ import {
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
-import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
   Traced,
@@ -16,7 +16,7 @@ import {
 } from "../src/decorators";
 import { TransactionContext, WorkflowContext } from "../src";
 import { WorkflowHandle } from "../src/workflow";
-import { OperonContext } from "../src/context";
+import { OperonContextImpl } from "../src/context";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -33,7 +33,7 @@ type TelemetrySignalDbFields = {
 class TestClass {
   @Traced
   static create_user(
-    _ctx: OperonContext,
+    _ctx: OperonContextImpl,
     name: string,
     age: number,
     isNice: boolean,
@@ -63,10 +63,7 @@ class TestClass {
     workflowCtxt: WorkflowContext,
     name: string
   ): Promise<string> {
-    const funcResult: string = await workflowCtxt.transaction(
-      TestClass.test_function,
-      name
-    );
+    const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
   }
@@ -338,11 +335,11 @@ describe("operon-telemetry", () => {
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const span = operon.tracer.startSpan("test");
-      const oc = new OperonContext("testName", span, operon.logger);
+      const oc = new OperonContextImpl("testName", span, operon.logger);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 
-      const params: InternalWorkflowParams = { parentCtx: oc };
+      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = operon.workflow(
         TestClass.test_workflow,

@@ -4,7 +4,22 @@ import { Logger } from "./telemetry/logs";
 import { LogSeverity } from "./telemetry/signals";
 import { has, get } from "lodash";
 
-export class OperonContext {
+export interface OperonContext {
+  request?: IncomingMessage;
+  workflowUUID: string;
+  authenticatedUser: string;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getConfig(key: string): any;
+
+  info(message: string): void;
+  warn(message: string): void;
+  log(message: string): void;
+  error(message: string): void;
+  debug(message: string): void;
+}
+
+export class OperonContextImpl implements OperonContext {
   request?: IncomingMessage; // Raw incoming HTTP request.
 
   authenticatedUser: string = ""; ///< The user that has been authenticated
@@ -13,7 +28,7 @@ export class OperonContext {
 
   workflowUUID: string = "";
 
-  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContext) {
+  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -25,7 +40,7 @@ export class OperonContext {
 
   /*** Application configuration ***/
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  applicationConfig?: any; // applicationConfiguration
+  applicationConfig?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any {
     if (!this.applicationConfig) {

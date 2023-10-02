@@ -1,4 +1,4 @@
-import { OperonMethodRegistrationBase } from "..";
+import { OperonMethodRegistrationBase } from "../decorators";
 import { ITelemetryExporter } from "./exporters";
 import { OperonSignal } from "./signals";
 

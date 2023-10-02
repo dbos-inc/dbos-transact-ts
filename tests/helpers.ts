@@ -1,4 +1,4 @@
-import { OperonConfig } from "../src";
+import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
 
 /* DB management helpers */

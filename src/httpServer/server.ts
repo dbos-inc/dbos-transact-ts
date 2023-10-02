@@ -5,7 +5,7 @@ import cors from "@koa/cors";
 import {
   APITypes,
   ArgSources,
-  HandlerContext,
+  HandlerContextImpl,
   OperonHandlerRegistration,
 } from "./handler";
 import { OperonTransaction } from "../transaction";
@@ -20,6 +20,8 @@ import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
 import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode } from "@opentelemetry/api";
+
+export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -82,7 +84,7 @@ export class OperonHttpServer {
 
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContext = new HandlerContext(operon, koaCtxt);
+          const oc: HandlerContextImpl = new HandlerContextImpl(operon, koaCtxt);
 
           try {
             // Check for auth first
@@ -126,6 +128,10 @@ export class OperonHttpServer {
               }
             });
 
+            // Extract workflow UUID from headers (if any).
+            // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
+            const headerWorkflowUUID = koaCtxt.get(OperonWorkflowUUIDHeader);
+
             // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
             // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
             // In case of an exception:
@@ -133,9 +139,9 @@ export class OperonHttpServer {
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
             if (ro.txnConfig) {
-              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc }, ...args);
+              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc, workflowUUID: headerWorkflowUUID}, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc }, ...args).getResult();
+              koaCtxt.body = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc, workflowUUID : headerWorkflowUUID}, ...args).getResult();
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
