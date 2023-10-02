@@ -225,6 +225,7 @@ export class Operon {
         throw new OperonInitializationError(err.message);
       }
     }
+    void this.recoverPendingWorkflows();
     this.initialized = true;
   }
 
@@ -365,11 +366,13 @@ export class Operon {
       const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
       if (!inputs) {
         console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+        continue;
       }
-      const wfInfo = this.workflowInfoMap.get(wfStatus!.name);
+      const wfInfo: WorkflowInfo<any,any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
 
       // FIXME: pass in parent context.
-      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID}))
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID}, ...inputs))
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }

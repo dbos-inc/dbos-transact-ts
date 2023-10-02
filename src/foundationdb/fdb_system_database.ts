@@ -185,7 +185,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     if (output === undefined) {
       return null;
     }
-    return { status: output.status, name: output.name, authenticatedUser: output.authenticatedUser };
+    return { status: output.status, workflowName: output.name, authenticatedUser: output.authenticatedUser };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

@@ -350,7 +350,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       return null;
     }
-    return { status: rows[0].status, name: rows[0].name, authenticatedUser: rows[0].authenticated_user };
+    return { status: rows[0].status, workflowName: rows[0].name, authenticatedUser: rows[0].authenticated_user };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

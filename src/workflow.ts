@@ -38,7 +38,7 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string;
-  name: string;
+  workflowName: string;
   authenticatedUser: string;
 }
 
