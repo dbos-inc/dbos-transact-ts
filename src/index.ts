@@ -57,6 +57,8 @@ export {
   OperonTransaction,
   OperonWorkflow,
   OperonCommunicator,
+
+  OrmEntities,
 } from "./decorators";
 
 export {

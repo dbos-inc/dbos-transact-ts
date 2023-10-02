@@ -42,7 +42,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
 } from './user_database';
-import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
+import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { OperonContext } from './context';
 
@@ -136,6 +136,8 @@ export class Operon {
   readonly logger: Logger;
   readonly tracer: Tracer;
 
+  entities: Function[] = []
+
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
     if (config) {
@@ -171,13 +173,16 @@ export class Operon {
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
 
-    this.configureDbClient(this.config) ;
+    console.log(this.config);
+
+    // this.configureDbClient(this.config) ;
 
   }
 
   configureDbClient(config: OperonConfig) {
 
       const userDbClient = config.userDbclient;
+      console.log(userDbClient);
       if (userDbClient === UserDatabaseName.PRISMA) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const { PrismaClient }  = require('@prisma/client');
@@ -186,6 +191,12 @@ export class Operon {
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const DataSourceExports = require('typeorm');
+        
+        try {
+        
+        // console.log(config.dbClientMetadata?.entities);
+        console.log("entities ...."+ this.entities);
+        
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
@@ -194,12 +205,21 @@ export class Operon {
           username: config.poolConfig.user,
           password: process.env.PGPASSWORD,
           database: config.poolConfig.database,
+          // synchronize: true,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-          entities: config.dbClientMetadata?.entities
+          // entities: config.dbClientMetadata?.entities
+          entities:this.entities
         }))
+      } catch (s) {
+        console.log("error");
+        console.log(s);
+      }
+      console.log("No error");
+
       } else {
         this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
       }
+     
   }
 
   #registerClass(cls: object) {
@@ -225,19 +245,40 @@ export class Operon {
   }
 
   async init(...classes: object[]): Promise<void> {
-    if (!this.userDatabase) {
-      throw new OperonInitializationError("No data source!");
-    }
+    
     if (this.initialized) {
       // TODO add logging when we have a logger
       return;
     }
     try {
+
+      type AnyConstructor = new (...args: unknown[]) => object;
+      for (const cls of classes) {
+        const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
+        // console.log(reg.ormEntities);
+        if (reg.ormEntities.length > 0 ) {
+          console.log("got entities " + reg.ormEntities);
+          this.entities = this.entities.concat(reg.ormEntities) 
+        }
+        // this.#registerClass(cls);
+      }
+
+      this.entities.forEach((entity) => {
+        console.log("decorator " + entity.name + " " + typeof entity);
+      });
+
+      this.configureDbClient(this.config);
+
+      if (!this.userDatabase) {
+        throw new OperonInitializationError("No data source!");
+      }
+
       await this.userDatabase.init();
 
       for (const cls of classes) {
         this.#registerClass(cls);
       }
+
 
       await this.telemetryCollector.init(this.registeredOperations);
       await this.systemDatabase.init();
@@ -298,7 +339,10 @@ export class Operon {
       observability_database: config.database.observability_database || undefined,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       application: config.application || undefined,
-      httpServer: config.httpServer || {port : 3000}
+      httpServer: config.httpServer || {port : 3000},
+      dbClientMetadata: {
+        entities: config.dbClientMetadata?.entities
+      }
     };
   }
 

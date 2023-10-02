@@ -30,7 +30,7 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     },
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
-        entities: ["tests/KV.ts"]
+        entities: ["KV"]
     }
   };
 

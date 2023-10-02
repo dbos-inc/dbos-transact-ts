@@ -43,7 +43,7 @@ describe("operon-config", () => {
     expect(poolConfig.database).toBe("some DB");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(operonConfig.application.payments_url).toBe("http://somedomain.com/payment")
-    await operon.destroy();
+    // await operon.destroy();
   });
 
   test("Custom config is parsed as expected", async () => {
@@ -56,7 +56,7 @@ describe("operon-config", () => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(operon.config.application.counter).toBe(3);
     expect(readFileSpy).toHaveBeenCalledTimes(0);
-    await operon.destroy();
+    // await operon.destroy();
   });
 
   test("fails to read config file", () => {

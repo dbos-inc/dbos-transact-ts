@@ -1,20 +1,46 @@
 // import { PrismaClient, testkv } from "@prisma/client";
 import { EntityManager} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonConfig, TransactionContext } from "../src";
+import { Operon, OperonConfig, OrmEntities, TransactionContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { UserDatabaseName } from "../src/user_database";
-import { KV } from './KV'
+// import { KV } from './KV'
 import { sleep } from "../src/utils";
+import {  Entity, Column, PrimaryColumn } from "typeorm";
 
+@Entity()
+export class KV {
+    @PrimaryColumn()
+    id: string = "t"
+
+    @Column()
+    value: string = "v"
+}
 
 /**
  * Funtions used in tests.
  */
 let globalCnt = 0;
 
+@OrmEntities([KV])
+class KVController {
 
-const testTxn = async (
+  static async testTxn(txnCtxt: TransactionContext,
+    id: string,
+    value: string) {
+      const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
+      const kv: KV = new KV();
+      kv.id = id;
+      kv.value = value;
+      const res = await p.save(kv);
+      globalCnt += 1;
+      return res.id;
+    }
+
+
+}
+
+/* const testTxn = async (
   txnCtxt: TransactionContext,
   id: string,
   value: string
@@ -26,7 +52,7 @@ const testTxn = async (
   const res = await p.save(kv);
   globalCnt += 1;
   return res.id;
-};
+}; */
 
 const readTxn = async (txnCtxt: TransactionContext, id: string) => {
   await sleep(1);
@@ -47,11 +73,15 @@ describe("typeorm-tests", () => {
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    await operon.init();
+    console.log("before init");
+    await operon.init(KVController);
+    console.log("after init");
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    console.log("dtop table");
     await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`
+      `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`
     ); 
+    console.log("done beforeEach");
   });
 
   afterEach(async () => {
@@ -60,12 +90,12 @@ describe("typeorm-tests", () => {
 
   test("simple-typeorm", async () => {
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.registerTransaction(KVController.testTxn);
     await expect(
-      operon.transaction(testTxn, { workflowUUID: workUUID }, "test", "value")
+      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
     await expect(
-      operon.transaction(testTxn, { workflowUUID: workUUID }, "test", "value")
+      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
   });
 
@@ -74,16 +104,16 @@ describe("typeorm-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.registerTransaction(KVController.testTxn);
     let results = await Promise.allSettled([
       operon.transaction(
-        testTxn,
+        KVController.testTxn,
         { workflowUUID: workUUID },
         "oaootest",
         "oaoovalue"
       ),
       operon.transaction(
-        testTxn,
+        KVController.testTxn,
         { workflowUUID: workUUID },
         "oaootest",
         "oaoovalue"

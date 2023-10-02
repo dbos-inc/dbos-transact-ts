@@ -226,6 +226,7 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
   name: string = "";
   requiredRole: string[] | undefined;
   needsInitialized: boolean = true;
+  ormEntities: Function[] = [];
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -573,4 +574,46 @@ export function OperonCommunicator(config: CommunicatorConfig={}) {
   }
   return decorator;
 
+}
+
+export function OrmEntities(entities: Function[]) {
+
+  entities.forEach((entity) => {
+    console.log("decorator " + entity.name + " " + typeof entity);
+  });
+
+  /* if (check(entities[0], "EntitySchema")) {
+    console.log("Valid entity");
+  } else {
+    console.log("Not Valid entity");
+  } */
+
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     clsreg.ormEntities = entities;
+  }
+  return clsdec; 
+
+ 
+}
+
+function check(obj: unknown, name: string) {
+
+  /* if (typeof obj === "object") {
+    console.log("It is an object");
+  } else {
+    console.log("It is not an object");
+  }
+  console.log(Symbol.for(name));
+  const v = obj as { "@instanceof": Symbol };
+  console.log(v);
+  console.log(v["@instanceof"]); */
+
+  return (
+      typeof obj === "object" &&
+      obj !== null &&
+      (obj as { "@instanceof": Symbol })["@instanceof"] ===
+          Symbol.for(name)
+  )
 }
