@@ -23,7 +23,8 @@ const Tables = {
   WorkflowStatus: "operon_workflow_status",
   OperationOutputs: "operon_operation_outputs",
   Notifications: "operon_notifications",
-  WorkflowEvents: "workflow_events"
+  WorkflowEvents: "workflow_events",
+  WorkflowInpus: "workflow_inputs"
 } as const;
 
 export class FoundationDBSystemDatabase implements SystemDatabase {
@@ -32,6 +33,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   operationOutputsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   notificationsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   workflowEventsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
+  workflowInputsDB: fdb.Database<string, string, unknown, unknown>;
 
   readonly workflowStatusBuffer: Map<string, unknown> = new Map();
 
@@ -54,6 +56,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .at(Tables.WorkflowEvents)
       .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, key] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
+    this.workflowInputsDB = this.dbRoot
+      .at(Tables.WorkflowInpus)
+      .withKeyEncoding(fdb.encoders.string) // We use workflowUUID as the key
+      .withValueEncoding(fdb.encoders.json);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -75,16 +81,26 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus(workflowUUID: string) {
-    await this.workflowStatusDB.doTransaction(async (txn) => {
-      const present = await txn.get(workflowUUID);
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T> {
+    return this.dbRoot.doTransaction(async (txn) => {
+      const statusDB = txn.at(this.workflowStatusDB);
+      const inputsDB = txn.at(this.workflowInputsDB);
+
+      const present = await statusDB.get(workflowUUID);
       if (present === undefined) {
-        txn.set(workflowUUID, {
+        statusDB.set(workflowUUID, {
           status: StatusString.PENDING,
           error: null,
           output: null,
         });
       }
+
+      const inputs = await inputsDB.get(workflowUUID);
+      if (inputs === undefined) {
+        inputsDB.set(workflowUUID, args);
+        return args;
+      }
+      return inputs as T;
     });
   }
 
