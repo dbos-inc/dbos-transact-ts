@@ -175,7 +175,6 @@ describe("foundationdb-operon", () => {
     const uuid = uuidv1();
     const invokedHandle = operon.workflow(testWorkflow, { workflowUUID: uuid });
     await outerPromise;
-    await operon.systemDatabase.flushWorkflowStatusBuffer();
     const retrievedHandle = operon.retrieveWorkflow(uuid);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,

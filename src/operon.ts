@@ -43,6 +43,7 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { serializeError } from 'serialize-error';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -321,6 +322,7 @@ export class Operon {
           // Record the error.
           const e: Error = err as Error;
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }

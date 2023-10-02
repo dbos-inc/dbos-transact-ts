@@ -51,13 +51,13 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .withKeyEncoding(fdb.encoders.tuple) // We use [destinationUUID, topic] as the key
       .withValueEncoding(fdb.encoders.json); // and values using JSON
     this.workflowEventsDB = this.dbRoot
-    .at(Tables.WorkflowEvents)
-    .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, key] as the key
-    .withValueEncoding(fdb.encoders.json); // and values using JSON
+      .at(Tables.WorkflowEvents)
+      .withKeyEncoding(fdb.encoders.tuple) // We use [workflowUUID, key] as the key
+      .withValueEncoding(fdb.encoders.json); // and values using JSON
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async init(): Promise<void> {}
+  async init(): Promise<void> { }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {
@@ -66,7 +66,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | OperonNull> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<R> | undefined;
-    if (output === undefined) {
+    if (output === undefined || output.status === StatusString.PENDING) {
       return operonNull;
     } else if (output.status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
@@ -75,8 +75,17 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  setWorkflowStatus(workflowUUID: string) {
-    this.workflowStatusBuffer.set(workflowUUID, operonNull);
+  async setWorkflowStatus(workflowUUID: string) {
+    await this.workflowStatusDB.doTransaction(async (txn) => {
+      const present = await txn.get(workflowUUID);
+      if (present === undefined) {
+        txn.set(workflowUUID, {
+          status: StatusString.PENDING,
+          error: null,
+          output: null,
+        });
+      }
+    });
   }
 
   bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
@@ -89,22 +98,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {
-        if (output === operonNull) {
-          const present = await txn.get(workflowUUID);
-          if (present === undefined) {
-            txn.set(workflowUUID, {
-              status: StatusString.PENDING,
-              error: null,
-              output: null,
-            });
-          }
-        } else {
           txn.set(workflowUUID, {
             status: StatusString.SUCCESS,
             error: null,
             output: output,
           });
-        }
       }
     });
     return Array.from(localBuffer.keys());
@@ -180,8 +178,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     const status = output.status;
     if (status === StatusString.SUCCESS) {
       return output.output;
-    } else {
+    } else if (status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
+    } else { // StatusString.PENDING
+      return this.getWorkflowResult(workflowUUID);
     }
   }
 
