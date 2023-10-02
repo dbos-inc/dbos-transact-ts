@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { OperonNull, operonNull } from "../operon";
+import { Operon, OperonNull, operonNull } from "../operon";
 import { SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
+import { string } from "yaml/dist/schema/common/string";
+import { OperonContextImpl } from "../context";
 
 interface WorkflowOutput<R> {
   status: string;
@@ -14,6 +16,8 @@ interface WorkflowOutput<R> {
   output: R;
   name: string;
   authenticatedUser: string;
+  authenticatedRoles: Array<string>;
+  assumedRole: string;
 }
 
 interface OperationOutput<R> {
@@ -83,7 +87,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
@@ -96,6 +100,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
           output: null,
           name: name,
           authenticatedUser: authenticatedUser,
+          assumedRole: assumedRole,
+          authenticatedRoles: authenticatedRoles,
         });
       }
 
@@ -125,6 +131,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
             output: output,
             name: currWf?.name ?? null,
             authenticatedUser: currWf?.authenticatedUser ?? null,
+            authenticatedRoles: currWf?.authenticatedRoles ?? null,
+            assumedRole: currWf?.assumedRole ?? null,
           });
       }
     });
@@ -138,6 +146,34 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       error: serialErr,
       output: null,
     });
+  }
+
+  async getPendingWorkflows(): Promise<string[]> {
+    const workflows = await this.workflowStatusDB.getRangeAll('', '\xff') as Array<[string, WorkflowOutput<unknown>]>;
+    return workflows.filter(i => i[1].status === StatusString.PENDING).map(i => i[0]);
+  }
+
+  async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
+    return await this.workflowInputsDB.get(workflowUUID) as T ?? null;
+  }
+
+  async getRecoveryContext(operon: Operon, workflowUUID: string): Promise<OperonContextImpl | null> {
+    const status = await this.getWorkflowStatus(workflowUUID);
+    if (!status) {
+      return null;
+    }
+    const span = operon.tracer.startSpan(status.workflowName);
+    span.setAttributes({
+      operationName: status.workflowName,
+    });
+    const oc = new OperonContextImpl(status.workflowName, span, operon.logger);
+    // FIXME: pass in the original request. IncomingMessage is not serializable.
+    oc.request = undefined;
+    oc.authenticatedUser = status.authenticatedUser;
+    oc.authenticatedRoles = status.authenticatedRoles;
+    oc.assumedRole = status.assumedRole;
+    oc.workflowUUID = workflowUUID;
+    return oc;
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
@@ -185,7 +221,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     if (output === undefined) {
       return null;
     }
-    return { status: output.status, workflowName: output.name, authenticatedUser: output.authenticatedUser };
+    return { status: output.status, workflowName: output.name, authenticatedUser: output.authenticatedUser, authenticatedRoles: output.authenticatedRoles, assumedRole: output.assumedRole };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

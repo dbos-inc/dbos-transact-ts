@@ -292,5 +292,31 @@ describe("foundationdb-operon", () => {
       "hello"
     );
   });
+
+  test("fdb-failure-recovery", async () => {
+    // Run a workflow until pending and start recovery.
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let cnt = 0;
+
+    const testWorkflow = async (ctxt: WorkflowContext, input: number) => {
+      cnt += input;
+      await promise1;
+      return input;
+    }
+    operon.registerWorkflow(testWorkflow, {});
+    const handle = await operon.workflow(testWorkflow, {}, 5);
+
+    const recoverPromise = operon.recoverPendingWorkflows();
+    resolve1!();
+
+    await recoverPromise;
+
+    await expect(handle.getResult()).resolves.toBe(5);
+    expect(cnt).toBe(10); // Should run twice.
+  });
 });
 
