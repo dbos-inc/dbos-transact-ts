@@ -265,20 +265,33 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
+  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
+    const wInfo = this.workflowInfoMap.get(wf.name);
+    if (wInfo === undefined) {
+      throw new OperonNotRegisteredError(wf.name);
+    }
+    const wConfig = wInfo.config;
+
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    const workflowInputID = wCtxt.functionIDGetIncrement();
+    wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
+
+    // Synchronously set the workflow's status to PENDING.  Not needed for temporary workflows.
+    if (!wCtxt.isTempWorkflow) {
+      await this.systemDatabase.setWorkflowStatus(workflowUUID);
+    }
     const runWorkflow = async () => {
-      const wInfo = this.workflowInfoMap.get(wf.name);
-      if (wInfo === undefined) {
-        throw new OperonNotRegisteredError(wf.name);
+      // Check if the workflow previously ran.
+      const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
+      if (previousOutput !== operonNull) {
+        wCtxt.span.setAttribute("cached", true);
+        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
+        this.tracer.endSpan(wCtxt.span);
+        return previousOutput as R;
       }
-      const wConfig = wInfo.config;
-
-      const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
-      const workflowInputID = wCtxt.functionIDGetIncrement();
-      wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
-
+      // Record inputs for OAOO. Not needed for temporary workflows.
       const checkWorkflowInput = async (input: T) => {
         // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
         const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2", workflowUUID, workflowInputID);
@@ -291,19 +304,6 @@ export class Operon {
         }
         return input;
       };
-
-      const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
-      if (previousOutput !== operonNull) {
-        wCtxt.span.setAttribute("cached", true);
-        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        this.tracer.endSpan(wCtxt.span);
-        return previousOutput as R;
-      }
-      // Synchronously set the workflow's status to PENDING.  Not needed for temporary workflows.
-      if (!wCtxt.isTempWorkflow) {
-        await this.systemDatabase.setWorkflowStatus(workflowUUID);
-      }
-      // Record inputs for OAOO. Not needed for temporary workflows.
       const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
       // Execute the workflow.
@@ -340,7 +340,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
+    return await (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
@@ -348,7 +348,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
+    return await (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
   }
 
   /**
