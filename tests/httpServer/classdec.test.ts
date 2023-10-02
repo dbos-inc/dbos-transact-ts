@@ -3,11 +3,9 @@
 import {
   GetApi,
   Operon,
-  OperonConfig,
   RequiredRole,
   DefaultRequiredRole,
   MiddlewareContext,
-  OperonNotAuthorizedError,
 } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import {
@@ -18,6 +16,8 @@ import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
+import { OperonNotAuthorizedError } from "../../src/error";
+import { OperonConfig } from "../../src/operon";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;

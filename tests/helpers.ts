@@ -1,4 +1,4 @@
-import { OperonConfig } from "../src";
+import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
 
@@ -25,9 +25,6 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     telemetryExporters: exporters || [],
     system_database: "operontest_systemdb",
     observability_database: "operontest_observabilitydb",
-    httpServer: {
-      port: 3000
-    },
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
         entities: ["KV"]

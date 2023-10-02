@@ -10,7 +10,7 @@ import {
 } from "../src/decorators";
 
 import {
-  OperonContext
+  OperonContextImpl
 }
 from "../src/context"
 
@@ -18,7 +18,7 @@ class TestFunctions {
   @Traced
   @TraceLevel(TraceLevels.INFO)
   static foo(
-    _ctx: OperonContext,
+    _ctx: OperonContextImpl,
     @LogMask(LogMasks.HASH) arg1: string,
     /*@ArgDate()*/ arg2: Date,
     @SkipLogging arg3: boolean,
@@ -81,7 +81,7 @@ describe("operon-logging", () => {
       console.log(cts);
     });
 
-    await TestFunctions.foo(null as unknown as OperonContext, "a", new Date(), false, 4);
+    await TestFunctions.foo(null as unknown as OperonContextImpl, "a", new Date(), false, 4);
   });
 });
 

@@ -1,13 +1,16 @@
 // import { PrismaClient, testkv } from "@prisma/client";
 import { EntityManager} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonConfig, OrmEntities, TransactionContext } from "../src";
+import { Operon, OrmEntities, TransactionContext } from "../src";
+import { OperonConfig } from "../src/operon" ;
 import { v1 as uuidv1 } from "uuid";
 import { UserDatabaseName } from "../src/user_database";
-// import { KV } from './KV'
 import { sleep } from "../src/utils";
 import {  Entity, Column, PrimaryColumn } from "typeorm";
 
+/**
+ * Funtions used in tests.
+ */
 @Entity()
 export class KV {
     @PrimaryColumn()
@@ -17,9 +20,6 @@ export class KV {
     value: string = "v"
 }
 
-/**
- * Funtions used in tests.
- */
 let globalCnt = 0;
 
 @OrmEntities([KV])

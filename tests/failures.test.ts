@@ -1,9 +1,7 @@
 import {
   Operon,
-  OperonConfig,
   WorkflowContext,
   TransactionContext,
-  OperonError,
   CommunicatorContext,
 } from "../src/";
 import {
@@ -15,7 +13,8 @@ import { DatabaseError } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
-import { OperonNotRegisteredError } from "../src/error";
+import { OperonError, OperonNotRegisteredError } from "../src/error";
+import { OperonConfig } from "../src/operon";
 
 describe("failures-tests", () => {
   let operon: Operon;
@@ -220,10 +219,11 @@ describe("failures-tests", () => {
 
   test("failing-communicator", async () => {
     let num = 0;
+    const maxAttempts = 4;
 
-    const testCommunicator = async (ctxt: CommunicatorContext) => {
+    const testCommunicator = async (_ctxt: CommunicatorContext) => {
       num += 1;
-      if (num !== ctxt.maxAttempts) {
+      if (num !== maxAttempts) {
         throw new Error("bad number");
       }
       await sleep(1);
@@ -231,7 +231,7 @@ describe("failures-tests", () => {
     };
     operon.registerCommunicator(testCommunicator, {
       intervalSeconds: 0,
-      maxAttempts: 4,
+      maxAttempts: maxAttempts,
     });
 
     const testWorkflow = async (ctxt: WorkflowContext) => {

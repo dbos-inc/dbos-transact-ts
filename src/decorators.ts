@@ -5,7 +5,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { OperonContext } from "./context";
+import { OperonContext, OperonContextImpl } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
 
@@ -291,7 +291,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.argType === TransactionContext || e.argType == WorkflowContext || e.argType == CommunicatorContext) {
+        if (e.index === 0) { // The first argument is always the context.
           e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
@@ -303,12 +303,12 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     const wrappedMethod = async function (this: This, ...args: Args) {
       const mn = methReg.name;
 
-      let opCtx : OperonContext | undefined = undefined;
+      let opCtx : OperonContextImpl | undefined = undefined;
 
       // Validate the user authentication and populate the role field\
       const rr = methReg.getRequiredRoles();
       if (rr.length > 0) {
-        opCtx = args[0] as OperonContext;
+        opCtx = args[0] as OperonContextImpl;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         let authRole = ''
@@ -331,7 +331,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context, may find a more robust way.
-          opCtx = args[idx] as OperonContext;
+          opCtx = args[idx] as OperonContextImpl;
           return;
         }
 

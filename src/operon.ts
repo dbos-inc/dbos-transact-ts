@@ -13,11 +13,11 @@ import {
   WorkflowHandle,
   WorkflowParams,
   RetrievedHandle,
+  WorkflowContextImpl,
 } from './workflow';
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { readFileSync } from './utils';
 
 import {
   ConsoleExporter,
@@ -34,7 +34,6 @@ import { PoolConfig } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
-import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
   PrismaUserDatabase,
@@ -44,18 +43,11 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { OperonContext } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
-const CONFIG_FILE: string = "operon-config.yaml";
-
-export interface httpConfig {
-  readonly port: number;
-}
-
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly userDbclient?: UserDatabaseName;
@@ -63,10 +55,11 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer: httpConfig ;
+  // readonly httpServer: httpConfig ;
   readonly dbClientMetadata?: any;
 }
 
+/*
 interface ConfigFile {
   database: {
     hostname: string;
@@ -83,7 +76,8 @@ interface ConfigFile {
   application: any;
   httpServer?: httpConfig;
   dbClientMetadata?: any;
-}
+
+}*/
 
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
@@ -95,13 +89,8 @@ interface WorkflowInput<T extends any[]> {
   input: T;
 }
 
-export interface InternalWorkflowParams extends WorkflowParams {
-  parentCtx?: OperonContext;
-}
-
 export class Operon {
   initialized: boolean;
-  readonly config: OperonConfig;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
@@ -139,12 +128,7 @@ export class Operon {
   entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
-    if (config) {
-      this.config = config;
-    } else {
-      this.config = this.generateOperonConfig();
-    }
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
     if (systemDatabase) {
       this.systemDatabase = systemDatabase;
     } else {
@@ -223,28 +207,23 @@ export class Operon {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
-      for (const arg of ro.args) {
-        if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
-          break;
-        } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.registeredFunction as OperonTransaction<any, any>;
-          this.registerTransaction(tx, ro.txnConfig);
-          break;
-        } else if (arg.argType.name === "CommunicatorContext") {
-          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-          this.registerCommunicator(comm, ro.commConfig);
-          break;
-        }
-      }
+     if (ro.workflowConfig) {
+      const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+      this.registerWorkflow(wf, ro.workflowConfig);
+     } else if (ro.txnConfig) {
+      const tx = ro.registeredFunction as OperonTransaction<any, any>;
+      this.registerTransaction(tx, ro.txnConfig);
+     } else if (ro.commConfig) {
+      const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+      this.registerCommunicator(comm, ro.commConfig);
+     }
     }
   }
 
   async init(...classes: object[]): Promise<void> {
     
     if (this.initialized) {
-      // TODO add logging when we have a logger
+      console.log("Operon already initialized!");
       return;
     }
     try {
@@ -281,7 +260,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        console.log(err);
+        console.error(err);
         throw new OperonInitializationError(err.message);
       }
     }
@@ -296,6 +275,7 @@ export class Operon {
     await this.telemetryCollector.destroy();
   }
 
+/*
   generateOperonConfig(): OperonConfig {
     // Load default configuration
     let config: ConfigFile | undefined;
@@ -342,7 +322,7 @@ export class Operon {
       }
     };
   }
-
+ 
   getDbPassword(): string {
     const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
     if (!dbPassword) {
@@ -351,6 +331,7 @@ export class Operon {
 
     return dbPassword;
   }
+  */
 
   /* WORKFLOW OPERATIONS */
 
@@ -379,7 +360,7 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: InternalWorkflowParams, ...args: T): WorkflowHandle<R> {
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const runWorkflow = async () => {
@@ -389,7 +370,7 @@ export class Operon {
       }
       const wConfig = wInfo.config;
 
-      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, params, workflowUUID, wConfig, wf.name);
+      const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
       const workflowInputID = wCtxt.functionIDGetIncrement();
       wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
@@ -445,7 +426,7 @@ export class Operon {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
   }
 
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: InternalWorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
@@ -453,7 +434,7 @@ export class Operon {
     return await this.workflow(operon_temp_workflow, params, ...args).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: InternalWorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
