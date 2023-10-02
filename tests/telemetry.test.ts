@@ -16,7 +16,7 @@ import {
 } from "../src/decorators";
 import { TransactionContext, WorkflowContext } from "../src";
 import { WorkflowHandle } from "../src/workflow";
-import { OperonContext } from "../src/context";
+import { OperonContextImpl } from "../src/context";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -33,7 +33,7 @@ type TelemetrySignalDbFields = {
 class TestClass {
   @Traced
   static create_user(
-    _ctx: OperonContext,
+    _ctx: OperonContextImpl,
     name: string,
     age: number,
     isNice: boolean,
@@ -335,7 +335,7 @@ describe("operon-telemetry", () => {
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const span = operon.tracer.startSpan("test");
-      const oc = new OperonContext("testName", span, operon.logger);
+      const oc = new OperonContextImpl("testName", span, operon.logger);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 

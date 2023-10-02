@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { OperonTransaction, TransactionContext } from "./transaction";
-import { OperonCommunicator, CommunicatorContext } from "./communicator";
+import { OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
+import { OperonCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContext, OperonContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -29,7 +29,7 @@ type WFInvokeFuncs<T> = {
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentCtx?: OperonContext;
+  parentCtx?: OperonContextImpl;
 }
 
 export interface WorkflowConfig {
@@ -51,7 +51,16 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperonContext {
+export interface WorkflowContext extends OperonContext {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
+  external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
+}
+
+export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext  {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
@@ -59,7 +68,7 @@ export class WorkflowContext extends OperonContext {
 
   constructor(
     operon: Operon,
-    parentCtx: OperonContext | undefined,
+    parentCtx: OperonContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
@@ -188,7 +197,7 @@ export class WorkflowContext extends OperonContext {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(
+        const tCtxt = new TransactionContextImpl(
           this.#operon.userDatabase.getName(), client, config, this,
           span, this.#operon.logger, funcId, txn.name,
         );
@@ -282,7 +291,7 @@ export class WorkflowContext extends OperonContext {
       backoffRate: commConfig.backoffRate,
       args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
     });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

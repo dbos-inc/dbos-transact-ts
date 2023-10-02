@@ -1,6 +1,5 @@
 import {
   Operon,
-  OperonConfig,
   WorkflowContext,
   TransactionContext,
   CommunicatorContext,
@@ -14,6 +13,7 @@ import {
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
+import { OperonConfig } from "../src/operon";
 
 describe("operon-tests", () => {
   const testTableName = "operon_test_kv";

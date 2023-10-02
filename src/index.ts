@@ -1,49 +1,35 @@
 export {
-  Operon,
-  OperonConfig,
+  Operon, // TODO: Remove
 } from './operon';
-
-export {
-  OperonContext,
-} from './context';
 
 export {
   TransactionContext,
   TransactionConfig,
-  OperonTransaction as OperonTransactionFunction,
 } from './transaction';
 
 export {
   WorkflowContext,
   WorkflowConfig,
-  WorkflowParams,
   WorkflowHandle,
   StatusString,
-  OperonWorkflow as OperonWorkflowFunction,
 } from './workflow';
 
 export {
-  CommunicatorContext
+  CommunicatorContext,
+  CommunicatorConfig,
 } from './communicator';
 
+export * as Error from './error';
+
 export {
-  OperonError,
-  OperonInitializationError,
-  OperonWorkflowPermissionDeniedError,
-  OperonDataValidationError,
-  OperonNotAuthorizedError,
-  OperonResponseError,
+  OperonResponseError
 } from './error';
 
 export {
-  OperonFieldType,
-  OperonDataType,
-  OperonMethodRegistrationBase,
   TraceLevels,
   LogMasks,
-  TraceEventTypes,
 
-  // BaseLogEvent, // Would be OK to export for some uses I think?
+  // Parameter Decorators
   Required,
   SkipLogging,
   LogMask,
@@ -52,28 +38,29 @@ export {
   Traced,
   RequiredRole,
 
+  // Class Decorators
   DefaultRequiredRole,
 
+  // Method Decorators
   OperonTransaction,
   OperonWorkflow,
   OperonCommunicator,
 } from "./decorators";
 
 export {
-  ArgSource,
   ArgSources,
+  HandlerContext,
 
-  APITypes,
+  // Endpoint Parameter Decorators
+  ArgSource,
+
+  // Endpoint Decorators
   GetApi,
   PostApi,
-
-  OperonHandlerRegistrationBase,
-  OperonHandlerParameter,
-  HandlerContext,
 } from "./httpServer/handler";
 
 export {
-  OperonHttpServer,
+  OperonHttpServer, // TODO: Remove
 } from "./httpServer/server";
 
 export {
@@ -81,6 +68,7 @@ export {
   OperonHttpAuthReturn,
   MiddlewareContext,
 
+  // Middleware Decorators
   Authentication,
   KoaMiddleware,
 } from "./httpServer/middleware";

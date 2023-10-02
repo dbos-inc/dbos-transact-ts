@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, getOrCreateOperonMethodArgsRegistration, OperonMethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { OperonContext } from "../context";
 import { Operon } from "../operon";
+import { OperonContext, OperonContextImpl } from "../context";
 import Koa from "koa";
 import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction, TransactionContext } from "../transaction";
@@ -18,7 +18,18 @@ type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => WorkflowHandle<Awaited<ReturnType<T[P]>>> : never;
 }
 
-export class HandlerContext extends OperonContext {
+export interface HandlerContext extends OperonContext {
+  koaContext: Koa.Context;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R>; // TODO: Make private
+  transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>; // TODO: Make private
+
+}
+
+export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
   readonly #operon: Operon;
 
   constructor(operon: Operon, readonly koaContext: Koa.Context) {
