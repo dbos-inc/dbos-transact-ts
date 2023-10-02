@@ -75,7 +75,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  bufferWorkflowStatus(workflowUUID: string) {
+  setWorkflowStatus(workflowUUID: string) {
     this.workflowStatusBuffer.set(workflowUUID, operonNull);
   }
 

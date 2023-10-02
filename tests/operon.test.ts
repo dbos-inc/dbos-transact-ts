@@ -525,8 +525,7 @@ describe("operon-tests", () => {
     resolve1!();
     await promise3;
 
-    // Flush and retrieve handle, should get the pending status.
-    await operon.flushWorkflowStatusBuffer();
+    // Retrieve handle, should get the pending status.
     await expect(
       operon.retrieveWorkflow<string>(workflowUUID).getStatus()
     ).resolves.toMatchObject({ status: StatusString.PENDING });
