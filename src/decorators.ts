@@ -520,10 +520,10 @@ export function RequiredRole(anyOf: string[]) {
 // Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
 export function TraceLevel(level: TraceLevels) {
   // This is the decorator that will get applied to the decorator item
-  function logdec<This, Args extends unknown[], Return>(
+  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.traceLevel = level;
@@ -532,7 +532,7 @@ export function TraceLevel(level: TraceLevels) {
   return logdec;
 }
 
-export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function Traced<This, Ctx extends OperonContext, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
   return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 

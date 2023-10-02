@@ -63,7 +63,7 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer: httpConfig ;
+  readonly httpServer?: httpConfig ;
   readonly dbClientMetadata?: any;
 }
 
@@ -156,7 +156,7 @@ export class Operon {
 
     // Parse requested exporters
     const telemetryExporters = [];
-    if (this.config.telemetryExporters) {
+    if (this.config.telemetryExporters && this.config.telemetryExporters.length > 0) {
       for (const exporter of this.config.telemetryExporters) {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
@@ -166,6 +166,9 @@ export class Operon {
           telemetryExporters.push(new JaegerExporter());
         }
       }
+    } else {
+      // If nothing is configured, enable console exporter by default.
+      telemetryExporters.push(new ConsoleExporter());
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector);

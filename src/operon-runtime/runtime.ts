@@ -52,7 +52,7 @@ export class OperonRuntime {
 
     const httpconfig = this.operon.config.httpServer ;
 
-    if (port === 0 && httpconfig.port != 0) {
+    if (port === 0 && httpconfig?.port !== undefined && httpconfig.port != 0) {
       port = httpconfig.port ;
     } else if (port === 0) {
       port = 3000;
@@ -60,7 +60,6 @@ export class OperonRuntime {
     
     this.server = server.listen(port);
     console.log(`Starting server on port: ${port}`);
-    
   }
 
   /**
