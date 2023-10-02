@@ -275,12 +275,11 @@ export class Operon {
     const wConfig = wInfo.config;
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
-    const workflowInputID = wCtxt.functionIDGetIncrement();
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
-    // Synchronously set the workflow's status to PENDING.  Not needed for temporary workflows.
+    // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      await this.systemDatabase.setWorkflowStatus(workflowUUID);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
@@ -291,24 +290,10 @@ export class Operon {
         this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
-      // Record inputs for OAOO. Not needed for temporary workflows.
-      const checkWorkflowInput = async (input: T) => {
-        // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
-        const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2", workflowUUID, workflowInputID);
-        if (rows.length === 0) {
-          // This workflow has never executed before, so record the input.
-          wCtxt.resultBuffer.set(workflowInputID, { workflow_name: wf.name, input: input });
-        } else {
-          // Return the old recorded input
-          input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
-        }
-        return input;
-      };
-      const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
       // Execute the workflow.
       try {
-        result = await wf(wCtxt, ...input);
+        result = await wf(wCtxt, ...args);
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {

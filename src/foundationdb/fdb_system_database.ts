@@ -75,7 +75,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async setWorkflowStatus(workflowUUID: string) {
+  async initWorkflowStatus(workflowUUID: string) {
     await this.workflowStatusDB.doTransaction(async (txn) => {
       const present = await txn.get(workflowUUID);
       if (present === undefined) {

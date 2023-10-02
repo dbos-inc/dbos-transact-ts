@@ -5,7 +5,7 @@ import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events } from "../schemas/system_db_schema";
+import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 
 export interface SystemDatabase {
@@ -13,7 +13,7 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
-  setWorkflowStatus(workflowUUID: string): Promise<void>;
+  initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
@@ -81,11 +81,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async setWorkflowStatus(workflowUUID: string) {
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T> {
     await this.pool.query(
       `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [workflowUUID, StatusString.PENDING, null]
     );
+    const { rows } = await this.pool.query<workflow_inputs>(
+      `INSERT INTO operon.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET inputs = excluded.inputs RETURNING inputs`,
+      [workflowUUID, JSON.stringify(args)]
+    )
+    return JSON.parse(rows[0].inputs);
   }
 
   bufferWorkflowOutput<R>(workflowUUID: string, output: R) {

@@ -25,6 +25,11 @@ export interface operation_outputs {
   error: string;
 }
 
+export interface workflow_inputs {
+  workflow_uuid: string;
+  inputs: string;
+}
+
 export const systemDBSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
@@ -34,6 +39,11 @@ export const systemDBSchema = `
     output TEXT,
     error TEXT,
     PRIMARY KEY (workflow_uuid, function_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS operon.workflow_inputs (
+    workflow_uuid TEXT PRIMARY KEY NOT NULL,
+    inputs TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS operon.workflow_status (
