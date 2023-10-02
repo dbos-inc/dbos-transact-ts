@@ -6,6 +6,7 @@ import {
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
+import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
@@ -14,7 +15,14 @@ import {
   OperonWorkflow,
   RequiredRole,
 } from "../src/decorators";
-import { TransactionContext, WorkflowContext } from "../src";
+import request from "supertest";
+import {
+  GetApi,
+  HandlerContext,
+  OperonHttpServer,
+  TransactionContext,
+  WorkflowContext,
+} from "../src";
 import { WorkflowHandle } from "../src/workflow";
 import { OperonContextImpl } from "../src/context";
 
@@ -66,6 +74,11 @@ class TestClass {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
+  }
+
+  @GetApi("/hello")
+  static async hello(_ctx: HandlerContext) {
+    return Promise.resolve({ message: "hello!" });
   }
 }
 
@@ -406,6 +419,53 @@ describe("operon-telemetry", () => {
       expect(wfTraceEntry.log_message).toBe(null);
       expect(wfTraceEntry.severity).toBe(null);
       expect(wfTraceEntry.trace_span).not.toBe(null);
+    });
+  });
+
+  describe("http Tracer", () => {
+    let operon: Operon;
+    let httpServer: OperonHttpServer;
+    let config: OperonConfig;
+
+    beforeAll(async () => {
+      config = generateOperonTestConfig();
+      await setupOperonTestDb(config);
+    });
+
+    beforeEach(async () => {
+      operon = new Operon(config);
+      operon.useNodePostgres();
+      await operon.init(TestClass);
+      httpServer = new OperonHttpServer(operon);
+    });
+
+    afterEach(async () => {
+      await operon.destroy();
+    });
+
+    test("Trace context is propagated in and out Operon", async () => {
+      const headers = {
+        [TRACE_PARENT_HEADER]:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        [TRACE_STATE_HEADER]: "some_state=some_value",
+      };
+
+      const response = await request(httpServer.app.callback())
+        .get("/hello")
+        .set(headers);
+      expect(response.statusCode).toBe(200);
+      expect(response.body.message).toBe("hello!");
+      // traceId should be the same, spanId should be different (ID of the last operation's span)
+      expect(response.headers.traceparent).toContain("00-4bf92f3577b34da6a3ce929d0e0e4736");
+      expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
+    });
+
+    test("New trace context is propagated out of Operon", async () => {
+      const response = await request(httpServer.app.callback()).get("/hello")
+      expect(response.statusCode).toBe(200);
+      expect(response.body.message).toBe("hello!");
+      // traceId should be the same, spanId should be different (ID of the last operation's span)
+      expect(response.headers.traceparent).not.toBe(null);
     });
   });
 });

@@ -1,6 +1,6 @@
 import { BasicTracerProvider, ReadableSpan, Span } from "@opentelemetry/sdk-trace-base";
 import { Resource } from "@opentelemetry/resources";
-import opentelemetry from "@opentelemetry/api";
+import opentelemetry, { Attributes, SpanContext } from "@opentelemetry/api";
 import { hrTimeToMicroseconds } from "@opentelemetry/core";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { TelemetryCollector } from "./collector";
@@ -34,13 +34,19 @@ export class Tracer {
     this.tracer.register();
   }
 
-  startSpan(name: string, parentSpan?: Span): Span {
+  startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {
+    const tracer = opentelemetry.trace.getTracer("operon-tracer");
+    const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext);
+    return tracer.startSpan(name, { startTime: Date.now(), attributes: attributes }, ctx) as Span;
+  }
+
+  startSpan(name: string, attributes?: Attributes, parentSpan?: Span): Span {
     const tracer = opentelemetry.trace.getTracer("operon-tracer");
     if (parentSpan) {
       const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
-      return tracer.startSpan(name, { startTime: Date.now() }, ctx) as Span;
+      return tracer.startSpan(name, { startTime: Date.now(), attributes: attributes }, ctx) as Span;
     } else {
-      return tracer.startSpan(name) as Span;
+      return tracer.startSpan(name, { attributes: attributes }) as Span;
     }
   }
 
