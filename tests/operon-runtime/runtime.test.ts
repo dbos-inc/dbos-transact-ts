@@ -103,11 +103,10 @@ localRuntimeConfig:
     fs.copyFileSync(filePath, `${filePath}.bak`);
     fs.writeFileSync(filePath, mockOperonConfigYamlString, 'utf-8');
 
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
-      env: process.env
-    });
-
     try {
+        const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+          env: process.env
+        });
         await waitForMessageTest(command, '6666');
     } finally {
         fs.copyFileSync(`${filePath}.bak`, filePath);
