@@ -12,6 +12,8 @@ interface WorkflowOutput<R> {
   status: string;
   error: string;
   output: R;
+  name: string;
+  authenticatedUser: string;
 }
 
 interface OperationOutput<R> {
@@ -81,7 +83,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(workflowUUID: string, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, args: T): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
@@ -92,6 +94,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
           status: StatusString.PENDING,
           error: null,
           output: null,
+          name: name,
+          authenticatedUser: authenticatedUser,
         });
       }
 
@@ -114,10 +118,13 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {
+          const currWf = (await txn.get(workflowUUID)) as WorkflowOutput<unknown>;
           txn.set(workflowUUID, {
             status: StatusString.SUCCESS,
             error: null,
             output: output,
+            name: currWf?.name ?? null,
+            authenticatedUser: currWf?.authenticatedUser ?? null,
           });
       }
     });
@@ -173,12 +180,12 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
+  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
-      return { status: StatusString.UNKNOWN };
+      return null;
     }
-    return { status: output.status };
+    return { status: output.status, name: output.name, authenticatedUser: output.authenticatedUser };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
