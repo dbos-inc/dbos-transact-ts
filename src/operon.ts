@@ -63,7 +63,7 @@ export interface OperonConfig {
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer?: httpConfig ;
+  readonly httpServer: httpConfig ;
   readonly dbClientMetadata?: any;
 }
 
@@ -156,7 +156,7 @@ export class Operon {
 
     // Parse requested exporters
     const telemetryExporters = [];
-    if (this.config.telemetryExporters && this.config.telemetryExporters.length > 0) {
+    if (this.config.telemetryExporters) {
       for (const exporter of this.config.telemetryExporters) {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
@@ -166,17 +166,12 @@ export class Operon {
           telemetryExporters.push(new JaegerExporter());
         }
       }
-    } else {
-      // If nothing is configured, enable console exporter by default.
-      telemetryExporters.push(new ConsoleExporter());
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector);
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
-
-    console.log(this.config);
 
     // this.configureDbClient(this.config) ;
 
@@ -185,7 +180,6 @@ export class Operon {
   configureDbClient(config: OperonConfig) {
 
       const userDbClient = config.userDbclient;
-      console.log(userDbClient);
       if (userDbClient === UserDatabaseName.PRISMA) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const { PrismaClient }  = require('@prisma/client');
@@ -198,7 +192,7 @@ export class Operon {
         try {
         
         // console.log(config.dbClientMetadata?.entities);
-        console.log("entities ...."+ this.entities);
+        console.log("In configure dbclient entities ...."+ this.entities);
         
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
@@ -217,7 +211,7 @@ export class Operon {
         console.log("error");
         console.log(s);
       }
-      console.log("No error");
+      // console.log("No error");
 
       } else {
         this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
@@ -262,13 +256,13 @@ export class Operon {
         if (reg.ormEntities.length > 0 ) {
           console.log("got entities " + reg.ormEntities);
           this.entities = this.entities.concat(reg.ormEntities) 
-        }
-        // this.#registerClass(cls);
+        } 
+  
       }
 
       this.entities.forEach((entity) => {
         console.log("decorator " + entity.name + " " + typeof entity);
-      });
+      }); 
 
       this.configureDbClient(this.config);
 
