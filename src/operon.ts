@@ -42,6 +42,7 @@ import {
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { OperonContext } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -278,7 +279,7 @@ export class Operon {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, args);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
@@ -370,9 +371,9 @@ export class Operon {
       }
       const wfInfo: WorkflowInfo<any,any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
 
-      // FIXME: pass in parent context.
+      const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID}, ...inputs))
+      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID, parentCtx: parentCtx ?? undefined}, ...inputs))
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }

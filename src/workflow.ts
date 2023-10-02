@@ -40,6 +40,8 @@ export interface WorkflowStatus {
   status: string;
   workflowName: string;
   authenticatedUser: string;
+  assumedRole: string;
+  authenticatedRoles: string[];
 }
 
 export interface PgTransactionId {
