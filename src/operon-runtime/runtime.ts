@@ -25,7 +25,6 @@ export class OperonRuntime {
   constructor(operonConfig: OperonConfig, readonly runtimeConfig: OperonRuntimeConfig = defaultConfig) {
     // Initialize Operon.
     this.operon = new Operon(operonConfig);
-    //this.operon.useNodePostgres();
   }
 
   /**
