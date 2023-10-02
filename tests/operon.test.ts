@@ -65,7 +65,7 @@ describe("operon-tests", () => {
 
     operon.registerWorkflow(testWorkflow);
 
-    const workflowHandle: WorkflowHandle<string> = operon.workflow(
+    const workflowHandle: WorkflowHandle<string> = await operon.workflow(
       testWorkflow,
       {},
       username
@@ -135,7 +135,7 @@ describe("operon-tests", () => {
 
     for (let i = 0; i < 100; i++) {
       await expect(
-        operon.workflow(testWorkflow, {}, username).getResult()
+        operon.workflow(testWorkflow, {}, username).then(x => x.getResult())
       ).resolves.toBe(username);
     }
   });
@@ -188,13 +188,13 @@ describe("operon-tests", () => {
 
     for (let i = 0; i < 10; i++) {
       await expect(
-        operon.workflow(testWorkflow, {}, username).getResult()
+        operon.workflow(testWorkflow, {}, username).then(x => x.getResult())
       ).resolves.toBe(i + 1);
     }
 
     // Should not appear in the database.
     await expect(
-      operon.workflow(testWorkflow, {}, "fail").getResult()
+      operon.workflow(testWorkflow, {}, "fail").then(x => x.getResult())
     ).rejects.toThrow("fail");
   });
 
@@ -248,7 +248,7 @@ describe("operon-tests", () => {
       uuidArray.push(workflowUUID);
       workflowResult = await operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
 
@@ -257,7 +257,7 @@ describe("operon-tests", () => {
       const workflowUUID: string = uuidArray[i];
       const workflowResult: number = await operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
   });
@@ -281,13 +281,13 @@ describe("operon-tests", () => {
 
     let result: number = await operon
       .workflow(testWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(0);
 
     // Test OAOO. Should return the original result.
     result = await operon
       .workflow(testWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(0);
   });
 
@@ -307,13 +307,13 @@ describe("operon-tests", () => {
     operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
-    const handle = operon
+    const handle = await operon
       .workflow(receiveWorkflow, { workflowUUID: workflowUUID });
-    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).getResult();
+    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).then(x => x.getResult());
     expect(await handle.getResult()).toBe(true);
     const retry = await operon
       .workflow(receiveWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(retry).toBe(true);
   });
 
@@ -324,7 +324,7 @@ describe("operon-tests", () => {
       return ctxt.recv<string>(topic, timeout);
     };
     operon.registerWorkflow(receiveWorkflow);
-    const promise = operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult();
+    const promise = operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult());
     await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123, "testTopic")).resolves.toBeFalsy();
 
     await expect(promise).resolves.toBe(123);
@@ -333,13 +333,13 @@ describe("operon-tests", () => {
     // Even we sent it twice, it should still be 123.
     await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123, "testTopic")).resolves.toBeFalsy();
 
-    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult()).resolves.toBe(123);
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(123);
 
     // Receive again with the same workflowUUID, should get the same result.
-    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).getResult()).resolves.toBe(123);
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(123);
 
     // Receive again with the different workflowUUID.
-    await expect(operon.workflow(receiveWorkflow, {}, "testTopic", 1).getResult()).resolves.toBeNull();
+    await expect(operon.workflow(receiveWorkflow, {}, "testTopic", 1).then(x => x.getResult())).resolves.toBeNull();
   });
 
   test("endtoend-oaoo", async () => {
@@ -369,7 +369,7 @@ describe("operon-tests", () => {
     await expect(
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 10)
-        .getResult()
+        .then(x => x.getResult())
     ).resolves.toBe(11);
     expect(num).toBe(1);
 
@@ -378,7 +378,7 @@ describe("operon-tests", () => {
     await expect(
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 10)
-        .getResult()
+        .then(x => x.getResult())
     ).resolves.toBe(11);
     // The workflow should not run at all.
     expect(num).toBe(1);
@@ -392,13 +392,13 @@ describe("operon-tests", () => {
     };
     operon.registerWorkflow(sendWorkflow);
 
-    const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
+    const handle: WorkflowHandle<number> = await operon.workflow(sendWorkflow, {});
     const workflowUUID = handle.getWorkflowUUID();
     await expect(operon.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(operon.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(operon.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).getResult()).resolves.toBe(0);
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).then(x => x.getResult())).resolves.toBe(0);
   });
 
   test("readonly-recording", async () => {
@@ -450,7 +450,7 @@ describe("operon-tests", () => {
     await expect(
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 123, "test")
-        .getResult()
+        .then(x => x.getResult())
     ).rejects.toThrowError(new Error("dumb test error"));
     expect(num).toBe(1);
     expect(workflowCnt).toBe(2);
@@ -459,7 +459,7 @@ describe("operon-tests", () => {
     await expect(
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 123, "test")
-        .getResult()
+        .then(x => x.getResult())
     ).rejects.toThrowError(new Error("dumb test error"));
     expect(num).toBe(1);
     expect(workflowCnt).toBe(2);
@@ -510,7 +510,7 @@ describe("operon-tests", () => {
 
     const workflowUUID = uuidv1();
 
-    const workflowHandle = operon.workflow(
+    const workflowHandle = await operon.workflow(
       testWorkflow,
       { workflowUUID: workflowUUID },
       123,

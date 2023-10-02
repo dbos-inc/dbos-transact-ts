@@ -264,7 +264,7 @@ describe("httpserver-tests", () => {
     static async testHandler(ctxt: HandlerContext, name: string) {
       const workflowUUID = ctxt.koaContext.get(OperonWorkflowUUIDHeader);
       // Invoke a workflow using the given UUID.
-      return ctxt.invoke(TestEndpoints, workflowUUID).testWorkflow(name).getResult();
+      return ctxt.invoke(TestEndpoints, workflowUUID).testWorkflow(name).then(x => x.getResult());
     }
 
     @PostApi("/transaction/:name")

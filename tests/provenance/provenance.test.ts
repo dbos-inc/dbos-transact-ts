@@ -52,7 +52,7 @@ describe("operon-provenance", () => {
   }
 
   test("basic-provenance", async () => {
-    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").getResult();
+    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").then(x => x.getResult());
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
     const pgExporter = operon.telemetryCollector

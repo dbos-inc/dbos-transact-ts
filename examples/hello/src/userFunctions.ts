@@ -34,7 +34,7 @@ export class Hello {
   @GetApi('/greeting/:name')
   static async helloEndpoint(ctx: HandlerContext, name: string) {
     ctx.log("helloEndpoint");
-    return await ctx.invoke(Hello).helloWorkflow(name).getResult();
+    return await ctx.invoke(Hello).helloWorkflow(name).then(x => x.getResult());
   }
 }
 

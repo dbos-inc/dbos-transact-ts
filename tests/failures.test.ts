@@ -60,7 +60,7 @@ describe("failures-tests", () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    const codeHandle = operon.workflow(testWorkflow, {}, 11);
+    const codeHandle = await operon.workflow(testWorkflow, {}, 11);
     await expect(codeHandle.getResult()).rejects.toThrowError(
       new OperonError("test operon error with code.", 11)
     );
@@ -80,7 +80,7 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    const noCodeHandle = operon.workflow(testWorkflow, {
+    const noCodeHandle = await operon.workflow(testWorkflow, {
       workflowUUID: wfUUID,
     });
     await expect(noCodeHandle.getResult()).rejects.toThrowError(
@@ -212,7 +212,7 @@ describe("failures-tests", () => {
 
     // Should succeed after retrying 10 times.
     await expect(
-      operon.workflow(testWorkflow, {}, 10).getResult()
+      operon.workflow(testWorkflow, {}, 10).then(x => x.getResult())
     ).resolves.toBe(10);
     expect(num).toBe(10);
   });
@@ -239,12 +239,12 @@ describe("failures-tests", () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {}).getResult()).resolves.toBe(
+    await expect(operon.workflow(testWorkflow, {}).then(x => x.getResult())).resolves.toBe(
       4
     );
 
     await expect(
-      operon.workflow(testWorkflow, {}).getResult()
+      operon.workflow(testWorkflow, {}).then(x => x.getResult())
     ).rejects.toThrowError(
       new OperonError("Communicator reached maximum retries.", 1)
     );
@@ -273,13 +273,13 @@ describe("failures-tests", () => {
 
     // Should throw an error.
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
@@ -320,7 +320,7 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered workflow.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").getResult()
+      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
     ).rejects.toThrowError(new OperonNotRegisteredError(testWorkflow.name));
 
     // Invoke an unregistered transaction.
@@ -333,14 +333,14 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered communicator.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").getResult()
+      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
     ).rejects.toThrowError(new OperonNotRegisteredError(testCommunicator.name));
 
     operon.registerCommunicator(testCommunicator, {});
 
     // Now everything should work.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").getResult()
+      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
     ).resolves.toBe(11);
   });
 });
