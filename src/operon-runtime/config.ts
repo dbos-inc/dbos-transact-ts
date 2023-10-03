@@ -66,6 +66,10 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
     database: configFile.database.user_database,
   };
 
+  if (!poolConfig.password) {
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database password`);
+  }
+
   if (configFile.database.ssl_ca) {
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }

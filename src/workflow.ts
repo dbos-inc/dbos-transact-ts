@@ -76,13 +76,15 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    const span = operon.tracer.startSpan(workflowName, parentCtx?.span);
-    span.setAttributes({
-      workflowUUID: workflowUUID,
-      operationName: workflowName,
-      runAs: parentCtx?.authenticatedUser ?? "",
-      functionID: 0,
-    });
+    const span = operon.tracer.startSpan(
+      workflowName,
+      {
+        workflowUUID: workflowUUID,
+        operationName: workflowName,
+        runAs: parentCtx?.authenticatedUser ?? "",
+      },
+      parentCtx?.span,
+    );
     super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
@@ -185,16 +187,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#operon.tracer.startSpan(txn.name, this.span);
-    span.setAttributes({
-      workflowUUID: this.workflowUUID,
-      operationName: txn.name,
-      runAs: this.authenticatedUser,
-      functionID: funcId,
-      readOnly: readOnly,
-      isolationLevel: config.isolationLevel,
-      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
-    });
+    const span: Span = this.#operon.tracer.startSpan(
+      txn.name,
+      {
+        workflowUUID: this.workflowUUID,
+        operationName: txn.name,
+        runAs: this.authenticatedUser,
+        readOnly: readOnly,
+        isolationLevel: config.isolationLevel,
+      },
+      this.span,
+    );
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
@@ -282,18 +285,19 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
     const funcID = this.functionIDGetIncrement();
 
-    const span: Span = this.#operon.tracer.startSpan(commFn.name, this.span);
-    span.setAttributes({
-      workflowUUID: this.workflowUUID,
-      operationName: commFn.name,
-      runAs: this.authenticatedUser,
-      functionID: funcID,
-      retriesAllowed: commConfig.retriesAllowed,
-      intervalSeconds: commConfig.intervalSeconds,
-      maxAttempts: commConfig.maxAttempts,
-      backoffRate: commConfig.backoffRate,
-      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
-    });
+    const span: Span = this.#operon.tracer.startSpan(
+      commFn.name,
+      {
+        workflowUUID: this.workflowUUID,
+        operationName: commFn.name,
+        runAs: this.authenticatedUser,
+        retriesAllowed: commConfig.retriesAllowed,
+        intervalSeconds: commConfig.intervalSeconds,
+        maxAttempts: commConfig.maxAttempts,
+        backoffRate: commConfig.backoffRate,
+      },
+      this.span,
+    );
     const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {

@@ -19,7 +19,7 @@ import {
 import { Operon } from "../operon";
 import { serializeError } from 'serialize-error';
 import { OperonMiddlewareDefaults } from './middleware';
-import { SpanStatusCode } from "@opentelemetry/api";
+import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 
 export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 
@@ -173,6 +173,24 @@ export class OperonHttpServer {
               koaCtxt.status = 500;
             }
           } finally {
+            // Inject trace context into response headers.
+            // We cannot use the defaultTextMapSetter to set headers through Koa
+            // So we provide a custom setter that sets headers through Koa's context.
+            // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
+            interface Carrier {
+              context: Koa.Context;
+            }
+            oc.W3CTraceContextPropagator.inject(
+              trace.setSpanContext(ROOT_CONTEXT, oc.span.spanContext()),
+              {
+                context: koaCtxt,
+              },
+              {
+                set: (carrier: Carrier, key: string, value: string) => {
+                  carrier.context.set(key, value);
+                }
+              },
+            );
             operon.tracer.endSpan(oc.span)
             await koaNext();
           }

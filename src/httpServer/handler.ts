@@ -5,6 +5,9 @@ import { OperonContext, OperonContextImpl } from "../context";
 import Koa from "koa";
 import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
 import { OperonTransaction, TransactionContext } from "../transaction";
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
+import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
+import { Span } from "@opentelemetry/sdk-trace-base";
 
 type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
@@ -31,13 +34,26 @@ export interface HandlerContext extends OperonContext {
 
 export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
   readonly #operon: Operon;
+  readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
   constructor(operon: Operon, readonly koaContext: Koa.Context) {
-    const span = operon.tracer.startSpan(koaContext.url);
-    span.setAttributes({
+    // If present, retrieve the trace context from the request
+    const httpTracer = new W3CTraceContextPropagator();
+    const extractedSpanContext = trace.getSpanContext(
+        httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter)
+    )
+    let span: Span;
+    const spanAttributes = {
       operationName: koaContext.url,
-    });
+    };
+    if (extractedSpanContext === undefined) {
+      span = operon.tracer.startSpan(koaContext.url, spanAttributes);
+    } else {
+      extractedSpanContext.isRemote = true;
+      span = operon.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
+    }
     super(koaContext.url, span, operon.logger);
+    this.W3CTraceContextPropagator = httpTracer;
     this.request = koaContext.req;
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

@@ -94,6 +94,7 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
+  password: \${PGPASSWORD}
   connectionTimeoutMillis: 3000
   user_database: 'hello'
 localRuntimeConfig:
@@ -103,11 +104,10 @@ localRuntimeConfig:
     fs.copyFileSync(filePath, `${filePath}.bak`);
     fs.writeFileSync(filePath, mockOperonConfigYamlString, 'utf-8');
 
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
-      env: process.env
-    });
-
     try {
+        const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+          env: process.env
+        });
         await waitForMessageTest(command, '6666');
     } finally {
         fs.copyFileSync(`${filePath}.bak`, filePath);
