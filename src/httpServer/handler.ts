@@ -29,7 +29,6 @@ export interface HandlerContext extends OperonContext {
   invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
   workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>; // TODO: Make private
-
 }
 
 export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
@@ -67,7 +66,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
   ///////////////////////
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
-    return this.#operon.send({ workflowUUID: idempotencyKey}, destinationUUID, message, topic);
+    return this.#operon.send(destinationUUID, message, topic, idempotencyKey);
   }
 
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {

@@ -319,20 +319,19 @@ describe("operon-tests", () => {
   });
 
   test("notification-oaoo", async () => {
-    const sendWorkflowUUID = uuidv1();
     const recvWorkflowUUID = uuidv1();
     const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
       return ctxt.recv<string>(topic, timeout);
     };
     operon.registerWorkflow(receiveWorkflow);
     const promise = operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult());
-    await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123, "testTopic")).resolves.toBeFalsy();
+    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", "test-suffix")).resolves.toBeFalsy();
 
     await expect(promise).resolves.toBe(123);
 
     // Send again with the same UUID but different input.
     // Even we sent it twice, it should still be 123.
-    await expect(operon.send({ workflowUUID: sendWorkflowUUID }, recvWorkflowUUID, 123, "testTopic")).resolves.toBeFalsy();
+    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", "test-suffix")).resolves.toBeFalsy();
 
     await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(123);
 
