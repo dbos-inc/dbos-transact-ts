@@ -143,8 +143,8 @@ export class Operon {
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const DataSourceExports = require('typeorm');
-        
-        try {   
+
+        try {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
@@ -184,7 +184,7 @@ export class Operon {
   }
 
   async init(...classes: object[]): Promise<void> {
-    
+
     if (this.initialized) {
       console.log("Operon already initialized!");
       return;
@@ -195,9 +195,9 @@ export class Operon {
       for (const cls of classes) {
         const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0 ) {
-          this.entities = this.entities.concat(reg.ormEntities) 
-        } 
-  
+          this.entities = this.entities.concat(reg.ormEntities)
+        }
+
       }
 
       this.configureDbClient(this.config);
@@ -318,7 +318,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    return await (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
+    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
@@ -326,7 +326,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return await (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
+    return (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
   }
 
   /**
