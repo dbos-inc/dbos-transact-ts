@@ -23,7 +23,7 @@ type HandlerWfFuncs<T> = {
 
 export interface HandlerContext extends OperonContext {
   koaContext: Koa.Context;
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
@@ -66,8 +66,8 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
   /* PUBLIC INTERFACE  */
   ///////////////////////
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string): Promise<void> {
-    return this.#operon.send({}, destinationUUID, message, topic);
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+    return this.#operon.send({ workflowUUID: idempotencyKey}, destinationUUID, message, topic);
   }
 
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
