@@ -94,4 +94,13 @@ describe("operon-config", () => {
       .mockReturnValue(JSON.stringify(mockConfigFile));
     expect(() => parseConfigFile()).toThrow(OperonInitializationError);
   });
+
+  test("config file is missing database password", () => {
+    delete process.env.PGPASSWORD;
+    jest
+      .spyOn(utils, "readFileSync")
+      .mockReturnValueOnce(mockOperonConfigYamlString);
+    jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+    expect(() => parseConfigFile()).toThrow(OperonInitializationError);
+  });
 });
