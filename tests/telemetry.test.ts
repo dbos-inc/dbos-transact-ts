@@ -109,9 +109,9 @@ describe("operon-telemetry", () => {
     const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
     let collector: TelemetryCollector;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       operon = new Operon(operonConfig);
-    //  operon.init();
+      await operon.init();
     });
 
     afterEach(async () => {
