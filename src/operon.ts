@@ -36,13 +36,12 @@ import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
-  PrismaClient,
   PrismaUserDatabase,
   UserDatabase,
-  TypeORMDataSource,
   TypeORMDatabase,
+  UserDatabaseName,
 } from './user_database';
-import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
+import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 
 export interface OperonNull { }
@@ -51,10 +50,12 @@ export const operonNull: OperonNull = {};
 /* Interface for Operon configuration */
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
+  readonly userDbclient?: UserDatabaseName;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
+  readonly dbClientMetadata?: any;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -102,6 +103,8 @@ export class Operon {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
+// eslint-disable-next-line @typescript-eslint/ban-types
+  entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
@@ -124,11 +127,11 @@ export class Operon {
           telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
+        } else {
+          // If nothing is configured, enable console exporter by default.
+          telemetryExporters.push(new ConsoleExporter());
         }
       }
-    } else {
-      // If nothing is configured, enable console exporter by default.
-      telemetryExporters.push(new ConsoleExporter());
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector);
@@ -137,26 +140,37 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
-  useNodePostgres() {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
-  }
-
-  usePrisma(client: PrismaClient) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PrismaUserDatabase(client);
-  }
-
-  useTypeORM(ds: TypeORMDataSource) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new TypeORMDatabase(ds);
-    return;
+  configureDbClient(config: OperonConfig) {
+      const userDbClient = config.userDbclient;
+      if (userDbClient === UserDatabaseName.PRISMA) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const { PrismaClient }  = require('@prisma/client');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+        this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+      } else if (userDbClient === UserDatabaseName.TYPEORM) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const DataSourceExports = require('typeorm');
+        
+        try {   
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
+          type: "postgres", // perhaps should move to config file
+          host: config.poolConfig.host,
+          port: config.poolConfig.port,
+          username: config.poolConfig.user,
+          password: process.env.PGPASSWORD,
+          database: config.poolConfig.database,
+          // synchronize: true,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+          // entities: config.dbClientMetadata?.entities
+          entities:this.entities
+          }))
+        } catch (s) {
+          console.log(s);
+        }
+      } else {
+        this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+      }
   }
 
   #registerClass(cls: object) {
@@ -177,21 +191,34 @@ export class Operon {
   }
 
   async init(...classes: object[]): Promise<void> {
-    if (!this.userDatabase) {
-      throw new OperonInitializationError("No data source!");
-    }
+    
     if (this.initialized) {
       console.log("Operon already initialized!");
       return;
     }
     try {
-      await this.userDatabase.init();
+
+      type AnyConstructor = new (...args: unknown[]) => object;
+      for (const cls of classes) {
+        const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
+        if (reg.ormEntities.length > 0 ) {
+          this.entities = this.entities.concat(reg.ormEntities) 
+        } 
+  
+      }
+
+      this.configureDbClient(this.config);
+
+      if (!this.userDatabase) {
+        throw new OperonInitializationError("No data source!");
+      }
 
       for (const cls of classes) {
         this.#registerClass(cls);
       }
 
       await this.telemetryCollector.init(this.registeredOperations);
+      await this.userDatabase.init();
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
