@@ -213,8 +213,6 @@ export class Operon {
         throw new OperonInitializationError("No data source!");
       }
 
-      // await this.userDatabase.init();
-
       for (const cls of classes) {
         this.#registerClass(cls);
       }
