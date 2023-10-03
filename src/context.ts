@@ -9,6 +9,8 @@ export interface OperonContext {
   workflowUUID: string;
   authenticatedUser: string;
 
+  span: Span;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
 

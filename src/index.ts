@@ -30,7 +30,6 @@ export {
 } from './error';
 
 export {
-  TraceLevels,
   LogMasks,
 
   // Parameter Decorators
@@ -38,8 +37,6 @@ export {
   SkipLogging,
   LogMask,
   ArgName,
-  TraceLevel,
-  Traced,
   RequiredRole,
 
   // Class Decorators

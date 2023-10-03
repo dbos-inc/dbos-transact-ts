@@ -93,48 +93,10 @@ function getArgNames(func: Function): string[] {
   return fn.split(",");
 }
 
-export enum TraceLevels {
-  DEBUG = "DEBUG",
-  INFO = "INFO",
-  WARN = "WARN",
-  ERROR = "ERROR",
-  CRITICAL = "CRITICAL",
-}
-
 export enum LogMasks {
   NONE = "NONE",
   HASH = "HASH",
   SKIP = "SKIP",
-}
-
-export enum TraceEventTypes {
-  METHOD_ENTER = "METHOD_ENTER",
-  METHOD_EXIT = "METHOD_EXIT",
-  METHOD_ERROR = "METHOD_ERROR",
-}
-
-class BaseTraceEvent {
-  eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
-  eventComponent: string = "";
-  eventLevel: TraceLevels = TraceLevels.DEBUG;
-  eventTime: Date = new Date();
-  authorizedUser: string = "";
-  authorizedRole: string = "";
-  positionalArgs: unknown[] = [];
-  namedArgs: { [x: string]: unknown } = {};
-
-  toString(): string {
-    return `
-    eventType: ${this.eventType}
-    eventComponent: ${this.eventComponent}
-    eventLevel: ${this.eventLevel}
-    eventTime: ${this.eventTime.toString()}
-    authorizedUser: ${this.authorizedUser}
-    authorizedRole: ${this.authorizedRole}
-    positionalArgs: ${JSON.stringify(this.positionalArgs)}
-    namedArgs: ${JSON.stringify(this.namedArgs)}
-    `;
-  }
 }
 
 export class OperonParameter {
@@ -168,7 +130,6 @@ export interface OperonRegistrationDefaults
 
 export interface OperonMethodRegistrationBase {
   name: string;
-  traceLevel: TraceLevels;
 
   args: OperonParameter[];
 
@@ -192,7 +153,6 @@ implements OperonMethodRegistrationBase
   defaults?: OperonRegistrationDefaults | undefined;
 
   name: string = "";
-  traceLevel: TraceLevels = TraceLevels.INFO;
 
   requiredRole: string[] | undefined = undefined;
 
@@ -302,29 +262,29 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
 
     const wrappedMethod = async function (this: This, ...args: Args) {
-      const mn = methReg.name;
 
       let opCtx : OperonContextImpl | undefined = undefined;
 
-      // Validate the user authentication and populate the role field\
-      const rr = methReg.getRequiredRoles();
-      if (rr.length > 0) {
+      // Validate the user authentication and populate the role field
+      const requiredRoles = methReg.getRequiredRoles();
+      if (requiredRoles.length > 0) {
         opCtx = args[0] as OperonContextImpl;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
-        let authRole = ''
         const set = new Set(curRoles);
-        for (const str of rr) {
-          if (set.has(str)) {
+        for (const role of requiredRoles) {
+          if (set.has(role)) {
             authorized = true;
-            authRole = str;
+            opCtx.assumedRole = role;
+            opCtx.span.setAttribute("assumedRrole", role);
+            break;
           }
         }
         if (!authorized) {
           const err = new OperonNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
+          opCtx.span.addEvent("OperonNotAuthorizedError", { message: err.message });
           throw err;
         }
-        opCtx.assumedRole = authRole;
       }
 
       // Input validation
@@ -339,14 +299,19 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         // Do we have an arg at all
         if (idx >= args.length) {
           if (argDescriptor.required) {
-            throw new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
+            const err = new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
+            // opCtx should be set
+            opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
+            throw err;
           }
           return;
         }
 
         let argValue = args[idx];
         if (argValue === undefined && argDescriptor.required) {
-          throw new OperonDataValidationError(`Missing required argument ${argDescriptor.name} calling ${methReg.name}`);
+          const err = new OperonDataValidationError(`Missing required argument ${argDescriptor.name} calling ${methReg.name}`);
+          opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
+          throw err;
         }
 
         if (argValue instanceof String) { // TODO: Add input validation for types other than String.
@@ -356,20 +321,14 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
         if (argDescriptor.dataType.dataType === 'text') {
           if ((typeof argValue !== 'string')) {
-            throw new OperonDataValidationError(`Argument ${argDescriptor.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+            const err = new OperonDataValidationError(`Argument ${argDescriptor.name} is marked as type 'text' and should be a string calling ${methReg.name}`);
+            opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
+            throw err;
           }
         }
       });
 
-      // Here let's log the structured record
-      const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = opCtx?.authenticatedUser || '';
-      sLogRec.authorizedRole = opCtx?.assumedRole || '';
-      sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
-      sLogRec.eventComponent = mn;
-      sLogRec.eventLevel = methReg.traceLevel;
-
-      // Argument masking
+      // Argument logging
       args.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
@@ -389,12 +348,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "JSONSALT");
             } else {
               // Yes, we are doing the same as above for now.
-              //  It can be better if we have verified the type of the data
+              // It can be better if we have verified the type of the data
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "OPERONSALT");
             }
           }
-          sLogRec.positionalArgs.push(loggedArgValue);
-          sLogRec.namedArgs[methReg.args[idx].name] = loggedArgValue;
+          opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
         }
       });
 
@@ -516,25 +474,6 @@ export function RequiredRole(anyOf: string[]) {
     return descriptor;
   }
   return apidec;
-}
-
-// Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
-export function TraceLevel(level: TraceLevels) {
-  // This is the decorator that will get applied to the decorator item
-  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.traceLevel = level;
-    return descriptor;
-  }
-  return logdec;
-}
-
-export function Traced<This, Ctx extends OperonContext, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>) {
-  return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {
