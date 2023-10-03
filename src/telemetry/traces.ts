@@ -52,8 +52,6 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(Date.now());
-    const readableSpan: ReadableSpan = span as ReadableSpan;
-
     const workflowUUID = span.attributes.workflowUUID as string;
     const operationName = span.attributes.operationName as string;
     const runAs = span.attributes.runAs as string;
@@ -67,7 +65,7 @@ export class Tracer {
       timestamp: Date.now(),
       traceID,
       transactionID: transactionID,
-      traceSpan: readableSpan,
+      traceSpan: span as ReadableSpan,
     };
 
     this.telemetryCollector.push(signal);

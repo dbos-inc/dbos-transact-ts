@@ -162,6 +162,7 @@ implements OperonMethodRegistrationBase
   {
     this.origFunction = origFunc;
   }
+  debug: boolean = false;
   needInitialized: boolean = true;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
@@ -276,7 +277,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           if (set.has(role)) {
             authorized = true;
             opCtx.assumedRole = role;
-            opCtx.span.setAttribute("assumedRrole", role);
+            opCtx.span.setAttribute("assumedRole", role);
             break;
           }
         }
@@ -461,6 +462,19 @@ export function DefaultRequiredRole(anyOf: string[]) {
 ///////////////////////
 /* METHOD DECORATORS */
 ///////////////////////
+
+export function Debug() {
+  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.debug = true;
+    return descriptor;
+  }
+  return logdec;
+}
 
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
