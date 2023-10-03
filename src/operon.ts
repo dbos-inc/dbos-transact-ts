@@ -105,7 +105,6 @@ export class Operon {
   readonly tracer: Tracer;
 // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
-  // entities: any[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
@@ -120,7 +119,7 @@ export class Operon {
 
     // Parse requested exporters
     const telemetryExporters = [];
-    if (this.config.telemetryExporters) {
+    if (this.config.telemetryExporters && this.config.telemetryExporters.length > 0) {
       for (const exporter of this.config.telemetryExporters) {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
@@ -128,6 +127,9 @@ export class Operon {
           telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
+        } else {
+          // If nothing is configured, enable console exporter by default.
+          telemetryExporters.push(new ConsoleExporter());
         }
       }
     }
@@ -136,13 +138,9 @@ export class Operon {
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
     this.initialEpochTimeMs = Date.now();
-
-    // this.configureDbClient(this.config) ;
-
   }
 
   configureDbClient(config: OperonConfig) {
-
       const userDbClient = config.userDbclient;
       if (userDbClient === UserDatabaseName.PRISMA) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
@@ -153,10 +151,9 @@ export class Operon {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const DataSourceExports = require('typeorm');
         
-        try {
-   
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
+        try {   
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
           host: config.poolConfig.host,
           port: config.poolConfig.port,
@@ -167,16 +164,13 @@ export class Operon {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           // entities: config.dbClientMetadata?.entities
           entities:this.entities
-        }))
-      } catch (s) {
-        console.log("error");
-        console.log(s);
-      }
-
+          }))
+        } catch (s) {
+          console.log(s);
+        }
       } else {
         this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
       }
-     
   }
 
   #registerClass(cls: object) {

@@ -45,7 +45,7 @@ export {
   OperonTransaction,
   OperonWorkflow,
   OperonCommunicator,
-
+  // Typeorm
   OrmEntities,
 } from "./decorators";
 

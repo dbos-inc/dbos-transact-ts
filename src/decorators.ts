@@ -226,7 +226,6 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
   name: string = "";
   requiredRole: string[] | undefined;
   needsInitialized: boolean = true;
-  // ormEntities: Function[] = [];
   // eslint-disable-next-line @typescript-eslint/ban-types
   ormEntities: Function[] = [];
 
@@ -580,11 +579,6 @@ export function OperonCommunicator(config: CommunicatorConfig={}) {
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 export function OrmEntities(entities: Function[]) {
-  // should be Function[]
-
-  /* entities.forEach((entity) => {
-    console.log("decorator " + entity.name + " " + typeof entity);
-  }); */
 
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
@@ -593,7 +587,6 @@ export function OrmEntities(entities: Function[]) {
   }
   return clsdec; 
 
- 
 }
 
 

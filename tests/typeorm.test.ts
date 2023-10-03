@@ -36,23 +36,7 @@ class KVController {
       globalCnt += 1;
       return res.id;
     }
-
-
 }
-
-/* const testTxn = async (
-  txnCtxt: TransactionContext,
-  id: string,
-  value: string
-) => {
-  const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
-  const kv: KV = new KV();
-  kv.id = id;
-  kv.value = value;
-  const res = await p.save(kv);
-  globalCnt += 1;
-  return res.id;
-}; */
 
 const readTxn = async (txnCtxt: TransactionContext, id: string) => {
   await sleep(1);
