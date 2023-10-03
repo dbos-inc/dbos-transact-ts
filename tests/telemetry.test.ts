@@ -10,7 +10,6 @@ import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
-  Traced,
   OperonTransaction,
   OperonWorkflow,
   RequiredRole,
@@ -39,18 +38,6 @@ type TelemetrySignalDbFields = {
 };
 
 class TestClass {
-  @Traced
-  static create_user(
-    _ctx: OperonContextImpl,
-    name: string,
-    age: number,
-    isNice: boolean,
-    udfParam: TelemetrySignalDbFields
-  ): Promise<string> {
-    console.log(name, age, isNice, udfParam);
-    return Promise.resolve(name);
-  }
-
   @OperonTransaction({ readOnly: false })
   static async test_function(
     txnCtxt: TransactionContext,
@@ -279,66 +266,6 @@ describe("operon-telemetry", () => {
       ];
       expect(stwQueryResult.rows).toEqual(
         expect.arrayContaining(expectedStwColumns)
-      );
-      const scuQueryResult = await pgExporterPgClient.query(
-        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
-      );
-      const expectedScuColumns = [
-        {
-          column_name: "trace_span",
-          data_type: "jsonb",
-        },
-        {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
-          column_name: "transaction_id",
-          data_type: "text",
-        },
-        {
-          column_name: "age",
-          data_type: "double precision",
-        },
-        {
-          column_name: "isnice",
-          data_type: "boolean",
-        },
-        {
-          column_name: "udfparam",
-          data_type: "json",
-        },
-        {
-          column_name: "name",
-          data_type: "text",
-        },
-        {
-          column_name: "log_message",
-          data_type: "text",
-        },
-        {
-          column_name: "function_name",
-          data_type: "text",
-        },
-        {
-          column_name: "run_as",
-          data_type: "text",
-        },
-        {
-          column_name: "severity",
-          data_type: "text",
-        },
-        {
-          column_name: "workflow_uuid",
-          data_type: "text",
-        },
-        {
-          column_name: "trace_id",
-          data_type: "text",
-        },
-      ];
-      expect(scuQueryResult.rows).toEqual(
-        expect.arrayContaining(expectedScuColumns)
       );
     });
 

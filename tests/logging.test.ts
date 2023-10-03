@@ -1,8 +1,5 @@
 import {
-  TraceLevels,
-  LogMasks,  
-  Traced,
-  TraceLevel,
+  LogMasks,
   ArgName,
   SkipLogging,
   LogMask,
@@ -15,8 +12,6 @@ import {
 from "../src/context"
 
 class TestFunctions {
-  @Traced
-  @TraceLevel(TraceLevels.INFO)
   static foo(
     _ctx: OperonContextImpl,
     @LogMask(LogMasks.HASH) arg1: string,
