@@ -91,14 +91,14 @@ describe("decorator-tests", () => {
 
     let result: number = await operon
       .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
 
     // Test OAOO. Should return the original result.
     result = await operon
       .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
   })
@@ -112,7 +112,7 @@ describe("decorator-tests", () => {
       uuidArray.push(workflowUUID);
       workflowResult = await operon
         .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
 
@@ -121,7 +121,7 @@ describe("decorator-tests", () => {
       const workflowUUID: string = uuidArray[i];
       const workflowResult: number = await operon
         .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
   })

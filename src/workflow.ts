@@ -38,6 +38,10 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string;
+  workflowName: string;
+  authenticatedUser: string;
+  assumedRole: string;
+  authenticatedRoles: string[];
 }
 
 export interface PgTransactionId {
@@ -45,7 +49,6 @@ export interface PgTransactionId {
 }
 
 export const StatusString = {
-  UNKNOWN: "UNKNOWN",
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
@@ -431,7 +434,7 @@ export interface WorkflowHandle<R> {
    * Retrieve the workflow's status.
    * Statuses are updated asynchronously.
    */
-  getStatus(): Promise<WorkflowStatus>;
+  getStatus(): Promise<WorkflowStatus | null>;
   /**
    * Await workflow completion and return its result.
    */
@@ -452,13 +455,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<WorkflowStatus> {
-    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    if (status.status === StatusString.UNKNOWN) {
-      return { status: StatusString.PENDING };
-    } else {
-      return status;
-    }
+  async getStatus(): Promise<WorkflowStatus | null> {
+    return this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
@@ -472,13 +470,11 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string) {}
 
-  static readonly pollingIntervalMs: number = 1000;
-
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<WorkflowStatus> {
+  async getStatus(): Promise<WorkflowStatus | null> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 

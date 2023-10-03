@@ -4,6 +4,7 @@ database:
   username: 'postgres'
   password: ${PGPASSWORD}
   user_database: 'hello'
+  system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'pg-node'
 telemetryExporters:

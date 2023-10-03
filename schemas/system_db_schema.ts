@@ -1,9 +1,12 @@
 export interface workflow_status {
   workflow_uuid: string;
   status: string;
+  name: string;
+  authenticated_user: string;
   output: string;
   error: string;
-  updated_at_epoch_ms: number;
+  assumed_role: string;
+  authenticated_roles: string;  // Serialized list of roles.
 }
 
 export interface notifications {
@@ -25,6 +28,11 @@ export interface operation_outputs {
   error: string;
 }
 
+export interface workflow_inputs {
+  workflow_uuid: string;
+  inputs: string;
+}
+
 export const systemDBSchema = `
   CREATE SCHEMA IF NOT EXISTS operon;
 
@@ -36,9 +44,18 @@ export const systemDBSchema = `
     PRIMARY KEY (workflow_uuid, function_id)
   );
 
+  CREATE TABLE IF NOT EXISTS operon.workflow_inputs (
+    workflow_uuid TEXT PRIMARY KEY NOT NULL,
+    inputs TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS operon.workflow_status (
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
+    name TEXT,
+    authenticated_user TEXT,
+    assumed_role TEXT,
+    authenticated_roles TEXT,
     output TEXT,
     error TEXT
   );

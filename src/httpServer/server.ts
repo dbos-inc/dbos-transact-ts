@@ -141,7 +141,7 @@ export class OperonHttpServer {
             if (ro.txnConfig) {
               koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc, workflowUUID: headerWorkflowUUID}, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc, workflowUUID : headerWorkflowUUID}, ...args).getResult();
+              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc, workflowUUID : headerWorkflowUUID}, ...args)).getResult();
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);

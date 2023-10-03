@@ -94,12 +94,12 @@ describe("foundationdb-operon", () => {
     const workflowUUID: string = uuidv1();
 
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).resolves.toBe(0);
 
     // Test OAOO. Should return the original result.
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).resolves.toBe(0);
     expect(counter).toBe(1);
   });
@@ -131,16 +131,16 @@ describe("foundationdb-operon", () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {}).getResult()).resolves.toBe(
+    await expect(operon.workflow(testWorkflow, {}).then(x => x.getResult())).resolves.toBe(
       "success"
     );
 
     const workflowUUID: string = uuidv1();
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).resolves.toBe("Communicator reached maximum retries.");
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).getResult()
+      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
     ).resolves.toBe("Communicator reached maximum retries.");
   });
 
@@ -175,13 +175,12 @@ describe("foundationdb-operon", () => {
     const uuid = uuidv1();
     const invokedHandle = operon.workflow(testWorkflow, { workflowUUID: uuid });
     await outerPromise;
-    await operon.systemDatabase.flushWorkflowStatusBuffer();
     const retrievedHandle = operon.retrieveWorkflow(uuid);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
     });
     innerResolve!();
-    await expect(invokedHandle.getResult()).resolves.toBe(3);
+    await expect(invokedHandle.then(x => x.getResult())).resolves.toBe(3);
     await operon.systemDatabase.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -206,10 +205,10 @@ describe("foundationdb-operon", () => {
     operon.registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
-    const handle = operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID });
-    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).getResult();
+    const handle = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID });
+    await operon.workflow(sendWorkflow, {}, handle.getWorkflowUUID()).then(x => x.getResult());
     expect(await handle.getResult()).toBe(true);
-    const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).getResult();
+    const retry = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult());
     expect(retry).toBe(true);
   });
 
@@ -221,13 +220,13 @@ describe("foundationdb-operon", () => {
     };
     operon.registerWorkflow(sendWorkflow);
 
-    const handle: WorkflowHandle<number> = operon.workflow(sendWorkflow, {});
+    const handle: WorkflowHandle<number> = await operon.workflow(sendWorkflow, {});
     const workflowUUID = handle.getWorkflowUUID();
     await expect(operon.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(operon.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(operon.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).getResult()).resolves.toBe(0);
+    await expect(operon.workflow(sendWorkflow, {workflowUUID: workflowUUID}).then(x => x.getResult())).resolves.toBe(0);
   });
 
   test("fdb-duplicate-communicator", async () => {
@@ -253,10 +252,10 @@ describe("foundationdb-operon", () => {
     const results = await Promise.allSettled([
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
-        .getResult(),
+        .then(x => x.getResult()),
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
-        .getResult(),
+        .then(x => x.getResult()),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -274,8 +273,8 @@ describe("foundationdb-operon", () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
-      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
     ]);
 
     // Send would trigger both to receive, but only one can delete the message.
@@ -292,6 +291,32 @@ describe("foundationdb-operon", () => {
     await expect(operon.retrieveWorkflow(recvUUID).getResult()).resolves.toBe(
       "hello"
     );
+  });
+
+  test("fdb-failure-recovery", async () => {
+    // Run a workflow until pending and start recovery.
+    let resolve1: () => void;
+    const promise1 = new Promise<void>((resolve) => {
+      resolve1 = resolve;
+    });
+
+    let cnt = 0;
+
+    const testWorkflow = async (ctxt: WorkflowContext, input: number) => {
+      cnt += input;
+      await promise1;
+      return input;
+    }
+    operon.registerWorkflow(testWorkflow, {});
+    const handle = await operon.workflow(testWorkflow, {}, 5);
+
+    const recoverPromise = operon.recoverPendingWorkflows();
+    resolve1!();
+
+    await recoverPromise;
+
+    await expect(handle.getResult()).resolves.toBe(5);
+    expect(cnt).toBe(10); // Should run twice.
   });
 });
 
