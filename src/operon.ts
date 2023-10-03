@@ -18,7 +18,6 @@ import {
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-
 import {
   ConsoleExporter,
   CONSOLE_EXPORTER,
@@ -31,7 +30,6 @@ import { TelemetryCollector } from './telemetry/collector';
 import { Logger } from './telemetry/logs';
 import { Tracer } from './telemetry/traces';
 import { PoolConfig } from 'pg';
-import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -61,11 +59,6 @@ export interface OperonConfig {
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
   config: WorkflowConfig;
-}
-
-interface WorkflowInput<T extends any[]> {
-  workflow_name: string;
-  input: T;
 }
 
 export class Operon {
@@ -150,8 +143,8 @@ export class Operon {
       } else if (userDbClient === UserDatabaseName.TYPEORM) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
         const DataSourceExports = require('typeorm');
-        
-        try {   
+
+        try {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
@@ -191,7 +184,7 @@ export class Operon {
   }
 
   async init(...classes: object[]): Promise<void> {
-    
+
     if (this.initialized) {
       console.log("Operon already initialized!");
       return;
@@ -202,9 +195,9 @@ export class Operon {
       for (const cls of classes) {
         const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0 ) {
-          this.entities = this.entities.concat(reg.ormEntities) 
-        } 
-  
+          this.entities = this.entities.concat(reg.ormEntities)
+        }
+
       }
 
       this.configureDbClient(this.config);
@@ -226,6 +219,7 @@ export class Operon {
         throw new OperonInitializationError(err.message);
       }
     }
+    void this.recoverPendingWorkflows();
     this.initialized = true;
   }
 
@@ -264,33 +258,24 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
+  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
+    const wInfo = this.workflowInfoMap.get(wf.name);
+    if (wInfo === undefined) {
+      throw new OperonNotRegisteredError(wf.name);
+    }
+    const wConfig = wInfo.config;
+
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
+
+    // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
+    if (!wCtxt.isTempWorkflow) {
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, args);
+    }
     const runWorkflow = async () => {
-      const wInfo = this.workflowInfoMap.get(wf.name);
-      if (wInfo === undefined) {
-        throw new OperonNotRegisteredError(wf.name);
-      }
-      const wConfig = wInfo.config;
-
-      const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
-      const workflowInputID = wCtxt.functionIDGetIncrement();
-      wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
-
-      const checkWorkflowInput = async (input: T) => {
-        // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
-        const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2", workflowUUID, workflowInputID);
-        if (rows.length === 0) {
-          // This workflow has never executed before, so record the input.
-          wCtxt.resultBuffer.set(workflowInputID, { workflow_name: wf.name, input: input });
-        } else {
-          // Return the old recorded input
-          input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
-        }
-        return input;
-      };
-
+      // Check if the workflow previously ran.
       const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
       if (previousOutput !== operonNull) {
         wCtxt.span.setAttribute("cached", true);
@@ -298,13 +283,10 @@ export class Operon {
         this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
-      // Asynchronously set the workflow's status to PENDING.
-      this.systemDatabase.bufferWorkflowStatus(workflowUUID);
-      // Record inputs for OAOO. Not needed for temporary workflows.
-      const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
+      // Execute the workflow.
       try {
-        result = await wf(wCtxt, ...input);
+        result = await wf(wCtxt, ...args);
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -318,6 +300,7 @@ export class Operon {
           // Record the error.
           const e: Error = err as Error;
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -335,7 +318,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
+    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
@@ -343,7 +326,7 @@ export class Operon {
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
+    return (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
   }
 
   /**
@@ -365,6 +348,29 @@ export class Operon {
     return uuidv4();
   }
 
+  /**
+   * A recovery process that runs during Operon init time.
+   * It runs to completion all pending workflows that were executing when the previous executor failed.
+   */
+  async recoverPendingWorkflows() {
+    const pendingWorkflows = await this.systemDatabase.getPendingWorkflows();
+    const handlerArray: WorkflowHandle<any>[] = [];
+    for (const workflowUUID of pendingWorkflows) {
+      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+      const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+      if (!inputs) {
+        console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+        continue;
+      }
+      const wfInfo: WorkflowInfo<any,any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
+
+      const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID, parentCtx: parentCtx ?? undefined}, ...inputs))
+    }
+    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+  }
+
   /* BACKGROUND PROCESSES */
   /**
    * Periodically flush the workflow output buffer to the system database.
@@ -374,4 +380,5 @@ export class Operon {
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }
+
 }

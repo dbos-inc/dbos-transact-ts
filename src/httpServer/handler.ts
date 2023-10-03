@@ -15,7 +15,7 @@ type HandlerTxFuncs<T> = {
 }
 
 type HandlerWfFuncs<T> = {
-  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => WorkflowHandle<Awaited<ReturnType<T[P]>>> : never;
+  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
 export interface HandlerContext extends OperonContext {
@@ -24,7 +24,7 @@ export interface HandlerContext extends OperonContext {
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R>; // TODO: Make private
+  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>; // TODO: Make private
 
 }
@@ -90,7 +90,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
   /////////////////////
 
   // TODO: Make private
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): WorkflowHandle<R> {
+  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     params.parentCtx = this;
     return this.#operon.workflow(wf, params, ...args);
   }

@@ -1,35 +1,40 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull } from "./operon";
+import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events } from "../schemas/system_db_schema";
+import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
+import { OperonContextImpl } from "./context";
 
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
-  bufferWorkflowStatus(workflowUUID: string): void;
+  initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
+
+  getPendingWorkflows(): Promise<Array<string>>;
+  getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+  getRecoveryContext(operon: Operon, workflowUUID: string): Promise<OperonContextImpl | null>;
 
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
   recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus>;
+  getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null>;
 
-  setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T) : Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number) : Promise<T | null>;
+  setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -72,8 +77,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
-    // TODO: maybe add back pending state.
-    if (rows.length === 0) {
+    if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
       return operonNull;
     } else if (rows[0].status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(rows[0].error));
@@ -82,8 +86,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  bufferWorkflowStatus(workflowUUID: string) {
-    this.workflowStatusBuffer.set(workflowUUID, operonNull);
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T> {
+    await this.pool.query(
+      `INSERT INTO operon.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, output) VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      [workflowUUID, StatusString.PENDING, name, authenticatedUser, assumedRole, JSON.stringify(authenticatedRoles), null]
+    );
+    const { rows } = await this.pool.query<workflow_inputs>(
+      `INSERT INTO operon.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
+      [workflowUUID, JSON.stringify(args)]
+    )
+    return JSON.parse(rows[0].inputs) as T;
   }
 
   bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
@@ -99,18 +111,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
     await client.query("BEGIN");
     for (const [workflowUUID, output] of localBuffer) {
-      if (output === operonNull) {
-        await client.query(
-          `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid) DO NOTHING`,
-          [workflowUUID, StatusString.PENDING, null]
-        );
-      } else {
-        await client.query(
-          `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+      await client.query(
+        `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
-          [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
-        );
-      }
+        [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
+      );
     }
     await client.query("COMMIT");
     client.release();
@@ -124,6 +129,44 @@ export class PostgresSystemDatabase implements SystemDatabase {
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
       [workflowUUID, StatusString.ERROR, serialErr]
     );
+  }
+
+  async getPendingWorkflows(): Promise<Array<string>> {
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid FROM operon.workflow_status WHERE status=$1`,
+      [StatusString.PENDING]
+    )
+    return rows.map(i => i.workflow_uuid);
+  }
+
+  async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
+    const { rows } = await this.pool.query<workflow_inputs>(
+      `SELECT inputs FROM operon.workflow_inputs WHERE workflow_uuid=$1`,
+      [workflowUUID]
+    )
+    if (rows.length === 0) {
+      return null
+    }
+    return JSON.parse(rows[0].inputs) as T;
+  }
+
+  async getRecoveryContext(operon: Operon, workflowUUID: string): Promise<OperonContextImpl | null> {
+    const status = await this.getWorkflowStatus(workflowUUID);
+    if (!status) {
+      return null;
+    }
+    const span = operon.tracer.startSpan(status.workflowName);
+    span.setAttributes({
+      operationName: status.workflowName,
+    });
+    const oc = new OperonContextImpl(status.workflowName, span, operon.logger);
+    // FIXME: pass in the original request. IncomingMessage is not serializable.
+    oc.request = undefined;
+    oc.authenticatedUser = status.authenticatedUser;
+    oc.authenticatedRoles = status.authenticatedRoles;
+    oc.assumedRole = status.assumedRole;
+    oc.workflowUUID = workflowUUID;
+    return oc;
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
@@ -278,7 +321,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
       return;
     }
-    ( { rows } = await client.query(
+    ({ rows } = await client.query(
       `INSERT INTO operon.workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
       [workflowUUID, key, JSON.stringify(message)]
     ));
@@ -321,14 +364,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       value = JSON.parse(finalRecvRows[0].value) as T;
     }
     return value;
-   }
+  }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
-      return { status: StatusString.UNKNOWN };
+      return null;
     }
-    return { status: rows[0].status };
+    return { status: rows[0].status, workflowName: rows[0].name, authenticatedUser: rows[0].authenticated_user, assumedRole: rows[0].assumed_role, authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[] };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

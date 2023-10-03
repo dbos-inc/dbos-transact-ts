@@ -105,8 +105,8 @@ describe("concurrency-tests", () => {
     operon.registerTransaction(testFunction);
 
     const uuid = uuidv1();
-    await operon.workflow(testWorkflow, { workflowUUID: uuid }).getResult();
-    const handle = operon.workflow(testWorkflow, { workflowUUID: uuid });
+    await operon.workflow(testWorkflow, { workflowUUID: uuid }).then(x => x.getResult());
+    const handle = await operon.workflow(testWorkflow, { workflowUUID: uuid });
     await promise2;
     await operon.flushWorkflowStatusBuffer();
     resolve!();
@@ -139,10 +139,10 @@ describe("concurrency-tests", () => {
     const results = await Promise.allSettled([
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
-        .getResult(),
+        .then(x => x.getResult()),
       operon
         .workflow(testWorkflow, { workflowUUID: workflowUUID }, 11)
-        .getResult(),
+        .then(x => x.getResult()),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -160,8 +160,8 @@ describe("concurrency-tests", () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
-      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).getResult(),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
+      operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
