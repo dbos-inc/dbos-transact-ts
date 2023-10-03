@@ -15,6 +15,7 @@ import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
 import { OperonError, OperonNotRegisteredError } from "../src/error";
 import { OperonConfig } from "../src/operon";
+import { OperonContextImpl } from "../src/context";
 
 describe("failures-tests", () => {
   let operon: Operon;
@@ -212,7 +213,7 @@ describe("failures-tests", () => {
 
     // Should succeed after retrying 10 times.
     await expect(
-      operon.workflow(testWorkflow, {}, 10).then(x => x.getResult())
+      operon.workflow(testWorkflow, {}, 10).then((x) => x.getResult())
     ).resolves.toBe(10);
     expect(num).toBe(10);
   });
@@ -239,12 +240,12 @@ describe("failures-tests", () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    await expect(operon.workflow(testWorkflow, {}).then(x => x.getResult())).resolves.toBe(
-      4
-    );
+    await expect(
+      operon.workflow(testWorkflow, {}).then((x) => x.getResult())
+    ).resolves.toBe(4);
 
     await expect(
-      operon.workflow(testWorkflow, {}).then(x => x.getResult())
+      operon.workflow(testWorkflow, {}).then((x) => x.getResult())
     ).rejects.toThrowError(
       new OperonError("Communicator reached maximum retries.", 1)
     );
@@ -273,13 +274,17 @@ describe("failures-tests", () => {
 
     // Should throw an error.
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
+      operon
+        .workflow(testWorkflow, { workflowUUID: workflowUUID })
+        .then((x) => x.getResult())
     ).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
     await expect(
-      operon.workflow(testWorkflow, { workflowUUID: workflowUUID }).then(x => x.getResult())
+      operon
+        .workflow(testWorkflow, { workflowUUID: workflowUUID })
+        .then((x) => x.getResult())
     ).rejects.toThrowError(new Error("failed no retry"));
     expect(numRun).toBe(1);
   });
@@ -320,7 +325,7 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered workflow.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
+      operon.workflow(testWorkflow, {}, 10, "test").then((x) => x.getResult())
     ).rejects.toThrowError(new OperonNotRegisteredError(testWorkflow.name));
 
     // Invoke an unregistered transaction.
@@ -333,19 +338,20 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered communicator.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
+      operon.workflow(testWorkflow, {}, 10, "test").then((x) => x.getResult())
     ).rejects.toThrowError(new OperonNotRegisteredError(testCommunicator.name));
 
     operon.registerCommunicator(testCommunicator, {});
 
     // Now everything should work.
     await expect(
-      operon.workflow(testWorkflow, {}, 10, "test").then(x => x.getResult())
+      operon.workflow(testWorkflow, {}, 10, "test").then((x) => x.getResult())
     ).resolves.toBe(11);
   });
 
   test("failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
+    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
     let resolve1: () => void;
     const promise1 = new Promise<void>((resolve) => {
       resolve1 = resolve;
@@ -354,19 +360,27 @@ describe("failures-tests", () => {
     let cnt = 0;
 
     const testWorkflow = async (ctxt: WorkflowContext, input: number) => {
-      cnt += input;
+      if (ctxt.authenticatedUser === "test_recovery_user") {
+        cnt += input;
+      }
       await promise1;
-      return input;
-    }
+      return ctxt.authenticatedUser;
+    };
     operon.registerWorkflow(testWorkflow, {});
-    const handle = await operon.workflow(testWorkflow, {}, 5);
+
+    // Create an Operon context to pass authenticated user to the workflow.
+    const span = operon.tracer.startSpan("test");
+    const oc = new OperonContextImpl("testRecovery", span, operon.logger);
+    oc.authenticatedUser = "test_recovery_user";
+
+    const handle = await operon.workflow(testWorkflow, { parentCtx: oc }, 5);
 
     const recoverPromise = operon.recoverPendingWorkflows();
     resolve1!();
 
     await recoverPromise;
 
-    await expect(handle.getResult()).resolves.toBe(5);
+    await expect(handle.getResult()).resolves.toBe("test_recovery_user");
     expect(cnt).toBe(10); // Should run twice.
   });
 });
