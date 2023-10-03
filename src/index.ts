@@ -31,6 +31,7 @@ export {
 
 export {
   LogMasks,
+  Debug,
 
   // Parameter Decorators
   Required,
