@@ -103,8 +103,9 @@ export class Operon {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
-
+// eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
+  // entities: any[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
@@ -218,13 +219,14 @@ export class Operon {
         throw new OperonInitializationError("No data source!");
       }
 
-      await this.userDatabase.init();
+      // await this.userDatabase.init();
 
       for (const cls of classes) {
         this.#registerClass(cls);
       }
 
       await this.telemetryCollector.init(this.registeredOperations);
+      await this.userDatabase.init();
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {

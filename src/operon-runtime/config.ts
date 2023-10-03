@@ -20,12 +20,14 @@ export interface ConfigFile {
     system_database: string;
     ssl_ca?: string;
     observability_database: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
   };
   telemetryExporters?: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
   localRuntimeConfig?: OperonRuntimeConfig;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
 }
 
@@ -77,7 +79,8 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
     dbClientMetadata: {
-      entities: configFile.dbClientMetadata?.entities
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      entities: configFile.dbClientMetadata.entities
     }
   };
 
