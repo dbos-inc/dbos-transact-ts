@@ -3,6 +3,10 @@ export {
 } from './operon';
 
 export {
+  OperonContext,
+} from './context';
+
+export {
   TransactionContext,
   TransactionConfig,
 } from './transaction';
