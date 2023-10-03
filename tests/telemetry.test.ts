@@ -80,7 +80,6 @@ describe("operon-telemetry", () => {
       POSTGRES_EXPORTER,
     ]);
     const operon = new Operon(operonConfig);
-    operon.useNodePostgres();
     await operon.init();
     await operon.destroy();
   });
@@ -88,7 +87,6 @@ describe("operon-telemetry", () => {
   test("collector handles errors gracefully", async () => {
     const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
     const operon = new Operon(operonConfig);
-    operon.useNodePostgres();
     await operon.init(TestClass);
 
     const collector = operon.telemetryCollector
@@ -111,9 +109,9 @@ describe("operon-telemetry", () => {
     const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
     let collector: TelemetryCollector;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       operon = new Operon(operonConfig);
-      operon.useNodePostgres();
+      await operon.init();
     });
 
     afterEach(async () => {
@@ -155,7 +153,6 @@ describe("operon-telemetry", () => {
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
-      operon.useNodePostgres();
       await operon.init(TestClass);
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(

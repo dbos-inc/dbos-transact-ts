@@ -5,6 +5,7 @@ import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
+import { UserDatabaseName } from '../user_database';
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -19,11 +20,15 @@ export interface ConfigFile {
     system_database: string;
     ssl_ca?: string;
     observability_database: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    user_dbclient?: UserDatabaseName;
   };
   telemetryExporters?: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
   localRuntimeConfig?: OperonRuntimeConfig;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dbClientMetadata?: any;
 }
 
 export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefined] {
@@ -67,11 +72,16 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
 
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
+    userDbclient: configFile.database.user_dbclient || UserDatabaseName.PGNODE,
     telemetryExporters: configFile.telemetryExporters || [],
     system_database: configFile.database.system_database ?? "operon_systemdb",
     observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
+    dbClientMetadata: {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      entities: configFile.dbClientMetadata?.entities
+    }
   };
 
   return [operonConfig, configFile.localRuntimeConfig];

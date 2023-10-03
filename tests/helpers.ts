@@ -1,8 +1,9 @@
 import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
+import { UserDatabaseName } from "../src/user_database";
 
 /* DB management helpers */
-export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
+export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
   const dbPassword: string | undefined =
     process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
@@ -24,6 +25,10 @@ export function generateOperonTestConfig(exporters?: string[]): OperonConfig {
     telemetryExporters: exporters || [],
     system_database: "operontest_systemdb",
     observability_database: "operontest_observabilitydb",
+    userDbclient: dbClient || UserDatabaseName.PGNODE,
+    dbClientMetadata: {
+        entities: ["KV"]
+    }
   };
 
   return operonTestConfig;

@@ -4,6 +4,7 @@ import { Operon, TransactionContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import { UserDatabaseName } from "../src/user_database";
 import { OperonConfig } from "../src/operon";
 
 interface PrismaPGError {
@@ -46,14 +47,13 @@ describe("prisma-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateOperonTestConfig(undefined, UserDatabaseName.PRISMA);
     await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    operon.usePrisma(new PrismaClient());
     await operon.init();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
