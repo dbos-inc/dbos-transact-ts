@@ -151,7 +151,7 @@ export class Operon {
           host: config.poolConfig.host,
           port: config.poolConfig.port,
           username: config.poolConfig.user,
-          password: process.env.PGPASSWORD,
+          password: config.poolConfig.password,
           database: config.poolConfig.database,
           // synchronize: true,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
