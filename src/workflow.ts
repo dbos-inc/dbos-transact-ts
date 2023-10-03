@@ -195,7 +195,6 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         runAs: this.authenticatedUser,
         readOnly: readOnly,
         isolationLevel: config.isolationLevel,
-        args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
       },
       this.span,
     );
@@ -296,7 +295,6 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         intervalSeconds: commConfig.intervalSeconds,
         maxAttempts: commConfig.maxAttempts,
         backoffRate: commConfig.backoffRate,
-        args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
       },
       this.span,
     );
