@@ -96,8 +96,10 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  connectionTimeoutMillis: 3000
   user_database: 'hello'
+  system_database: 'hello_systemdb'
+  connectionTimeoutMillis: 3000
+  user_dbclient: 'pg-node'
 localRuntimeConfig:
   port: 6666
 `;
