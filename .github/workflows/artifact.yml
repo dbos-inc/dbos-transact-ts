@@ -29,10 +29,11 @@ jobs:
         working-directory: ./
         run: |
           npm run setversion
-      - name: Compile 
+      - name: Compile and pack
         working-directory: ./
         run: |
           npm run build
+          npm pack
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
