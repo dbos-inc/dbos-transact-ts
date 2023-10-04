@@ -33,41 +33,17 @@ jobs:
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v3
-        # fetch-depth 0 needed for NBGV
-        with:
-          fetch-depth: 0
       - name: Use Node.js 18
         uses: actions/setup-node@v3
         with:
           node-version: 18
-        # .NET 6 needed for NBGV
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: 6.0.x
-      - name: npm ci
-        working-directory: ./
-        run: |
-          npm ci
-      - name: Set Version 
-        working-directory: ./
-        run: |
-          npm run setversion
       - name: Compile and Test
         working-directory: ./
         run: |
+          npm ci
           npm run build
           npm test
           npm run lint
         env:
           DB_PASSWORD: dbos
           DB_USER: postgres
-      - name: npm pack
-        working-directory: ./
-        run: |
-          npm pack
-      - name: Upload package
-        uses: actions/upload-artifact@v3
-        with:
-          name: operon
-          path: ./dbos-inc-operon-*.tgz

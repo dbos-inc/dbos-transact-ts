@@ -14,3 +14,5 @@ on:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
+  artifact:
+    uses: ./.github/workflows/artifact.yml
