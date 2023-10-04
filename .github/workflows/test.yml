@@ -1,15 +1,7 @@
-name: Build and Test Operon
+name: Test Operon
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    types:
-      - ready_for_review
-      - opened
-      - reopened
-      - synchronize
-  workflow_dispatch:
+  workflow_call:
 
 jobs:
   build:
@@ -48,7 +40,7 @@ jobs:
       - name: Compile and Test
         working-directory: ./
         run: |
-          npm install .
+          npm ci
           npm run build
           npm test
           npm run lint

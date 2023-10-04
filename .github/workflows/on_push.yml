@@ -1,0 +1,17 @@
+name: On Push
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+  artifact:
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/artifact.yml
