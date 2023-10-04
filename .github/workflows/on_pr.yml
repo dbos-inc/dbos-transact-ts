@@ -12,11 +12,11 @@ on:
       - synchronize
 
 jobs:
-  test:
-    uses: ./.github/workflows/test.yml
-  artifact:
-    needs: test
-    uses: ./.github/workflows/artifact.yml
+  # test:
+  #   uses: ./.github/workflows/test.yml
+  # artifact:
+    # needs: test
+    # uses: ./.github/workflows/artifact.yml
   # temporary publish for test purposes
   publish:
     runs-on: ubuntu-latest
@@ -37,8 +37,8 @@ jobs:
     - uses: actions/setup-node@v3
       with:
         node-version: 18
-        registry-url: 'https://npm.pkg.github.com'
-        scope: '@dbos-inc'
+        # registry-url: 'https://npm.pkg.github.com'
+        # scope: '@dbos-inc'
     - name: Nerdbank.GitVersioning
       id: nbgv
       uses: dotnet/nbgv@v0.4.1
@@ -50,5 +50,5 @@ jobs:
         npm run build
         npm publish
       env:
-        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        NPM_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
