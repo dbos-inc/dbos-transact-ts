@@ -17,7 +17,6 @@ version.json
 # repo folders that shouldn't be published
 .vscode/
 .github/
-examples/
 tests/
 
 # ignore any packed packages in the repo
