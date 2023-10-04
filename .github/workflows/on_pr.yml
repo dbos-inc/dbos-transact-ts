@@ -17,9 +17,3 @@ jobs:
   artifact:
     needs: test
     uses: ./.github/workflows/artifact.yml
-  echo:
-    runs-on: ubuntu-latest
-    needs: artifact
-    steps:
-      - run: echo 'NpmPackageVersion=${{ needs.artifact.outputs.NpmPackageVersion }}'
-      - run: echo 'PackageName=${{ needs.artifact.outputs.PackageName }}'
