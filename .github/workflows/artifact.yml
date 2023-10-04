@@ -2,47 +2,37 @@ name: Create Operon Package Artifact
 
 on:
   workflow_call:
-    outputs:
-        NpmPackageVersion: 
-            description: NBGV NpmPackageVersion
-            value: ${{ jobs.build.outputs.NpmPackageVersion }}
-        PackageName: 
-          description: npm pack package name
-          value: ${{ jobs.build.outputs.PackageName }}
   
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-        NpmPackageVersion: ${{ steps.nbgv.outputs.NpmPackageVersion }}
-        PackageName: ${{ steps.setfilename.outputs.PACKAGE_FILE }}
-
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v3
-        # fetch-depth 0 needed for NBGV
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # fetch-depth 0 needed for NBGV
       - name: Use Node.js 18
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@dbos-inc'
       - name: Nerdbank.GitVersioning
         id: nbgv
         uses: dotnet/nbgv@v0.4.1
         with:
           stamp: package.json
-      - name: Set Filename
-        id: setfilename
-        run: echo "PACKAGE_FILE=dbos-inc-operon-${{ steps.nbgv.outputs.NpmPackageVersion }}.tgz" >> "$GITHUB_OUTPUT"
-      - name: Compile and pack
-        working-directory: ./
-        run: |
-          npm ci
-          npm run build
-          npm pack
-        
+      - run: npm ci
+      - run: npm build
+      # TODO: only publish public release branches
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm pack
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
           name: operon
-          path: ${{ steps.setfilename.outputs.PACKAGE_FILE }}
+          path: ./dbos-inc-operon-*.tgz
