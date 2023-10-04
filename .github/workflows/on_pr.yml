@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: artifact
+    # needs: artifact
     steps:
     # - name: Download Operon
     #   uses: actions/download-artifact@v3
