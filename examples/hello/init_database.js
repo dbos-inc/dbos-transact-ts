@@ -2,67 +2,73 @@ const { Client } = require('pg');
 
 const POSTGRES_HOST = process.env.POSTGRES_HOST || "localhost";
 
+const executeQuery = async (client, query) => {
+    console.log(query);
+    return await client.query(query);
+};
+
 const createUserAndDb = async () => {
     const adminClient = new Client({
-      host: POSTGRES_HOST,
-      user: 'postgres',
-      password: process.env.PGPASSWORD
+        host: POSTGRES_HOST,
+        user: 'postgres',
+        password: process.env.PGPASSWORD
     });
-  
+
     await adminClient.connect();
-  
+
     // Attempt to create the new user 'hello'
     try {
-      await adminClient.query("CREATE USER hello WITH PASSWORD 'hello';");
+        await executeQuery(adminClient, "CREATE USER hello WITH PASSWORD 'hello';");
     } catch (error) {
-      if (!error.message.includes('already exists')) {
-        throw error;
-      }
+        if (!error.message.includes('already exists')) {
+            throw error;
+        }
+        console.log("User 'hello' already exists. Continuing...");
     }
-  
-    await adminClient.query("ALTER USER hello CREATEDB;");
-  
+
+    await executeQuery(adminClient, "ALTER USER hello CREATEDB;");
+
     // Check if the database 'hello' exists before trying to drop it
-    const dbExistsResult = await adminClient.query(
-      "SELECT 1 FROM pg_database WHERE datname='hello';"
-    );
-  
+    const dbExistsResult = await executeQuery(adminClient, "SELECT 1 FROM pg_database WHERE datname='hello';");
+
     if (dbExistsResult.rowCount > 0) {
-      await adminClient.query("DROP DATABASE hello;");
+        await executeQuery(adminClient, "DROP DATABASE hello;");
     }
-  
+
     // Connect as hello user to create the DB
     const helloClient = new Client({
-      host: POSTGRES_HOST,
-      user: 'hello',
-      password: 'hello',
-      database: 'postgres'
+        host: POSTGRES_HOST,
+        user: 'hello',
+        password: 'hello',
+        database: 'postgres',
     });
-  
+
     await helloClient.connect();
-    await helloClient.query("CREATE DATABASE hello;");
-  
+    await executeQuery(helloClient, "CREATE DATABASE hello;");
+
     // Grant permissions
-    await adminClient.query("GRANT CREATE, USAGE ON SCHEMA public TO hello;");
-  
+    await executeQuery(adminClient, "GRANT CREATE, USAGE ON SCHEMA public TO hello;");
+
     await adminClient.end();
     await helloClient.end();
-  };
+};
 
 const createTables = async () => {
-  const helloClient = new Client({
-    host: POSTGRES_HOST,
-    user: 'hello',
-    password: 'hello',
-    database: 'hello'
-  });
+    const helloClient = new Client({
+        host: POSTGRES_HOST,
+        user: 'hello',
+        password: 'hello',
+        database: 'hello'
+    });
 
-  await helloClient.connect();
-  await helloClient.query("CREATE TABLE IF NOT EXISTS OperonHello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);");
-  await helloClient.end();
+    await helloClient.connect();
+
+    await executeQuery(helloClient, "CREATE TABLE IF NOT EXISTS OperonHello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);");
+
+    await helloClient.end();
 };
 
 (async () => {
-  await createUserAndDb();
-  await createTables();
+    await createUserAndDb();
+    await createTables();
 })();
