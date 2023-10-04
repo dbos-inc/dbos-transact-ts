@@ -11,8 +11,7 @@ Gruntfile.js
 jest.config.js
 operon-config.yaml
 tsconfig.json
-tsconfig.build-fdb.json
-tsconfig.build.json
+tsconfig.*.json
 version.json
 
 # repo folders that shouldn't be published
