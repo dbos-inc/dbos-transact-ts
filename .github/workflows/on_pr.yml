@@ -20,6 +20,9 @@ jobs:
   # temporary publish for test purposes
   publish:
       runs-on: ubuntu-latest
+      permissions:
+        contents: read
+        packages: write
       needs: artifact
       steps:
       - name: Download Operon
