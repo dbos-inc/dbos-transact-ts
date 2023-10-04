@@ -2,10 +2,17 @@ name: Create Operon Package Artifact
 
 on:
   workflow_call:
+    outputs:
+        NpmPackageVersion: 
+            description: NBGV NpmPackageVersion
+            value: ${{ jobs.build.outputs.NpmPackageVersion }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+        NpmPackageVersion: ${{ steps.nbgv.outputs.NpmPackageVersion }}
+        PackageName: dbos-inc-operon-${{ steps.nbgv.outputs.NpmPackageVersion }}.tgz
 
     steps:
       - uses: actions/checkout@v3
@@ -27,7 +34,6 @@ jobs:
           npm ci
           npm run build
           npm pack
-      - run: echo 'NpmPackageVersion=${{ steps.nbgv.outputs.NpmPackageVersion }}'
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
