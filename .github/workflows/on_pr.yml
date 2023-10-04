@@ -19,26 +19,36 @@ jobs:
     uses: ./.github/workflows/artifact.yml
   # temporary publish for test purposes
   publish:
-      runs-on: ubuntu-latest
-      permissions:
-        contents: read
-        packages: write
-      needs: artifact
-      steps:
-      - name: Download Operon
-        uses: actions/download-artifact@v3
-        with:
-          name: operon
-          path: ./
-      - name: Use Node.js 18
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@dbos-inc'
-      - name: Publish to GitHub package manager
-        run: |
-          npm publish ${{ needs.artifact.outputs.PackageName }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: artifact
+    steps:
+    # - name: Download Operon
+    #   uses: actions/download-artifact@v3
+    #   with:
+    #     name: operon
+    #     path: ./
+    - uses: actions/checkout@v3
+      # fetch-depth 0 needed for NBGV
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 18
+        registry-url: 'https://npm.pkg.github.com'
+        scope: '@dbos-inc'
+    - name: Nerdbank.GitVersioning
+      id: nbgv
+      uses: dotnet/nbgv@v0.4.1
+      with:
+        stamp: package.json
+    - name: Publish to GitHub package manager
+      run: |
+        npm ci
+        npm run build
+        npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
