@@ -544,12 +544,21 @@ export function ArgName(name: string) {
   };
 }
 
-export function ArgDate() { // TODO a little more info about it
+export function ArgDate() { // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.dataType.dataType = 'timestamp';
+  };
+}
+
+export function ArgVarchar(length: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+    const curParam = existingParameters[parameterIndex];
+    curParam.dataType = OperonDataType.varchar(length);
   };
 }
 
