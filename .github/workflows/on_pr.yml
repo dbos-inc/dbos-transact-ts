@@ -15,4 +15,5 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
   artifact:
+    needs: test
     uses: ./.github/workflows/artifact.yml
