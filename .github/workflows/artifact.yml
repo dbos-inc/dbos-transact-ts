@@ -6,7 +6,10 @@ on:
         NpmPackageVersion: 
             description: NBGV NpmPackageVersion
             value: ${{ jobs.build.outputs.NpmPackageVersion }}
-
+        PackageName: 
+          description: npm pack package name
+          value: ${{ jobs.build.outputs.PackageName }}
+  
 jobs:
   build:
     runs-on: ubuntu-latest
