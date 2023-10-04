@@ -26,8 +26,8 @@ jobs:
           stamp: package.json
       - run: npm ci
       - run: npm run build
-      # TODO: only publish public release branches
       - run: npm publish
+        if: ${{ steps.nbgv.outputs.PublicRelease }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm pack
