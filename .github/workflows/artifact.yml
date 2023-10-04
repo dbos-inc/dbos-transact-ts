@@ -37,6 +37,12 @@ jobs:
         with:
           name: npmlogs
           path: /home/runner/.npm/_logs/**
+      - name: Upload NPMRC
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: npmrc
+          path: .npmrc
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
