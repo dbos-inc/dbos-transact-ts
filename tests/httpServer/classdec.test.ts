@@ -6,9 +6,14 @@ import {
   RequiredRole,
   DefaultRequiredRole,
   MiddlewareContext,
+  OperonTransaction,
+  OperonWorkflow,
+  TransactionContext,
+  WorkflowContext,
 } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import {
+  TestKvTable,
   generateOperonTestConfig,
   setupOperonTestDb,
 } from "../helpers";
@@ -20,6 +25,8 @@ import { OperonNotAuthorizedError } from "../../src/error";
 import { OperonConfig } from "../../src/operon";
 
 describe("httpserver-defsec-tests", () => {
+  const testTableName = "operon_test_kv";
+
   let operon: Operon;
   let httpServer: OperonHttpServer;
   let config: OperonConfig;
@@ -32,6 +39,10 @@ describe("httpserver-defsec-tests", () => {
   beforeEach(async () => {
     operon = new Operon(config);
     await operon.init(TestEndpointDefSec);
+    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await operon.userDatabase.query(
+      `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
+    );
     httpServer = new OperonHttpServer(operon);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
@@ -74,6 +85,15 @@ describe("httpserver-defsec-tests", () => {
   test("authorized", async () => {
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
+  });
+
+  // The handler is authorized, then its child workflow and transaction should also be authroized.
+  test("cascade-authorized",async () => {
+    const response = await request(httpServer.app.callback()).get("/workflow?name=alice&userid=a_real_user");
+    expect(response.statusCode).toBe(200);
+
+    const txnResponse = await request(httpServer.app.callback()).get("/transaction?name=alice&userid=a_real_user");
+    expect(txnResponse.statusCode).toBe(200);
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -127,6 +147,36 @@ describe("httpserver-defsec-tests", () => {
     @GetApi("/requireduser")
     static async testAuth(_ctxt: HandlerContext, name: string) {
       return `Please say hello to ${name}`;
+    }
+
+    @OperonTransaction()
+    static async testTranscation(txnCtxt: TransactionContext, name: string) {
+      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
+        [name]
+      );
+      return `hello ${rows[0].id}`;
+    }
+
+    @OperonWorkflow()
+    static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
+      const res = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
+      return res;
+    }
+
+    @GetApi("/workflow")
+    static async testWfEndpoint(ctxt: HandlerContext, name: string) {
+      const res = await ctxt
+        .invoke(TestEndpointDefSec)
+        .testWorkflow(name)
+        .then((x) => x.getResult());
+      return res;
+    }
+
+    @GetApi("/transaction")
+    static async testTxnEndpoint(ctxt: HandlerContext, name: string) {
+      const res = await ctxt.invoke(TestEndpointDefSec).testTranscation(name);
+      return res;
     }
   }
 });

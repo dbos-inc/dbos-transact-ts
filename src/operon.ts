@@ -120,11 +120,11 @@ export class Operon {
           telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
-        } else {
-          // If nothing is configured, enable console exporter by default.
-          telemetryExporters.push(new ConsoleExporter());
         }
       }
+    } else {
+      // If nothing is configured, enable console exporter by default.
+      telemetryExporters.push(new ConsoleExporter());
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector);

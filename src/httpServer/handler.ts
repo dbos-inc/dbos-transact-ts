@@ -113,6 +113,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
 
   // TODO: Make private
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    params.parentCtx = this;
     return this.#operon.transaction(txn, params, ...args);
   }
 }
