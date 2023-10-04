@@ -321,12 +321,13 @@ export class Operon {
     return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
+    const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
+    return (await this.workflow(operon_temp_workflow, { workflowUUID: workflowUUID }, destinationUUID, message, topic)).getResult();
   }
 
   /**
