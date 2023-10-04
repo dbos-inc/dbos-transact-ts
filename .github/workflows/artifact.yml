@@ -27,8 +27,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: echo ${{ steps.nbgv.outputs.PublicRelease }}
+      - run: echo ${{ steps.nbgv.outputs.VersionFileFound }}
       - run: npm publish
-        if: ${{ !! steps.nbgv.outputs.PublicRelease }}
+        if: ${{ steps.nbgv.outputs.PublicRelease != 'False'}}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm pack
