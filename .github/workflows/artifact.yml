@@ -24,8 +24,8 @@ jobs:
         uses: dotnet/nbgv@v0.4.1
         with:
           stamp: package.json
-      - run: npm ci
-      - run: npm run build
+      # - run: npm ci
+      # - run: npm run build
       # TODO: only publish public release branches
       - run: npm publish
         env:
