@@ -62,6 +62,10 @@ jobs:
         env:
           DB_PASSWORD: dbos
           DB_USER: postgres
+      - name: npm pack
+        working-directory: ./
+        run: |
+          npm pack
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
