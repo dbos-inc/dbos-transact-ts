@@ -31,6 +31,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm pack
+      - name: Upload NPM Logs
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: npmlogs
+          path: /home/runner/.npm/_logs/**
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
