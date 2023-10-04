@@ -33,6 +33,9 @@ jobs:
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v3
+        # fetch-depth 0 needed for NBGV
+        with:
+          fetch-depth: 0
       - name: Use Node.js 18
         uses: actions/setup-node@v3
         with:
