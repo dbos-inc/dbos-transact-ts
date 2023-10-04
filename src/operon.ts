@@ -13,12 +13,11 @@ import {
   WorkflowHandle,
   WorkflowParams,
   RetrievedHandle,
+  WorkflowContextImpl,
 } from './workflow';
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import { readFileSync } from './utils';
-
 import {
   ConsoleExporter,
   CONSOLE_EXPORTER,
@@ -31,55 +30,30 @@ import { TelemetryCollector } from './telemetry/collector';
 import { Logger } from './telemetry/logs';
 import { Tracer } from './telemetry/traces';
 import { PoolConfig } from 'pg';
-import { transaction_outputs } from '../schemas/user_db_schema';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
-import YAML from 'yaml';
 import {
   PGNodeUserDatabase,
-  PrismaClient,
   PrismaUserDatabase,
   UserDatabase,
-  TypeORMDataSource,
   TypeORMDatabase,
+  UserDatabaseName,
 } from './user_database';
-import { OperonMethodRegistrationBase, getRegisteredOperations } from './decorators';
+import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { OperonContext } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
-const CONFIG_FILE: string = "operon-config.yaml";
-
-export interface httpConfig {
-  readonly port: number;
-}
-
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
+  readonly userDbclient?: UserDatabaseName;
   readonly telemetryExporters?: string[];
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
-  readonly httpServer: httpConfig ;
-}
-
-interface ConfigFile {
-  database: {
-    hostname: string;
-    port: number;
-    username: string;
-    connectionTimeoutMillis: number;
-    user_database: string;
-    system_database: string;
-    ssl_ca?: string;
-    observability_database: string;
-  };
-  telemetryExporters?: string[];
-  application: any;
-  httpServer?: httpConfig
+  readonly dbClientMetadata?: any;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -87,18 +61,8 @@ interface WorkflowInfo<T extends any[], R> {
   config: WorkflowConfig;
 }
 
-interface WorkflowInput<T extends any[]> {
-  workflow_name: string;
-  input: T;
-}
-
-export interface InternalWorkflowParams extends WorkflowParams {
-  parentCtx?: OperonContext;
-}
-
 export class Operon {
   initialized: boolean;
-  readonly config: OperonConfig;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
@@ -132,14 +96,11 @@ export class Operon {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
+// eslint-disable-next-line @typescript-eslint/ban-types
+  entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(config?: OperonConfig, systemDatabase?: SystemDatabase) {
-    if (config) {
-      this.config = config;
-    } else {
-      this.config = this.generateOperonConfig();
-    }
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
     if (systemDatabase) {
       this.systemDatabase = systemDatabase;
     } else {
@@ -151,7 +112,7 @@ export class Operon {
 
     // Parse requested exporters
     const telemetryExporters = [];
-    if (this.config.telemetryExporters) {
+    if (this.config.telemetryExporters && this.config.telemetryExporters.length > 0) {
       for (const exporter of this.config.telemetryExporters) {
         if (exporter === CONSOLE_EXPORTER) {
           telemetryExporters.push(new ConsoleExporter());
@@ -159,6 +120,9 @@ export class Operon {
           telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
+        } else {
+          // If nothing is configured, enable console exporter by default.
+          telemetryExporters.push(new ConsoleExporter());
         }
       }
     }
@@ -169,73 +133,93 @@ export class Operon {
     this.initialEpochTimeMs = Date.now();
   }
 
-  useNodePostgres() {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
-  }
+  configureDbClient(config: OperonConfig) {
+      const userDbClient = config.userDbclient;
+      if (userDbClient === UserDatabaseName.PRISMA) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const { PrismaClient }  = require('@prisma/client');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+        this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+      } else if (userDbClient === UserDatabaseName.TYPEORM) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const DataSourceExports = require('typeorm');
 
-  usePrisma(client: PrismaClient) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new PrismaUserDatabase(client);
-  }
-
-  useTypeORM(ds: TypeORMDataSource) {
-    if (this.userDatabase) {
-      throw new OperonInitializationError("Data source already initialized!");
-    }
-    this.userDatabase = new TypeORMDatabase(ds);
-    return;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
+          type: "postgres", // perhaps should move to config file
+          host: config.poolConfig.host,
+          port: config.poolConfig.port,
+          username: config.poolConfig.user,
+          password: config.poolConfig.password,
+          database: config.poolConfig.database,
+          // synchronize: true,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+          // entities: config.dbClientMetadata?.entities
+          entities:this.entities
+          }))
+        } catch (s) {
+          console.log(s);
+        }
+      } else {
+        this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+      }
   }
 
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
-      for (const arg of ro.args) {
-        if (arg.argType.name === "WorkflowContext") {
-          const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-          this.registerWorkflow(wf, ro.workflowConfig);
-          break;
-        } else if (arg.argType.name === "TransactionContext") {
-          const tx = ro.registeredFunction as OperonTransaction<any, any>;
-          this.registerTransaction(tx, ro.txnConfig);
-          break;
-        } else if (arg.argType.name === "CommunicatorContext") {
-          const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-          this.registerCommunicator(comm, ro.commConfig);
-          break;
-        }
-      }
+     if (ro.workflowConfig) {
+      const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+      this.registerWorkflow(wf, ro.workflowConfig);
+     } else if (ro.txnConfig) {
+      const tx = ro.registeredFunction as OperonTransaction<any, any>;
+      this.registerTransaction(tx, ro.txnConfig);
+     } else if (ro.commConfig) {
+      const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+      this.registerCommunicator(comm, ro.commConfig);
+     }
     }
   }
 
   async init(...classes: object[]): Promise<void> {
-    if (!this.userDatabase) {
-      throw new OperonInitializationError("No data source!");
-    }
+
     if (this.initialized) {
-      // TODO add logging when we have a logger
+      console.log("Operon already initialized!");
       return;
     }
     try {
-      await this.userDatabase.init();
+
+      type AnyConstructor = new (...args: unknown[]) => object;
+      for (const cls of classes) {
+        const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
+        if (reg.ormEntities.length > 0 ) {
+          this.entities = this.entities.concat(reg.ormEntities)
+        }
+
+      }
+
+      this.configureDbClient(this.config);
+
+      if (!this.userDatabase) {
+        throw new OperonInitializationError("No data source!");
+      }
 
       for (const cls of classes) {
         this.#registerClass(cls);
       }
 
       await this.telemetryCollector.init(this.registeredOperations);
+      await this.userDatabase.init();
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        console.log(err);
+        console.error(err);
         throw new OperonInitializationError(err.message);
       }
     }
+    void this.recoverPendingWorkflows();
     this.initialized = true;
   }
 
@@ -245,58 +229,6 @@ export class Operon {
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
-  }
-
-  generateOperonConfig(): OperonConfig {
-    // Load default configuration
-    let config: ConfigFile | undefined;
-    try {
-      const configContent = readFileSync(CONFIG_FILE);
-      config = YAML.parse(configContent) as ConfigFile;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new OperonInitializationError(`parsing ${CONFIG_FILE}: ${error.message}`);
-      }
-    }
-    if (!config) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} is empty`);
-    }
-
-    // Handle "Global" pool config
-    if (!config.database) {
-      throw new OperonInitializationError(`Operon configuration ${CONFIG_FILE} does not contain database config`);
-    }
-
-    const poolConfig: PoolConfig = {
-      host: config.database.hostname,
-      port: config.database.port,
-      user: config.database.username,
-      password: this.getDbPassword(),
-      connectionTimeoutMillis: config.database.connectionTimeoutMillis,
-      database: config.database.user_database,
-    };
-    if (config.database.ssl_ca) {
-      poolConfig.ssl = { ca: [readFileSync(config.database.ssl_ca)], rejectUnauthorized: true };
-    }
-
-    return {
-      poolConfig: poolConfig,
-      telemetryExporters: config.telemetryExporters || [],
-      system_database: config.database.system_database ?? "operon_systemdb",
-      observability_database: config.database.observability_database || undefined,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      application: config.application || undefined,
-      httpServer: config.httpServer || {port : 3000}
-    };
-  }
-
-  getDbPassword(): string {
-    const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    if (!dbPassword) {
-      throw new OperonInitializationError("DB_PASSWORD or PGPASSWORD environment variable not set");
-    }
-
-    return dbPassword;
   }
 
   /* WORKFLOW OPERATIONS */
@@ -326,33 +258,24 @@ export class Operon {
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: InternalWorkflowParams, ...args: T): WorkflowHandle<R> {
+  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
+    const wInfo = this.workflowInfoMap.get(wf.name);
+    if (wInfo === undefined) {
+      throw new OperonNotRegisteredError(wf.name);
+    }
+    const wConfig = wInfo.config;
+
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
+
+    // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
+    if (!wCtxt.isTempWorkflow) {
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, args);
+    }
     const runWorkflow = async () => {
-      const wInfo = this.workflowInfoMap.get(wf.name);
-      if (wInfo === undefined) {
-        throw new OperonNotRegisteredError(wf.name);
-      }
-      const wConfig = wInfo.config;
-
-      const wCtxt: WorkflowContext = new WorkflowContext(this, params.parentCtx, params, workflowUUID, wConfig, wf.name);
-      const workflowInputID = wCtxt.functionIDGetIncrement();
-      wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
-
-      const checkWorkflowInput = async (input: T) => {
-        // The workflow input is always at function ID = 0 in the operon.transaction_outputs table.
-        const rows = await this.userDatabase.query<transaction_outputs>("SELECT output FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2", workflowUUID, workflowInputID);
-        if (rows.length === 0) {
-          // This workflow has never executed before, so record the input.
-          wCtxt.resultBuffer.set(workflowInputID, { workflow_name: wf.name, input: input });
-        } else {
-          // Return the old recorded input
-          input = (JSON.parse(rows[0].output) as WorkflowInput<T>).input;
-        }
-        return input;
-      };
-
+      // Check if the workflow previously ran.
       const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
       if (previousOutput !== operonNull) {
         wCtxt.span.setAttribute("cached", true);
@@ -360,13 +283,10 @@ export class Operon {
         this.tracer.endSpan(wCtxt.span);
         return previousOutput as R;
       }
-      // Asynchronously set the workflow's status to PENDING.
-      this.systemDatabase.bufferWorkflowStatus(workflowUUID);
-      // Record inputs for OAOO. Not needed for temporary workflows.
-      const input = wCtxt.isTempWorkflow ? args : await checkWorkflowInput(args);
       let result: R;
+      // Execute the workflow.
       try {
-        result = await wf(wCtxt, ...input);
+        result = await wf(wCtxt, ...args);
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -380,6 +300,7 @@ export class Operon {
           // Record the error.
           const e: Error = err as Error;
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -392,20 +313,20 @@ export class Operon {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
   }
 
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: InternalWorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       return await ctxt.transaction(txn, ...args);
     };
-    return await this.workflow(operon_temp_workflow, params, ...args).getResult();
+    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
-  async send<T extends NonNullable<any>>(params: InternalWorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
+  async send<T extends NonNullable<any>>(params: WorkflowParams, destinationUUID: string, message: T, topic: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
-    return await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic).getResult();
+    return (await this.workflow(operon_temp_workflow, params, destinationUUID, message, topic)).getResult();
   }
 
   /**
@@ -427,6 +348,29 @@ export class Operon {
     return uuidv4();
   }
 
+  /**
+   * A recovery process that runs during Operon init time.
+   * It runs to completion all pending workflows that were executing when the previous executor failed.
+   */
+  async recoverPendingWorkflows() {
+    const pendingWorkflows = await this.systemDatabase.getPendingWorkflows();
+    const handlerArray: WorkflowHandle<any>[] = [];
+    for (const workflowUUID of pendingWorkflows) {
+      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+      const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+      if (!inputs) {
+        console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+        continue;
+      }
+      const wfInfo: WorkflowInfo<any,any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
+
+      const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID, parentCtx: parentCtx ?? undefined}, ...inputs))
+    }
+    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+  }
+
   /* BACKGROUND PROCESSES */
   /**
    * Periodically flush the workflow output buffer to the system database.
@@ -436,4 +380,5 @@ export class Operon {
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }
+
 }

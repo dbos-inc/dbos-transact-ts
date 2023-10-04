@@ -6,17 +6,24 @@ import {
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
-import { InternalWorkflowParams, Operon, OperonConfig } from "../src/operon";
+import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
+import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import {
-  Traced,
   OperonTransaction,
   OperonWorkflow,
   RequiredRole,
 } from "../src/decorators";
-import { TransactionContext, WorkflowContext } from "../src";
+import request from "supertest";
+import {
+  GetApi,
+  HandlerContext,
+  OperonHttpServer,
+  TransactionContext,
+  WorkflowContext,
+} from "../src";
 import { WorkflowHandle } from "../src/workflow";
-import { OperonContext } from "../src/context";
+import { OperonContextImpl } from "../src/context";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -31,17 +38,6 @@ type TelemetrySignalDbFields = {
 };
 
 class TestClass {
-  @Traced
-  static create_user(
-    name: string,
-    age: number,
-    isNice: boolean,
-    udfParam: TelemetrySignalDbFields
-  ): Promise<string> {
-    console.log(name, age, isNice, udfParam);
-    return Promise.resolve(name);
-  }
-
   @OperonTransaction({ readOnly: false })
   static async test_function(
     txnCtxt: TransactionContext,
@@ -62,12 +58,14 @@ class TestClass {
     workflowCtxt: WorkflowContext,
     name: string
   ): Promise<string> {
-    const funcResult: string = await workflowCtxt.transaction(
-      TestClass.test_function,
-      name
-    );
+    const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
+  }
+
+  @GetApi("/hello")
+  static async hello(_ctx: HandlerContext) {
+    return Promise.resolve({ message: "hello!" });
   }
 }
 
@@ -82,7 +80,6 @@ describe("operon-telemetry", () => {
       POSTGRES_EXPORTER,
     ]);
     const operon = new Operon(operonConfig);
-    operon.useNodePostgres();
     await operon.init();
     await operon.destroy();
   });
@@ -90,7 +87,6 @@ describe("operon-telemetry", () => {
   test("collector handles errors gracefully", async () => {
     const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
     const operon = new Operon(operonConfig);
-    operon.useNodePostgres();
     await operon.init(TestClass);
 
     const collector = operon.telemetryCollector
@@ -113,9 +109,9 @@ describe("operon-telemetry", () => {
     const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
     let collector: TelemetryCollector;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       operon = new Operon(operonConfig);
-      operon.useNodePostgres();
+      await operon.init();
     });
 
     afterEach(async () => {
@@ -157,7 +153,6 @@ describe("operon-telemetry", () => {
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
       operon = new Operon(operonConfig);
-      operon.useNodePostgres();
       await operon.init(TestClass);
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
@@ -272,78 +267,18 @@ describe("operon-telemetry", () => {
       expect(stwQueryResult.rows).toEqual(
         expect.arrayContaining(expectedStwColumns)
       );
-      const scuQueryResult = await pgExporterPgClient.query(
-        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_create_user';`
-      );
-      const expectedScuColumns = [
-        {
-          column_name: "trace_span",
-          data_type: "jsonb",
-        },
-        {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
-          column_name: "transaction_id",
-          data_type: "text",
-        },
-        {
-          column_name: "age",
-          data_type: "double precision",
-        },
-        {
-          column_name: "isnice",
-          data_type: "boolean",
-        },
-        {
-          column_name: "udfparam",
-          data_type: "json",
-        },
-        {
-          column_name: "name",
-          data_type: "text",
-        },
-        {
-          column_name: "log_message",
-          data_type: "text",
-        },
-        {
-          column_name: "function_name",
-          data_type: "text",
-        },
-        {
-          column_name: "run_as",
-          data_type: "text",
-        },
-        {
-          column_name: "severity",
-          data_type: "text",
-        },
-        {
-          column_name: "workflow_uuid",
-          data_type: "text",
-        },
-        {
-          column_name: "trace_id",
-          data_type: "text",
-        },
-      ];
-      expect(scuQueryResult.rows).toEqual(
-        expect.arrayContaining(expectedScuColumns)
-      );
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const span = operon.tracer.startSpan("test");
-      const oc = new OperonContext("testName", span, operon.logger);
+      const oc = new OperonContextImpl("testName", span, operon.logger);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 
-      const params: InternalWorkflowParams = { parentCtx: oc };
+      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
-      const workflowHandle: WorkflowHandle<string> = operon.workflow(
+      const workflowHandle: WorkflowHandle<string> = await operon.workflow(
         TestClass.test_workflow,
         params,
         username
@@ -411,6 +346,57 @@ describe("operon-telemetry", () => {
       expect(wfTraceEntry.log_message).toBe(null);
       expect(wfTraceEntry.severity).toBe(null);
       expect(wfTraceEntry.trace_span).not.toBe(null);
+    });
+  });
+
+  describe("http Tracer", () => {
+    let operon: Operon;
+    let httpServer: OperonHttpServer;
+    let config: OperonConfig;
+
+    beforeAll(async () => {
+      config = generateOperonTestConfig();
+      await setupOperonTestDb(config);
+    });
+
+    beforeEach(async () => {
+      operon = new Operon(config);
+      await operon.init(TestClass);
+      httpServer = new OperonHttpServer(operon);
+    });
+
+    afterEach(async () => {
+      await operon.destroy();
+    });
+
+    test("Trace context is propagated in and out Operon", async () => {
+      const headers = {
+        [TRACE_PARENT_HEADER]:
+          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        [TRACE_STATE_HEADER]: "some_state=some_value",
+      };
+
+      const response = await request(httpServer.app.callback())
+        .get("/hello")
+        .set(headers);
+      expect(response.statusCode).toBe(200);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(response.body.message).toBe("hello!");
+      // traceId should be the same, spanId should be different (ID of the last operation's span)
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(response.headers.traceparent).toContain("00-4bf92f3577b34da6a3ce929d0e0e4736");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
+    });
+
+    test("New trace context is propagated out of Operon", async () => {
+      const response = await request(httpServer.app.callback()).get("/hello")
+      expect(response.statusCode).toBe(200);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(response.body.message).toBe("hello!");
+      // traceId should be the same, spanId should be different (ID of the last operation's span)
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(response.headers.traceparent).not.toBe(null);
     });
   });
 });

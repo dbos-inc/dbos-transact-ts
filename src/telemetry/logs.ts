@@ -1,16 +1,16 @@
 import { TelemetryCollector } from "./collector";
 import { LogSeverity, TelemetrySignal } from "./signals";
-import { OperonContext } from "../context";
+import { OperonContextImpl } from "../context";
 
 interface ILogger {
-  log(context: OperonContext, severity: LogSeverity, message: string): void;
+  log(context: OperonContextImpl, severity: LogSeverity, message: string): void;
   collector: TelemetryCollector;
 }
 
 export class Logger implements ILogger {
   constructor(readonly collector: TelemetryCollector) {}
 
-  log(context: OperonContext, severity: LogSeverity, message: string): void {
+  log(context: OperonContextImpl, severity: LogSeverity, message: string): void {
     const signal: TelemetrySignal = {
       workflowUUID: context.workflowUUID,
       operationName: context.operationName,

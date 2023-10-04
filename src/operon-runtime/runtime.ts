@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon } from '../operon';
+import { Operon, OperonConfig } from '../operon';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -10,29 +10,27 @@ interface ModuleExports {
   [key: string]: any;
 }
 
-export class OperonRuntime {
+export interface OperonRuntimeConfig {
+  port: number;
+}
 
-  private operon: Operon | null = null;
+const defaultConfig: OperonRuntimeConfig = {
+  port: 3000,
+}
+
+export class OperonRuntime {
+  private operon: Operon;
   private server: Server | null = null;
 
-  /**
-   * Load an application's Operon functions, assumed to be in src/userFunctions.ts (which is compiled to dist/userFunction.js).
-   */
-  private async loadFunctions(): Promise<ModuleExports | null> {
-    const workingDirectory = process.cwd();
-    const userFunctions = workingDirectory + "/dist/userFunctions.js";
-    if (fs.existsSync(userFunctions)) {
-      /* eslint-disable-next-line @typescript-eslint/no-var-requires */
-      return await import(userFunctions) as ModuleExports;
-    } else {
-      return null;
-    }
+  constructor(operonConfig: OperonConfig, readonly runtimeConfig: OperonRuntimeConfig = defaultConfig) {
+    // Initialize Operon.
+    this.operon = new Operon(operonConfig);
   }
 
   /**
-   * Start an HTTP server hosting an application's Operon functions.
+   * Initialize the runtime by loading user functions and initiatilizing the Operon object
    */
-  async startServer(port: number) {
+  async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
       throw new OperonError("userFunctions not found");
@@ -44,24 +42,37 @@ export class OperonRuntime {
         classes.push(exports[key] as object);
       }
     }
-    // Initialize Operon.
-    this.operon = new Operon();
-    this.operon.useNodePostgres();
+
     await this.operon.init(...classes);
+  }
+
+  /**
+   * Load an application's Operon functions, assumed to be in src/userFunctions.ts (which is compiled to dist/userFunction.js).
+   */
+  private loadFunctions(): Promise<ModuleExports> | null {
+    const workingDirectory = process.cwd();
+    const userFunctions = workingDirectory + "/dist/userFunctions.js";
+    if (fs.existsSync(userFunctions)) {
+      /* eslint-disable-next-line @typescript-eslint/no-var-requires */
+      return import(userFunctions) as Promise<ModuleExports>;
+    } else {
+      return null;
+    }
+  }
+
+  /**
+   * Start an HTTP server hosting an application's Operon functions.
+   */
+  startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
+    // CLI takes precedence over config file, which takes precedence over default config.
+    const config: OperonRuntimeConfig = {
+      port: inputConfig.port || this.runtimeConfig.port,
+    }
 
     const server = new OperonHttpServer(this.operon)
 
-    const httpconfig = this.operon.config.httpServer ;
-
-    if (port === 0 && httpconfig.port != 0) {
-      port = httpconfig.port ;
-    } else if (port === 0) {
-      port = 3000;
-    }
-    
-    this.server = server.listen(port);
-    console.log(`Starting server on port: ${port}`);
-    
+    this.server = server.listen(config.port);
+    console.log(`Starting server on port: ${config.port}`);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
-import { OperonPostgresExporterError, OperonJaegerExporterError } from "./../error";
+import { OperonPostgresExporterError } from "./../error";
 import { OperonSignal, ProvenanceSignal, TelemetrySignal, LogSeverity } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
@@ -36,7 +36,7 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
       });
       this.exporter.export(exportSpans, (results: ExportResult) => {
         if (results.code !== ExportResultCode.SUCCESS) {
-          throw new OperonJaegerExporterError(results);
+          console.warn(`Jaeger export failed`);
         }
       });
       resolve();

@@ -3,11 +3,9 @@
 import {
   GetApi,
   Operon,
-  OperonConfig,
   RequiredRole,
   DefaultRequiredRole,
   MiddlewareContext,
-  OperonNotAuthorizedError,
 } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import {
@@ -16,9 +14,10 @@ import {
 } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
+import { OperonNotAuthorizedError } from "../../src/error";
+import { OperonConfig } from "../../src/operon";
 
 describe("httpserver-defsec-tests", () => {
   let operon: Operon;
@@ -26,13 +25,12 @@ describe("httpserver-defsec-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
     operon = new Operon(config);
-    operon.useNodePostgres();
     await operon.init(TestEndpointDefSec);
     httpServer = new OperonHttpServer(operon);
     middlewareCounter = 0;
@@ -41,6 +39,7 @@ describe("httpserver-defsec-tests", () => {
 
   afterEach(async () => {
     await operon.destroy();
+    jest.restoreAllMocks();
   });
 
   test("get-hello", async () => {
@@ -52,16 +51,22 @@ describe("httpserver-defsec-tests", () => {
   });
 
   test("not-authenticated", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });

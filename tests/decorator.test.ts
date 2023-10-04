@@ -1,5 +1,5 @@
-import { CommunicatorContext, Operon, OperonCommunicator, OperonConfig, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { CONSOLE_EXPORTER } from "../src/telemetry/exporters";
+import { CommunicatorContext, Operon, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
@@ -11,8 +11,7 @@ class TestClass {
   static get counter() { return TestClass.#counter; }
   @OperonCommunicator()
   static async testCommunicator(commCtxt: CommunicatorContext) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(commCtxt.applicationConfig.counter).toBe(3);
+    expect(commCtxt.getConfig("counter")).toBe(3);
     void commCtxt;
     await sleep(1);
     return TestClass.#counter++;
@@ -20,16 +19,14 @@ class TestClass {
 
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(workflowCtxt.applicationConfig.counter).toBe(3);
-    const funcResult = await workflowCtxt.external(TestClass.testCommunicator);
+    expect(workflowCtxt.getConfig("counter")).toBe(3);
+    const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
 
   @OperonTransaction()
   static async testInsertTx(txnCtxt: TransactionContext, name: string) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(txnCtxt.applicationConfig.counter).toBe(3);
+    expect(txnCtxt.getConfig("counter")).toBe(3);
     const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name]
@@ -54,15 +51,9 @@ class TestClass {
   @OperonWorkflow()
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(wfCtxt.applicationConfig.counter).toBe(3);
-    const funcResult: number = await wfCtxt.transaction(
-      TestClass.testInsertTx,
-      name
-    );
-    const checkResult: number = await wfCtxt.transaction(
-      TestClass.testReadTx,
-      funcResult
-    );
+    expect(wfCtxt.getConfig("counter")).toBe(3);
+    const funcResult: number = await wfCtxt.invoke(TestClass).testInsertTx(name);
+    const checkResult: number = await wfCtxt.invoke(TestClass).testReadTx(funcResult);
     return checkResult;
   }
 }
@@ -74,7 +65,7 @@ describe("decorator-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     username = config.poolConfig.user || "postgres";
     await setupOperonTestDb(config);
   })
@@ -82,7 +73,6 @@ describe("decorator-tests", () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
-    operon.useNodePostgres();
     await operon.init(TestClass);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
@@ -101,14 +91,14 @@ describe("decorator-tests", () => {
 
     let result: number = await operon
       .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
 
     // Test OAOO. Should return the original result.
     result = await operon
       .workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID })
-      .getResult();
+      .then(x => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
   })
@@ -122,7 +112,7 @@ describe("decorator-tests", () => {
       uuidArray.push(workflowUUID);
       workflowResult = await operon
         .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
 
@@ -131,7 +121,7 @@ describe("decorator-tests", () => {
       const workflowUUID: string = uuidArray[i];
       const workflowResult: number = await operon
         .workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username)
-        .getResult();
+        .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
   })

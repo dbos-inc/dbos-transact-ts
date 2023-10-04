@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { OperonTransaction, TransactionContext } from "./transaction";
-import { OperonCommunicator, CommunicatorContext } from "./communicator";
+import { OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
+import { OperonCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
@@ -10,13 +10,13 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext } from './context';
+import { OperonContext, OperonContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
-type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
+export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
@@ -29,6 +29,7 @@ type WFInvokeFuncs<T> = {
 
 export interface WorkflowParams {
   workflowUUID?: string;
+  parentCtx?: OperonContextImpl;
 }
 
 export interface WorkflowConfig {
@@ -37,6 +38,10 @@ export interface WorkflowConfig {
 
 export interface WorkflowStatus {
   status: string;
+  workflowName: string;
+  authenticatedUser: string;
+  assumedRole: string;
+  authenticatedRoles: string[];
 }
 
 export interface PgTransactionId {
@@ -44,13 +49,21 @@ export interface PgTransactionId {
 }
 
 export const StatusString = {
-  UNKNOWN: "UNKNOWN",
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
 } as const;
 
-export class WorkflowContext extends OperonContext {
+export interface WorkflowContext extends OperonContext {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
+  external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
+}
+
+export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext  {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
@@ -58,20 +71,20 @@ export class WorkflowContext extends OperonContext {
 
   constructor(
     operon: Operon,
-    parentCtx: OperonContext | undefined,
-    // FIXME: seems we are not using this anymore
-    params: WorkflowParams,
+    parentCtx: OperonContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    const span = operon.tracer.startSpan(workflowName, parentCtx?.span);
-    span.setAttributes({
-      workflowUUID: workflowUUID,
-      operationName: workflowName,
-      runAs: parentCtx?.authenticatedUser ?? "",
-      functionID: 0,
-    });
+    const span = operon.tracer.startSpan(
+      workflowName,
+      {
+        workflowUUID: workflowUUID,
+        operationName: workflowName,
+        runAs: parentCtx?.authenticatedUser ?? "",
+      },
+      parentCtx?.span,
+    );
     super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
@@ -174,22 +187,23 @@ export class WorkflowContext extends OperonContext {
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#operon.tracer.startSpan(txn.name, this.span);
-    span.setAttributes({
-      workflowUUID: this.workflowUUID,
-      operationName: txn.name,
-      runAs: this.authenticatedUser,
-      functionID: funcId,
-      readOnly: readOnly,
-      isolationLevel: config.isolationLevel,
-      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
-    });
+    const span: Span = this.#operon.tracer.startSpan(
+      txn.name,
+      {
+        workflowUUID: this.workflowUUID,
+        operationName: txn.name,
+        runAs: this.authenticatedUser,
+        readOnly: readOnly,
+        isolationLevel: config.isolationLevel,
+      },
+      this.span,
+    );
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContext(
+        const tCtxt = new TransactionContextImpl(
           this.#operon.userDatabase.getName(), client, config, this,
           span, this.#operon.logger, funcId, txn.name,
         );
@@ -271,19 +285,20 @@ export class WorkflowContext extends OperonContext {
 
     const funcID = this.functionIDGetIncrement();
 
-    const span: Span = this.#operon.tracer.startSpan(commFn.name, this.span);
-    span.setAttributes({
-      workflowUUID: this.workflowUUID,
-      operationName: commFn.name,
-      runAs: this.authenticatedUser,
-      functionID: funcID,
-      retriesAllowed: commConfig.retriesAllowed,
-      intervalSeconds: commConfig.intervalSeconds,
-      maxAttempts: commConfig.maxAttempts,
-      backoffRate: commConfig.backoffRate,
-      args: JSON.stringify(args), // TODO enforce skipLogging & request for hashing
-    });
-    const ctxt: CommunicatorContext = new CommunicatorContext(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const span: Span = this.#operon.tracer.startSpan(
+      commFn.name,
+      {
+        workflowUUID: this.workflowUUID,
+        operationName: commFn.name,
+        runAs: this.authenticatedUser,
+        retriesAllowed: commConfig.retriesAllowed,
+        intervalSeconds: commConfig.intervalSeconds,
+        maxAttempts: commConfig.maxAttempts,
+        backoffRate: commConfig.backoffRate,
+      },
+      this.span,
+    );
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
@@ -423,7 +438,7 @@ export interface WorkflowHandle<R> {
    * Retrieve the workflow's status.
    * Statuses are updated asynchronously.
    */
-  getStatus(): Promise<WorkflowStatus>;
+  getStatus(): Promise<WorkflowStatus | null>;
   /**
    * Await workflow completion and return its result.
    */
@@ -444,13 +459,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<WorkflowStatus> {
-    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    if (status.status === StatusString.UNKNOWN) {
-      return { status: StatusString.PENDING };
-    } else {
-      return status;
-    }
+  async getStatus(): Promise<WorkflowStatus | null> {
+    return this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
@@ -464,13 +474,11 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string) {}
 
-  static readonly pollingIntervalMs: number = 1000;
-
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
-  async getStatus(): Promise<WorkflowStatus> {
+  async getStatus(): Promise<WorkflowStatus | null> {
     return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
   }
 

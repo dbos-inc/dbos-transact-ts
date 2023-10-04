@@ -1,16 +1,16 @@
 // import { PrismaClient, testkv } from "@prisma/client";
-import { DataSource, Entity, EntityManager, PrimaryColumn, Column} from "typeorm";
+import { EntityManager} from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonConfig, TransactionContext } from "../src";
+import { Operon, OrmEntities, TransactionContext } from "../src";
+import { OperonConfig } from "../src/operon" ;
 import { v1 as uuidv1 } from "uuid";
+import { UserDatabaseName } from "../src/user_database";
 import { sleep } from "../src/utils";
-
+import {  Entity, Column, PrimaryColumn } from "typeorm";
 
 /**
  * Funtions used in tests.
  */
-let globalCnt = 0;
-
 @Entity()
 export class KV {
     @PrimaryColumn()
@@ -20,29 +20,23 @@ export class KV {
     value: string = "v"
 }
 
-const typeormDs = new DataSource({
-  type: "postgres", // perhaps should move to config file
-  host: "localhost",
-  port: 5432,
-  username: "postgres",
-  password: process.env.PGPASSWORD,
-  database: "operontest",
-  entities: [KV]
-});
+let globalCnt = 0;
 
-const testTxn = async (
-  txnCtxt: TransactionContext,
-  id: string,
-  value: string
-) => {
-  const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
-  const kv: KV = new KV();
-  kv.id = id;
-  kv.value = value;
-  const res = await p.save(kv);
-  globalCnt += 1;
-  return res.id;
-};
+@OrmEntities([KV])
+class KVController {
+
+  static async testTxn(txnCtxt: TransactionContext,
+    id: string,
+    value: string) {
+      const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
+      const kv: KV = new KV();
+      kv.id = id;
+      kv.value = value;
+      const res = await p.save(kv);
+      globalCnt += 1;
+      return res.id;
+    }
+}
 
 const readTxn = async (txnCtxt: TransactionContext, id: string) => {
   await sleep(1);
@@ -56,18 +50,17 @@ describe("typeorm-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateOperonTestConfig(undefined, UserDatabaseName.TYPEORM);
     await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
     operon = new Operon(config);
-    operon.useTypeORM(typeormDs);
-    await operon.init();
+    await operon.init(KVController);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`
+      `CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`
     ); 
   });
 
@@ -77,12 +70,12 @@ describe("typeorm-tests", () => {
 
   test("simple-typeorm", async () => {
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.registerTransaction(KVController.testTxn);
     await expect(
-      operon.transaction(testTxn, { workflowUUID: workUUID }, "test", "value")
+      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
     await expect(
-      operon.transaction(testTxn, { workflowUUID: workUUID }, "test", "value")
+      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
   });
 
@@ -91,16 +84,16 @@ describe("typeorm-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.registerTransaction(KVController.testTxn);
     let results = await Promise.allSettled([
       operon.transaction(
-        testTxn,
+        KVController.testTxn,
         { workflowUUID: workUUID },
         "oaootest",
         "oaoovalue"
       ),
       operon.transaction(
-        testTxn,
+        KVController.testTxn,
         { workflowUUID: workUUID },
         "oaootest",
         "oaoovalue"

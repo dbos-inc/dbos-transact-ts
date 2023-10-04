@@ -5,7 +5,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { OperonContext } from "./context";
+import { OperonContext, OperonContextImpl } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
 
@@ -93,48 +93,10 @@ function getArgNames(func: Function): string[] {
   return fn.split(",");
 }
 
-export enum TraceLevels {
-  DEBUG = "DEBUG",
-  INFO = "INFO",
-  WARN = "WARN",
-  ERROR = "ERROR",
-  CRITICAL = "CRITICAL",
-}
-
 export enum LogMasks {
   NONE = "NONE",
   HASH = "HASH",
   SKIP = "SKIP",
-}
-
-export enum TraceEventTypes {
-  METHOD_ENTER = "METHOD_ENTER",
-  METHOD_EXIT = "METHOD_EXIT",
-  METHOD_ERROR = "METHOD_ERROR",
-}
-
-class BaseTraceEvent {
-  eventType: TraceEventTypes = TraceEventTypes.METHOD_ENTER;
-  eventComponent: string = "";
-  eventLevel: TraceLevels = TraceLevels.DEBUG;
-  eventTime: Date = new Date();
-  authorizedUser: string = "";
-  authorizedRole: string = "";
-  positionalArgs: unknown[] = [];
-  namedArgs: { [x: string]: unknown } = {};
-
-  toString(): string {
-    return `
-    eventType: ${this.eventType}
-    eventComponent: ${this.eventComponent}
-    eventLevel: ${this.eventLevel}
-    eventTime: ${this.eventTime.toString()}
-    authorizedUser: ${this.authorizedUser}
-    authorizedRole: ${this.authorizedRole}
-    positionalArgs: ${JSON.stringify(this.positionalArgs)}
-    namedArgs: ${JSON.stringify(this.namedArgs)}
-    `;
-  }
 }
 
 export class OperonParameter {
@@ -168,7 +130,6 @@ export interface OperonRegistrationDefaults
 
 export interface OperonMethodRegistrationBase {
   name: string;
-  traceLevel: TraceLevels;
 
   args: OperonParameter[];
 
@@ -192,7 +153,6 @@ implements OperonMethodRegistrationBase
   defaults?: OperonRegistrationDefaults | undefined;
 
   name: string = "";
-  traceLevel: TraceLevels = TraceLevels.INFO;
 
   requiredRole: string[] | undefined = undefined;
 
@@ -202,6 +162,7 @@ implements OperonMethodRegistrationBase
   {
     this.origFunction = origFunc;
   }
+  debug: boolean = false;
   needInitialized: boolean = true;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
@@ -226,6 +187,8 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
   name: string = "";
   requiredRole: string[] | undefined;
   needsInitialized: boolean = true;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  ormEntities: Function[] = [];
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -290,7 +253,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.argType === TransactionContext || e.argType == WorkflowContext || e.argType == CommunicatorContext) {
+        if (e.index === 0) { // The first argument is always the context.
           e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
@@ -300,29 +263,35 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
     Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
 
     const wrappedMethod = async function (this: This, ...args: Args) {
-      const mn = methReg.name;
 
-      let opCtx : OperonContext | undefined = undefined;
+      let opCtx : OperonContextImpl | undefined = undefined;
 
-      // Validate the user authentication and populate the role field\
-      const rr = methReg.getRequiredRoles();
-      if (rr.length > 0) {
-        opCtx = args[0] as OperonContext;
+      // Validate the user authentication and populate the role field
+      const requiredRoles = methReg.getRequiredRoles();
+      if (requiredRoles.length > 0) {
+        opCtx = args[0] as OperonContextImpl;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
-        let authRole = ''
         const set = new Set(curRoles);
-        for (const str of rr) {
-          if (set.has(str)) {
+        for (const role of requiredRoles) {
+          if (set.has(role)) {
             authorized = true;
-            authRole = str;
+            opCtx.assumedRole = role;
+            opCtx.span.setAttribute("assumedRole", role);
+            break;
           }
         }
         if (!authorized) {
           const err = new OperonNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
+          opCtx.span.addEvent("OperonNotAuthorizedError", { message: err.message });
           throw err;
         }
-        opCtx.assumedRole = authRole;
+      }
+
+      const validationError = (msg:string) => {
+        const err = new OperonDataValidationError(msg);
+        opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
+        return err;
       }
 
       // Input validation
@@ -330,21 +299,21 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context, may find a more robust way.
-          opCtx = args[idx] as OperonContext;
+          opCtx = args[idx] as OperonContextImpl;
           return;
         }
 
         // Do we have an arg at all
         if (idx >= args.length) {
           if (argDescriptor.required) {
-            throw new OperonDataValidationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
+            throw validationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
           }
           return;
         }
 
         let argValue = args[idx];
         if (argValue === undefined && argDescriptor.required) {
-          throw new OperonDataValidationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
+          throw validationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
         }
 
         if (argValue instanceof String) {
@@ -368,11 +337,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         //  We could support emails and other validations too with something like that...
         if (argDescriptor.dataType.dataType === 'text' || argDescriptor.dataType.dataType === 'varchar') {
           if ((typeof argValue !== 'string')) {
-            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a string`);
+            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a string`);
           }
           if (argDescriptor.dataType.length > 0) {
             if (argValue.length > argDescriptor.dataType.length) {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' with maximum length ${argDescriptor.dataType.length} but has length ${argValue.length}`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' with maximum length ${argDescriptor.dataType.length} but has length ${argValue.length}`);
             }
           }
         }
@@ -392,11 +361,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
                 args[idx] = argValue;
               }
               else {
-                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
+                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
               }
             }
             else {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
             }
           }
         }
@@ -404,7 +373,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           // Range check precision and scale... wishing there was a bigdecimal
           //  Floats don't really permit us to check the scale.
           if (typeof argValue !== 'number') {
-            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
           }
           let prec = argDescriptor.dataType.precision;
           if (prec > 0) {
@@ -412,7 +381,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
               prec = prec - argDescriptor.dataType.scale;
             }
             if (Math.abs(argValue) >= Math.exp(prec)) {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is out of range for type '${argDescriptor.dataType.formatAsString()}`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is out of range for type '${argDescriptor.dataType.formatAsString()}`);
             }
           }
         }
@@ -421,7 +390,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
             if (typeof argValue === 'string') {
               const n = parseFloat(argValue);
               if (isNaN(n)) {
-                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
               }
               argValue = n;
               args[idx] = argValue;
@@ -432,12 +401,12 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
               args[idx] = argValue;
             }
             else {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
             }
           }
           if (argDescriptor.dataType.dataType === 'integer') {
             if (!Number.isInteger(argValue)) {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but has a fractional part`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but has a fractional part`);
             }
           }
         }
@@ -446,13 +415,13 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
             if (typeof argValue == 'string') {
               const d = Date.parse(argValue);
               if (isNaN(d)) {
-                throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is a string that will not parse as Date`);
+                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is a string that will not parse as Date`);
               }
               argValue = new Date(d);
               args[idx] = argValue;
             }
             else {
-              throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a date or time`);
+              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a date or time`);
             }
           }
         }
@@ -461,21 +430,13 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           // /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
           // That matches UUID version 1-5.
           if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(argValue))) {
-            throw new OperonDataValidationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a valid UUID`);
+            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a valid UUID`);
           }
         }
         // JSON can be anything.  We can validate it against a schema at some later version...
       });
 
-      // Here let's log the structured record
-      const sLogRec = new BaseTraceEvent();
-      sLogRec.authorizedUser = opCtx?.authenticatedUser || '';
-      sLogRec.authorizedRole = opCtx?.assumedRole || '';
-      sLogRec.eventType = TraceEventTypes.METHOD_ENTER;
-      sLogRec.eventComponent = mn;
-      sLogRec.eventLevel = methReg.traceLevel;
-
-      // Argument masking
+      // Argument logging
       args.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
@@ -495,12 +456,11 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "JSONSALT");
             } else {
               // Yes, we are doing the same as above for now.
-              //  It can be better if we have verified the type of the data
+              // It can be better if we have verified the type of the data
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "OPERONSALT");
             }
           }
-          sLogRec.positionalArgs.push(loggedArgValue);
-          sLogRec.namedArgs[methReg.args[idx].name] = loggedArgValue;
+          opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
         }
       });
 
@@ -610,6 +570,19 @@ export function DefaultRequiredRole(anyOf: string[]) {
 /* METHOD DECORATORS */
 ///////////////////////
 
+export function Debug() {
+  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.debug = true;
+    return descriptor;
+  }
+  return logdec;
+}
+
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
     target: object,
@@ -622,25 +595,6 @@ export function RequiredRole(anyOf: string[]) {
     return descriptor;
   }
   return apidec;
-}
-
-// Outer shell is the factory that produces decorator - which gets parameters for building the decorator code
-export function TraceLevel(level: TraceLevels) {
-  // This is the decorator that will get applied to the decorator item
-  function logdec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-  {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.traceLevel = level;
-    return descriptor;
-  }
-  return logdec;
-}
-
-export function Traced<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
-  return TraceLevel(TraceLevels.INFO)(target, propertyKey, descriptor);
 }
 
 export function OperonWorkflow(config: WorkflowConfig={}) {
@@ -682,3 +636,17 @@ export function OperonCommunicator(config: CommunicatorConfig={}) {
   return decorator;
 
 }
+
+// eslint-disable-next-line @typescript-eslint/ban-types
+export function OrmEntities(entities: Function[]) {
+
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     clsreg.ormEntities = entities;
+  }
+  return clsdec; 
+
+}
+
+

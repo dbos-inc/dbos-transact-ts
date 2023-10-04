@@ -10,11 +10,16 @@ export interface UserDatabase {
 
   getName(): UserDatabaseName;
 
-  transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R>;
+  // Run transactionFunction as a database transaction
+  transaction<T extends any[], R>(transactionFunction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R>;
+  // Execute a raw SQL query
   query<R>(sql: string, ...params: any[]): Promise<R[]>;
+  // Execute a raw SQL query in the session/transaction of a particular client
   queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]>;
 
+  // Is a database error retriable?  Currently only serialization errors are retriable
   isRetriableTransactionError(error: unknown): boolean;
+  // Is a database error caused by a key conflict (key constraint violation or serialization error)?
   isKeyConflictError(error: unknown): boolean;
 }
 

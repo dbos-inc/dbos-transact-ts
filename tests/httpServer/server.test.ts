@@ -3,9 +3,6 @@
 import {
   GetApi,
   Operon,
-  OperonConfig,
-  OperonNotAuthorizedError,
-  OperonResponseError,
   OperonTransaction,
   OperonWorkflow,
   MiddlewareContext,
@@ -13,8 +10,9 @@ import {
   RequiredRole,
   TransactionContext,
   WorkflowContext,
+  StatusString,
 } from "../../src";
-import { OperonHttpServer } from "../../src/httpServer/server";
+import { OperonHttpServer, OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
 import {
   TestKvTable,
   generateOperonTestConfig,
@@ -22,8 +20,10 @@ import {
 } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
-import { CONSOLE_EXPORTER } from "../../src/telemetry/exporters";
 import { Authentication } from "../../src/httpServer/middleware";
+import { v1 as uuidv1 } from "uuid";
+import { OperonConfig } from "../../src/operon";
+import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -33,28 +33,23 @@ describe("httpserver-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig([CONSOLE_EXPORTER]);
+    config = generateOperonTestConfig();
     await setupOperonTestDb(config);
   });
 
   beforeEach(async () => {
     operon = new Operon(config);
-    operon.useNodePostgres();
     await operon.init(TestEndpoints);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
     );
     httpServer = new OperonHttpServer(operon);
-    // TODO: Need to find a way to customize the list of middlewares. It's tricky because the order we use those middlewares matters.
-    // For example, if we use logger() after we register routes, the logger cannot correctly log the request before the function executes.
-    // httpServer.app.use(logger());
-    // In some cases, the aspects often covered by middleware can be made more explicit and more dev-friendly at the same time.
-    //  We would run those at the appropriate time.
   });
 
   afterEach(async () => {
     await operon.destroy();
+    jest.restoreAllMocks();
   });
 
   test("get-hello", async () => {
@@ -70,6 +65,8 @@ describe("httpserver-tests", () => {
   });
 
   test("get-query", async () => {
+    // "mute" console.info
+    jest.spyOn(console, "info").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/query?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
@@ -97,6 +94,8 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback())
       .post("/error")
       .send({ name: "alice" });
@@ -111,12 +110,16 @@ describe("httpserver-tests", () => {
   });
 
   test("response-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
     expect(response.body.message).toBe("customize error");
   });
 
   test("datavalidation-error", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/query");
     expect(response.statusCode).toBe(400);
     expect(response.body.details.operonErrorCode).toBe(9);
@@ -129,16 +132,22 @@ describe("httpserver-tests", () => {
   });
 
   test("not-authenticated", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
+    // "mute" console.error
+    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
@@ -146,6 +155,41 @@ describe("httpserver-tests", () => {
   test("authorized", async () => {
     const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
+  });
+
+  test("test-workflowUUID-header", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(httpServer.app.callback())
+      .post("/workflow?name=bob")
+      .set({"operon-workflowuuid": workflowUUID});
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    await operon.flushWorkflowStatusBuffer();
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
+
+  test("endpoint-handler-UUID", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(httpServer.app.callback()).get("/handler/bob")
+      .set({"operon-workflowuuid": workflowUUID});
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -218,8 +262,9 @@ describe("httpserver-tests", () => {
 
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
-      // Invoke a workflow using the provided Operon instance.
-      return ctxt.workflow(TestEndpoints.testWorkflow, {}, name).getResult();
+      const workflowUUID = ctxt.koaContext.get(OperonWorkflowUUIDHeader);
+      // Invoke a workflow using the given UUID.
+      return ctxt.invoke(TestEndpoints, workflowUUID).testWorkflow(name).then(x => x.getResult());
     }
 
     @PostApi("/transaction/:name")
@@ -235,7 +280,7 @@ describe("httpserver-tests", () => {
     @PostApi("/workflow")
     @OperonWorkflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
-      const res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
+      const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return res;
     }
 
@@ -243,8 +288,8 @@ describe("httpserver-tests", () => {
     @OperonWorkflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
       // This workflow should encounter duplicate primary key error.
-      let res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
-      res = await wfCtxt.transaction(TestEndpoints.testTranscation, name);
+      let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+      res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return res;
     }
 
