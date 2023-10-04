@@ -23,6 +23,7 @@ jobs:
         path: ./
     - name: Publish to GitHub package manager
       run: |
+        npm config set @dbos-inc:registry https://npm.pkg.github.com
         npm publish ${{ needs.artifact.outputs.PackageName }}
       env:
         NPM_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
