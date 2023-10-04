@@ -3,33 +3,29 @@ import path from 'path'
 import fs from 'fs'
 
 interface CopyOption {
-  cwd?: string
   rename?: (basename: string) => string
-  parents?: boolean
 }
 
 const identity = (x: string) => x
 
 export const copy = async (
-  src: string | string[],
+  src: string,
+  targets: string[],
   dest: string,
-  { cwd, rename = identity, parents = true }: CopyOption = {}
+  { rename = identity }: CopyOption = {}
 ) => {
-  const source = typeof src === 'string' ? [src] : src
 
-  if (source.length === 0 || !dest) {
+  if (targets.length === 0 || !dest) {
     throw new TypeError('`src` and `dest` are required')
   }
 
-  console.log(source);
-  const sourceFiles = await glob(source, {
-    cwd,
+  const sourceFiles = await glob(targets, {
+    cwd: src,
     dot: true,
     absolute: false,
     stats: false,
     ignore: ['**/node_modules/**', '**/dist/**']
   })
-  console.log(sourceFiles);
 
 
   return Promise.all(
@@ -37,10 +33,8 @@ export const copy = async (
       const dirname = path.dirname(p)
       const basename = rename(path.basename(p))
 
-      const from = cwd ? path.resolve(cwd, p) : p
-      const to = parents
-        ? path.join(dest, dirname, basename)
-        : path.join(dest, basename)
+      const from = path.resolve(src, p);
+      const to = path.join(dest, dirname, basename);
 
       // Ensure the destination directory exists
       await fs.promises.mkdir(path.dirname(to), { recursive: true })
@@ -51,12 +45,7 @@ export const copy = async (
 }
 
 export async function init(dest: string) {
-  const copySource = ["**"]
   const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
-  console.log(templatePath);
-  await copy(copySource, dest,
-    {
-      parents: true,
-      cwd: templatePath
-    });
+  const targets = ["**"]
+  await copy(templatePath, targets, dest);
 }
