@@ -1,4 +1,4 @@
-import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonCommunicator, CommunicatorContext, HandlerContext } from 'operon'
+import { TransactionContext, WorkflowContext, OperonTransaction, OperonWorkflow, GetApi, OperonCommunicator, CommunicatorContext, HandlerContext } from '@dbos-inc/operon'
 
 export class Hello {
 
@@ -37,4 +37,3 @@ export class Hello {
     return await ctx.invoke(Hello).helloWorkflow(name).then(x => x.getResult());
   }
 }
-

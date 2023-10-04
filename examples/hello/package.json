@@ -1,18 +1,15 @@
 {
-  "name": "hello-function",
-  "version": "1.0.0",
-  "description": "Simple functions",
+  "name": "operon-hello",
+  "version": "0.0.10",
   "scripts": {
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "operon": "../.."
+    "@dbos-inc/operon": "0.5.1-preview"
   }
 }
