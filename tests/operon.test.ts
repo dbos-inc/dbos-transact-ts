@@ -320,26 +320,25 @@ describe("operon-tests", () => {
 
   test("notification-oaoo", async () => {
     const recvWorkflowUUID = uuidv1();
+    const idempotencyKey = "test-suffix"
     const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
-      return ctxt.recv<string>(topic, timeout);
+      // This returns true if and only if exactly one message is sent to it.
+      const succeeds = await ctxt.recv<number>(topic, timeout);
+      const fails = await ctxt.recv<number>(topic, 0);
+      return succeeds === 123 && fails === null;
     };
     operon.registerWorkflow(receiveWorkflow);
-    const promise = operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult());
-    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", "test-suffix")).resolves.toBeFalsy();
 
-    await expect(promise).resolves.toBe(123);
+    // Send twice with the same idempotency key.  Only one message should be sent.
+    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
+    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
 
-    // Send again with the same UUID but different input.
-    // Even we sent it twice, it should still be 123.
-    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", "test-suffix")).resolves.toBeFalsy();
+    // Receive twice with the same UUID.  Each should get the same result of true.
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(true);
+    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(true);
 
-    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(123);
-
-    // Receive again with the same workflowUUID, should get the same result.
-    await expect(operon.workflow(receiveWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then(x => x.getResult())).resolves.toBe(123);
-
-    // Receive again with the different workflowUUID.
-    await expect(operon.workflow(receiveWorkflow, {}, "testTopic", 1).then(x => x.getResult())).resolves.toBeNull();
+    // A receive with a different UUID should return false.
+    await expect(operon.workflow(receiveWorkflow, {}, "testTopic", 0).then(x => x.getResult())).resolves.toBe(false);
   });
 
   test("endtoend-oaoo", async () => {
