@@ -16,26 +16,20 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 18
-        # .NET 6 needed for NBGV
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+      - name: Nerdbank.GitVersioning
+        id: nbgv
+        uses: dotnet/nbgv@v0.4.1
         with:
-          dotnet-version: 6.0.x
-      - name: npm ci
-        working-directory: ./
-        run: |
-          npm ci
-      - name: Set Version 
-        working-directory: ./
-        run: |
-          npm run setversion
+          stamp: package.json
       - name: Compile and pack
         working-directory: ./
         run: |
+          npm ci
           npm run build
           npm pack
+      - run: echo 'NpmPackageVersion=${{ steps.nbgv.outputs.NpmPackageVersion }}'
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
           name: operon
-          path: ./dbos-inc-operon-*.tgz
+          path: ./dbos-inc-operon-${{ steps.nbgv.outputs.NpmPackageVersion }}.tgz
