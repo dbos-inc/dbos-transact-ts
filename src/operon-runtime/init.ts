@@ -27,7 +27,6 @@ export const copy = async (
     ignore: ['**/node_modules/**', '**/dist/**']
   })
 
-
   return Promise.all(
     sourceFiles.map(async (p) => {
       const dirname = path.dirname(p)

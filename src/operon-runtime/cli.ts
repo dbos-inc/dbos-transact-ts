@@ -6,7 +6,6 @@ import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
 import { init } from "./init";
-import * as path from 'path';
 
 const program = new Command();
 

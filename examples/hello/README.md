@@ -24,4 +24,4 @@ You can add more functionality to the app by modifying `src/userFunctions.ts`, t
 
 ## Learn More
 
-To learn more abuot Operon, take a look at [our documentation](https://dbos-inc.github.io/operon-docs/) or our [source code](https://github.com/dbos-inc/operon).
+To learn more about Operon, take a look at [our documentation](https://dbos-inc.github.io/operon-docs/) or our [source code](https://github.com/dbos-inc/operon).
