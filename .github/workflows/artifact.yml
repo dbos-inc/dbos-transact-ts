@@ -26,8 +26,9 @@ jobs:
           stamp: package.json
       - run: npm ci
       - run: npm run build
+      - run: echo ${{ steps.nbgv.outputs.PublicRelease }}
       - run: npm publish
-        if: ${{ steps.nbgv.outputs.PublicRelease }}
+        if: ${{ !! steps.nbgv.outputs.PublicRelease }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm pack
