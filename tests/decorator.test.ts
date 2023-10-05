@@ -1,3 +1,4 @@
+import { PoolClient } from "pg";
 import { CommunicatorContext, Operon, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
@@ -5,6 +6,8 @@ import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./help
 import { v1 as uuidv1 } from "uuid";
 
 const testTableName = "operon_test_kv";
+
+type TestTransactionContext = TransactionContext<PoolClient>;
 
 class TestClass {
   static #counter = 0;
@@ -25,9 +28,9 @@ class TestClass {
   }
 
   @OperonTransaction()
-  static async testInsertTx(txnCtxt: TransactionContext, name: string) {
+  static async testInsertTx(txnCtxt: TestTransactionContext, name: string) {
     expect(txnCtxt.getConfig("counter")).toBe(3);
-    const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    const { rows } = await txnCtxt.client.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name]
     );
@@ -35,8 +38,8 @@ class TestClass {
   }
 
   @OperonTransaction({readOnly: true})
-  static async testReadTx(txnCtxt: TransactionContext,id: number) {
-    const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+  static async testReadTx(txnCtxt: TestTransactionContext,id: number) {
+    const { rows } = await txnCtxt.client.query<TestKvTable>(
       `SELECT id FROM ${testTableName} WHERE id=$1`,
       [id]
     );

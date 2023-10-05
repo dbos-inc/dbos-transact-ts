@@ -19,7 +19,7 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
-export type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+export type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
@@ -217,7 +217,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Check if this execution previously happened, returning its original result if it did.
 
         const tCtxt = new TransactionContextImpl(
-          this.#operon.userDatabase.getName(), client, config, this,
+          this.#operon.userDatabase.getName(), client, this,
           span, this.#operon.logger, funcId, txn.name,
         );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
