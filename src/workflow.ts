@@ -77,7 +77,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-      const span = operon.tracer.startSpan(
+    const span = operon.tracer.startSpan(
       workflowName,
       {
         workflowUUID: workflowUUID,
