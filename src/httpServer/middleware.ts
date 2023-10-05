@@ -7,7 +7,7 @@ export class MiddlewareContext {
   constructor(
     readonly koaContext: Koa.Context,
     readonly name: string, // Method (handler, transaction, workflow) name
-    readonly requiredRole: string[]
+    readonly requiredRole: string[], // Roles required for the invoked Operon operation, if empty perhaps auth is not required
   ) { }
 }
 

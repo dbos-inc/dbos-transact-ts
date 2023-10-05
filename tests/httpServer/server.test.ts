@@ -195,7 +195,7 @@ describe("httpserver-tests", () => {
   // eslint-disable-next-line @typescript-eslint/require-await
   async function testAuthMiddlware (ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
-      const { userid } = ctx.koaContext.request.query
+      const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {

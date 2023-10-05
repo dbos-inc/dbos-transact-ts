@@ -121,6 +121,78 @@ describe("httpserver-datavalidation-tests", () => {
     .send({v:1234});
     expect(response.statusCode).toBe(400);
   });
+  test("varchar post boolean", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:false});
+    expect(response.statusCode).toBe(400);
+  });
+
+  // Number (float)
+  test("no number (get)", async () => {
+    const response = await request(httpServer.app.callback()).get("/number");
+    expect(response.statusCode).toBe(400);
+  });
+  test("no number (post)", async () => {
+    const response = await request(httpServer.app.callback()).post("/number");
+    expect(response.statusCode).toBe(400);
+  });
+  test("no number (post) 2", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({});
+    expect(response.statusCode).toBe(400);
+  });
+  test("number get", async () => {
+    const response = await request(httpServer.app.callback()).get("/number")
+    .query({v:"10.1"});
+    expect(response.statusCode).toBe(200);
+  });
+  test("number get", async () => {
+    const response = await request(httpServer.app.callback()).get("/number")
+    .query({v:10.5});
+    expect(response.statusCode).toBe(200);
+  });
+  test("number get - bogus value", async () => {
+    const response = await request(httpServer.app.callback()).get("/number")
+    .query({v:"abc"});
+    expect(response.statusCode).toBe(400);
+  });
+  test("number get - bigint", async () => {
+    const response = await request(httpServer.app.callback()).get("/number")
+    .query({v:12345678901234567890n});
+    expect(response.statusCode).toBe(200);
+  });
+  test("number post", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:"20"});
+    expect(response.statusCode).toBe(200);
+  });
+  test("number post", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:20.20});
+    expect(response.statusCode).toBe(200);
+  });
+  test("number post - bogus value", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:"AAAaaaAAAaaa"});
+    expect(response.statusCode).toBe(400);
+  });
+  test("number post not a number", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:false});
+    expect(response.statusCode).toBe(400);
+  });
+  /* You can't do this - no bigint serialize to json
+  test("number post bigint", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:234567890123456789n});
+    expect(response.statusCode).toBe(200);
+  });
+  */
+  test("number post bigint", async () => {
+    const response = await request(httpServer.app.callback()).post("/number")
+    .send({v:"12345678901234567890"});
+    expect(response.statusCode).toBe(200);
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpointDataVal {
@@ -150,12 +222,32 @@ describe("httpserver-datavalidation-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/varchar")
     static async checkVarcharG(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+      if (typeof v !== 'string') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
       return { message: `This is a really nice string (limited length): ${v}` };
     }
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/varchar")
     static async checkVarcharP(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+      if (typeof v !== 'string') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
       return { message: `This is a really nice string (limited length): ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/number")
+    static async checkNumberG(_ctx: HandlerContext, v: number) {
+      if (typeof v !== 'number') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice number: ${v}` };
+    }
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/number")
+    static async checkNumberP(_ctx: HandlerContext, v: number) {
+      return { message: `This is a really nice number: ${v}` };
     }
   }
 });
