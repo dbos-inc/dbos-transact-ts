@@ -9,6 +9,7 @@ Operon works with any Postgres database, but to make things easier, we've provid
 
 ```bash
 ./start_postgres_docker.sh
+export PGPASSWORD=dbos
 node init_database.js
 ```
 
@@ -22,7 +23,7 @@ npx operon start
 Finally, curl the server to see that it's working!
 
 ```bash
- curl -i http://localhost:3000/greeting/operon
+ curl http://localhost:3000/greeting/operon
 ```
 
 You can add more functionality to the app by modifying `src/userFunctions.ts`, then re-building and re-starting it.
