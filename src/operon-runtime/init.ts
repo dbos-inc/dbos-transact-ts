@@ -48,7 +48,7 @@ export const copy = async (
 export async function init(appName: string) {
 
   if (fs.existsSync(appName)) {
-    throw new OperonError(`Directory ${appName} already exists, existing...`);
+    throw new OperonError(`Directory ${appName} already exists, exiting...`);
   }
 
   const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
