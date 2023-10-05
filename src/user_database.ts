@@ -3,6 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "
 import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
+import { Knex } from "knex";
 
 export interface UserDatabase {
   init(): Promise<void>;
@@ -25,12 +26,13 @@ export interface UserDatabase {
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager;
+export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
   TYPEORM: "typeorm",
+  KNEX: "knex",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -136,7 +138,7 @@ const PrismaIsolationLevel = {
 } as const;
 
 export class PrismaUserDatabase implements UserDatabase {
-  constructor(readonly prisma: PrismaClient) {}
+  constructor(readonly prisma: PrismaClient) { }
 
   async init(): Promise<void> {
     await this.prisma.$queryRawUnsafe(createUserDBSchema);
@@ -203,13 +205,13 @@ export interface TypeORMDataSource {
   readonly isInitialized: boolean;
   readonly manager: TypeORMEntityManager;
   initialize(): Promise<this>;
-  query<T=any>(query: string): Promise<T>;
+  query<T = any>(query: string): Promise<T>;
   destroy(): Promise<void>;
 }
 
 export interface TypeORMEntityManager {
   query<T = any>(query: string, parameters?: any[]): Promise<T>
-  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager:TypeORMEntityManager) => Promise<T>) : Promise<T>
+  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<T>): Promise<T>
 }
 
 export interface QueryFailedError<T> {
@@ -250,9 +252,9 @@ export class TypeORMDatabase implements UserDatabase {
     const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
 
     return this.dataSource.manager.transaction(isolationLevel,
-      async (transactionEntityManager : TypeORMEntityManager) => {
-      const result = await txn(transactionEntityManager, ...args);
-      return result;
+      async (transactionEntityManager: TypeORMEntityManager) => {
+        const result = await txn(transactionEntityManager, ...args);
+        return result;
       },
     );
   }
@@ -287,5 +289,69 @@ export class TypeORMDatabase implements UserDatabase {
   isKeyConflictError(error: unknown): boolean {
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
+  }
+}
+
+/**
+ * Knex user data access interface
+ */
+export class KnexUserDatabase implements UserDatabase {
+
+  constructor(readonly knex: Knex) { }
+
+  async init(): Promise<void> {
+    await this.knex.raw(createUserDBSchema);
+    await this.knex.raw(userDBSchema);
+  }
+
+  async destroy(): Promise<void> {
+    this.knex.destroy();
+  }
+
+  getName() {
+    return UserDatabaseName.KNEX;
+  }
+
+  async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    let isolationLevel: Knex.IsolationLevels;
+    if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
+      isolationLevel = "read uncommitted";
+    } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
+      isolationLevel = "read committed";
+    } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
+      isolationLevel = "repeatable read";
+    } else {
+      isolationLevel = "serializable";
+    }
+    const result = await this.knex.transaction<R>(async function (trx) {
+      return await transaction(trx, ...args);
+    },
+      { isolationLevel: isolationLevel });
+    return result;
+  }
+
+  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+    const knexSql = sql.replace(/\$\d+/g, '?');
+    const rows = await this.knex.raw<R>(knexSql, params) as { rows: R[] };
+    return rows.rows;
+  }
+
+  async queryWithClient<R>(client: Knex.Transaction, sql: string, ...params: any[]): Promise<R[]> {
+    const knexSql = sql.replace(/\$\d+/g, '?');
+    const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
+    return rows.rows;
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    return null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    return false;
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    return false;
   }
 }
