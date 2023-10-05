@@ -10,10 +10,10 @@ let insertCount = 0;
 
 class TestClass {
   @OperonTransaction()
-  static async testInsert(txnCtxt: TransactionContext, name: string) {
+  static async testInsert(txnCtxt: TransactionContext, value: string) {
     insertCount++;
     const result = await txnCtxt.knex<TestKvTable>(testTableName)
-      .insert({ value: name })
+      .insert({ value: value })
       .returning('id');
     return result[0].id!;
   }
@@ -25,10 +25,19 @@ class TestClass {
   }
 
   @OperonWorkflow()
-  static async testWf(ctxt: WorkflowContext, name: string) {
-    const id = await ctxt.invoke(TestClass).testInsert(name);
+  static async testWf(ctxt: WorkflowContext, value: string) {
+    const id = await ctxt.invoke(TestClass).testInsert(value);
     const result = await ctxt.invoke(TestClass).testSelect(id);
     return result;
+  }
+
+  @OperonTransaction()
+  static async unsafeInsert(txnCtxt: TransactionContext, key: number, value: string) {
+    insertCount++;
+    const result = await txnCtxt.knex<TestKvTable>(testTableName)
+      .insert({ id: key, value: value })
+      .returning('id');
+    return result[0].id!;
   }
 }
 
@@ -74,5 +83,15 @@ describe("knex-tests", () => {
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("test-one");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("test-one");
     expect(insertCount).toBe(1);
+  });
+
+  test("knex-key-conflict", async () => {
+    await operon.transaction(TestClass.unsafeInsert, {}, 1, "test-one");
+    try {
+      await operon.transaction(TestClass.unsafeInsert, {}, 1, "test-two");
+      expect(true).toBe(false); // Fail if no error is thrown.
+    } catch (e) {
+      expect(operon.userDatabase.isKeyConflictError(e)).toBe(true);
+    }
   });
 });
