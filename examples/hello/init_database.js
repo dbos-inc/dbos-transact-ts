@@ -70,7 +70,7 @@ const createTables = async () => {
 
     await helloClient.connect();
 
-    await executeQuery(helloClient, "CREATE TABLE IF NOT EXISTS OperonHello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);");
+    await executeQuery(helloClient, "CREATE TABLE IF NOT EXISTS operon_hello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);");
 
     await helloClient.end();
 };
