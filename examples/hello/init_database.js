@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const { Client } = require('pg');
 
 const POSTGRES_HOST = process.env.POSTGRES_HOST || "localhost";
@@ -29,10 +31,15 @@ const createUserAndDb = async () => {
     await executeQuery(adminClient, "ALTER USER hello CREATEDB;");
 
     // Check if the database 'hello' exists before trying to drop it
-    const dbExistsResult = await executeQuery(adminClient, "SELECT 1 FROM pg_database WHERE datname='hello';");
-
-    if (dbExistsResult.rowCount > 0) {
+    const helloExists = await executeQuery(adminClient, "SELECT 1 FROM pg_database WHERE datname='hello';");
+    if (helloExists.rowCount > 0) {
         await executeQuery(adminClient, "DROP DATABASE hello;");
+    }
+
+    // Check if the database 'hello' exists before trying to drop it
+    const systemDBExists = await executeQuery(adminClient, "SELECT 1 FROM pg_database WHERE datname='hello_systemdb';");
+    if (systemDBExists.rowCount > 0) {
+        await executeQuery(adminClient, "DROP DATABASE hello_systemdb;");
     }
 
     // Connect as hello user to create the DB
