@@ -19,7 +19,7 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
-type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+export type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
@@ -59,11 +59,12 @@ export interface WorkflowContext extends OperonContext {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
   external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
 }
 
-export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext  {
+export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
@@ -173,6 +174,18 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   }
 
   /**
+   * Invoke another workflow as its child workflow and return a workflow handle.
+   * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
+   * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
+   */
+  async childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
+  }
+
+  /**
    * Execute a transactional function.
    * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.
    * If the transaction encounters a Postgres serialization error, retry it.
@@ -247,8 +260,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (this.#operon.userDatabase.isRetriableTransactionError(err))
-        {
+        if (this.#operon.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
           // Retry serialization failures.
@@ -421,9 +433,9 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
         : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
-          : undefined;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
+        : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
   }
