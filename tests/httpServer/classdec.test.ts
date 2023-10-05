@@ -167,17 +167,15 @@ describe("httpserver-defsec-tests", () => {
 
     @GetApi("/workflow")
     static async testWfEndpoint(ctxt: HandlerContext, name: string) {
-      const res = await ctxt
+      return ctxt
         .invoke(TestEndpointDefSec)
         .testWorkflow(name)
         .then((x) => x.getResult());
-      return res;
     }
 
     @GetApi("/transaction")
     static async testTxnEndpoint(ctxt: HandlerContext, name: string) {
-      const res = await ctxt.invoke(TestEndpointDefSec).testTranscation(name);
-      return res;
+      return ctxt.invoke(TestEndpointDefSec).testTranscation(name);
     }
   }
 });

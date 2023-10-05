@@ -3,13 +3,13 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { Operon } from "../operon";
 import { OperonContext, OperonContextImpl } from "../context";
 import Koa from "koa";
-import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
-import { OperonTransaction, TransactionContext } from "../transaction";
+import { OperonWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, TxFunc } from "../workflow";
+import { OperonTransaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 
-type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
+// local type declarations for Operon workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
@@ -85,7 +85,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
-    const params = { workflowUUID: workflowUUID };
+    const params = { workflowUUID: workflowUUID, parentCtx: this };
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
@@ -96,8 +96,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
           ? (...args: any[]) => this.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
           : undefined;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return proxy;
+    return proxy as (HandlerTxFuncs<T> & HandlerWfFuncs<T>);
   }
 
   //////////////////////
@@ -106,13 +105,11 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
 
   // TODO: Make private
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    params.parentCtx = this;
     return this.#operon.workflow(wf, params, ...args);
   }
 
   // TODO: Make private
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    params.parentCtx = this;
     return this.#operon.transaction(txn, params, ...args);
   }
 }
