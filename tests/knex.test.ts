@@ -2,12 +2,16 @@ import { Operon, OperonTransaction, OperonWorkflow, TransactionContext, Workflow
 import { OperonConfig } from "../src/operon";
 import { UserDatabaseName } from "../src/user_database";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { v1 as uuidv1 } from "uuid";
 
 const testTableName = "operon_test_kv";
+
+let insertCount = 0;
 
 class TestClass {
   @OperonTransaction()
   static async testInsert(txnCtxt: TransactionContext, name: string) {
+    insertCount++;
     const result = await txnCtxt.knex<TestKvTable>(testTableName)
       .insert({ value: name })
       .returning('id');
@@ -45,6 +49,7 @@ describe("knex-tests", () => {
     await operon.userDatabase.query(
       `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
     );
+    insertCount = 0;
   });
 
   afterEach(async () => {
@@ -58,5 +63,16 @@ describe("knex-tests", () => {
     expect(selectResult).toEqual("test-one");
     const wfResult = await operon.workflow(TestClass.testWf, {}, "test-two").then(x => x.getResult());
     expect(wfResult).toEqual("test-two");
+  });
+
+  test("knex-duplicate-workflows", async () => {
+    const uuid = uuidv1();
+    const results = await Promise.allSettled([
+      operon.workflow(TestClass.testWf, {workflowUUID: uuid}, "test-one").then(x => x.getResult()),
+      operon.workflow(TestClass.testWf, {workflowUUID: uuid}, "test-one").then(x => x.getResult()),
+    ]);
+    expect((results[0] as PromiseFulfilledResult<string>).value).toBe("test-one");
+    expect((results[1] as PromiseFulfilledResult<string>).value).toBe("test-one");
+    expect(insertCount).toBe(1);
   });
 });
