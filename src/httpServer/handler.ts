@@ -85,7 +85,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
-    const params = { workflowUUID: workflowUUID };
+    const params = { workflowUUID: workflowUUID, parentCtx: this };
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
@@ -106,13 +106,11 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
 
   // TODO: Make private
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    params.parentCtx = this;
     return this.#operon.workflow(wf, params, ...args);
   }
 
   // TODO: Make private
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    params.parentCtx = this;
     return this.#operon.transaction(txn, params, ...args);
   }
 }

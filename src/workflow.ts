@@ -21,10 +21,15 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 // local type declarations for Operon transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
+type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
 type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+}
+
+type ChildWfFuncs<T> = {
+  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
 export interface WorkflowParams {
@@ -63,19 +68,13 @@ export interface WorkflowContext extends OperonContext {
   external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
 }
 
-export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext  {
+export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #operon;
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
 
-  constructor(
-    operon: Operon,
-    parentCtx: OperonContextImpl | undefined,
-    workflowUUID: string,
-    readonly workflowConfig: WorkflowConfig,
-    workflowName: string
-  ) {
+  constructor(operon: Operon, parentCtx: OperonContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
     const span = operon.tracer.startSpan(
       workflowName,
       {
@@ -83,7 +82,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         operationName: workflowName,
         runAs: parentCtx?.authenticatedUser ?? "",
       },
-      parentCtx?.span,
+      parentCtx?.span
     );
     super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
@@ -173,6 +172,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   }
 
   /**
+   * Invoke another workflow as its child workflow and return a workflow handle.
+   * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
+   * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
+   */
+  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
+  }
+
+  /**
    * Execute a transactional function.
    * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.
    * If the transaction encounters a Postgres serialization error, retry it.
@@ -196,17 +206,14 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         readOnly: readOnly,
         isolationLevel: config.isolationLevel,
       },
-      this.span,
+      this.span
     );
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContextImpl(
-          this.#operon.userDatabase.getName(), client, config, this,
-          span, this.#operon.logger, funcId, txn.name,
-        );
+        const tCtxt = new TransactionContextImpl(this.#operon.userDatabase.getName(), client, config, this, span, this.#operon.logger, funcId, txn.name);
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
@@ -247,8 +254,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (this.#operon.userDatabase.isRetriableTransactionError(err))
-        {
+        if (this.#operon.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
           // Retry serialization failures.
@@ -296,7 +302,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         maxAttempts: commConfig.maxAttempts,
         backoffRate: commConfig.backoffRate,
       },
-      this.span,
+      this.span
     );
     const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
@@ -418,14 +424,15 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
+        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
         : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
-          : undefined;
+        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
+        : undefined;
     }
-    return proxy as WFInvokeFuncs<T>;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return proxy;
   }
 }
 

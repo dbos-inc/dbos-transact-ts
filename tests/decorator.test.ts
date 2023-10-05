@@ -56,6 +56,12 @@ class TestClass {
     const checkResult: number = await wfCtxt.invoke(TestClass).testReadTx(funcResult);
     return checkResult;
   }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  @OperonWorkflow()
+  static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
+    return wfCtxt.invoke(TestClass).testTxWorkflow(name)
+  }
 }
 
 describe("decorator-tests", () => {
