@@ -9,6 +9,6 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@dbos-inc/operon": "0.5.7-preview"
+    "@dbos-inc/operon": "../.."
   }
 }
