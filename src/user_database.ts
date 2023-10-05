@@ -305,14 +305,14 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async destroy(): Promise<void> {
-    this.knex.destroy();
+    await this.knex.destroy();
   }
 
   getName() {
     return UserDatabaseName.KNEX;
   }
 
-  async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(transactionFunction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let isolationLevel: Knex.IsolationLevels;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
@@ -325,7 +325,7 @@ export class KnexUserDatabase implements UserDatabase {
       isolationLevel = "serializable";
     }
     const result = await this.knex.transaction<R>(async function (trx) {
-      return await transaction(trx, ...args);
+      return await transactionFunction(trx, ...args);
     },
       { isolationLevel: isolationLevel });
     return result;
