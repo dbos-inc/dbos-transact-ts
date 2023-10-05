@@ -21,15 +21,10 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 // local type declarations for Operon transaction and communicator functions
 export type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
-export type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
 type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-}
-
-type ChildWfFuncs<T> = {
-  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
 export interface WorkflowParams {
@@ -60,13 +55,13 @@ export const StatusString = {
 } as const;
 
 export interface WorkflowContext extends OperonContext {
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> & ChildWfFuncs<T>;
+  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
   external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
-  childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -178,9 +173,10 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
    */
   async childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args) as Promise<WorkflowHandle<R>>;
+    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
   }
 
   /**
@@ -418,7 +414,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> & ChildWfFuncs<T> {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
@@ -431,16 +427,8 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
         : undefined;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      if (proxy[op.name] === undefined) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        proxy[op.name] = op.workflowConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.childWorkflow(op.registeredFunction as OperonWorkflow<any[], any>, ...args)
-        : undefined;
-      }
     }
-    return proxy as WFInvokeFuncs<T> & ChildWfFuncs<T>;
+    return proxy as WFInvokeFuncs<T>;
   }
 }
 
