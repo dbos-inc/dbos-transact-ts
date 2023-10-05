@@ -23,6 +23,7 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
       };
 
       stdout.on('data', onData);
+      stderr.on("data", onData);
 
       command.on('error', (error) => {
         reject(error);  // Reject promise on command error
@@ -75,14 +76,14 @@ describe("runtime-tests", () => {
 
   // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!
   test("runtime-hello using default runtime configuration", async () => {
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+    const command = spawn('node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js', ['start'], {
       env: process.env
     });
     await waitForMessageTest(command, '3000');
   });
 
   test("runtime hello with port provided as CLI parameter", async () => {
-    const command = spawn('../../dist/src/operon-runtime/cli.js', ['start', '--port', '1234'], {
+    const command = spawn('node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js', ['start', '--port', '1234'], {
       env: process.env
     });
     await waitForMessageTest(command, '1234');
@@ -95,8 +96,10 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  connectionTimeoutMillis: 3000
   user_database: 'hello'
+  system_database: 'hello_systemdb'
+  connectionTimeoutMillis: 3000
+  user_dbclient: 'pg-node'
 localRuntimeConfig:
   port: 6666
 `;
@@ -105,7 +108,7 @@ localRuntimeConfig:
     fs.writeFileSync(filePath, mockOperonConfigYamlString, 'utf-8');
 
     try {
-        const command = spawn('../../dist/src/operon-runtime/cli.js', ['start'], {
+        const command = spawn('node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js', ['start'], {
           env: process.env
         });
         await waitForMessageTest(command, '6666');

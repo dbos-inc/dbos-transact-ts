@@ -5,13 +5,23 @@ import { deploy } from "./deploy";
 import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
+import { init } from "./init";
+
 const program = new Command();
 
-/* LOCAL DEVELOPMENT */
+////////////////////////
+/* LOCAL DEVELOPMENT  */
+////////////////////////
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const packageJson = require('../../../package.json') as { version: string };
+program.
+  version(packageJson.version);
+
 program
   .command('start')
   .description('Start the server')
-  .option('-p, --port <type>', 'Specify the port number')
+  .option('-p, --port <number>', 'Specify the port number')
   .action(async (options: { port: string }) => {
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig | undefined] = parseConfigFile();
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);
@@ -21,12 +31,23 @@ program
     });
   });
 
-/* CLOUD DEPLOYMENT */
+program
+  .command('init')
+  .description('Init an Operon application')
+  .option('-n, --appName <application-name>', 'Application name', 'operon-hello-app')
+  .action(async (options: { appName: string }) => {
+    await init(options.appName);
+  });
+
+///////////////////////
+/* CLOUD DEPLOYMENT  */
+///////////////////////
+
 program
   .command('deploy')
   .description('Deploy an application to the cloud')
-  .option('-n, --name <type>', 'Specify the app name')
-  .option('-h, --host <type>', 'Specify the host', 'localhost')
+  .option('-n, --name <string>', 'Specify the app name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { name: string, host: string }) => {
     if (!options.name) {
       console.error('Error: the --name option is required.');
