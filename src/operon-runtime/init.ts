@@ -1,6 +1,8 @@
 import { async as glob } from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
+import { execSync } from 'child_process'
+import { OperonError } from '../error'
 
 interface CopyOption {
   rename?: (basename: string) => string
@@ -43,8 +45,19 @@ export const copy = async (
   )
 }
 
-export async function init(dest: string) {
+export async function init(appName: string) {
+
+  if (fs.existsSync(appName)) {
+    throw new OperonError(`Directory ${appName} already exists, existing...`);
+  }
+
   const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
   const targets = ["**"]
-  await copy(templatePath, targets, dest);
+  await copy(templatePath, targets, appName);
+
+  const packageJsonName = path.resolve(appName, 'package.json');
+  const content = fs.readFileSync(packageJsonName, 'utf-8');
+  let updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
+  fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
+  execSync("npm i", {cwd: appName})
 }

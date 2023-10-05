@@ -40,9 +40,9 @@ program
 program
   .command('init')
   .description('Init an Operon application')
-  .option('-p, --path <path>', 'Specify where to init', 'operon-hello-app')
-  .action(async (options: { path: string }) => {
-    await init(options.path);
+  .option('-n, --appName <application-name>', 'Application name', 'operon-hello-app')
+  .action(async (options: { appName: string }) => {
+    await init(options.appName);
   });
 
 program.parse(process.argv);

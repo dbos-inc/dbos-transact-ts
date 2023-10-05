@@ -1,20 +1,14 @@
 # Operon Hello
 
-This is an [Operon app](https://dbos-inc.github.io/operon-docs/) boostrapped with `operon init`.
+This is an [Operon app](https://dbos-inc.github.io/operon-docs/) bootstrapped with `operon init`.
 
 ## Getting Started
 
 First, set up the database.
-Operon works with any Postgres database, but to make things easier, we've provided a nifty script that starts Postgres locally in a Docker container:
+Operon works with any Postgres database, but to make things easier, we've provided nifty scripts that start Postgres locally in a Docker container and set up some tables:
 
 ```bash
 ./start_postgres_docker.sh
-```
-
-Then, set up some tables:
-
-```bash
-npm i
 node init_database.js
 ```
 
@@ -25,9 +19,7 @@ npm run build
 npx operon start
 ```
 
-Open [http://localhost:3000/greeting/operon](http://localhost:3000/greeting/operon) to see the result.
-
-Alternatively, use curl:
+Finally, curl the server to see that it's working!
 
 ```bash
  curl -i http://localhost:3000/greeting/operon
