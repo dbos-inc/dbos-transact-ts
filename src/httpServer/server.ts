@@ -162,19 +162,17 @@ export class OperonHttpServer {
                 st = 400;  // Set to 400: client-side error.
               }
               koaCtxt.status = st;
-              koaCtxt.message = e.message;
               koaCtxt.body = {
                 status: st,
                 message: e.message,
                 details: e,
-              } 
+              }
             } else {
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: JSON.stringify(e) });
               koaCtxt.body = e;
               koaCtxt.status = 500;
               throw e;
             }
-            
           } finally {
             // Inject trace context into response headers.
             // We cannot use the defaultTextMapSetter to set headers through Koa
