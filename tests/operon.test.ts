@@ -14,6 +14,7 @@ import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
+import { PoolClient } from "pg";
 
 describe("operon-tests", () => {
   const testTableName = "operon_test_kv";
@@ -42,8 +43,8 @@ describe("operon-tests", () => {
   });
 
   test("simple-function", async () => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.pgClient.query(
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, name: string) => {
+      const { rows } = await txnCtxt.client.query(
         `select current_user from current_user where current_user=$1;`,
         [name]
       );
@@ -95,7 +96,7 @@ describe("operon-tests", () => {
   });
 
   test("return-void", async () => {
-    const testFunction = async (txnCtxt: TransactionContext) => {
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>) => {
       void txnCtxt;
       await sleep(1);
       return;
@@ -115,7 +116,7 @@ describe("operon-tests", () => {
   });
 
   test("tight-loop", async () => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, name: string) => {
       void txnCtxt;
       await sleep(1);
       return name;
@@ -142,8 +143,8 @@ describe("operon-tests", () => {
   });
 
   test("abort-function", async () => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name]
       );
@@ -155,10 +156,10 @@ describe("operon-tests", () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `SELECT id FROM ${testTableName} WHERE id=$1`,
         [id]
       );
@@ -200,8 +201,8 @@ describe("operon-tests", () => {
   });
 
   test("oaoo-simple", async () => {
-    const testFunction = async (txnCtxt: TransactionContext, name: string) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, name: string) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name]
       );
@@ -210,10 +211,10 @@ describe("operon-tests", () => {
     operon.registerTransaction(testFunction);
 
     const testFunctionRead = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `SELECT id FROM ${testTableName} WHERE id=$1`,
         [id]
       );
@@ -344,7 +345,7 @@ describe("operon-tests", () => {
   test("endtoend-oaoo", async () => {
     let num = 0;
 
-    const testFunction = async (txnCtxt: TransactionContext, code: number) => {
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, code: number) => {
       void txnCtxt;
       await sleep(1);
       return code + 1;
@@ -404,8 +405,8 @@ describe("operon-tests", () => {
     let num = 0;
     let workflowCnt = 0;
 
-    const readFunction = async (txnCtxt: TransactionContext, id: number) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    const readFunction = async (txnCtxt: TransactionContext<PoolClient>, id: number) => {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `SELECT value FROM ${testTableName} WHERE id=$1`,
         [id]
       );
@@ -418,11 +419,11 @@ describe("operon-tests", () => {
     operon.registerTransaction(readFunction, { readOnly: true });
 
     const writeFunction = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number,
       name: string
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
         [id, name]
       );
@@ -482,11 +483,11 @@ describe("operon-tests", () => {
     });
 
     const writeFunction = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number,
       name: string
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
         [id, name]
       );

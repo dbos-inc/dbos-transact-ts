@@ -9,7 +9,7 @@ import {
   setupOperonTestDb,
   TestKvTable,
 } from "./helpers";
-import { DatabaseError } from "pg";
+import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { StatusString } from "../src/workflow";
@@ -96,7 +96,7 @@ describe("failures-tests", () => {
   test("readonly-error", async () => {
     let cnt = 0;
 
-    const testFunction = async (txnCtxt: TransactionContext, id: number) => {
+    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, id: number) => {
       await sleep(1);
       void txnCtxt;
       cnt += 1;
@@ -122,11 +122,11 @@ describe("failures-tests", () => {
     let counter: number = 0;
     let succeedUUID: string = "";
     const testFunction = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number,
       name: string
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`,
         [id, name]
       );
@@ -192,7 +192,7 @@ describe("failures-tests", () => {
     // Just for testing, functions shouldn't share global state.
     let num = 0;
     const testFunction = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       maxRetry: number
     ) => {
       if (num !== maxRetry) {
@@ -291,11 +291,11 @@ describe("failures-tests", () => {
 
   test("no-registration", async () => {
     const testFunction = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TransactionContext<PoolClient>,
       id: number,
       name: string
     ) => {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`,
         [id, name]
       );

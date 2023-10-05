@@ -8,6 +8,7 @@ import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonConfig } from "../src/operon";
+import { PoolClient } from "pg";
 
 describe("concurrency-tests", () => {
   let operon: Operon;
@@ -37,7 +38,7 @@ describe("concurrency-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     let cnt = 0;
-    const testReadWriteFunction = async (txnCtxt: TransactionContext, id: number) => {
+    const testReadWriteFunction = async (txnCtxt: TransactionContext<PoolClient>, id: number) => {
       await sleep(10);
       cnt += 1;
       return id;
@@ -55,7 +56,7 @@ describe("concurrency-tests", () => {
 
     // Read-only transactions would execute twice.
     cnt = 0;
-    const testReadOnlyFunction = async (txnCtxt: TransactionContext, id: number) => {
+    const testReadOnlyFunction = async (txnCtxt: TransactionContext<PoolClient>, id: number) => {
       await sleep(10);
       cnt += 1;
       return id;
@@ -96,7 +97,7 @@ describe("concurrency-tests", () => {
     };
     operon.registerWorkflow(testWorkflow);
 
-    const testFunction = async (ctxt: TransactionContext) => {
+    const testFunction = async (ctxt: TransactionContext<PoolClient>) => {
       void ctxt;
       await sleep(1);
       funCounter++;
