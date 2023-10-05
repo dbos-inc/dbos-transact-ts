@@ -1,12 +1,12 @@
 import { TransactionContext, OperonTransaction, GetApi } from '@dbos-inc/operon'
 import { PoolClient } from 'pg';
 
-type TestTransactionContext = TransactionContext<PoolClient>;
+type HelloTransactionContext = TransactionContext<PoolClient>;
 
 export class Hello {
   @GetApi('/greeting/:name')
   @OperonTransaction()
-  static async helloFunction(txnCtxt: TestTransactionContext, name: string) {
+  static async helloFunction(txnCtxt: HelloTransactionContext, name: string) {
     const greeting = `Hello, ${name}!`
     const { rows } = await txnCtxt.client.query<{ greeting_id: number }>("INSERT INTO OperonHello(greeting) VALUES ($1) RETURNING greeting_id", [greeting])
     return `Greeting ${rows[0].greeting_id}: Hello, ${name}!`;
