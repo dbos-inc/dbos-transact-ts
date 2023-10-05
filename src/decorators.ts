@@ -540,7 +540,6 @@ export function OrmEntities(entities: Function[]) {
      clsreg.ormEntities = entities;
   }
   return clsdec;
-
 }
 
 

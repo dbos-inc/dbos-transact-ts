@@ -32,7 +32,7 @@ describe("httpserver-tests", () => {
   let operon: Operon;
   let httpServer: OperonHttpServer;
   let config: OperonConfig;
-  
+
   beforeAll(async () => {
     config = generateOperonTestConfig();
     await setupOperonTestDb(config);
