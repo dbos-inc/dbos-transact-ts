@@ -34,9 +34,7 @@ export interface workflow_inputs {
 }
 
 export const systemDBSchema = `
-  CREATE SCHEMA IF NOT EXISTS operon;
-
-  CREATE TABLE IF NOT EXISTS operon.operation_outputs (
+  CREATE TABLE IF NOT EXISTS operation_outputs (
     workflow_uuid TEXT NOT NULL,
     function_id INT NOT NULL,
     output TEXT,
@@ -44,12 +42,12 @@ export const systemDBSchema = `
     PRIMARY KEY (workflow_uuid, function_id)
   );
 
-  CREATE TABLE IF NOT EXISTS operon.workflow_inputs (
+  CREATE TABLE IF NOT EXISTS workflow_inputs (
     workflow_uuid TEXT PRIMARY KEY NOT NULL,
     inputs TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS operon.workflow_status (
+  CREATE TABLE IF NOT EXISTS workflow_status (
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
     name TEXT,
@@ -60,14 +58,14 @@ export const systemDBSchema = `
     error TEXT
   );
 
-  CREATE TABLE IF NOT EXISTS operon.notifications (
+  CREATE TABLE IF NOT EXISTS notifications (
     destination_uuid TEXT NOT NULL,
     topic TEXT,
     message TEXT NOT NULL,
     created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
-  CREATE TABLE IF NOT EXISTS operon.workflow_events (
+  CREATE TABLE IF NOT EXISTS workflow_events (
     workflow_uuid TEXT NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,
@@ -79,16 +77,15 @@ export const systemDBSchema = `
       IF NOT EXISTS (
           SELECT 1
           FROM   pg_indexes 
-          WHERE  schemaname = 'operon'
-          AND    tablename  = 'notifications'
+          WHERE  tablename  = 'notifications'
           AND    indexname  = 'idx_workflow_topic'
       ) THEN
-          CREATE INDEX idx_workflow_topic ON operon.notifications (destination_uuid, topic);
+          CREATE INDEX idx_workflow_topic ON notifications (destination_uuid, topic);
       END IF;
   END 
   $$;
 
-  CREATE OR REPLACE FUNCTION operon.notifications_function() RETURNS TRIGGER AS $$
+  CREATE OR REPLACE FUNCTION notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
@@ -104,13 +101,13 @@ export const systemDBSchema = `
         IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_notifications_trigger') THEN
           EXECUTE '
               CREATE TRIGGER operon_notifications_trigger
-              AFTER INSERT ON operon.notifications
-              FOR EACH ROW EXECUTE FUNCTION operon.notifications_function()';
+              AFTER INSERT ON notifications
+              FOR EACH ROW EXECUTE FUNCTION notifications_function()';
         END IF;
     END
     $$;
 
-    CREATE OR REPLACE FUNCTION operon.workflow_events_function() RETURNS TRIGGER AS $$
+    CREATE OR REPLACE FUNCTION workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
@@ -126,8 +123,8 @@ export const systemDBSchema = `
         IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_workflow_events_trigger') THEN
           EXECUTE '
               CREATE TRIGGER operon_workflow_events_trigger
-              AFTER INSERT ON operon.workflow_events
-              FOR EACH ROW EXECUTE FUNCTION operon.workflow_events_function()';
+              AFTER INSERT ON workflow_events
+              FOR EACH ROW EXECUTE FUNCTION workflow_events_function()';
         END IF;
     END
     $$;
