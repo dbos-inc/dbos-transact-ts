@@ -357,17 +357,21 @@ export class Operon {
     const pendingWorkflows = await this.systemDatabase.getPendingWorkflows();
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflowUUID of pendingWorkflows) {
-      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-      const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
-      if (!inputs) {
-        console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
-        continue;
-      }
-      const wfInfo: WorkflowInfo<any,any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
+      try {
+        const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+        const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+        if (!inputs) {
+          console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+          continue;
+        }
+        const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
 
-      const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      handlerArray.push(await this.workflow(wfInfo!.workflow, {workflowUUID : workflowUUID, parentCtx: parentCtx ?? undefined}, ...inputs))
+        const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs))
+      } catch (e) {
+        console.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
+      }
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
   }
