@@ -31,8 +31,6 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends Operon
   constructor(
     readonly clientKind: UserDatabaseName,
     readonly client: T,
-    // Q: Do we need the transaction config here?
-    readonly config: TransactionConfig,
     workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,

@@ -204,7 +204,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Check if this execution previously happened, returning its original result if it did.
 
         const tCtxt = new TransactionContextImpl(
-          this.#operon.userDatabase.getName(), client, config, this,
+          this.#operon.userDatabase.getName(), client, this,
           span, this.#operon.logger, funcId, txn.name,
         );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
