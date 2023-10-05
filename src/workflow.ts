@@ -19,9 +19,9 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
-type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
+export type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
-type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
+export type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
 type WFInvokeFuncs<T> = {
@@ -60,12 +60,13 @@ export const StatusString = {
 } as const;
 
 export interface WorkflowContext extends OperonContext {
-  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
+  invoke<T extends object>(object: T): WFInvokeFuncs<T> & ChildWfFuncs<T>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
   external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
+  childWorkflow<T extends any[], R>(wf: WFFunc, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -176,10 +177,10 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
    * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
    */
-  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: WFFunc, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
+    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args) as Promise<WorkflowHandle<R>>;
   }
 
   /**
@@ -417,7 +418,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
+  invoke<T extends object>(object: T): WFInvokeFuncs<T> & ChildWfFuncs<T> {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
@@ -430,9 +431,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
         : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if (proxy[op.name] === undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.workflowConfig
+        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          (...args: any[]) => this.childWorkflow(op.registeredFunction as WFFunc, ...args)
+        : undefined;
+      }
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return proxy;
+    console.log(proxy);
+    return proxy as WFInvokeFuncs<T> & ChildWfFuncs<T>;
   }
 }
 

@@ -3,14 +3,11 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { Operon } from "../operon";
 import { OperonContext, OperonContextImpl } from "../context";
 import Koa from "koa";
-import { OperonWorkflow, TailParameters, WorkflowContext, WorkflowHandle, WorkflowParams } from "../workflow";
-import { OperonTransaction, TransactionContext } from "../transaction";
+import { OperonWorkflow, TailParameters, WorkflowHandle, WorkflowParams, TxFunc, WFFunc } from "../workflow";
+import { OperonTransaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
-
-type TxFunc = (ctxt: TransactionContext, ...args: any[]) => Promise<any>;
-type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
 type HandlerTxFuncs<T> = {

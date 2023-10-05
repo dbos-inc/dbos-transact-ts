@@ -280,7 +280,7 @@ describe("httpserver-tests", () => {
     @PostApi("/workflow")
     @OperonWorkflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
-      const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+      const res: string = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return res;
     }
 
@@ -288,7 +288,7 @@ describe("httpserver-tests", () => {
     @OperonWorkflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
       // This workflow should encounter duplicate primary key error.
-      let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+      let res: string = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return res;
     }

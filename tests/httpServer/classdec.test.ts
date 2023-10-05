@@ -160,7 +160,7 @@ describe("httpserver-defsec-tests", () => {
 
     @OperonWorkflow()
     static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
-      const res = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
+      const res: string = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
       return res;
     }
 

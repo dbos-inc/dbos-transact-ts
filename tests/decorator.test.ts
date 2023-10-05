@@ -20,7 +20,7 @@ class TestClass {
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
     expect(workflowCtxt.getConfig("counter")).toBe(3);
-    const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
+    const funcResult: number = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
 
@@ -60,7 +60,7 @@ class TestClass {
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonWorkflow()
   static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
-    return wfCtxt.invoke(TestClass).testTxWorkflow(name)
+    return wfCtxt.childWorkflow(TestClass.testTxWorkflow, name).then(x => x.getResult());
   }
 }
 
@@ -109,7 +109,7 @@ describe("decorator-tests", () => {
     expect(TestClass.counter).toBe(initialCounter + 1);
   })
 
-  test("wf-decorator-ooao", async () => {
+  test("wf-decorator-oaoo", async () => {
     let workflowResult: number;
     const uuidArray: string[] = [];
 
@@ -130,5 +130,21 @@ describe("decorator-tests", () => {
         .then(x => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
+  })
+
+  test("nested-workflow-oaoo", async() => {
+    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
+
+    const workflowUUID = uuidv1();
+    const res = await operon.workflow(TestClass.nestedWorkflow, {workflowUUID: workflowUUID}, username).then(x => x.getResult());
+    expect(res).toEqual(1);
+
+    const res2 = await operon.workflow(TestClass.nestedWorkflow, {workflowUUID: workflowUUID}, username).then(x => x.getResult());
+    expect(res2).toBe(1);
+
+    // Retrieve output of the child workflow.
+    await operon.flushWorkflowStatusBuffer();
+    const retrievedHandle = operon.retrieveWorkflow(workflowUUID + "-0");
+    await expect(retrievedHandle.getResult()).resolves.toBe(1);
   })
 });
