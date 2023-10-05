@@ -7,7 +7,7 @@ import { ValuesOf } from "./utils";
 import { Logger } from "./telemetry/logs";
 
 // Can we call it OperonTransactionFunction
-export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext, ...args: T) => Promise<R>;
+export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;
