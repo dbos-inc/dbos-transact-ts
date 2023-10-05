@@ -22,10 +22,13 @@ export class KV {
 
 let globalCnt = 0;
 
+type TestTransactionContext = TransactionContext<TypeORMEntityManager>;
+
+
 @OrmEntities([KV])
 class KVController {
 
-  static async testTxn(txnCtxt: TransactionContext<TypeORMEntityManager>,
+  static async testTxn(txnCtxt: TestTransactionContext,
     id: string,
     value: string) {
       const p = txnCtxt.client as EntityManager ;
@@ -38,7 +41,7 @@ class KVController {
     }
 }
 
-const readTxn = async (txnCtxt: TransactionContext<TypeORMEntityManager>, id: string) => {
+const readTxn = async (txnCtxt: TestTransactionContext, id: string) => {
   await sleep(1);
   globalCnt += 1;
   return id;

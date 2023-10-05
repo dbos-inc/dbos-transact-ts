@@ -38,10 +38,12 @@ type TelemetrySignalDbFields = {
   trace_span: JSON;
 };
 
+type TestTransactionContext = TransactionContext<PoolClient>;
+
 class TestClass {
   @OperonTransaction({ readOnly: false })
   static async test_function(
-    txnCtxt: TransactionContext<PoolClient>,
+    txnCtxt: TestTransactionContext,
     name: string
   ): Promise<string> {
     const { rows } = await txnCtxt.client.query(

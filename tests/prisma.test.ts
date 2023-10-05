@@ -15,12 +15,14 @@ interface PrismaPGError {
   };
 }
 
+type TestTransactionContext = TransactionContext<PrismaClient>;
+
 /**
  * Funtions used in tests.
  */
 let globalCnt = 0;
 const testTxn = async (
-  txnCtxt: TransactionContext<PrismaClient>,
+  txnCtxt: TestTransactionContext,
   id: string,
   value: string
 ) => {
@@ -34,7 +36,7 @@ const testTxn = async (
   return res.id;
 };
 
-const readTxn = async (txnCtxt: TransactionContext<PrismaClient>, id: string) => {
+const readTxn = async (txnCtxt: TestTransactionContext, id: string) => {
   await sleep(1);
   globalCnt += 1;
   return id;
@@ -123,7 +125,7 @@ describe("prisma-tests", () => {
     // Test if we can get the correct Postgres error code from Prisma.
     // We must use query raw, otherwise, Prisma would convert the error to use its own error code.
     const conflictTxn = async (
-      txnCtxt: TransactionContext<PrismaClient>,
+      txnCtxt: TestTransactionContext,
       id: string,
       value: string
     ) => {

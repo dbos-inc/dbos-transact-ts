@@ -93,10 +93,12 @@ describe("failures-tests", () => {
     });
   });
 
+  type TestTransactionContext = TransactionContext<PoolClient>;
+
   test("readonly-error", async () => {
     let cnt = 0;
 
-    const testFunction = async (txnCtxt: TransactionContext<PoolClient>, id: number) => {
+    const testFunction = async (txnCtxt: TestTransactionContext, id: number) => {
       await sleep(1);
       void txnCtxt;
       cnt += 1;
@@ -122,7 +124,7 @@ describe("failures-tests", () => {
     let counter: number = 0;
     let succeedUUID: string = "";
     const testFunction = async (
-      txnCtxt: TransactionContext<PoolClient>,
+      txnCtxt: TestTransactionContext,
       id: number,
       name: string
     ) => {
@@ -192,7 +194,7 @@ describe("failures-tests", () => {
     // Just for testing, functions shouldn't share global state.
     let num = 0;
     const testFunction = async (
-      txnCtxt: TransactionContext<PoolClient>,
+      txnCtxt: TestTransactionContext,
       maxRetry: number
     ) => {
       if (num !== maxRetry) {
@@ -291,7 +293,7 @@ describe("failures-tests", () => {
 
   test("no-registration", async () => {
     const testFunction = async (
-      txnCtxt: TransactionContext<PoolClient>,
+      txnCtxt: TestTransactionContext,
       id: number,
       name: string
     ) => {
