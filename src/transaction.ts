@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { PoolClient } from "pg";
-import { PrismaClient, UserDatabaseName, UserDatabaseClient, TypeORMEntityManager } from "./user_database";
+import { UserDatabaseName, UserDatabaseClient } from "./user_database";
 import { WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext, OperonContextImpl } from "./context";
@@ -23,22 +22,17 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
-export interface TransactionContext extends OperonContext {
-  pgClient: PoolClient;
-  prismaClient: PrismaClient;
-  typeormEM: TypeORMEntityManager;
+export interface TransactionContext<T extends UserDatabaseClient> extends OperonContext {
+  client: T;
 }
 
-export class TransactionContextImpl extends OperonContextImpl implements TransactionContext  {
-  readonly pgClient: PoolClient = null as unknown as PoolClient;
-  readonly prismaClient: PrismaClient = null as unknown as PrismaClient;
-
-  readonly typeormEM: TypeORMEntityManager = null as unknown as TypeORMEntityManager;
+export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T>  {
 
   constructor(
-    userDatabaseName: UserDatabaseName,
-    client: UserDatabaseClient,
-    config: TransactionConfig,
+    readonly clientKind: UserDatabaseName,
+    readonly client: T,
+    // Q: Do we need the transaction config here?
+    readonly config: TransactionConfig,
     workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,
@@ -46,14 +40,6 @@ export class TransactionContextImpl extends OperonContextImpl implements Transac
     operationName: string
   ) {
     super(operationName, span, logger, workflowContext);
-    void config;
-    if (userDatabaseName === UserDatabaseName.PGNODE) {
-      this.pgClient = client as PoolClient;
-    } else if (userDatabaseName === UserDatabaseName.PRISMA) {
-      this.prismaClient = client as PrismaClient;
-    } else if (userDatabaseName === UserDatabaseName.TYPEORM) {
-      this.typeormEM = client as TypeORMEntityManager;
-    }
 
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
