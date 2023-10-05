@@ -9,7 +9,15 @@ import { init } from "./init";
 
 const program = new Command();
 
-/* LOCAL DEVELOPMENT */
+////////////////////////
+/* LOCAL DEVELOPMENT  */
+////////////////////////
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const packageJson = require('../../../package.json') as { version: string };
+program.
+  version(packageJson.version);
+
 program
   .command('start')
   .description('Start the server')
@@ -23,7 +31,18 @@ program
     });
   });
 
-/* CLOUD DEPLOYMENT */
+program
+  .command('init')
+  .description('Init an Operon application')
+  .option('-n, --appName <application-name>', 'Application name', 'operon-hello-app')
+  .action(async (options: { appName: string }) => {
+    await init(options.appName);
+  });
+
+///////////////////////
+/* CLOUD DEPLOYMENT  */
+///////////////////////
+
 program
   .command('deploy')
   .description('Deploy an application to the cloud')
@@ -35,14 +54,6 @@ program
       return;
     }
     await deploy(options.name, options.host);
-  });
-
-program
-  .command('init')
-  .description('Init an Operon application')
-  .option('-n, --appName <application-name>', 'Application name', 'operon-hello-app')
-  .action(async (options: { appName: string }) => {
-    await init(options.appName);
   });
 
 program.parse(process.argv);
