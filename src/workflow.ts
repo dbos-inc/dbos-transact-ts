@@ -66,7 +66,7 @@ export interface WorkflowContext extends OperonContext {
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
   transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
   external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
-  childWorkflow<T extends any[], R>(wf: WFFunc, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
+  childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // TODO: Make private
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -177,7 +177,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
    * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
    */
-  async childWorkflow<T extends any[], R>(wf: WFFunc, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args) as Promise<WorkflowHandle<R>>;
@@ -436,11 +436,10 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
         ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.childWorkflow(op.registeredFunction as WFFunc, ...args)
+          (...args: any[]) => this.childWorkflow(op.registeredFunction as OperonWorkflow<any[], any>, ...args)
         : undefined;
       }
     }
-    console.log(proxy);
     return proxy as WFInvokeFuncs<T> & ChildWfFuncs<T>;
   }
 }

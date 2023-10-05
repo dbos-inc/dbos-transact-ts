@@ -60,7 +60,10 @@ class TestClass {
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonWorkflow()
   static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
-    return wfCtxt.childWorkflow(TestClass.testTxWorkflow, name).then(x => x.getResult());
+    // If I use the following line, jest would fail with "Property 'testTxWorkflow' does not exist on type 'WFInvokeFuncs<typeof TestClass> & ChildWfFuncs<typeof TestClass>'."
+    // return wfCtxt.invoke(TestClass).testTxWorkflow(name).then(x => x.getResult());
+    const res: number = await wfCtxt.invoke(TestClass).testTxWorkflow(name).then(x => x.getResult());
+    return res;
   }
 }
 
