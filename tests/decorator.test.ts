@@ -20,7 +20,7 @@ class TestClass {
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
     expect(workflowCtxt.getConfig("counter")).toBe(3);
-    const funcResult: number = await workflowCtxt.invoke(TestClass).testCommunicator();
+    const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
 

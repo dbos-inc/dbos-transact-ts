@@ -96,8 +96,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
           ? (...args: any[]) => this.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
           : undefined;
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return proxy;
+    return proxy as (HandlerTxFuncs<T> & HandlerWfFuncs<T>);
   }
 
   //////////////////////

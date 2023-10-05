@@ -70,15 +70,20 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   readonly resultBuffer: Map<number, any> = new Map<number, any>();
   readonly isTempWorkflow: boolean;
 
-  constructor(operon: Operon, parentCtx: OperonContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
-    const span = operon.tracer.startSpan(
+  constructor(
+    operon: Operon,
+    parentCtx: OperonContextImpl | undefined,
+    workflowUUID: string,
+    readonly workflowConfig: WorkflowConfig,
+    workflowName: string
+  ) {    const span = operon.tracer.startSpan(
       workflowName,
       {
         workflowUUID: workflowUUID,
         operationName: workflowName,
         runAs: parentCtx?.authenticatedUser ?? "",
       },
-      parentCtx?.span
+      parentCtx?.span,
     );
     super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
@@ -203,14 +208,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         readOnly: readOnly,
         isolationLevel: config.isolationLevel,
       },
-      this.span
+      this.span,
     );
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         // Check if this execution previously happened, returning its original result if it did.
 
-        const tCtxt = new TransactionContextImpl(this.#operon.userDatabase.getName(), client, config, this, span, this.#operon.logger, funcId, txn.name);
+        const tCtxt = new TransactionContextImpl(
+          this.#operon.userDatabase.getName(), client, config, this,
+          span, this.#operon.logger, funcId, txn.name,
+        );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
@@ -299,7 +307,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         maxAttempts: commConfig.maxAttempts,
         backoffRate: commConfig.backoffRate,
       },
-      this.span
+      this.span,
     );
     const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
 
@@ -421,11 +429,11 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
         : op.commConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
         : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
