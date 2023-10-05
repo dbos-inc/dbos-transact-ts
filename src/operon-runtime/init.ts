@@ -57,7 +57,7 @@ export async function init(appName: string) {
 
   const packageJsonName = path.resolve(appName, 'package.json');
   const content = fs.readFileSync(packageJsonName, 'utf-8');
-  let updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
+  const updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
   fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
   execSync("npm i", {cwd: appName})
 }

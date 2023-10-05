@@ -6,7 +6,6 @@ import { Writable } from "stream";
 import { Client } from "pg";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import fs from "fs";
-import { sleep } from "../../src/utils";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
     const stdout = command.stdout as unknown as Writable;
@@ -24,6 +23,7 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
       };
 
       stdout.on('data', onData);
+      stderr.on("data", onData);
 
       command.on('error', (error) => {
         reject(error);  // Reject promise on command error
