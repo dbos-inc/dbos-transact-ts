@@ -271,7 +271,6 @@ describe("foundationdb-operon", () => {
 
     // Run two send/recv concurrently with the same UUID, both should succeed.
     const recvUUID = uuidv1();
-    const sendUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
       operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
       operon.workflow(receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
@@ -279,7 +278,7 @@ describe("foundationdb-operon", () => {
 
     // Send would trigger both to receive, but only one can delete the message.
     await expect(
-      operon.send({ workflowUUID: sendUUID }, recvUUID, "hello", "testTopic")
+      operon.send(recvUUID, "hello", "testTopic")
     ).resolves.not.toThrow();
 
     const recvRes = await recvResPromise;
@@ -287,7 +286,6 @@ describe("foundationdb-operon", () => {
     expect((recvRes[1] as PromiseFulfilledResult<string>).value).toBe("hello");
 
     // Make sure we retrieve results correctly.
-    await expect(operon.retrieveWorkflow(sendUUID).getResult()).resolves.not.toThrow();
     await expect(operon.retrieveWorkflow(recvUUID).getResult()).resolves.toBe(
       "hello"
     );
