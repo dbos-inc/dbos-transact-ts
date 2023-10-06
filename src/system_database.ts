@@ -76,7 +76,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
       return operonNull;
     } else if (rows[0].status === StatusString.ERROR) {
@@ -88,11 +88,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T> {
     await this.pool.query(
-      `INSERT INTO operon.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, output) VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, output) VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [workflowUUID, StatusString.PENDING, name, authenticatedUser, assumedRole, JSON.stringify(authenticatedRoles), null]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
-      `INSERT INTO operon.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
+      `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [workflowUUID, JSON.stringify(args)]
     )
     return JSON.parse(rows[0].inputs) as T;
@@ -112,7 +112,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await client.query("BEGIN");
     for (const [workflowUUID, output] of localBuffer) {
       await client.query(
-        `INSERT INTO operon.workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+        `INSERT INTO workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
         DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
         [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
       );
@@ -125,7 +125,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.pool.query(
-      `INSERT INTO operon.workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+      `INSERT INTO workflow_status (workflow_uuid, status, error) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
       [workflowUUID, StatusString.ERROR, serialErr]
     );
@@ -133,7 +133,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getPendingWorkflows(): Promise<Array<string>> {
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM operon.workflow_status WHERE status=$1`,
+      `SELECT workflow_uuid FROM workflow_status WHERE status=$1`,
       [StatusString.PENDING]
     )
     return rows.map(i => i.workflow_uuid);
@@ -141,7 +141,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
-      `SELECT inputs FROM operon.workflow_inputs WHERE workflow_uuid=$1`,
+      `SELECT inputs FROM workflow_inputs WHERE workflow_uuid=$1`,
       [workflowUUID]
     )
     if (rows.length === 0) {
@@ -170,7 +170,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
-    const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length === 0) {
       return operonNull;
     } else if (JSON.parse(rows[0].error) !== null) {
@@ -183,7 +183,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
     try {
-      await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialOutput]);
+      await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialOutput]);
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
@@ -198,7 +198,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     try {
-      await this.pool.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialErr]);
+      await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialErr]);
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
@@ -215,7 +215,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async recordNotificationOutput<R>(client: PoolClient, workflowUUID: string, functionID: number, output: R) {
     try {
-      await client.query("INSERT INTO operon.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, JSON.stringify(output)]);
+      await client.query("INSERT INTO operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, JSON.stringify(output)]);
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
@@ -236,14 +236,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    const { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    const { rows } = await client.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
       return;
     }
     await client.query(
-      `INSERT INTO operon.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+      `INSERT INTO notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
       [destinationUUID, topic, JSON.stringify(message)]
     );
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
@@ -254,7 +254,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null> {
     topic = topic === null ? this.nullTopic : topic;
     // First, check for previous executions.
-    const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
+    const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
       return JSON.parse(checkRows[0].output) as T;
     }
@@ -275,7 +275,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([messagePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM operon.notifications WHERE destination_uuid=$1 AND topic=$2;", [workflowUUID, topic])).rows;
+    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM notifications WHERE destination_uuid=$1 AND topic=$2;", [workflowUUID, topic])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
@@ -287,19 +287,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const finalRecvRows = (await client.query<notifications>(
       `WITH oldest_entry AS (
         SELECT destination_uuid, topic, message, created_at_epoch_ms
-        FROM operon.notifications
+        FROM notifications
         WHERE destination_uuid = $1
           AND topic = $2
         ORDER BY created_at_epoch_ms ASC
         LIMIT 1
       )
 
-      DELETE FROM operon.notifications
+      DELETE FROM notifications
       USING oldest_entry
-      WHERE operon.notifications.destination_uuid = oldest_entry.destination_uuid
-        AND operon.notifications.topic = oldest_entry.topic
-        AND operon.notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
-      RETURNING operon.notifications.*;`,
+      WHERE notifications.destination_uuid = oldest_entry.destination_uuid
+        AND notifications.topic = oldest_entry.topic
+        AND notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
+      RETURNING notifications.*;`,
       [workflowUUID, topic])).rows;
     let message: T | null = null;
     if (finalRecvRows.length > 0) {
@@ -315,14 +315,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    let { rows } = await client.query<operation_outputs>("SELECT output FROM operon.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    let { rows } = await client.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
       return;
     }
     ({ rows } = await client.query(
-      `INSERT INTO operon.workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      `INSERT INTO workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
       [workflowUUID, key, JSON.stringify(message)]
     ));
     if (rows.length === 0) {
@@ -351,14 +351,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key FROM operon.workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM operon.workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     let value: T | null = null;
     if (finalRecvRows.length > 0) {
       value = JSON.parse(finalRecvRows[0].value) as T;
@@ -367,7 +367,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
       return null;
     }
@@ -378,7 +378,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const pollingIntervalMs: number = 1000;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM operon.workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
       if (rows.length > 0) {
         const status = rows[0].status;
         if (status === StatusString.SUCCESS) {

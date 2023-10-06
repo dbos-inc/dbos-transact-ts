@@ -15,17 +15,18 @@ interface PrismaPGError {
   };
 }
 
+type TestTransactionContext = TransactionContext<PrismaClient>;
+
 /**
  * Funtions used in tests.
  */
 let globalCnt = 0;
 const testTxn = async (
-  txnCtxt: TransactionContext,
+  txnCtxt: TestTransactionContext,
   id: string,
   value: string
 ) => {
-  const p: PrismaClient = txnCtxt.prismaClient as PrismaClient;
-  const res = await p.testkv.create({
+  const res = await txnCtxt.client.testkv.create({
     data: {
       id: id,
       value: value,
@@ -35,7 +36,7 @@ const testTxn = async (
   return res.id;
 };
 
-const readTxn = async (txnCtxt: TransactionContext, id: string) => {
+const readTxn = async (txnCtxt: TestTransactionContext, id: string) => {
   await sleep(1);
   globalCnt += 1;
   return id;
@@ -124,12 +125,11 @@ describe("prisma-tests", () => {
     // Test if we can get the correct Postgres error code from Prisma.
     // We must use query raw, otherwise, Prisma would convert the error to use its own error code.
     const conflictTxn = async (
-      txnCtxt: TransactionContext,
+      txnCtxt: TestTransactionContext,
       id: string,
       value: string
     ) => {
-      const p: PrismaClient = txnCtxt.prismaClient as PrismaClient;
-      const res = await p.$queryRawUnsafe<testkv>(
+      const res = await txnCtxt.client.$queryRawUnsafe<testkv>(
         `INSERT INTO ${testTableName} VALUES ($1, $2)`,
         id,
         value
