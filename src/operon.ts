@@ -112,7 +112,7 @@ export class Operon {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowStatusBuffer();
     }, this.flushBufferIntervalMs);
-    this.config.logger.debug(`Started workflow status buffer worker with ID ${this.flushBufferID}`);
+    this.config.logger.debug('Started workflow status buffer worker');
 
     // Parse requested exporters
     const telemetryExporters = [];

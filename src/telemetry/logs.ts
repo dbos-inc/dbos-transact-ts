@@ -8,7 +8,7 @@ export class Logger {
   constructor(private readonly globalLogger: winstonLogger, private readonly ctx: OperonContext) {}
 
   // Eventually we this object will implement one of our TelemetrySignal interface
-  formatContextInfo(): Object {
+  formatContextInfo(): object {
     return {
       workflowUUID: this.ctx.workflowUUID,
       authenticatedUser: this.ctx.authenticatedUser,

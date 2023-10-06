@@ -86,9 +86,11 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
       format.colorize(),
       format.printf((info) => {
       const {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         timestamp, level, message, ...args
       } = info;
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
       const ts = timestamp.slice(0, 19).replace('T', ' ');
       /*
       const keyValueStrings = Object.entries(args).map(([key, value]) => `${key}: ${value}`);
