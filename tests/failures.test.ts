@@ -33,12 +33,10 @@ describe("failures-tests", () => {
   });
 
   test("operon-error", async () => {
-    const codeHandle = await operon.workflow(FailureTestClass.testCommWorkflow, {}, "code", 11);
-    await expect(codeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
-    await expect(codeHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.ERROR,
-    });
-    const retrievedHandle = operon.retrieveWorkflow<string>(codeHandle.getWorkflowUUID());
+    const wfUUID1 = uuidv1();
+    await expect(operon.external(FailureTestClass.testCommunicator, {workflowUUID: wfUUID1}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+
+    const retrievedHandle = operon.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
@@ -47,18 +45,7 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    const noCodeHandle = await operon.workflow(
-      FailureTestClass.testCommWorkflow,
-      {
-        workflowUUID: wfUUID,
-      },
-      "code"
-    );
-    await expect(noCodeHandle.getResult()).rejects.toThrowError(new OperonError("test operon error without code"));
-    expect(noCodeHandle.getWorkflowUUID()).toBe(wfUUID);
-    await expect(noCodeHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.ERROR,
-    });
+    await expect(operon.external(FailureTestClass.testCommunicator, {workflowUUID: wfUUID})).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
   test("readonly-error", async () => {
@@ -107,20 +94,20 @@ describe("failures-tests", () => {
   });
 
   test("failing-communicator", async () => {
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, {}, "retry").then((x) => x.getResult())).resolves.toBe(4);
+    await expect(operon.external(FailureTestClass.testFailCommunicator, {})).resolves.toBe(4);
 
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, {}, "retry").then((x) => x.getResult())).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(operon.external(FailureTestClass.testFailCommunicator, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
   });
 
   test("nonretry-communicator", async () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, "noretry").then((x) => x.getResult())).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.external(FailureTestClass.testNoRetry, { workflowUUID: workflowUUID })).rejects.toThrowError(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, "noretry").then((x) => x.getResult())).rejects.toThrowError(new Error("failed no retry"));
+    await expect(operon.external(FailureTestClass.testNoRetry, { workflowUUID: workflowUUID })).rejects.toThrowError(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
   });
 
@@ -133,7 +120,7 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered communicator in a workflow.
     // Note: since we use invoke() in the workflow, it throws "TypeError: ctxt.invoke(...).noRegComm is not a function" instead of OperonNotRegisteredError.
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, {}, "noreg").then((x) => x.getResult())).rejects.toThrowError();
+    await expect(operon.workflow(FailureTestClass.testCommWorkflow, {}).then((x) => x.getResult())).rejects.toThrowError();
   });
 
   test("failure-recovery", async () => {
@@ -210,9 +197,9 @@ class FailureTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
-  static async testFailCommunicator(_ctxt: CommunicatorContext) {
+  static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
-    if (FailureTestClass.cnt !== 4) {
+    if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
     }
     return FailureTestClass.cnt;
@@ -242,14 +229,7 @@ class FailureTestClass {
   }
 
   @OperonWorkflow()
-  static async testCommWorkflow(ctxt: WorkflowContext, commName: string, code?: number) {
-    if (commName === "code") {
-      return await ctxt.invoke(FailureTestClass).testCommunicator(code);
-    } else if (commName === "retry") {
-      return await ctxt.invoke(FailureTestClass).testFailCommunicator();
-    } else if (commName === "noretry") {
-      return await ctxt.invoke(FailureTestClass).testNoRetry();
-    }
+  static async testCommWorkflow(ctxt: WorkflowContext) {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
   }
 

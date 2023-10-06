@@ -100,12 +100,13 @@ describe("operon-tests", () => {
   test("simple-communicator", async () => {
     const workflowUUID: string = uuidv1();
 
-    let result: number = await operon.workflow(OperonTestClass.testCommWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult());
-    expect(result).toBe(0);
+    await expect(operon.external(OperonTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(OperonTestClass.testCommWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult());
-    expect(result).toBe(0);
+    await expect(operon.external(OperonTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
+
+    // Should be a new run.
+    await expect(operon.external(OperonTestClass.testCommunicator, {})).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
@@ -273,12 +274,6 @@ class OperonTestClass {
   @OperonCommunicator()
   static async testCommunicator(_ctxt: CommunicatorContext) {
     return OperonTestClass.cnt++;
-  }
-
-  @OperonWorkflow()
-  static async testCommWorkflow(ctxt: WorkflowContext) {
-    const funcResult = await ctxt.invoke(OperonTestClass).testCommunicator();
-    return funcResult ?? -1;
   }
 
   @OperonWorkflow()

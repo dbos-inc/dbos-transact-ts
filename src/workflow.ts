@@ -19,11 +19,11 @@ export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for Operon transaction and communicator functions
-export type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
+type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
-type WFInvokeFuncs<T> = {
+export type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 

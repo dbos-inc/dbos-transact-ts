@@ -175,9 +175,9 @@ class FdbTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
-  static async testErrorCommunicator(_ctxt: CommunicatorContext) {
+  static async testErrorCommunicator(ctxt: CommunicatorContext) {
     FdbTestClass.cnt++;
-    if (FdbTestClass.cnt !== 4) {
+    if (FdbTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
     }
     return FdbTestClass.cnt;

@@ -14,7 +14,8 @@ export interface CommunicatorConfig {
 }
 
 export interface CommunicatorContext extends OperonContext {
-
+  readonly retriesAllowed: boolean;
+  readonly maxAttempts: number;
 }
 
 export class CommunicatorContextImpl extends OperonContextImpl implements CommunicatorContext
