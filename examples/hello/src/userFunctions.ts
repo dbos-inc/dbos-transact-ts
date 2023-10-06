@@ -18,7 +18,10 @@ export class Hello {
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
     const logger = txnCtxt.getLogger();
     const greeting = `Hello, ${name}!`
-    logger.info(greeting, true);
+    logger.info('log message with context data', true);
+    logger.warn('warning without context data');
+    logger.error(new Error('oops'));
+    logger.error(new Error('oops with context data'), true);
     const rows = await txnCtxt.client<operon_hello>("operon_hello")
       .insert({ greeting: greeting })
       .returning("greeting_id");

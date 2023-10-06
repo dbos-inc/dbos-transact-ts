@@ -41,7 +41,9 @@ export class Logger {
     this.globalLogger.crit(message, ctx ? this.formatContextInfo() : {});
   }
 
-  error(message: string, ctx: boolean = false): void {
-    this.globalLogger.error(message, ctx ? this.formatContextInfo() : {});
+  // Winston doesn't allow us to pass both an Object AND metadata. See node_modules/winston/index.d.ts
+  error(e: Error, ctx: boolean = false): void {
+    e.message = `${e.message}${ctx ? ' ' + JSON.stringify(this.formatContextInfo()) : ""}`;
+    this.globalLogger.error(e);
   }
 }

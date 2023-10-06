@@ -18,7 +18,6 @@ import {
 } from "../error";
 import { Operon } from "../operon";
 import { Logger } from "winston";
-import { serializeError } from 'serialize-error';
 import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 
@@ -158,7 +157,7 @@ export class OperonHttpServer {
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             const logger = oc.getLogger();
-            logger.error(JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
+            logger.error(e as Error);
             if (e instanceof Error) {
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);

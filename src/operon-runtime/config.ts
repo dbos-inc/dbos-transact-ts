@@ -33,7 +33,32 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
+function createGlobalLogger(logLevel: string): Logger {
+  // TODO We will need to configure the formatter for "production" mode
+  return createLogger({
+    level: logLevel,
+    format: format.combine(
+      format.errors({ stack: true }),
+      format.timestamp(),
+      format.colorize(),
+      format.printf((info) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const { timestamp, level, message, stack, ...args } = info;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const ts = timestamp.slice(0, 19).replace("T", " ");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const formattedStack = stack?.split("\n").slice(1).join("\n");
+        return `${ts} [${level}]: ${message} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
+      })
+    ),
+    transports: [new transports.Console()],
+    handleExceptions: true,
+  });
+}
+
 export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+  const logger = createGlobalLogger(cliOptions.loglevel);
+
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
@@ -55,8 +80,7 @@ export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfi
 
   // Handle "Global" pool configFile
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config
-`);
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config`);
   }
 
   const poolConfig: PoolConfig = {
@@ -73,37 +97,9 @@ export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfi
   }
 
   if (configFile.database.ssl_ca) {
+    logger.debug(`Using SSL CA ${configFile.database.ssl_ca}`);
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
-
-  const logLevel: string = cliOptions.loglevel;
-
-  // TODO We will need to configure the formatter for "production" mode
-  const logger: Logger = createLogger({
-    level: logLevel,
-    format: format.combine(
-      format.timestamp(),
-      format.colorize(),
-      format.printf((info) => {
-      const {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        timestamp, level, message, ...args
-      } = info;
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-      const ts = timestamp.slice(0, 19).replace('T', ' ');
-      /*
-      const keyValueStrings = Object.entries(args).map(([key, value]) => `${key}: ${value}`);
-      return `${ts} [${level}]: ${message} ${keyValueStrings.join(", ")}`;
-      */
-      return `${ts} [${level}]: ${message} ${Object.keys(args).length ? '\n' + JSON.stringify(args, null, 2) : ''}`;
-      /*
-      const structuredLogEntry = { message, ...args };
-      return `${ts} [${level}]: ${JSON.stringify(structuredLogEntry, null, 2)}`;
-      */
-    })),
-    transports: [new transports.Console()],
-  });
 
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
