@@ -1,6 +1,19 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, Operon, OperonTransaction, OperonWorkflow, MiddlewareContext, PostApi, RequiredRole, TransactionContext, WorkflowContext, StatusString } from "../../src";
+import {
+  GetApi,
+  Operon,
+  OperonTransaction,
+  OperonWorkflow,
+  MiddlewareContext,
+  PostApi,
+  RequiredRole,
+  TransactionContext,
+  WorkflowContext,
+  StatusString,
+  OperonCommunicator,
+  CommunicatorContext,
+} from "../../src";
 import { OperonHttpServer, OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
@@ -254,11 +267,17 @@ describe("httpserver-tests", () => {
       return `hello ${rows[0].id}`;
     }
 
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @OperonCommunicator()
+    static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
+      return input;
+    }
+
     @PostApi("/workflow")
     @OperonWorkflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
       const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
-      return res;
+      return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
     }
 
     @PostApi("/error")
