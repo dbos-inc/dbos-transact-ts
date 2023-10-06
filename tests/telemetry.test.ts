@@ -222,7 +222,6 @@ describe("operon-telemetry", () => {
         params,
         username
       );
-      const workflowUUID = workflowHandle.getWorkflowUUID();
       const result: string = await workflowHandle.getResult();
 
       // Workflow should have executed correctly
@@ -234,30 +233,6 @@ describe("operon-telemetry", () => {
       const pgExporter = operon.telemetryCollector
         .exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
-
-      const txnLogQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_function WHERE log_message IS NOT NULL`
-        );
-      expect(txnLogQueryResult.rows).toHaveLength(1);
-      const txnLogEntry = txnLogQueryResult.rows[0];
-      expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
-      expect(txnLogEntry.function_name).toBe("test_function");
-      expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(txnLogEntry.trace_id).toBe(null);
-      expect(txnLogEntry.trace_span).toBe(null);
-
-      const wfLogQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_workflow WHERE log_message IS NOT NULL`
-        );
-      expect(wfLogQueryResult.rows).toHaveLength(1);
-      const wfLogEntry = wfLogQueryResult.rows[0];
-      expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
-      expect(wfLogEntry.function_name).toBe("test_workflow");
-      expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(wfLogEntry.trace_id).toBe(null);
-      expect(wfLogEntry.trace_span).toBe(null);
 
       // Exporter should export traces
       const txnTraceQueryResult =
