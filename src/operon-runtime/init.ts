@@ -48,7 +48,7 @@ export const copy = async (
 export async function init(appName: string) {
 
   if (fs.existsSync(appName)) {
-    throw new OperonError(`Directory ${appName} already exists, existing...`);
+    throw new OperonError(`Directory ${appName} already exists, exiting...`);
   }
 
   const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
@@ -57,7 +57,9 @@ export async function init(appName: string) {
 
   const packageJsonName = path.resolve(appName, 'package.json');
   const content = fs.readFileSync(packageJsonName, 'utf-8');
-  const updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
+  let updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
+  updatedContent = content.replace('"@dbos-inc/operon": "../..",', ``);
   fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
   execSync("npm i", {cwd: appName})
+  execSync("npm install --save @dbos-inc/operon", {cwd: appName})
 }

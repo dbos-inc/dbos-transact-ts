@@ -62,7 +62,7 @@ describe("runtime-tests", () => {
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
-    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS OperonHello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);`);
+    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS operon_hello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);`);
     await pgSystemClient.end();
 
     process.chdir('examples/hello');
@@ -99,7 +99,7 @@ database:
   user_database: 'hello'
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
-  user_dbclient: 'pg-node'
+  user_dbclient: 'knex'
 localRuntimeConfig:
   port: 6666
 `;
