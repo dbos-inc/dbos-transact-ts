@@ -48,7 +48,7 @@ describe("operon-provenance", () => {
 
     @OperonWorkflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
-      return await ctxt.transaction(TestFunctions.testTransaction, name);
+      return await ctxt.invoke(TestFunctions).testTransaction(name);
     }
   }
 
