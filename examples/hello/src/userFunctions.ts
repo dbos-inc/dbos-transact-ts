@@ -1,7 +1,7 @@
 import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
-type KnexTransactionContext = TransactionContext<Knex.Transaction>;
+type KnexTransactionContext = TransactionContext<Knex>;
 
 interface operon_hello {
   greeting_id: number;

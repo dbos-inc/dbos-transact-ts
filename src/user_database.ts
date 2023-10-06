@@ -324,8 +324,8 @@ export class KnexUserDatabase implements UserDatabase {
     } else {
       isolationLevel = "serializable";
     }
-    const result = await this.knex.transaction<R>(async function (trx) {
-      return await transactionFunction(trx, ...args);
+    const result = await this.knex.transaction<R>(async function (transactionClient: Knex.Transaction) {
+      return await transactionFunction(transactionClient, ...args);
     },
       { isolationLevel: isolationLevel });
     return result;
@@ -337,7 +337,7 @@ export class KnexUserDatabase implements UserDatabase {
     return rows.rows;
   }
 
-  async queryWithClient<R>(client: Knex.Transaction, sql: string, ...params: any[]): Promise<R[]> {
+  async queryWithClient<R>(client: Knex, sql: string, ...params: any[]): Promise<R[]> {
     const knexSql = sql.replace(/\$\d+/g, '?');
     const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
     return rows.rows;

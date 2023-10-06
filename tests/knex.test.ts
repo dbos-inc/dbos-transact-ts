@@ -5,7 +5,7 @@ import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./help
 import { v1 as uuidv1 } from "uuid";
 import { Knex } from 'knex'
 
-type KnexTransactionContext = TransactionContext<Knex.Transaction>;
+type KnexTransactionContext = TransactionContext<Knex>;
 const testTableName = "operon_test_kv";
 
 let insertCount = 0;
