@@ -10,6 +10,9 @@ import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
+import { PoolClient } from "pg";
+
+type PGTransactionContext = TransactionContext<PoolClient>;
 
 describe("foundationdb-operon", () => {
   let operon: Operon;
@@ -39,7 +42,7 @@ describe("foundationdb-operon", () => {
     let counter = 0;
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    const testFunction = async (txnCtxt: TransactionContext) => {
+    const testFunction = async (txnCtxt: PGTransactionContext) => {
       void txnCtxt;
       counter++;
       return 5;
@@ -59,7 +62,7 @@ describe("foundationdb-operon", () => {
   test("fdb-error-recording", async () => {
     let counter = 0;
     // eslint-disable-next-line @typescript-eslint/require-await
-    const testFunction = async (txnCtxt: TransactionContext) => {
+    const testFunction = async (txnCtxt: PGTransactionContext) => {
       void txnCtxt;
       if (counter++ === 0) {
         throw new Error("fail");
@@ -158,7 +161,7 @@ describe("foundationdb-operon", () => {
     });
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    const testFunction = async (txnCtxt: TransactionContext) => {
+    const testFunction = async (txnCtxt: PGTransactionContext) => {
       void txnCtxt;
       counter++;
       return 3;
