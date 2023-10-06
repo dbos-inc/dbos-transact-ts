@@ -78,7 +78,7 @@ export class Operon {
       this.tempWorkflowName,
       {
         // eslint-disable-next-line @typescript-eslint/require-await
-        workflow: async () => console.error("UNREACHABLE: Indirect invoke of temp workflow"),
+        workflow: async () => this.config.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
         config: {},
       },
     ],
@@ -378,7 +378,7 @@ export class Operon {
         const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
         const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
         if (!inputs) {
-          console.error("Failed to find inputs during recover, workflow UUID: " + workflowUUID);
+          this.config.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
           continue;
         }
         const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
@@ -387,7 +387,7 @@ export class Operon {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs))
       } catch (e) {
-        console.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
+        this.config.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));

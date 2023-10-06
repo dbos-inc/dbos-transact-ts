@@ -9,11 +9,6 @@ import { init } from "./init";
 
 const program = new Command();
 
-export interface OperonCLIOptions {
-  port: number,
-  loglevel: string,
-}
-
 ////////////////////////
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
@@ -23,12 +18,17 @@ const packageJson = require('../../../package.json') as { version: string };
 program.
   version(packageJson.version);
 
+export interface OperonCLIStartOptions {
+  port: number,
+  loglevel: string,
+}
+
 program
   .command('start')
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify Operon log level', 'info')
-  .action(async (options: OperonCLIOptions) => {
+  .action(async (options: OperonCLIStartOptions) => {
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);
     await runtime.init();

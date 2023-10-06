@@ -7,7 +7,7 @@ import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
-import { OperonCLIOptions } from "./cli";
+import { OperonCLIStartOptions } from "./cli";
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -33,7 +33,7 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, OperonRuntimeConfig] {
+export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
