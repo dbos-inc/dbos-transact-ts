@@ -79,7 +79,7 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
   const logLevel: string = cliOptions.loglevel;
 
   // TODO We will need to configure the formatter for "production" mode
-  const operonLogger: Logger = createLogger({
+  const logger: Logger = createLogger({
     level: logLevel,
     format: format.combine(
       format.timestamp(),
@@ -90,7 +90,15 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
       } = info;
 
       const ts = timestamp.slice(0, 19).replace('T', ' ');
-      return `${ts} [${level}]: ${message} ${Object.keys(args).length ? JSON.stringify(args, null, 2) : ''}`;
+      /*
+      const keyValueStrings = Object.entries(args).map(([key, value]) => `${key}: ${value}`);
+      return `${ts} [${level}]: ${message} ${keyValueStrings.join(", ")}`;
+      */
+      return `${ts} [${level}]: ${message} ${Object.keys(args).length ? '\n' + JSON.stringify(args, null, 2) : ''}`;
+      /*
+      const structuredLogEntry = { message, ...args };
+      return `${ts} [${level}]: ${JSON.stringify(structuredLogEntry, null, 2)}`;
+      */
     })),
     transports: [new transports.Console()],
   });
@@ -107,13 +115,13 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    logger: operonLogger,
+    logger,
   };
 
   // CLI takes precedence over config file, which takes precedence over default config.
   const localRuntimeConfig: OperonRuntimeConfig = {
     port: cliOptions.port || configFile.localRuntimeConfig?.port || 3000,
-    logger: operonLogger,
+    logger,
   };
 
   return [operonConfig, localRuntimeConfig];

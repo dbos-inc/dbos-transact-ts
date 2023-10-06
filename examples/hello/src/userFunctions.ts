@@ -18,7 +18,7 @@ export class Hello {
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
     const logger = txnCtxt.getLogger();
     const greeting = `Hello, ${name}!`
-    logger.info(greeting);
+    logger.info(greeting, true);
     const rows = await txnCtxt.client<operon_hello>("operon_hello")
       .insert({ greeting: greeting })
       .returning("greeting_id");

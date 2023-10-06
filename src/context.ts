@@ -28,7 +28,7 @@ export class OperonContextImpl implements OperonContext {
   readonly logger: OperonLogger;
 
   constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
-    this.logger = new OperonLogger(logger);
+    this.logger = new OperonLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;

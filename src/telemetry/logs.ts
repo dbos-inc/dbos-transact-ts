@@ -5,57 +5,43 @@ import { OperonContext } from "../context";
  * It allows us to embed contextual information into the logs
  **/
 export class Logger {
-  constructor(private readonly globalLogger: winstonLogger) {}
+  constructor(private readonly globalLogger: winstonLogger, private readonly ctx: OperonContext) {}
 
   // Eventually we this object will implement one of our TelemetrySignal interface
-  formatMessage(message: string, ctx?: OperonContext): Object {
-    if (ctx) {
-      return {
-        message,
-        workflowUUID: ctx.workflowUUID,
-        authenticatedUser: ctx.authenticatedUser,
-        traceId: ctx.span.spanContext().traceId,
-        spanId: ctx.span.spanContext().spanId,
-      };
-    } else {
-      return {
-        message,
-      };
-    }
+  formatContextInfo(): Object {
+    return {
+      workflowUUID: this.ctx.workflowUUID,
+      authenticatedUser: this.ctx.authenticatedUser,
+      traceId: this.ctx.span.spanContext().traceId,
+      spanId: this.ctx.span.spanContext().spanId,
+    };
   }
 
-  info(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.info(msg);
+  info(message: string, ctx: boolean = false): void {
+    this.globalLogger.info(message, ctx ? this.formatContextInfo() : {});
   }
 
-  debug(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.debug(msg);
+  debug(message: string, ctx: boolean = false): void {
+    this.globalLogger.debug(message, ctx ? this.formatContextInfo() : {});
   }
 
-  warn(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.warn(msg);
+  warn(message: string, ctx: boolean = false): void {
+    this.globalLogger.warn(message, ctx ? this.formatContextInfo() : {});
   }
 
-  emerg(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.emerg(msg);
+  emerg(message: string, ctx: boolean = false): void {
+    this.globalLogger.emerg(message, ctx ? this.formatContextInfo() : {});
   }
 
-  alert(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.alert(msg);
+  alert(message: string, ctx: boolean = false): void {
+    this.globalLogger.alert(message, ctx ? this.formatContextInfo() : {});
   }
 
-  crit(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.crit(msg);
+  crit(message: string, ctx: boolean = false): void {
+    this.globalLogger.crit(message, ctx ? this.formatContextInfo() : {});
   }
 
-  error(message: string, ctx?: OperonContext): void {
-    const msg = this.formatMessage(message, ctx);
-    this.globalLogger.error(msg);
+  error(message: string, ctx: boolean = false): void {
+    this.globalLogger.error(message, ctx ? this.formatContextInfo() : {});
   }
 }
