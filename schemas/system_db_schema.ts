@@ -72,18 +72,7 @@ export const systemDBSchema = `
     PRIMARY KEY (workflow_uuid, key)
   );
 
-  DO $$ 
-  BEGIN 
-      IF NOT EXISTS (
-          SELECT 1
-          FROM   pg_indexes 
-          WHERE  tablename  = 'notifications'
-          AND    indexname  = 'idx_workflow_topic'
-      ) THEN
-          CREATE INDEX idx_workflow_topic ON notifications (destination_uuid, topic);
-      END IF;
-  END 
-  $$;
+  CREATE INDEX IF NOT EXISTS idx_workflow_topic ON notifications (destination_uuid, topic);
 
   CREATE OR REPLACE FUNCTION notifications_function() RETURNS TRIGGER AS $$
     DECLARE
@@ -94,18 +83,10 @@ export const systemDBSchema = `
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
-
-    DO
-    $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_notifications_trigger') THEN
-          EXECUTE '
-              CREATE TRIGGER operon_notifications_trigger
-              AFTER INSERT ON notifications
-              FOR EACH ROW EXECUTE FUNCTION notifications_function()';
-        END IF;
-    END
-    $$;
+    
+    CREATE OR REPLACE TRIGGER operon_notifications_trigger
+    AFTER INSERT ON notifications
+    FOR EACH ROW EXECUTE FUNCTION notifications_function();
 
     CREATE OR REPLACE FUNCTION workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
@@ -117,15 +98,7 @@ export const systemDBSchema = `
     END;
     $$ LANGUAGE plpgsql;
 
-    DO
-    $$
-    BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'operon_workflow_events_trigger') THEN
-          EXECUTE '
-              CREATE TRIGGER operon_workflow_events_trigger
-              AFTER INSERT ON workflow_events
-              FOR EACH ROW EXECUTE FUNCTION workflow_events_function()';
-        END IF;
-    END
-    $$;
+    CREATE OR REPLACE TRIGGER operon_workflow_events_trigger
+    AFTER INSERT ON workflow_events
+    FOR EACH ROW EXECUTE FUNCTION workflow_events_function();
 `;
