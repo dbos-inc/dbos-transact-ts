@@ -81,6 +81,12 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
+  test("endpoint-communicator", async () => {
+    const response = await request(httpServer.app.callback()).get("/communicator/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+  });
+
   test("endpoint-workflow", async () => {
     const response = await request(httpServer.app.callback()).post("/workflow?name=alice");
     expect(response.statusCode).toBe(200);
@@ -268,6 +274,7 @@ describe("httpserver-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/communicator/:input")
     @OperonCommunicator()
     static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
       return input;
