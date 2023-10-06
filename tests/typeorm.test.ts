@@ -4,7 +4,7 @@ import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { Operon, OrmEntities, TransactionContext } from "../src";
 import { OperonConfig } from "../src/operon" ;
 import { v1 as uuidv1 } from "uuid";
-import { UserDatabaseName } from "../src/user_database";
+import { TypeORMEntityManager, UserDatabaseName } from "../src/user_database";
 import { sleep } from "../src/utils";
 import {  Entity, Column, PrimaryColumn } from "typeorm";
 
@@ -22,13 +22,16 @@ export class KV {
 
 let globalCnt = 0;
 
+type TestTransactionContext = TransactionContext<TypeORMEntityManager>;
+
+
 @OrmEntities([KV])
 class KVController {
 
-  static async testTxn(txnCtxt: TransactionContext,
+  static async testTxn(txnCtxt: TestTransactionContext,
     id: string,
     value: string) {
-      const p: EntityManager = txnCtxt.typeormEM as EntityManager ;
+      const p = txnCtxt.client as EntityManager ;
       const kv: KV = new KV();
       kv.id = id;
       kv.value = value;
@@ -38,7 +41,7 @@ class KVController {
     }
 }
 
-const readTxn = async (txnCtxt: TransactionContext, id: string) => {
+const readTxn = async (txnCtxt: TestTransactionContext, id: string) => {
   await sleep(1);
   globalCnt += 1;
   return id;

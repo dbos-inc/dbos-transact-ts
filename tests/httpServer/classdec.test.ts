@@ -23,6 +23,7 @@ import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 import { OperonNotAuthorizedError } from "../../src/error";
 import { OperonConfig } from "../../src/operon";
+import { PoolClient } from "pg";
 
 describe("httpserver-defsec-tests", () => {
   const testTableName = "operon_test_kv";
@@ -150,8 +151,8 @@ describe("httpserver-defsec-tests", () => {
     }
 
     @OperonTransaction()
-    static async testTranscation(txnCtxt: TransactionContext, name: string) {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    static async testTranscation(txnCtxt: TransactionContext<PoolClient>, name: string) {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name]
       );
@@ -166,17 +167,15 @@ describe("httpserver-defsec-tests", () => {
 
     @GetApi("/workflow")
     static async testWfEndpoint(ctxt: HandlerContext, name: string) {
-      const res = await ctxt
+      return ctxt
         .invoke(TestEndpointDefSec)
         .testWorkflow(name)
         .then((x) => x.getResult());
-      return res;
     }
 
     @GetApi("/transaction")
     static async testTxnEndpoint(ctxt: HandlerContext, name: string) {
-      const res = await ctxt.invoke(TestEndpointDefSec).testTranscation(name);
-      return res;
+      return ctxt.invoke(TestEndpointDefSec).testTranscation(name);
     }
   }
 });

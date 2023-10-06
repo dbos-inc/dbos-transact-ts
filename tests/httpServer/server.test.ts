@@ -24,6 +24,7 @@ import { Authentication } from "../../src/httpServer/middleware";
 import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
+import { PoolClient } from "pg";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -215,6 +216,8 @@ describe("httpserver-tests", () => {
     return;
   }
 
+  type TestTransactionContext = TransactionContext<PoolClient>;
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @Authentication(testAuthMiddlware)
   class TestEndpoints {
@@ -256,7 +259,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/operon-error")
     @OperonTransaction()
-    static async operonErr(_ctx: TransactionContext) {
+    static async operonErr(_ctx: TestTransactionContext) {
       throw new OperonResponseError("customize error", 503);
     }
 
@@ -269,8 +272,8 @@ describe("httpserver-tests", () => {
 
     @PostApi("/transaction/:name")
     @OperonTransaction()
-    static async testTranscation(txnCtxt: TransactionContext, name: string) {
-      const { rows } = await txnCtxt.pgClient.query<TestKvTable>(
+    static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`,
         [name]
       );

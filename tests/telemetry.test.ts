@@ -24,6 +24,7 @@ import {
 } from "../src";
 import { WorkflowHandle } from "../src/workflow";
 import { OperonContextImpl } from "../src/context";
+import { PoolClient } from "pg";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -37,13 +38,15 @@ type TelemetrySignalDbFields = {
   trace_span: JSON;
 };
 
+type TestTransactionContext = TransactionContext<PoolClient>;
+
 class TestClass {
   @OperonTransaction({ readOnly: false })
   static async test_function(
-    txnCtxt: TransactionContext,
+    txnCtxt: TestTransactionContext,
     name: string
   ): Promise<string> {
-    const { rows } = await txnCtxt.pgClient.query(
+    const { rows } = await txnCtxt.client.query(
       `select current_user from current_user where current_user=$1;`,
       [name]
     );

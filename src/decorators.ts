@@ -623,7 +623,8 @@ export function OperonTransaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext, ...args: Args) => Promise<Return>>)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
@@ -654,8 +655,7 @@ export function OrmEntities(entities: Function[]) {
      const clsreg = getOrCreateOperonClassRegistration(ctor);
      clsreg.ormEntities = entities;
   }
-  return clsdec; 
-
+  return clsdec;
 }
 
 

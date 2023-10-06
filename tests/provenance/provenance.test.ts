@@ -5,6 +5,7 @@ import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
 import { Operon, TransactionContext, WorkflowContext } from "../../src";
 import { PgTransactionId } from "../../src/workflow";
 import { OperonConfig } from "../../src/operon";
+import { PoolClient } from "pg";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -36,10 +37,10 @@ describe("operon-provenance", () => {
 
   class TestFunctions {
     @OperonTransaction()
-    static async testTransaction(ctxt: TransactionContext, name: string) {
-      await ctxt.pgClient.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
+    static async testTransaction(ctxt: TransactionContext<PoolClient>, name: string) {
+      await ctxt.client.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
       return (
-        await ctxt.pgClient.query<PgTransactionId>(
+        await ctxt.client.query<PgTransactionId>(
           "select CAST(pg_current_xact_id() AS TEXT) as txid;"
         )
       ).rows[0].txid;
