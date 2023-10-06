@@ -1,12 +1,4 @@
-import {
-  CommunicatorContext,
-  Operon,
-  OperonCommunicator,
-  OperonTransaction,
-  OperonWorkflow,
-  TransactionContext,
-  WorkflowContext,
-} from "../src";
+import { CommunicatorContext, Operon, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
@@ -30,9 +22,7 @@ describe("concurrency-tests", () => {
     operon = new Operon(config);
     await operon.init(ConcurrTestClass);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`
-    );
+    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;
     ConcurrTestClass.wfCnt = 0;
   });
@@ -70,7 +60,7 @@ describe("concurrency-tests", () => {
     // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
-    await operon.workflow(ConcurrTestClass.testWorkflow, { workflowUUID: uuid }).then(x => x.getResult());
+    await operon.workflow(ConcurrTestClass.testWorkflow, { workflowUUID: uuid }).then((x) => x.getResult());
     const handle = await operon.workflow(ConcurrTestClass.testWorkflow, { workflowUUID: uuid });
     await ConcurrTestClass.promise2;
     await operon.flushWorkflowStatusBuffer();
@@ -86,12 +76,8 @@ describe("concurrency-tests", () => {
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      operon
-        .workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11)
-        .then(x => x.getResult()),
-      operon
-        .workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11)
-        .then(x => x.getResult()),
+      operon.workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11).then((x) => x.getResult()),
+      operon.workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11).then((x) => x.getResult()),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -100,20 +86,18 @@ describe("concurrency-tests", () => {
   });
 
   test("duplicate-notifications", async () => {
-        // Run two send/recv concurrently with the same UUID, both should succeed.
+    // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      operon.workflow(ConcurrTestClass.receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
-      operon.workflow(ConcurrTestClass.receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then(x => x.getResult()),
+      operon.workflow(ConcurrTestClass.receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then((x) => x.getResult()),
+      operon.workflow(ConcurrTestClass.receiveWorkflow, { workflowUUID: recvUUID }, "testTopic", 2).then((x) => x.getResult()),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleep(10); // Both would be listening to the notification.
 
-    await expect(
-      operon.send(recvUUID, "testmsg", "testTopic")
-    ).resolves.toBeFalsy();
+    await expect(operon.send(recvUUID, "testmsg", "testTopic")).resolves.toBeFalsy();
 
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<string | null>).value).toBe("testmsg");
@@ -139,20 +123,20 @@ class ConcurrTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonTransaction()
-  static async testReadWriteFunction (_txnCtxt: TestTransactionContext, id: number) {
+  static async testReadWriteFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonTransaction({ readOnly: true })
-  static async testReadOnlyFunction (_txnCtxt: TestTransactionContext, id: number) {
+  static async testReadOnlyFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt += 1;
     return id;
   }
 
   @OperonWorkflow()
-  static async testWorkflow (ctxt: WorkflowContext) {
+  static async testWorkflow(ctxt: WorkflowContext) {
     if (ConcurrTestClass.wfCnt++ === 1) {
       ConcurrTestClass.resolve2();
       await ConcurrTestClass.promise;
@@ -162,19 +146,19 @@ class ConcurrTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator()
-  static async testCommunicator (_ctxt: CommunicatorContext, id: number) {
+  static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
   @OperonWorkflow()
-  static async testCommWorkflow (ctxt: WorkflowContext, id: number) {
+  static async testCommWorkflow(ctxt: WorkflowContext, id: number) {
     const funcResult = await ctxt.invoke(ConcurrTestClass).testCommunicator(id);
     return funcResult ?? -1;
   }
 
   @OperonWorkflow()
-  static async receiveWorkflow (ctxt: WorkflowContext, topic: string, timeout: number) {
+  static async receiveWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
     return ctxt.recv<string>(topic, timeout);
   }
 }

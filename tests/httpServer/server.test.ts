@@ -1,23 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import {
-  GetApi,
-  Operon,
-  OperonTransaction,
-  OperonWorkflow,
-  MiddlewareContext,
-  PostApi,
-  RequiredRole,
-  TransactionContext,
-  WorkflowContext,
-  StatusString,
-} from "../../src";
+import { GetApi, Operon, OperonTransaction, OperonWorkflow, MiddlewareContext, PostApi, RequiredRole, TransactionContext, WorkflowContext, StatusString } from "../../src";
 import { OperonHttpServer, OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
-import {
-  TestKvTable,
-  generateOperonTestConfig,
-  setupOperonTestDb,
-} from "../helpers";
+import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
@@ -42,9 +27,7 @@ describe("httpserver-tests", () => {
     operon = new Operon(config);
     await operon.init(TestEndpoints);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`
-    );
+    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
     httpServer = new OperonHttpServer(operon);
   });
 
@@ -74,9 +57,7 @@ describe("httpserver-tests", () => {
   });
 
   test("post-test", async () => {
-    const response = await request(httpServer.app.callback())
-      .post("/testpost")
-      .send({ name: "alice" });
+    const response = await request(httpServer.app.callback()).post("/testpost").send({ name: "alice" });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
   });
@@ -88,8 +69,7 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-workflow", async () => {
-    const response = await request(httpServer.app.callback())
-      .post("/workflow?name=alice");
+    const response = await request(httpServer.app.callback()).post("/workflow?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
@@ -97,11 +77,9 @@ describe("httpserver-tests", () => {
   test("endpoint-error", async () => {
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback())
-      .post("/error")
-      .send({ name: "alice" });
+    const response = await request(httpServer.app.callback()).post("/error").send({ name: "alice" });
     expect(response.statusCode).toBe(500);
-    expect(response.body.details.code).toBe('23505');  // Should be the expected error.
+    expect(response.body.details.code).toBe("23505"); // Should be the expected error.
   });
 
   test("endpoint-handler", async () => {
@@ -129,7 +107,7 @@ describe("httpserver-tests", () => {
   test("operon-redirect", async () => {
     const response = await request(httpServer.app.callback()).get("/redirect");
     expect(response.statusCode).toBe(302);
-    expect(response.headers.location).toBe('/redirect-operon');
+    expect(response.headers.location).toBe("/redirect-operon");
   });
 
   test("not-authenticated", async () => {
@@ -160,9 +138,7 @@ describe("httpserver-tests", () => {
 
   test("test-workflowUUID-header", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(httpServer.app.callback())
-      .post("/workflow?name=bob")
-      .set({"operon-workflowuuid": workflowUUID});
+    const response = await request(httpServer.app.callback()).post("/workflow?name=bob").set({ "operon-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
@@ -179,8 +155,7 @@ describe("httpserver-tests", () => {
 
   test("endpoint-handler-UUID", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(httpServer.app.callback()).get("/handler/bob")
-      .set({"operon-workflowuuid": workflowUUID});
+    const response = await request(httpServer.app.callback()).get("/handler/bob").set({ "operon-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
@@ -194,22 +169,21 @@ describe("httpserver-tests", () => {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async function testAuthMiddlware (ctx: MiddlewareContext) {
+  async function testAuthMiddlware(ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
-      const { userid } = ctx.koaContext.request.query
+      const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
         const err = new OperonNotAuthorizedError("Not logged in.", 401);
         throw err;
-      }
-      else {
-        if (uid === 'go_away') {
+      } else {
+        if (uid === "go_away") {
           throw new OperonNotAuthorizedError("Go away.", 401);
         }
         return {
           authenticatedUser: uid,
-          authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
+          authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
         };
       }
     }
@@ -240,13 +214,13 @@ describe("httpserver-tests", () => {
     @GetApi("/redirect")
     static async redirectUrl(ctx: HandlerContext) {
       const url = ctx.request?.url || "bad url"; // Get the raw url from request.
-      ctx.koaContext.redirect(url + '-operon');
+      ctx.koaContext.redirect(url + "-operon");
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.info(`query with name ${name}`);  // Test logging.
+      ctx.info(`query with name ${name}`); // Test logging.
       return `hello ${name}`;
     }
 
@@ -267,16 +241,16 @@ describe("httpserver-tests", () => {
     static async testHandler(ctxt: HandlerContext, name: string) {
       const workflowUUID = ctxt.koaContext.get(OperonWorkflowUUIDHeader);
       // Invoke a workflow using the given UUID.
-      return ctxt.invoke(TestEndpoints, workflowUUID).testWorkflow(name).then(x => x.getResult());
+      return ctxt
+        .invoke(TestEndpoints, workflowUUID)
+        .testWorkflow(name)
+        .then((x) => x.getResult());
     }
 
     @PostApi("/transaction/:name")
     @OperonTransaction()
     static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`,
-        [name]
-      );
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
     }
 
@@ -298,7 +272,7 @@ describe("httpserver-tests", () => {
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/requireduser")
-    @RequiredRole(['user'])
+    @RequiredRole(["user"])
     static async testAuth(_ctxt: HandlerContext, name: string) {
       return `Please say hello to ${name}`;
     }

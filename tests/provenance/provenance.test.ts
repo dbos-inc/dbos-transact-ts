@@ -23,9 +23,7 @@ describe("operon-provenance", () => {
     operon = new Operon(config);
     await operon.init(TestFunctions);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
-    );
+    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     provDaemon = new ProvenanceDaemon(config, "jest_test_slot");
     await provDaemon.start();
   });
@@ -39,11 +37,7 @@ describe("operon-provenance", () => {
     @OperonTransaction()
     static async testTransaction(ctxt: TransactionContext<PoolClient>, name: string) {
       await ctxt.client.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
-      return (
-        await ctxt.client.query<PgTransactionId>(
-          "select CAST(pg_current_xact_id() AS TEXT) as txid;"
-        )
-      ).rows[0].txid;
+      return (await ctxt.client.query<PgTransactionId>("select CAST(pg_current_xact_id() AS TEXT) as txid;")).rows[0].txid;
     }
 
     @OperonWorkflow()
@@ -53,11 +47,10 @@ describe("operon-provenance", () => {
   }
 
   test("basic-provenance", async () => {
-    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").then(x => x.getResult());
+    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").then((x) => x.getResult());
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
-    const pgExporter = operon.telemetryCollector
-    .exporters[0] as PostgresExporter;
+    const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -65,6 +58,5 @@ describe("operon-provenance", () => {
     await operon.telemetryCollector.processAndExportSignals();
     ({ rows } = await pgExporter.pgClient.query(`SELECT * FROM signal_testtransaction WHERE transaction_id=$1`, [xid]));
     expect(rows.length).toBeGreaterThan(0);
-
   });
 });

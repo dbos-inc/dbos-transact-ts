@@ -1,27 +1,12 @@
-import {
-  ConsoleExporter,
-  PostgresExporter,
-  POSTGRES_EXPORTER,
-  CONSOLE_EXPORTER,
-} from "../src/telemetry/exporters";
+import { ConsoleExporter, PostgresExporter, POSTGRES_EXPORTER, CONSOLE_EXPORTER } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import {
-  OperonTransaction,
-  OperonWorkflow,
-  RequiredRole,
-} from "../src/decorators";
+import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
-import {
-  GetApi,
-  HandlerContext,
-  OperonHttpServer,
-  TransactionContext,
-  WorkflowContext,
-} from "../src";
+import { GetApi, HandlerContext, OperonHttpServer, TransactionContext, WorkflowContext } from "../src";
 import { WorkflowHandle } from "../src/workflow";
 import { OperonContextImpl } from "../src/context";
 import { PoolClient } from "pg";
@@ -42,14 +27,8 @@ type TestTransactionContext = TransactionContext<PoolClient>;
 
 class TestClass {
   @OperonTransaction({ readOnly: false })
-  static async test_function(
-    txnCtxt: TestTransactionContext,
-    name: string
-  ): Promise<string> {
-    const { rows } = await txnCtxt.client.query(
-      `select current_user from current_user where current_user=$1;`,
-      [name]
-    );
+  static async test_function(txnCtxt: TestTransactionContext, name: string): Promise<string> {
+    const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     const result = JSON.stringify(rows[0]);
     txnCtxt.log(`transaction result: ${result}`);
     return result;
@@ -57,10 +36,7 @@ class TestClass {
 
   @OperonWorkflow()
   @RequiredRole(["operonAppAdmin", "operonAppUser"])
-  static async test_workflow(
-    workflowCtxt: WorkflowContext,
-    name: string
-  ): Promise<string> {
+  static async test_workflow(workflowCtxt: WorkflowContext, name: string): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
@@ -78,10 +54,7 @@ describe("operon-telemetry", () => {
   });
 
   test("Operon init works with all exporters", async () => {
-    const operonConfig = generateOperonTestConfig([
-      CONSOLE_EXPORTER,
-      POSTGRES_EXPORTER,
-    ]);
+    const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER, POSTGRES_EXPORTER]);
     const operon = new Operon(operonConfig);
     await operon.init();
     await operon.destroy();
@@ -92,17 +65,14 @@ describe("operon-telemetry", () => {
     const operon = new Operon(operonConfig);
     await operon.init(TestClass);
 
-    const collector = operon.telemetryCollector
-      .exporters[0] as PostgresExporter;
+    const collector = operon.telemetryCollector.exporters[0] as PostgresExporter;
     jest.spyOn(collector, "process").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(
-      operon.telemetryCollector.processAndExportSignals()
-    ).resolves.not.toThrow();
+    await expect(operon.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
 
     await operon.destroy();
   });
@@ -158,9 +128,7 @@ describe("operon-telemetry", () => {
       operon = new Operon(operonConfig);
       await operon.init(TestClass);
       expect(operon.telemetryCollector.exporters.length).toBe(1);
-      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(
-        PostgresExporter
-      );
+      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(PostgresExporter);
     });
 
     afterAll(async () => {
@@ -170,12 +138,9 @@ describe("operon-telemetry", () => {
     });
 
     test("signal tables are correctly created", async () => {
-      const pgExporter = operon.telemetryCollector
-        .exporters[0] as PostgresExporter;
+      const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
-      const stfQueryResult = await pgExporterPgClient.query(
-        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`
-      );
+      const stfQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`);
       const expectedStfColumns = [
         {
           column_name: "timestamp",
@@ -218,13 +183,9 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stfQueryResult.rows).toEqual(
-        expect.arrayContaining(expectedStfColumns)
-      );
+      expect(stfQueryResult.rows).toEqual(expect.arrayContaining(expectedStfColumns));
 
-      const stwQueryResult = await pgExporterPgClient.query(
-        `SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`
-      );
+      const stwQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`);
       const expectedStwColumns = [
         {
           column_name: "trace_span",
@@ -267,9 +228,7 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
       ];
-      expect(stwQueryResult.rows).toEqual(
-        expect.arrayContaining(expectedStwColumns)
-      );
+      expect(stwQueryResult.rows).toEqual(expect.arrayContaining(expectedStwColumns));
     });
 
     test("correctly exports log entries with single workflow single operation", async () => {
@@ -281,11 +240,7 @@ describe("operon-telemetry", () => {
 
       const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
-      const workflowHandle: WorkflowHandle<string> = await operon.workflow(
-        TestClass.test_workflow,
-        params,
-        username
-      );
+      const workflowHandle: WorkflowHandle<string> = await operon.workflow(TestClass.test_workflow, params, username);
       const workflowUUID = workflowHandle.getWorkflowUUID();
       const result: string = await workflowHandle.getResult();
 
@@ -295,14 +250,10 @@ describe("operon-telemetry", () => {
       // Exporter should export the log entries
       await operon.telemetryCollector.processAndExportSignals();
 
-      const pgExporter = operon.telemetryCollector
-        .exporters[0] as PostgresExporter;
+      const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
 
-      const txnLogQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_function WHERE log_message IS NOT NULL`
-        );
+      const txnLogQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_function WHERE log_message IS NOT NULL`);
       expect(txnLogQueryResult.rows).toHaveLength(1);
       const txnLogEntry = txnLogQueryResult.rows[0];
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
@@ -313,10 +264,7 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.trace_id).toBe(null);
       expect(txnLogEntry.trace_span).toBe(null);
 
-      const wfLogQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_workflow WHERE log_message IS NOT NULL`
-        );
+      const wfLogQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_workflow WHERE log_message IS NOT NULL`);
       expect(wfLogQueryResult.rows).toHaveLength(1);
       const wfLogEntry = wfLogQueryResult.rows[0];
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
@@ -328,10 +276,7 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.trace_span).toBe(null);
 
       // Exporter should export traces
-      const txnTraceQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_function WHERE trace_id IS NOT NULL`
-        );
+      const txnTraceQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_function WHERE trace_id IS NOT NULL`);
       expect(txnTraceQueryResult.rows).toHaveLength(1);
       const txnTraceEntry = txnTraceQueryResult.rows[0];
       expect(txnTraceEntry.trace_id.length).toBe(32);
@@ -339,10 +284,7 @@ describe("operon-telemetry", () => {
       expect(txnTraceEntry.severity).toBe(null);
       expect(txnTraceEntry.trace_span).not.toBe(null);
 
-      const wfTraceQueryResult =
-        await pgExporterPgClient.query<TelemetrySignalDbFields>(
-          `SELECT * FROM signal_test_workflow WHERE trace_id IS NOT NULL`
-        );
+      const wfTraceQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_workflow WHERE trace_id IS NOT NULL`);
       expect(wfTraceQueryResult.rows).toHaveLength(1);
       const wfTraceEntry = wfTraceQueryResult.rows[0];
       expect(wfTraceEntry.trace_id.length).toBe(32);
@@ -374,14 +316,11 @@ describe("operon-telemetry", () => {
 
     test("Trace context is propagated in and out Operon", async () => {
       const headers = {
-        [TRACE_PARENT_HEADER]:
-          "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        [TRACE_PARENT_HEADER]: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         [TRACE_STATE_HEADER]: "some_state=some_value",
       };
 
-      const response = await request(httpServer.app.callback())
-        .get("/hello")
-        .set(headers);
+      const response = await request(httpServer.app.callback()).get("/hello").set(headers);
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");
@@ -393,7 +332,7 @@ describe("operon-telemetry", () => {
     });
 
     test("New trace context is propagated out of Operon", async () => {
-      const response = await request(httpServer.app.callback()).get("/hello")
+      const response = await request(httpServer.app.callback()).get("/hello");
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");
