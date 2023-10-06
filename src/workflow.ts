@@ -60,8 +60,6 @@ export interface WorkflowContext extends OperonContext {
   recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
   childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R>; // TODO: Make private
-  external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R>; // TODO: Make private
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
