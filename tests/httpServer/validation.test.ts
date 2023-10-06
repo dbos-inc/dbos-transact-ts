@@ -313,6 +313,40 @@ describe("httpserver-datavalidation-tests", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  // Date
+  test("no date (get)", async () => {
+    const response = await request(httpServer.app.callback()).get("/date");
+    expect(response.statusCode).toBe(400);
+  });
+  test("no date (post)", async () => {
+    const response = await request(httpServer.app.callback()).post("/date");
+    expect(response.statusCode).toBe(400);
+  });
+  test("no date (post) 2", async () => {
+    const response = await request(httpServer.app.callback()).post("/date")
+    .send({});
+    expect(response.statusCode).toBe(400);
+  });
+  test("good date (get)", async () => {
+    const response = await request(httpServer.app.callback()).get("/date")
+    .query({v:"2023-10-31"});
+    expect(response.statusCode).toBe(200);
+  });
+  test("good date (post)", async () => {
+    const response = await request(httpServer.app.callback()).post("/date")
+    .send({v:"2023-10-31"});
+    expect(response.statusCode).toBe(200);
+  });
+  test("bad date (get)", async () => {
+    const response = await request(httpServer.app.callback()).get("/date")
+    .query({v:"AAA"});
+    expect(response.statusCode).toBe(400);
+  });
+  test("bad date (post)", async () => {
+    const response = await request(httpServer.app.callback()).post("/date")
+    .send({v:"turnip"});
+    expect(response.statusCode).toBe(400);
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpointDataVal {
