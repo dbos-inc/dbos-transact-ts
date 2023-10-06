@@ -1,22 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import {
-  GetApi,
-  Operon,
-  RequiredRole,
-  DefaultRequiredRole,
-  MiddlewareContext,
-  OperonTransaction,
-  OperonWorkflow,
-  TransactionContext,
-  WorkflowContext,
-} from "../../src";
+import { GetApi, Operon, RequiredRole, DefaultRequiredRole, MiddlewareContext, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
-import {
-  TestKvTable,
-  generateOperonTestConfig,
-  setupOperonTestDb,
-} from "../helpers";
+import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
@@ -41,9 +27,7 @@ describe("httpserver-defsec-tests", () => {
     operon = new Operon(config);
     await operon.init(TestEndpointDefSec);
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(
-      `CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`
-    );
+    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     httpServer = new OperonHttpServer(operon);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
@@ -59,7 +43,7 @@ describe("httpserver-defsec-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
     expect(middlewareCounter).toBe(1);
-    expect(middlewareCounter2).toBe(2);  // Middleware runs from left to right.
+    expect(middlewareCounter2).toBe(2); // Middleware runs from left to right.
   });
 
   test("not-authenticated", async () => {
@@ -89,7 +73,7 @@ describe("httpserver-defsec-tests", () => {
   });
 
   // The handler is authorized, then its child workflow and transaction should also be authroized.
-  test("cascade-authorized",async () => {
+  test("cascade-authorized", async () => {
     const response = await request(httpServer.app.callback()).get("/workflow?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
 
@@ -98,22 +82,21 @@ describe("httpserver-defsec-tests", () => {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async function authTestMiddleware (ctx: MiddlewareContext) {
+  async function authTestMiddleware(ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
-      const { userid } = ctx.koaContext.request.query
+      const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
         const err = new OperonNotAuthorizedError("Not logged in.", 401);
         throw err;
-      }
-      else {
-        if (uid === 'go_away') {
+      } else {
+        if (uid === "go_away") {
           throw new OperonNotAuthorizedError("Go away.", 401);
         }
         return {
           authenticatedUser: uid,
-          authenticatedRoles: (uid === 'a_real_user' ? ['user'] : ['other'])
+          authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
         };
       }
     }
@@ -130,10 +113,10 @@ describe("httpserver-defsec-tests", () => {
   const testMiddleware2: Middleware = async (ctx, next) => {
     middlewareCounter2 = middlewareCounter + 1;
     await next();
-  };  
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  @DefaultRequiredRole(['user'])
+  @DefaultRequiredRole(["user"])
   @Authentication(authTestMiddleware)
   @KoaMiddleware(testMiddleware, testMiddleware2)
   class TestEndpointDefSec {
@@ -152,10 +135,7 @@ describe("httpserver-defsec-tests", () => {
 
     @OperonTransaction()
     static async testTranscation(txnCtxt: TransactionContext<PoolClient>, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-        [name]
-      );
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
     }
 
