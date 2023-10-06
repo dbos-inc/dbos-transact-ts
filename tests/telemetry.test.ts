@@ -2,8 +2,6 @@ import {
   PostgresExporter,
   POSTGRES_EXPORTER,
 } from "../src/telemetry/exporters";
-import { TelemetryCollector } from "../src/telemetry/collector";
-import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
@@ -49,7 +47,8 @@ class TestClass {
       [name]
     );
     const result = JSON.stringify(rows[0]);
-    txnCtxt.log(`transaction result: ${result}`);
+    const logger = txnCtxt.getLogger();
+    logger.info(`transaction result: ${result}`);
     return result;
   }
 
@@ -60,7 +59,6 @@ class TestClass {
     name: string
   ): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
-    workflowCtxt.log(`workflow result: ${funcResult}`);
     return funcResult;
   }
 
@@ -144,14 +142,6 @@ describe("operon-telemetry", () => {
           data_type: "text",
         },
         {
-          column_name: "severity",
-          data_type: "text",
-        },
-        {
-          column_name: "log_message",
-          data_type: "text",
-        },
-        {
           column_name: "trace_id",
           data_type: "text",
         },
@@ -193,14 +183,6 @@ describe("operon-telemetry", () => {
           data_type: "bigint",
         },
         {
-          column_name: "severity",
-          data_type: "text",
-        },
-        {
-          column_name: "log_message",
-          data_type: "text",
-        },
-        {
           column_name: "trace_id",
           data_type: "text",
         },
@@ -229,7 +211,7 @@ describe("operon-telemetry", () => {
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const span = operon.tracer.startSpan("test");
-      const oc = new OperonContextImpl("testName", span, operon.logger);
+      const oc = new OperonContextImpl("testName", span, operon.config.logger);
       oc.authenticatedRoles = ["operonAppAdmin"];
       oc.authenticatedUser = "operonAppAdmin";
 
@@ -262,8 +244,6 @@ describe("operon-telemetry", () => {
       expect(txnLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(txnLogEntry.function_name).toBe("test_function");
       expect(txnLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(txnLogEntry.severity).toBe(LogSeverity.Log);
-      expect(txnLogEntry.log_message).toBe(`transaction result: ${result}`);
       expect(txnLogEntry.trace_id).toBe(null);
       expect(txnLogEntry.trace_span).toBe(null);
 
@@ -276,8 +256,6 @@ describe("operon-telemetry", () => {
       expect(wfLogEntry.workflow_uuid).toBe(workflowUUID);
       expect(wfLogEntry.function_name).toBe("test_workflow");
       expect(wfLogEntry.run_as).toBe(oc.authenticatedUser);
-      expect(wfLogEntry.severity).toBe(LogSeverity.Log);
-      expect(wfLogEntry.log_message).toBe(`workflow result: ${result}`);
       expect(wfLogEntry.trace_id).toBe(null);
       expect(wfLogEntry.trace_span).toBe(null);
 
@@ -289,8 +267,6 @@ describe("operon-telemetry", () => {
       expect(txnTraceQueryResult.rows).toHaveLength(1);
       const txnTraceEntry = txnTraceQueryResult.rows[0];
       expect(txnTraceEntry.trace_id.length).toBe(32);
-      expect(txnTraceEntry.log_message).toBe(null);
-      expect(txnTraceEntry.severity).toBe(null);
       expect(txnTraceEntry.trace_span).not.toBe(null);
 
       const wfTraceQueryResult =
@@ -300,8 +276,6 @@ describe("operon-telemetry", () => {
       expect(wfTraceQueryResult.rows).toHaveLength(1);
       const wfTraceEntry = wfTraceQueryResult.rows[0];
       expect(wfTraceEntry.trace_id.length).toBe(32);
-      expect(wfTraceEntry.log_message).toBe(null);
-      expect(wfTraceEntry.severity).toBe(null);
       expect(wfTraceEntry.trace_span).not.toBe(null);
     });
   });

@@ -8,6 +8,7 @@ import { OperonInitializationError } from "../../src/error";
 import { OperonConfig } from "../../src/operon";
 
 describe("operon-config", () => {
+  const mockCLIOptions = {port: NaN, loglevel: "info"};
   const mockOperonConfigYamlString = `
       database:
         hostname: 'some host'
@@ -44,7 +45,7 @@ describe("operon-config", () => {
     const [operonConfig, runtimeConfig]: [
       OperonConfig,
       OperonRuntimeConfig | undefined
-    ] = parseConfigFile();
+    ] = parseConfigFile(mockCLIOptions);
 
     // Test pool config options
     const poolConfig: PoolConfig = operonConfig.poolConfig;
@@ -76,7 +77,7 @@ describe("operon-config", () => {
     jest.spyOn(utils, "readFileSync").mockImplementation(() => {
       throw new OperonInitializationError("some error");
     });
-    expect(() => parseConfigFile()).toThrow(OperonInitializationError);
+    expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 
   test("config file is empty", () => {
@@ -84,7 +85,7 @@ describe("operon-config", () => {
     jest
       .spyOn(utils, "readFileSync")
       .mockReturnValue(JSON.stringify(mockConfigFile));
-    expect(() => parseConfigFile()).toThrow(OperonInitializationError);
+    expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 
   test("config file is missing database config", () => {
@@ -92,7 +93,7 @@ describe("operon-config", () => {
     jest
       .spyOn(utils, "readFileSync")
       .mockReturnValue(JSON.stringify(mockConfigFile));
-    expect(() => parseConfigFile()).toThrow(OperonInitializationError);
+    expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 
   test("config file is missing database password", () => {
@@ -101,6 +102,6 @@ describe("operon-config", () => {
       .spyOn(utils, "readFileSync")
       .mockReturnValueOnce(mockOperonConfigYamlString);
     jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
-    expect(() => parseConfigFile()).toThrow(OperonInitializationError);
+    expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 });

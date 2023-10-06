@@ -372,7 +372,7 @@ describe("failures-tests", () => {
 
     // Create an Operon context to pass authenticated user to the workflow.
     const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("testRecovery", span, operon.logger);
+    const oc = new OperonContextImpl("testRecovery", span, operon.config.logger);
     oc.authenticatedUser = "test_recovery_user";
 
     const handle = await operon.workflow(testWorkflow, { parentCtx: oc }, 5);
