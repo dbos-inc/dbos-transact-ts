@@ -1,4 +1,4 @@
-/* eslint-disaServerble @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonConfig } from '../operon';
 import { Logger } from 'winston';
 import { OperonHttpServer } from '../httpServer/server';
