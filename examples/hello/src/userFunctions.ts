@@ -4,8 +4,8 @@ import { Knex } from 'knex';
 type KnexTransactionContext = TransactionContext<Knex>;
 
 interface operon_hello {
-  greeting_id: number;
-  greeting: string;
+  name: string;
+  greet_count: number;
 }
 export class Hello {
 
@@ -16,10 +16,16 @@ export class Hello {
 
   @OperonTransaction()
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
-    const greeting = `Hello, ${name}!`
-    const rows = await txnCtxt.client<operon_hello>("operon_hello")
-      .insert({ greeting: greeting })
-      .returning("greeting_id");
-    return `Greeting ${rows[0].greeting_id}: Hello, ${name}!\n`;
+    // Increment greet_count.
+    await txnCtxt.client<operon_hello>("operon_hello")
+      .insert({name: name, greet_count: 1})
+      .onConflict('name')
+      .merge({ greet_count: txnCtxt.client.raw('operon_hello.greet_count + 1') });
+    // Retrieve greet_count.
+    const greet_count = await txnCtxt.client<operon_hello>("operon_hello")
+      .select("greet_count")
+      .where({name:name}).first()
+      .then(x => x?.greet_count);
+    return `Hello, ${name}! You have been greeted ${greet_count} times.\n`;
   }
 }
