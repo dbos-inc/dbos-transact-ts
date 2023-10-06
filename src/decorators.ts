@@ -352,16 +352,16 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
               args[idx] = argValue;
             }
             else if (typeof argValue == 'string') {
-              if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true') {
+              if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true' || argValue === '1') {
                 argValue = true;
                 args[idx] = argValue;
               }
-              else if (argValue.toLowerCase() === 'f' || argValue.toLowerCase() === 'false') {
+              else if (argValue.toLowerCase() === 'f' || argValue.toLowerCase() === 'false' || argValue === '0') {
                 argValue = false;
                 args[idx] = argValue;
               }
               else {
-                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
+                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and may be a string convertible to boolean, but was ${argValue}.`);
               }
             }
             else {
