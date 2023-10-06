@@ -60,6 +60,6 @@ export async function init(appName: string) {
   let updatedContent = content.replace('"name": "operon-hello"', `"name": "${appName}"`);
   updatedContent = content.replace('"@dbos-inc/operon": "../..",', ``);
   fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
-  execSync("npm i", {cwd: appName})
-  execSync("npm install --save @dbos-inc/operon", {cwd: appName})
+  execSync("npm i", {cwd: appName, stdio: 'inherit'})
+  execSync("npm install --save @dbos-inc/operon", {cwd: appName, stdio: 'inherit'})
 }
