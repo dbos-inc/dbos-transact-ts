@@ -3,24 +3,26 @@ import { OperonConfig } from "../src/operon";
 import { UserDatabaseName } from "../src/user_database";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
+import { Knex } from 'knex'
 
+type KnexTransactionContext = TransactionContext<Knex.Transaction>;
 const testTableName = "operon_test_kv";
 
 let insertCount = 0;
 
 class TestClass {
   @OperonTransaction()
-  static async testInsert(txnCtxt: TransactionContext, value: string) {
+  static async testInsert(txnCtxt: KnexTransactionContext, value: string) {
     insertCount++;
-    const result = await txnCtxt.knex<TestKvTable>(testTableName)
+    const result = await txnCtxt.client<TestKvTable>(testTableName)
       .insert({ value: value })
       .returning('id');
     return result[0].id!;
   }
 
   @OperonTransaction()
-  static async testSelect(txnCtxt: TransactionContext, id: number) {
-    const result = await txnCtxt.knex<TestKvTable>(testTableName).select("value").where({id: id});
+  static async testSelect(txnCtxt: KnexTransactionContext, id: number) {
+    const result = await txnCtxt.client<TestKvTable>(testTableName).select("value").where({id: id});
     return result[0].value!;
   }
 
@@ -32,9 +34,9 @@ class TestClass {
   }
 
   @OperonTransaction()
-  static async unsafeInsert(txnCtxt: TransactionContext, key: number, value: string) {
+  static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
     insertCount++;
-    const result = await txnCtxt.knex<TestKvTable>(testTableName)
+    const result = await txnCtxt.client<TestKvTable>(testTableName)
       .insert({ id: key, value: value })
       .returning('id');
     return result[0].id!;
