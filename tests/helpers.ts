@@ -4,8 +4,7 @@ import { UserDatabaseName } from "../src/user_database";
 
 /* DB management helpers */
 export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
-  const dbPassword: string | undefined =
-    process.env.DB_PASSWORD || process.env.PGPASSWORD;
+  const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
   }
@@ -20,15 +19,15 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
       database: "operontest",
     },
     application: {
-      counter: 3
+      counter: 3,
     },
     telemetryExporters: exporters || [],
     system_database: "operontest_systemdb",
     observability_database: "operontest_observabilitydb",
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
-        entities: ["KV"]
-    }
+      entities: ["KV"],
+    },
   };
 
   return operonTestConfig;
@@ -43,16 +42,10 @@ export async function setupOperonTestDb(config: OperonConfig) {
     database: "postgres",
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(
-    `DROP DATABASE IF EXISTS ${config.poolConfig.database};`
-  );
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
   await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
-  await pgSystemClient.query(
-    `DROP DATABASE IF EXISTS ${config.system_database};`
-  );
-  await pgSystemClient.query(
-    `DROP DATABASE IF EXISTS ${config.observability_database};`
-  );
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.observability_database};`);
   await pgSystemClient.end();
 }
 
