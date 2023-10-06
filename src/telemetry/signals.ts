@@ -20,12 +20,6 @@ export interface TelemetrySignal {
   transactionID?: string;
   traceID?: string;
   traceSpan?: ReadableSpan;
-  /* TODO add back these fields when we have our selected logger
-   * e.g. if we use winston this can be done by override the transport to also generate a TelemetrySignal and push to our collector queue
-  severity?: LogSeverity;
-  logMessage?: string;
-  stack?: string;
-  */
 }
 
 export interface ProvenanceSignal {

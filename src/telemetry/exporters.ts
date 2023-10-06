@@ -84,8 +84,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
         run_as TEXT NOT NULL,
         timestamp BIGINT NOT NULL,
         transaction_id TEXT DEFAULT NULL,
-        severity TEXT DEFAULT NULL,
-        log_message TEXT DEFAULT NULL,
         trace_id TEXT DEFAULT NULL,
         trace_span JSONB DEFAULT NULL,\n`;
 
@@ -130,7 +128,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       const tableName: string = `signal_${operationName}`;
       const query = `
         INSERT INTO ${tableName}
-        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_name text, run_as text, timestamp bigint, transaction_id text, severity text, log_message text, trace_id text, trace_span json)
+        SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (workflow_uuid text, function_name text, run_as text, timestamp bigint, transaction_id text, trace_id text, trace_span json)
       `;
 
       const values: string = JSON.stringify(
@@ -141,8 +139,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
             run_as: signal.runAs,
             timestamp: signal.timestamp,
             transaction_id: signal.transactionID,
-            severity: "DEBUG", // XXX PLACE HOLDER
-            log_message: "placeholder", // XXX PLACE HOLDER
             trace_id: signal.traceID,
             trace_span: signal.traceSpan ? spanToString(signal.traceSpan) : null,
           };
