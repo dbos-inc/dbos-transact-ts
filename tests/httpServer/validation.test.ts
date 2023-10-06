@@ -6,6 +6,7 @@ import {
   Operon,
   
   ArgVarchar,
+  ArgDate,
 } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import {
@@ -247,7 +248,63 @@ describe("httpserver-datavalidation-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/number")
     static async checkNumberP(_ctx: HandlerContext, v: number) {
+      if (typeof v !== 'number') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
       return { message: `This is a really nice number: ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/bigint")
+    static async checkBigintG(_ctx: HandlerContext, v: bigint) {
+      if (typeof v !== 'bigint') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice bigint: ${v}` };
+    }
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/bigint")
+    static async checkBigintP(_ctx: HandlerContext, v: bigint) {
+      if (typeof v !== 'bigint') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice bigint: ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/date")
+    static async checkDateG(_ctx: HandlerContext, @ArgDate() v: Date) {
+      if (!(v instanceof Date)) {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice date: ${v.toISOString()}` };
+    }
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/date")
+    static async checkDateP(_ctx: HandlerContext, @ArgDate() v: Date) {
+      if (!(v instanceof Date)) {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice date: ${v.toISOString()}` };
+    }
+
+
+    // This is in honor of Harry
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @GetApi("/boolean")
+    static async checkBooleanG(_ctx: HandlerContext, v: boolean) {
+      if (typeof v !== 'boolean') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice boolean: ${v}` };
+    }
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/boolean")
+    static async checkBooleanP(_ctx: HandlerContext, @ArgDate() v: boolean) {
+      if (typeof v !== 'boolean') {
+        throw new Error("THIS SHOULD NEVER HAPPEN");
+      }
+      return { message: `This is a really nice boolean: ${v}` };
     }
   }
 });
