@@ -348,8 +348,13 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (argDescriptor.dataType.dataType === 'boolean') {
           if (typeof argValue !== 'boolean') {
             if (typeof argValue == 'number') {
-              argValue = (argValue != 0 ? true : false);
-              args[idx] = argValue;
+              if (argValue === 0 || argValue === 1) {
+                argValue = (argValue != 0 ? true : false);
+                args[idx] = argValue;
+              }
+              else {
+                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and may be a number (0 or 1) convertible to boolean, but was ${argValue}.`);
+              }
             }
             else if (typeof argValue == 'string') {
               if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true' || argValue === '1') {

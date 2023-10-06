@@ -297,6 +297,22 @@ describe("httpserver-datavalidation-tests", () => {
     expect(response.body.message).toBe("This is a really nice boolean: false");
   });
   */
+  test("bad boolean 1", async () => {
+    const response = await request(httpServer.app.callback()).post("/boolean")
+    .send({v:"A"});
+    expect(response.statusCode).toBe(400);
+  });
+  test("bad boolean 2", async () => {
+    const response = await request(httpServer.app.callback()).post("/boolean")
+    .send({v:"falsy"});
+    expect(response.statusCode).toBe(400);
+  });
+  test("bad boolean 1", async () => {
+    const response = await request(httpServer.app.callback()).post("/boolean")
+    .send({v:2});
+    expect(response.statusCode).toBe(400);
+  });
+
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   class TestEndpointDataVal {
@@ -390,7 +406,6 @@ describe("httpserver-datavalidation-tests", () => {
       }
       return { message: `This is a really nice date: ${v.toISOString()}` };
     }
-
 
     // This is in honor of Harry
     // eslint-disable-next-line @typescript-eslint/require-await
