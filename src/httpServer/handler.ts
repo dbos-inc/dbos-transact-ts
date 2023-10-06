@@ -47,7 +47,19 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
     }
     super(koaContext.url, span, operon.logger);
     this.W3CTraceContextPropagator = httpTracer;
-    this.request = koaContext.req;
+    this.request = {
+      headers: koaContext.request.headers,
+      rawHeaders: koaContext.req.rawHeaders,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      params: koaContext.params,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      body: koaContext.request.body,
+      rawBody: koaContext.request.rawBody,
+      query: koaContext.request.query,
+      querystring: koaContext.request.querystring,
+      url: koaContext.request.url,
+      ip: koaContext.request.ip,
+    };
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;

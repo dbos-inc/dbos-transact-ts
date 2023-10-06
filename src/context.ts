@@ -1,11 +1,25 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { IncomingMessage } from "http";
 import { Logger } from "./telemetry/logs";
 import { LogSeverity } from "./telemetry/signals";
 import { has, get } from "lodash";
+import { IncomingHttpHeaders } from "http";
+import { ParsedUrlQuery } from "querystring";
+
+// Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
+interface OperonRequest {
+  headers: IncomingHttpHeaders;  // HTTP headers.
+  rawHeaders: string[];
+  params: unknown; // Parsed argument from URL.
+  body?: unknown;  // parsed HTTP body as an object.
+  rawBody: string; // unparsed raw HTTP body string.
+  query: ParsedUrlQuery; // parsed query string.
+  querystring: string; // unparsed query string.
+  url: string; // request url.
+  ip: string; // request remote address.
+}
 
 export interface OperonContext {
-  request?: IncomingMessage;
+  request?: OperonRequest;
   workflowUUID: string;
   authenticatedUser: string;
 
@@ -22,7 +36,7 @@ export interface OperonContext {
 }
 
 export class OperonContextImpl implements OperonContext {
-  request?: IncomingMessage; // Raw incoming HTTP request.
+  request?: OperonRequest; // Raw incoming HTTP request.
 
   authenticatedUser: string = ""; ///< The user that has been authenticated
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
