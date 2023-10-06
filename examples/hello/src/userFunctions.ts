@@ -19,8 +19,9 @@ export class Hello {
     // Retrieve greet_count.
     const greet_count = await txnCtxt.client<operon_hello>("operon_hello")
       .select("greet_count")
-      .where({name:name}).first()
-      .then(x => x?.greet_count);
+      .where({name:name})
+      .first()
+      .then(row => row?.greet_count);
     return `Hello, ${name}! You have been greeted ${greet_count} times.\n`;
   }
 
