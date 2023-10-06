@@ -300,7 +300,7 @@ describe("httpserver-datavalidation-tests", () => {
     }
     // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/boolean")
-    static async checkBooleanP(_ctx: HandlerContext, @ArgDate() v: boolean) {
+    static async checkBooleanP(_ctx: HandlerContext, v: boolean) {
       if (typeof v !== 'boolean') {
         throw new Error("THIS SHOULD NEVER HAPPEN");
       }
