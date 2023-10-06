@@ -159,7 +159,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     span.setAttributes({
       operationName: status.workflowName,
     });
-    const oc = new OperonContextImpl(status.workflowName, span, operon.logger);
+    const oc = new OperonContextImpl(status.workflowName, span, operon.config.logger);
     // FIXME: pass in the original request. IncomingMessage is not serializable.
     oc.request = undefined;
     oc.authenticatedUser = status.authenticatedUser;

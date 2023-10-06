@@ -1,8 +1,6 @@
 import {
-  ConsoleExporter,
   PostgresExporter,
   POSTGRES_EXPORTER,
-  CONSOLE_EXPORTER,
 } from "../src/telemetry/exporters";
 import { TelemetryCollector } from "../src/telemetry/collector";
 import { LogSeverity, TelemetrySignal } from "../src/telemetry/signals";
@@ -76,7 +74,6 @@ describe("operon-telemetry", () => {
 
   test("Operon init works with all exporters", async () => {
     const operonConfig = generateOperonTestConfig([
-      CONSOLE_EXPORTER,
       POSTGRES_EXPORTER,
     ]);
     const operon = new Operon(operonConfig);
@@ -102,49 +99,6 @@ describe("operon-telemetry", () => {
     ).resolves.not.toThrow();
 
     await operon.destroy();
-  });
-
-  describe("Console exporter", () => {
-    let operon: Operon;
-    const operonConfig = generateOperonTestConfig([CONSOLE_EXPORTER]);
-    let collector: TelemetryCollector;
-
-    beforeEach(async () => {
-      operon = new Operon(operonConfig);
-      await operon.init();
-    });
-
-    afterEach(async () => {
-      await collector.destroy();
-      await operon.destroy();
-    });
-
-    test("console.log is called with the correct messages", async () => {
-      collector = operon.telemetryCollector;
-      expect(collector.exporters.length).toBe(1);
-      expect(collector.exporters[0]).toBeInstanceOf(ConsoleExporter);
-
-      await collector.init();
-      const logSpy = jest.spyOn(global.console, "log").mockImplementation(); // "mute" console.log
-
-      const signal1: TelemetrySignal = {
-        workflowUUID: "test",
-        operationName: "create_user",
-        runAs: "test",
-        timestamp: Date.now(),
-        severity: LogSeverity.Log,
-        logMessage: "test",
-        stack: "some stack trace",
-      };
-      const signal2 = { ...signal1 };
-      signal2.logMessage = "test2";
-      collector.push(signal1);
-      collector.push(signal2);
-      await collector.processAndExportSignals();
-      expect(logSpy).toHaveBeenCalledTimes(2);
-      expect(logSpy).toHaveBeenNthCalledWith(1, `${signal1.logMessage}`);
-      expect(logSpy).toHaveBeenNthCalledWith(2, `${signal2.logMessage}`);
-    });
   });
 
   describe("Postgres exporter", () => {

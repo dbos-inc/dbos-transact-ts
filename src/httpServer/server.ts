@@ -16,7 +16,7 @@ import {
   OperonResponseError,
   isOperonClientError,
 } from "../error";
-import { Operon } from "../operon";
+import { Operon, TemporaryLogger } from "../operon";
 import { serializeError } from 'serialize-error';
 import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -26,6 +26,7 @@ export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 export class OperonHttpServer {
   readonly app: Koa;
   readonly router: Router;
+  readonly logger: TemporaryLogger;
 
   /**
    * Create a Koa app.
@@ -41,6 +42,7 @@ export class OperonHttpServer {
       config.router = new Router();
     }
     this.router = config.router;
+    this.logger = operon.config.logger;
 
     if (!config.koa) {
       config.koa = new Koa();
@@ -64,7 +66,7 @@ export class OperonHttpServer {
   listen(port: number) {
     // Start the HTTP server.
     return this.app.listen(port, () => {
-      console.log(`[Operon Server]: Server is running at http://localhost:${port}`);
+      this.logger.info(`[Operon Server] Server is running at http://localhost:${port}`);
     });
   }
 
@@ -78,6 +80,7 @@ export class OperonHttpServer {
         const defaults = ro.defaults as OperonMiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
+            operon.config.logger.debug(`[Operon Server] applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
           })
         }
@@ -199,8 +202,10 @@ export class OperonHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
+          operon.config.logger.debug(`[Operon Server] Registered GET ${ro.apiURL}`);
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
+          operon.config.logger.debug(`[Operon Server] Registered POST ${ro.apiURL}`);
         }
       }
     });

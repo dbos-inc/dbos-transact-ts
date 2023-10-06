@@ -9,6 +9,11 @@ import { init } from "./init";
 
 const program = new Command();
 
+export interface OperonCLIOptions {
+  port: number,
+  loglevel: string,
+}
+
 ////////////////////////
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
@@ -22,13 +27,12 @@ program
   .command('start')
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
-  .action(async (options: { port: string }) => {
-    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig | undefined] = parseConfigFile();
+  .option('-l, --loglevel <string>', 'Specify Operon log level', 'info')
+  .action(async (options: OperonCLIOptions) => {
+    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);
     await runtime.init();
-    runtime.startServer({
-      port: parseInt(options.port),
-    });
+    runtime.startServer();
   });
 
 program

@@ -1,11 +1,12 @@
 import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
-import { OperonConfig } from "../operon";
+import { OperonConfig, TemporaryLogger } from "../operon";
 import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
-import { UserDatabaseName } from '../user_database';
+import { UserDatabaseName } from "../user_database";
+import { OperonCLIOptions } from "./cli";
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -31,7 +32,7 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefined] {
+export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, OperonRuntimeConfig] {
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
@@ -74,6 +75,22 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
 
+  const logLevel: string = cliOptions.loglevel;
+  const operonLogger: TemporaryLogger = { // TODO replace by an instance of our selected logger
+    info(input) {
+      logLevel === "info" || logLevel === "debug" || logLevel === "warn" || logLevel === "error" ? console.info(`[INFO] ${input}`) : null;
+    },
+    debug(input) {
+      logLevel === "debug" || logLevel === "warn" || logLevel === "error" ? console.debug(`[DEBUG] ${input}`) : null;
+    },
+    warn(input) {
+      logLevel === "warn" || logLevel === "error" ? console.info(`[WARN] ${input}`) : null;
+    },
+    error(input) {
+      logLevel === "error" ? console.error(`[ERROR] ${input}`) : null;
+    },
+  };
+
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.PGNODE,
@@ -84,9 +101,16 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
     application: configFile.application || undefined,
     dbClientMetadata: {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      entities: configFile.dbClientMetadata?.entities
-    }
+      entities: configFile.dbClientMetadata?.entities,
+    },
+    logger: operonLogger,
   };
 
-  return [operonConfig, configFile.localRuntimeConfig];
+  // CLI takes precedence over config file, which takes precedence over default config.
+  const localRuntimeConfig: OperonRuntimeConfig = {
+    port: cliOptions.port || configFile.localRuntimeConfig?.port || 3000,
+    logger: operonLogger,
+  };
+
+  return [operonConfig, localRuntimeConfig];
 }

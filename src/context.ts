@@ -1,8 +1,8 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { IncomingMessage } from "http";
-import { Logger } from "./telemetry/logs";
 import { LogSeverity } from "./telemetry/signals";
 import { has, get } from "lodash";
+import { TemporaryLogger } from "./operon";
 
 export interface OperonContext {
   request?: IncomingMessage;
@@ -30,7 +30,7 @@ export class OperonContextImpl implements OperonContext {
 
   workflowUUID: string = "";
 
-  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, private readonly logger: TemporaryLogger, parentCtx?: OperonContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -55,23 +55,26 @@ export class OperonContextImpl implements OperonContext {
   }
 
   /*** Logging methods ***/
+  // TODO Format the message to add contextual information
   info(message: string): void {
-    this.logger.log(this, LogSeverity.Info, message);
+    this.logger.info(message);
   }
 
+  // TODO replace with logger.warn when we have our selected logger
   warn(message: string): void {
-    this.logger.log(this, LogSeverity.Warn, message);
+    this.logger.info(message);
   }
 
+  // TODO replace with logger.log when we have our selected logger
   log(message: string): void {
-    this.logger.log(this, LogSeverity.Log, message);
+    this.logger.info(message);
   }
 
   error(message: string): void {
-    this.logger.log(this, LogSeverity.Error, message);
+    this.logger.error(message);
   }
 
   debug(message: string): void {
-    this.logger.log(this, LogSeverity.Debug, message);
+    this.logger.debug(message);
   }
 }

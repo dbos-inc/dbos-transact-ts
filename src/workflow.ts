@@ -85,7 +85,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       },
       parentCtx?.span,
     );
-    super(workflowName, span, operon.logger, parentCtx);
+    super(workflowName, span, operon.config.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
@@ -205,7 +205,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
         const tCtxt = new TransactionContextImpl(
           this.#operon.userDatabase.getName(), client, config, this,
-          span, this.#operon.logger, funcId, txn.name,
+          span, this.#operon.config.logger, funcId, txn.name,
         );
         const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
         if (check !== operonNull) {
@@ -298,7 +298,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       },
       this.span,
     );
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.config.logger, commConfig, commFn.name);
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);

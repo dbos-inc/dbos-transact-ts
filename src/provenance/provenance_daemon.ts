@@ -1,7 +1,5 @@
 import { Client, DatabaseError } from "pg";
 import {
-  CONSOLE_EXPORTER,
-  ConsoleExporter,
   POSTGRES_EXPORTER,
   PostgresExporter,
 } from "../telemetry/exporters";
@@ -59,9 +57,7 @@ export class ProvenanceDaemon {
     const telemetryExporters = [];
     if (operonConfig.telemetryExporters) {
       for (const exporter of operonConfig.telemetryExporters) {
-        if (exporter === CONSOLE_EXPORTER) {
-          telemetryExporters.push(new ConsoleExporter());
-        } else if (exporter === POSTGRES_EXPORTER) {
+        if (exporter === POSTGRES_EXPORTER) {
           telemetryExporters.push(new PostgresExporter(operonConfig.poolConfig, operonConfig?.observability_database));
         }
       }
