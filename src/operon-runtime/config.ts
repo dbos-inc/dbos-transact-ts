@@ -78,13 +78,20 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
 
   const logLevel: string = cliOptions.loglevel;
 
+  // TODO We will need to configure the formatter for "production" mode
   const operonLogger: Logger = createLogger({
     level: logLevel,
     format: format.combine(
       format.timestamp(),
       format.colorize(),
-      format.json(),
-    ),
+      format.printf((info) => {
+      const {
+        timestamp, level, message, ...args
+      } = info;
+
+      const ts = timestamp.slice(0, 19).replace('T', ' ');
+      return `${ts} [${level}]: ${message} ${Object.keys(args).length ? JSON.stringify(args, null, 2) : ''}`;
+    })),
     transports: [new transports.Console()],
   });
 

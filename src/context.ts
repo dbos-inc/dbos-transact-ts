@@ -25,8 +25,10 @@ export class OperonContextImpl implements OperonContext {
   assumedRole: string = ""; ///< Role in use - that user has and provided authorization to current function
 
   workflowUUID: string = "";
+  readonly logger: OperonLogger;
 
-  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
+    this.logger = new OperonLogger(logger);
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -51,17 +53,7 @@ export class OperonContextImpl implements OperonContext {
   }
 
   /*** Logging methods ***/
-
-  getContextInfo() {
-    return {
-      workflowUUID: this.workflowUUID,
-      authenticatedUser: this.authenticatedUser,
-      authenticatedRoles: this.authenticatedRoles,
-      assumedRole: this.assumedRole,
-    };
-  }
-
   getLogger(): OperonLogger {
-    return new OperonLogger(this.logger);
+    return this.logger;
   }
 }
