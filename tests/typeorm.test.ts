@@ -73,7 +73,7 @@ describe("typeorm-tests", () => {
 
   test("simple-typeorm", async () => {
     const workUUID = uuidv1();
-    operon.registerTransaction(KVController.testTxn);
+    operon.#registerTransaction(KVController.testTxn);
     await expect(
       operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
@@ -87,7 +87,7 @@ describe("typeorm-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
-    operon.registerTransaction(KVController.testTxn);
+    operon.#registerTransaction(KVController.testTxn);
     let results = await Promise.allSettled([
       operon.transaction(
         KVController.testTxn,
@@ -112,7 +112,7 @@ describe("typeorm-tests", () => {
 
     // Read-only transactions would execute twice.
     globalCnt = 0;
-    operon.registerTransaction(readTxn, { readOnly: true });
+    operon.#registerTransaction(readTxn, { readOnly: true });
     const readUUID = uuidv1();
     results = await Promise.allSettled([
       operon.transaction(readTxn, { workflowUUID: readUUID }, "oaootestread"),

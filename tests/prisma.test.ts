@@ -68,7 +68,7 @@ describe("prisma-tests", () => {
 
   test("simple-prisma", async () => {
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.#registerTransaction(testTxn);
     await expect(
       operon.transaction(testTxn, { workflowUUID: workUUID }, "test", "value")
     ).resolves.toBe("test");
@@ -81,7 +81,7 @@ describe("prisma-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
-    operon.registerTransaction(testTxn);
+    operon.#registerTransaction(testTxn);
     let results = await Promise.allSettled([
       operon.transaction(
         testTxn,
@@ -106,7 +106,7 @@ describe("prisma-tests", () => {
 
     // Read-only transactions would execute twice.
     globalCnt = 0;
-    operon.registerTransaction(readTxn, { readOnly: true });
+    operon.#registerTransaction(readTxn, { readOnly: true });
     const readUUID = uuidv1();
     results = await Promise.allSettled([
       operon.transaction(readTxn, { workflowUUID: readUUID }, "oaootestread"),
@@ -136,7 +136,7 @@ describe("prisma-tests", () => {
       );
       return res.id;
     };
-    operon.registerTransaction(conflictTxn);
+    operon.#registerTransaction(conflictTxn);
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
     const results = await Promise.allSettled([

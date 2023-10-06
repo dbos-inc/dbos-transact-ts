@@ -47,7 +47,7 @@ describe("foundationdb-operon", () => {
       counter++;
       return 5;
     };
-    operon.registerTransaction(testFunction);
+    operon.#registerTransaction(testFunction);
     const uuid = uuidv1();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
@@ -68,7 +68,7 @@ describe("foundationdb-operon", () => {
         throw new Error("fail");
       }
     };
-    operon.registerTransaction(testFunction);
+    operon.#registerTransaction(testFunction);
     const uuid = uuidv1();
     await expect(
       operon.transaction(testFunction, { workflowUUID: uuid })
@@ -87,13 +87,13 @@ describe("foundationdb-operon", () => {
       void commCtxt;
       return counter++;
     };
-    operon.registerCommunicator(testCommunicator);
+    operon.#registerCommunicator(testCommunicator);
 
     const testWorkflow = async (workflowCtxt: WorkflowContext) => {
       const funcResult = await workflowCtxt.external(testCommunicator);
       return funcResult;
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
     const workflowUUID: string = uuidv1();
 
     await expect(
@@ -119,7 +119,7 @@ describe("foundationdb-operon", () => {
       }
       return num;
     };
-    operon.registerCommunicator(testCommunicator, {
+    operon.#registerCommunicator(testCommunicator, {
       intervalSeconds: 0,
       maxAttempts: maxAttempts,
     });
@@ -132,7 +132,7 @@ describe("foundationdb-operon", () => {
       }
       return "success";
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     await expect(operon.workflow(testWorkflow, {}).then(x => x.getResult())).resolves.toBe(
       "success"
@@ -172,8 +172,8 @@ describe("foundationdb-operon", () => {
       await(innerPromise);
       return result;
     };
-    operon.registerTransaction(testFunction);
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerTransaction(testFunction);
+    operon.#registerWorkflow(testWorkflow);
 
     const uuid = uuidv1();
     const invokedHandle = operon.workflow(testWorkflow, { workflowUUID: uuid });
@@ -199,13 +199,13 @@ describe("foundationdb-operon", () => {
       const fail = await ctxt.recv("fail", 0);
       return message1 === "message1" && message2 === "message2" && fail === null;
     };
-    operon.registerWorkflow(receiveWorkflow);
+    operon.#registerWorkflow(receiveWorkflow);
 
     const sendWorkflow = async (ctxt: WorkflowContext, destinationUUID: string) => {
       await ctxt.send(destinationUUID, "message1");
       await ctxt.send(destinationUUID, "message2");
     };
-    operon.registerWorkflow(sendWorkflow);
+    operon.#registerWorkflow(sendWorkflow);
 
     const workflowUUID = uuidv1();
     const handle = await operon.workflow(receiveWorkflow, { workflowUUID: workflowUUID });
@@ -221,7 +221,7 @@ describe("foundationdb-operon", () => {
       await ctxt.setEvent("key2", "value2");
       return 0;
     };
-    operon.registerWorkflow(sendWorkflow);
+    operon.#registerWorkflow(sendWorkflow);
 
     const handle: WorkflowHandle<number> = await operon.workflow(sendWorkflow, {});
     const workflowUUID = handle.getWorkflowUUID();
@@ -243,13 +243,13 @@ describe("foundationdb-operon", () => {
       void ctxt;
       return id;
     };
-    operon.registerCommunicator(testFunction, { retriesAllowed: false });
+    operon.#registerCommunicator(testFunction, { retriesAllowed: false });
 
     const testWorkflow = async (workflowCtxt: WorkflowContext, id: number) => {
       const funcResult = await workflowCtxt.external(testFunction, id);
       return funcResult ?? -1;
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
@@ -270,7 +270,7 @@ describe("foundationdb-operon", () => {
     const receiveWorkflow = async (ctxt: WorkflowContext, topic: string, timeout: number) => {
       return ctxt.recv<string>(topic, timeout);
     };
-    operon.registerWorkflow(receiveWorkflow);
+    operon.#registerWorkflow(receiveWorkflow);
 
     // Run two send/recv concurrently with the same UUID, both should succeed.
     const recvUUID = uuidv1();
@@ -308,7 +308,7 @@ describe("foundationdb-operon", () => {
       await promise1;
       return input;
     }
-    operon.registerWorkflow(testWorkflow, {});
+    operon.#registerWorkflow(testWorkflow, {});
     const handle = await operon.workflow(testWorkflow, {}, 5);
 
     const recoverPromise = operon.recoverPendingWorkflows();

@@ -54,12 +54,12 @@ describe("failures-tests", () => {
         throw new OperonError("test operon error without code");
       }
     };
-    operon.registerCommunicator(testCommunicator, { retriesAllowed: false });
+    operon.#registerCommunicator(testCommunicator, { retriesAllowed: false });
 
     const testWorkflow = async (ctxt: WorkflowContext, code?: number) => {
       return await ctxt.external(testCommunicator, code);
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     const codeHandle = await operon.workflow(testWorkflow, {}, 11);
     await expect(codeHandle.getResult()).rejects.toThrowError(
@@ -105,7 +105,7 @@ describe("failures-tests", () => {
       throw new Error("test error");
       return id;
     };
-    operon.registerTransaction(testFunction, { readOnly: true });
+    operon.#registerTransaction(testFunction, { readOnly: true });
 
     const testUUID = uuidv1();
     await expect(
@@ -136,7 +136,7 @@ describe("failures-tests", () => {
       succeedUUID = name;
       return rows[0];
     };
-    operon.registerTransaction(testFunction);
+    operon.#registerTransaction(testFunction);
 
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
@@ -206,12 +206,12 @@ describe("failures-tests", () => {
       await sleep(1);
       return maxRetry;
     };
-    operon.registerTransaction(testFunction);
+    operon.#registerTransaction(testFunction);
 
     const testWorkflow = async (ctxt: WorkflowContext, maxRetry: number) => {
       return await ctxt.transaction(testFunction, maxRetry);
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     // Should succeed after retrying 10 times.
     await expect(
@@ -232,7 +232,7 @@ describe("failures-tests", () => {
       await sleep(1);
       return num;
     };
-    operon.registerCommunicator(testCommunicator, {
+    operon.#registerCommunicator(testCommunicator, {
       intervalSeconds: 0,
       maxAttempts: maxAttempts,
     });
@@ -240,7 +240,7 @@ describe("failures-tests", () => {
     const testWorkflow = async (ctxt: WorkflowContext) => {
       return await ctxt.external(testCommunicator);
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     await expect(
       operon.workflow(testWorkflow, {}).then((x) => x.getResult())
@@ -264,13 +264,13 @@ describe("failures-tests", () => {
       throw new Error("failed no retry");
       return 10;
     };
-    operon.registerCommunicator(testCommunicator, { retriesAllowed: false });
+    operon.#registerCommunicator(testCommunicator, { retriesAllowed: false });
 
     const testWorkflow = async (ctxt: WorkflowContext): Promise<number> => {
       void ctxt;
       return await ctxt.external(testCommunicator);
     };
-    operon.registerWorkflow(testWorkflow);
+    operon.#registerWorkflow(testWorkflow);
 
     const workflowUUID = uuidv1();
 
@@ -335,15 +335,15 @@ describe("failures-tests", () => {
       operon.transaction(testFunction, {}, 10, "test")
     ).rejects.toThrowError(new OperonNotRegisteredError(testFunction.name));
 
-    operon.registerTransaction(testFunction, {});
-    operon.registerWorkflow(testWorkflow, {});
+    operon.#registerTransaction(testFunction, {});
+    operon.#registerWorkflow(testWorkflow, {});
 
     // Invoke an unregistered communicator.
     await expect(
       operon.workflow(testWorkflow, {}, 10, "test").then((x) => x.getResult())
     ).rejects.toThrowError(new OperonNotRegisteredError(testCommunicator.name));
 
-    operon.registerCommunicator(testCommunicator, {});
+    operon.#registerCommunicator(testCommunicator, {});
 
     // Now everything should work.
     await expect(
@@ -368,7 +368,7 @@ describe("failures-tests", () => {
       await promise1;
       return ctxt.authenticatedUser;
     };
-    operon.registerWorkflow(testWorkflow, {});
+    operon.#registerWorkflow(testWorkflow, {});
 
     // Create an Operon context to pass authenticated user to the workflow.
     const span = operon.tracer.startSpan("test");
