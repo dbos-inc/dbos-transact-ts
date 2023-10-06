@@ -11,29 +11,14 @@ export class Hello {
 
   @GetApi('/greeting/:name')
   static async helloHandler(handlerCtxt: HandlerContext, name: string) {
-      const logger = handlerCtxt.getLogger();
-      logger.add(my custom splunk transport);
-
-      message = {
-        message: "hello",
-        spanId...
-      }
-      logger.log(JSON.stringify(message));
-
-
-
-      // This exports to configured exporters
-      // adds, under the hood, context information
-      logger.log(message);
-
-
     return handlerCtxt.invoke(Hello).helloTransaction(name);
   }
 
   @OperonTransaction()
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
+    const logger = txnCtxt.getLogger();
     const greeting = `Hello, ${name}!`
-    txnCtxt.info(greeting);
+    logger.info(greeting);
     const rows = await txnCtxt.client<operon_hello>("operon_hello")
       .insert({ greeting: greeting })
       .returning("greeting_id");
