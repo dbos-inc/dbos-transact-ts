@@ -324,10 +324,12 @@ export class KnexUserDatabase implements UserDatabase {
     } else {
       isolationLevel = "serializable";
     }
-    const result = await this.knex.transaction<R>(async function (transactionClient: Knex.Transaction) {
-      return await transactionFunction(transactionClient, ...args);
-    },
-      { isolationLevel: isolationLevel });
+    const result = await this.knex.transaction<R>(
+      async (transactionClient: Knex.Transaction) => {
+        return await transactionFunction(transactionClient, ...args);
+      },
+      { isolationLevel: isolationLevel }
+    );
     return result;
   }
 
