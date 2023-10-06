@@ -9,11 +9,6 @@ interface operon_hello {
 }
 export class Hello {
 
-  @GetApi('/greeting/:name')
-  static async helloHandler(handlerCtxt: HandlerContext, name: string) {
-    return handlerCtxt.invoke(Hello).helloTransaction(name);
-  }
-
   @OperonTransaction()
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
     // Increment greet_count.
@@ -27,5 +22,10 @@ export class Hello {
       .where({name:name}).first()
       .then(x => x?.greet_count);
     return `Hello, ${name}! You have been greeted ${greet_count} times.\n`;
+  }
+
+  @GetApi('/greeting/:name')
+  static async helloHandler(handlerCtxt: HandlerContext, name: string) {
+    return handlerCtxt.invoke(Hello).helloTransaction(name);
   }
 }
