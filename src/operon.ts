@@ -26,6 +26,7 @@ import {
 } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
+import { Logger } from 'winston';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
@@ -44,13 +45,6 @@ import knex, { Knex } from 'knex';
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
 
-export interface TemporaryLogger {
-  info: (input: any) => void;
-  warn: (input: any) => void;
-  debug: (input: any) => void;
-  error: (input: any) => void;
-}
-
 /* Interface for Operon configuration */
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
@@ -60,7 +54,7 @@ export interface OperonConfig {
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
-  readonly logger: TemporaryLogger;
+  readonly logger: Logger;
 }
 
 interface WorkflowInfo<T extends any[], R> {

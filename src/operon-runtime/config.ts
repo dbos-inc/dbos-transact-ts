@@ -1,6 +1,7 @@
 import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
-import { OperonConfig, TemporaryLogger } from "../operon";
+import { OperonConfig } from "../operon";
+import { transports, createLogger, format, Logger } from "winston";
 import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
@@ -76,20 +77,16 @@ export function parseConfigFile(cliOptions: OperonCLIOptions): [OperonConfig, Op
   }
 
   const logLevel: string = cliOptions.loglevel;
-  const operonLogger: TemporaryLogger = { // TODO replace by an instance of our selected logger
-    info(input) {
-      logLevel === "info" || logLevel === "debug" || logLevel === "warn" || logLevel === "error" ? console.info(`[INFO] ${input}`) : null;
-    },
-    debug(input) {
-      logLevel === "debug" || logLevel === "warn" || logLevel === "error" ? console.debug(`[DEBUG] ${input}`) : null;
-    },
-    warn(input) {
-      logLevel === "warn" || logLevel === "error" ? console.info(`[WARN] ${input}`) : null;
-    },
-    error(input) {
-      logLevel === "error" ? console.error(`[ERROR] ${input}`) : null;
-    },
-  };
+
+  const operonLogger: Logger = createLogger({
+    level: logLevel,
+    format: format.combine(
+      format.timestamp(),
+      format.colorize(),
+      format.json(),
+    ),
+    transports: [new transports.Console()],
+  });
 
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,

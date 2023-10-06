@@ -4,7 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { OperonContext, OperonContextImpl } from "./context";
 import { ValuesOf } from "./utils";
-import { TemporaryLogger } from "./operon";
+import { Logger } from "winston";
 
 // Can we call it OperonTransactionFunction
 export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
@@ -32,7 +32,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends Operon
     readonly client: T,
     workflowContext: WorkflowContextImpl,
     span: Span,
-    logger: TemporaryLogger,
+    logger: Logger,
     readonly functionID: number,
     operationName: string
   ) {

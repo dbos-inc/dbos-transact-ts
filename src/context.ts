@@ -1,8 +1,8 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { IncomingMessage } from "http";
-import { LogSeverity } from "./telemetry/signals";
+import { Logger } from "winston";
+import { Logger as OperonLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
-import { TemporaryLogger } from "./operon";
 
 export interface OperonContext {
   request?: IncomingMessage;
@@ -14,11 +14,7 @@ export interface OperonContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
 
-  info(message: string): void;
-  warn(message: string): void;
-  log(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
+  getLogger(): OperonLogger;
 }
 
 export class OperonContextImpl implements OperonContext {
@@ -30,7 +26,7 @@ export class OperonContextImpl implements OperonContext {
 
   workflowUUID: string = "";
 
-  constructor(readonly operationName: string, readonly span: Span, private readonly logger: TemporaryLogger, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -55,26 +51,17 @@ export class OperonContextImpl implements OperonContext {
   }
 
   /*** Logging methods ***/
-  // TODO Format the message to add contextual information
-  info(message: string): void {
-    this.logger.info(message);
+
+  getContextInfo() {
+    return {
+      workflowUUID: this.workflowUUID,
+      authenticatedUser: this.authenticatedUser,
+      authenticatedRoles: this.authenticatedRoles,
+      assumedRole: this.assumedRole,
+    };
   }
 
-  // TODO replace with logger.warn when we have our selected logger
-  warn(message: string): void {
-    this.logger.info(message);
-  }
-
-  // TODO replace with logger.log when we have our selected logger
-  log(message: string): void {
-    this.logger.info(message);
-  }
-
-  error(message: string): void {
-    this.logger.error(message);
-  }
-
-  debug(message: string): void {
-    this.logger.debug(message);
+  getLogger(): OperonLogger {
+    return new OperonLogger(this.logger);
   }
 }

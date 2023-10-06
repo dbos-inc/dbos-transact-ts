@@ -1,5 +1,6 @@
 /* eslint-disaServerble @typescript-eslint/no-explicit-any */
-import { Operon, OperonConfig, TemporaryLogger } from '../operon';
+import { Operon, OperonConfig } from '../operon';
+import { Logger } from 'winston';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -12,7 +13,7 @@ interface ModuleExports {
 
 export interface OperonRuntimeConfig {
   port: number;
-  logger: TemporaryLogger;
+  logger: Logger;
 }
 
 export class OperonRuntime {

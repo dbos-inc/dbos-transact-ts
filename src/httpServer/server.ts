@@ -16,7 +16,8 @@ import {
   OperonResponseError,
   isOperonClientError,
 } from "../error";
-import { Operon, TemporaryLogger } from "../operon";
+import { Operon } from "../operon";
+import { Logger } from "winston";
 import { serializeError } from 'serialize-error';
 import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -26,7 +27,7 @@ export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 export class OperonHttpServer {
   readonly app: Koa;
   readonly router: Router;
-  readonly logger: TemporaryLogger;
+  readonly logger: Logger;
 
   /**
    * Create a Koa app.
@@ -156,7 +157,8 @@ export class OperonHttpServer {
             }
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
-            oc.error(JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
+            const logger = oc.getLogger();
+            logger.error(JSON.stringify(serializeError(e), null, '\t').replace(/\\n/g, '\n'));
             if (e instanceof Error) {
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);

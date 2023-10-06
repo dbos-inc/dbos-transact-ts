@@ -11,6 +11,22 @@ export class Hello {
 
   @GetApi('/greeting/:name')
   static async helloHandler(handlerCtxt: HandlerContext, name: string) {
+      const logger = handlerCtxt.getLogger();
+      logger.add(my custom splunk transport);
+
+      message = {
+        message: "hello",
+        spanId...
+      }
+      logger.log(JSON.stringify(message));
+
+
+
+      // This exports to configured exporters
+      // adds, under the hood, context information
+      logger.log(message);
+
+
     return handlerCtxt.invoke(Hello).helloTransaction(name);
   }
 
