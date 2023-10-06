@@ -4,13 +4,20 @@ This is an [Operon app](https://dbos-inc.github.io/operon-docs/) bootstrapped wi
 
 ## Getting Started
 
-First, set up the database.
-Operon works with any Postgres database, but to make things easier, we've provided nifty scripts that start Postgres locally in a Docker container and set up some tables:
+First, start the database.
+Operon works with any Postgres database, but to make things easier, we've provided a nifty script that starts Postgres locally in a Docker container and creates a database:
 
 ```bash
-./start_postgres_docker.sh
 export PGPASSWORD=dbos
-node init_database.js
+./start_postgres_docker.sh
+```
+
+Then, create some database tables.
+In this quickstart, we use [knex.js](https://knexjs.org/) to manage database migrations.
+Run our provided migration to create a database table:
+
+```bash
+npx knex migrate:latest
 ```
 
 Next, build and run the app:

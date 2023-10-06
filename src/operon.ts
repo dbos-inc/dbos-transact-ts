@@ -38,9 +38,11 @@ import {
   UserDatabase,
   TypeORMDatabase,
   UserDatabaseName,
+  KnexUserDatabase,
 } from './user_database';
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import knex, { Knex } from 'knex';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -96,7 +98,7 @@ export class Operon {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
-// eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
@@ -134,52 +136,61 @@ export class Operon {
   }
 
   configureDbClient(config: OperonConfig) {
-      const userDbClient = config.userDbclient;
-      if (userDbClient === UserDatabaseName.PRISMA) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-        const { PrismaClient }  = require('@prisma/client');
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-        this.userDatabase = new PrismaUserDatabase(new PrismaClient());
-      } else if (userDbClient === UserDatabaseName.TYPEORM) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-        const DataSourceExports = require('typeorm');
-
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-          this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
+    const userDbClient = config.userDbclient;
+    if (userDbClient === UserDatabaseName.PRISMA) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+      const { PrismaClient } = require('@prisma/client');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+      this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+    } else if (userDbClient === UserDatabaseName.TYPEORM) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+      const DataSourceExports = require('typeorm');
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
           host: config.poolConfig.host,
           port: config.poolConfig.port,
           username: config.poolConfig.user,
           password: config.poolConfig.password,
           database: config.poolConfig.database,
-          // synchronize: true,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-          // entities: config.dbClientMetadata?.entities
-          entities:this.entities
-          }))
-        } catch (s) {
-          console.log(s);
-        }
-      } else {
-        this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+          entities: this.entities
+        }))
+      } catch (s) {
+        console.log(s);
       }
+    } else if (userDbClient === UserDatabaseName.KNEX) {
+      const knexConfig: Knex.Config = {
+        client: 'postgres',
+        connection: {
+          host: config.poolConfig.host,
+          port: config.poolConfig.port,
+          user: config.poolConfig.user,
+          password: config.poolConfig.password,
+          database: config.poolConfig.database,
+        }
+      }
+      this.userDatabase = new KnexUserDatabase(knex(knexConfig));
+    } else {
+      this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+    }
   }
 
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
-     if (ro.workflowConfig) {
-      const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-      this.registerWorkflow(wf, ro.workflowConfig);
-     } else if (ro.txnConfig) {
-      const tx = ro.registeredFunction as OperonTransaction<any, any>;
-      this.registerTransaction(tx, ro.txnConfig);
-     } else if (ro.commConfig) {
-      const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-      this.registerCommunicator(comm, ro.commConfig);
-     }
+      if (ro.workflowConfig) {
+        const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+        this.registerWorkflow(wf, ro.workflowConfig);
+      } else if (ro.txnConfig) {
+        const tx = ro.registeredFunction as OperonTransaction<any, any>;
+        this.registerTransaction(tx, ro.txnConfig);
+      } else if (ro.commConfig) {
+        const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+        this.registerCommunicator(comm, ro.commConfig);
+      }
     }
   }
 
@@ -194,7 +205,7 @@ export class Operon {
       type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
         const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
-        if (reg.ormEntities.length > 0 ) {
+        if (reg.ormEntities.length > 0) {
           this.entities = this.entities.concat(reg.ormEntities)
         }
 

@@ -1,14 +1,25 @@
-import { TransactionContext, OperonTransaction, GetApi } from '@dbos-inc/operon'
-import { PoolClient } from 'pg';
+import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@dbos-inc/operon'
+import { Knex } from 'knex';
 
-type PGTransactionContext = TransactionContext<PoolClient>;
+type KnexTransactionContext = TransactionContext<Knex>;
 
+interface operon_hello {
+  greeting_id: number;
+  greeting: string;
+}
 export class Hello {
+
   @GetApi('/greeting/:name')
+  static async helloHandler(handlerCtxt: HandlerContext, name: string) {
+    return handlerCtxt.invoke(Hello).helloTransaction(name);
+  }
+
   @OperonTransaction()
-  static async helloFunction(txnCtxt: PGTransactionContext, name: string) {
+  static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
     const greeting = `Hello, ${name}!`
-    const { rows } = await txnCtxt.client.query<{ greeting_id: number }>("INSERT INTO OperonHello(greeting) VALUES ($1) RETURNING greeting_id", [greeting])
-    return `Greeting ${rows[0].greeting_id}: Hello, ${name}!`;
+    const rows = await txnCtxt.client<operon_hello>("operon_hello")
+      .insert({ greeting: greeting })
+      .returning("greeting_id");
+    return `Greeting ${rows[0].greeting_id}: Hello, ${name}!\n`;
   }
 }
