@@ -169,6 +169,7 @@ describe("httpserver-tests", () => {
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
+      request: { url: "/workflow?name=bob" },
     });
   });
 
@@ -184,6 +185,7 @@ describe("httpserver-tests", () => {
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
+      request: { url: "/handler/bob" },
     });
   });
 

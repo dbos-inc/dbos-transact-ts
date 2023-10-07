@@ -7,6 +7,7 @@ export interface workflow_status {
   error: string;
   assumed_role: string;
   authenticated_roles: string;  // Serialized list of roles.
+  request: string;  // Serialized HTTPRequest
 }
 
 export interface notifications {
@@ -54,6 +55,7 @@ export const systemDBSchema = `
     authenticated_user TEXT,
     assumed_role TEXT,
     authenticated_roles TEXT,
+    request TEXT,
     output TEXT,
     error TEXT
   );

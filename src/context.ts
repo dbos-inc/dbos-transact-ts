@@ -6,16 +6,16 @@ import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
-interface HTTPRequest {
-  headers: IncomingHttpHeaders;  // HTTP headers.
-  rawHeaders: string[];
-  params: unknown; // Parsed argument from URL.
+export interface HTTPRequest {
+  headers?: IncomingHttpHeaders;  // HTTP headers.
+  rawHeaders?: string[];
+  params?: unknown; // Parsed argument from URL.
   body?: unknown;  // parsed HTTP body as an object.
-  rawBody: string; // unparsed raw HTTP body string.
-  query: ParsedUrlQuery; // parsed query string.
-  querystring: string; // unparsed query string.
-  url: string; // request url.
-  ip: string; // request remote address.
+  rawBody?: string; // unparsed raw HTTP body string.
+  query?: ParsedUrlQuery; // parsed query string.
+  querystring?: string; // unparsed query string.
+  url?: string; // request url.
+  ip?: string; // request remote address.
 }
 
 export interface OperonContext {

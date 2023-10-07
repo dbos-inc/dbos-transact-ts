@@ -5,6 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
+import { OperonContextImpl } from "../../src/context";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -138,7 +139,14 @@ describe("foundationdb-operon", () => {
 
   test("fdb-failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const handle = await operon.workflow(FdbTestClass.testRecoveryWorkflow, {}, 5);
+    clearInterval(operon.flushBufferID);
+
+    // Create an Operon context to pass authenticated user and a URL to the workflow.
+    const span = operon.tracer.startSpan("test");
+    const oc = new OperonContextImpl("testRecovery", span, operon.logger);
+    oc.authenticatedUser = "test_recovery_user";
+    oc.request = { url: "test-recovery-url" };
+    const handle = await operon.workflow(FdbTestClass.testRecoveryWorkflow, { parentCtx: oc }, 5);
 
     const recoverPromise = operon.recoverPendingWorkflows();
     FdbTestClass.resolve1();
@@ -249,7 +257,9 @@ class FdbTestClass {
 
   @OperonWorkflow()
   static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    FdbTestClass.cnt += input;
+    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request?.url === "test-recovery-url") {
+      FdbTestClass.cnt += input;
+    }
     await FdbTestClass.promise1;
     return input;
   }
