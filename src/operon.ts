@@ -185,15 +185,15 @@ export class Operon {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as OperonWorkflow<any, any>;
-        this.registerWorkflow(wf, ro.workflowConfig);
+        this.#registerWorkflow(wf, ro.workflowConfig);
         this.config.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as OperonTransaction<any, any>;
-        this.registerTransaction(tx, ro.txnConfig);
+        this.#registerTransaction(tx, ro.txnConfig);
         this.config.logger.debug(`Registered transaction ${ro.name}`);
       } else if (ro.commConfig) {
         const comm = ro.registeredFunction as OperonCommunicator<any, any>;
-        this.registerCommunicator(comm, ro.commConfig);
+        this.#registerCommunicator(comm, ro.commConfig);
         this.config.logger.debug(`Registered communicator ${ro.name}`);
       }
     }
@@ -250,7 +250,7 @@ export class Operon {
 
   /* WORKFLOW OPERATIONS */
 
-  registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}) {
+  #registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new OperonError(`Repeated workflow name: ${wf.name}`);
     }
@@ -261,14 +261,14 @@ export class Operon {
     this.workflowInfoMap.set(wf.name, workflowInfo);
   }
 
-  registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig = {}) {
+  #registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig = {}) {
     if (this.transactionConfigMap.has(txn.name)) {
       throw new OperonError(`Repeated Transaction name: ${txn.name}`);
     }
     this.transactionConfigMap.set(txn.name, params);
   }
 
-  registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig = {}) {
+  #registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig = {}) {
     if (this.communicatorConfigMap.has(comm.name)) {
       throw new OperonError(`Repeated Commmunicator name: ${comm.name}`);
     }
@@ -333,7 +333,8 @@ export class Operon {
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
-      return await ctxt.transaction(txn, ...args);
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      return await ctxtImpl.transaction(txn, ...args);
     };
     return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }

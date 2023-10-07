@@ -37,15 +37,10 @@ describe("operon-config", () => {
   });
 
   test("Config is valid and is parsed as expected", () => {
-    jest
-      .spyOn(utils, "readFileSync")
-      .mockReturnValueOnce(mockOperonConfigYamlString);
+    jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockOperonConfigYamlString);
     jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
 
-    const [operonConfig, runtimeConfig]: [
-      OperonConfig,
-      OperonRuntimeConfig | undefined
-    ] = parseConfigFile(mockCLIOptions);
+    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
 
     // Test pool config options
     const poolConfig: PoolConfig = operonConfig.poolConfig;
@@ -58,9 +53,7 @@ describe("operon-config", () => {
 
     // Application config
     const applicationConfig: any = operonConfig.application;
-    expect(applicationConfig.payments_url).toBe(
-      "http://somedomain.com/payment"
-    );
+    expect(applicationConfig.payments_url).toBe("http://somedomain.com/payment");
     expect(applicationConfig.foo).toBe("foo");
     expect(applicationConfig.bar).toBe("bar");
     expect(applicationConfig.nested.baz).toBe("baz");
@@ -82,25 +75,19 @@ describe("operon-config", () => {
 
   test("config file is empty", () => {
     const mockConfigFile = "";
-    jest
-      .spyOn(utils, "readFileSync")
-      .mockReturnValue(JSON.stringify(mockConfigFile));
+    jest.spyOn(utils, "readFileSync").mockReturnValue(JSON.stringify(mockConfigFile));
     expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 
   test("config file is missing database config", () => {
     const mockConfigFile = { someOtherConfig: "some other config" };
-    jest
-      .spyOn(utils, "readFileSync")
-      .mockReturnValue(JSON.stringify(mockConfigFile));
+    jest.spyOn(utils, "readFileSync").mockReturnValue(JSON.stringify(mockConfigFile));
     expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
 
   test("config file is missing database password", () => {
     delete process.env.PGPASSWORD;
-    jest
-      .spyOn(utils, "readFileSync")
-      .mockReturnValueOnce(mockOperonConfigYamlString);
+    jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockOperonConfigYamlString);
     jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
     expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
   });
