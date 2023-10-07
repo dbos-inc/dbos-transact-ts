@@ -32,6 +32,9 @@ class TestClass {
   }
 
   @OperonTransaction()
+  static async returnVoid(_ctxt: KnexTransactionContext) {}
+
+  @OperonTransaction()
   static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
     insertCount++;
     const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ id: key, value: value }).returning("id");
@@ -67,6 +70,10 @@ describe("knex-tests", () => {
     expect(selectResult).toEqual("test-one");
     const wfResult = await operon.workflow(TestClass.testWf, {}, "test-two").then((x) => x.getResult());
     expect(wfResult).toEqual("test-two");
+  });
+
+  test("knex-return-void", async () => {
+    await expect(operon.transaction(TestClass.returnVoid, {})).resolves.not.toThrow();
   });
 
   test("knex-duplicate-workflows", async () => {
