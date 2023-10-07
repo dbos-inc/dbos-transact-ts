@@ -27,7 +27,7 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     observability_database: "operontest_observabilitydb",
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
-      entities: ["KV"]
+      entities: ["KV"],
     },
     logger: createLogger({silent: true}),
   };
