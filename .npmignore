@@ -18,6 +18,7 @@ version.json
 .vscode/
 .github/
 tests/
+coverage/
 
 # ignore any packed packages in the repo
 *.tgz
