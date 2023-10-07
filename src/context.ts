@@ -6,7 +6,7 @@ import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
-interface OperonRequest {
+interface HTTPRequest {
   headers: IncomingHttpHeaders;  // HTTP headers.
   rawHeaders: string[];
   params: unknown; // Parsed argument from URL.
@@ -19,7 +19,7 @@ interface OperonRequest {
 }
 
 export interface OperonContext {
-  request?: OperonRequest;
+  request?: HTTPRequest;
   workflowUUID: string;
   authenticatedUser: string;
 
@@ -36,7 +36,7 @@ export interface OperonContext {
 }
 
 export class OperonContextImpl implements OperonContext {
-  request?: OperonRequest; // Raw incoming HTTP request.
+  request?: HTTPRequest; // Raw incoming HTTP request.
 
   authenticatedUser: string = ""; ///< The user that has been authenticated
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
