@@ -339,6 +339,15 @@ export class Operon {
     return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
+  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    // Create a workflow and call external.
+    const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      return await ctxtImpl.external(commFn, ...args);
+    };
+    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
+  }
+
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {

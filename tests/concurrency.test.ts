@@ -76,8 +76,8 @@ describe("concurrency-tests", () => {
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      operon.workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11).then((x) => x.getResult()),
-      operon.workflow(ConcurrTestClass.testCommWorkflow, { workflowUUID: workflowUUID }, 11).then((x) => x.getResult()),
+      operon.external(ConcurrTestClass.testCommunicator, { workflowUUID: workflowUUID }, 11),
+      operon.external(ConcurrTestClass.testCommunicator, { workflowUUID: workflowUUID }, 11),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -149,12 +149,6 @@ class ConcurrTestClass {
   static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
-  }
-
-  @OperonWorkflow()
-  static async testCommWorkflow(ctxt: WorkflowContext, id: number) {
-    const funcResult = await ctxt.invoke(ConcurrTestClass).testCommunicator(id);
-    return funcResult ?? -1;
   }
 
   @OperonWorkflow()

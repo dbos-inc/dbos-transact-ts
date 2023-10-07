@@ -3,19 +3,15 @@ import { OperonMethodRegistration, OperonParameter, registerAndWrapFunction, get
 import { Operon } from "../operon";
 import { OperonContext, OperonContextImpl } from "../context";
 import Koa from "koa";
-import { OperonWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, TxFunc } from "../workflow";
+import { OperonWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
 import { OperonTransaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
+import { OperonCommunicator } from "../communicator";
 
 // local type declarations for Operon workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
-
-// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
-type HandlerTxFuncs<T> = {
-  [P in keyof T as T[P] extends TxFunc ? P : never]: T[P] extends TxFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-}
 
 type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
@@ -26,7 +22,7 @@ export interface HandlerContext extends OperonContext {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T>;
+  invoke<T extends object>(object: T, workflowUUID?: string): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
 }
 
 export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
@@ -51,7 +47,19 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
     }
     super(koaContext.url, span, operon.config.logger);
     this.W3CTraceContextPropagator = httpTracer;
-    this.request = koaContext.req;
+    this.request = {
+      headers: koaContext.request.headers,
+      rawHeaders: koaContext.req.rawHeaders,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      params: koaContext.params,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      body: koaContext.request.body,
+      rawBody: koaContext.request.rawBody,
+      query: koaContext.request.query,
+      querystring: koaContext.request.querystring,
+      url: koaContext.request.url,
+      ip: koaContext.request.ip,
+    };
     if (operon.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = operon.config.application;
@@ -79,7 +87,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T, workflowUUID?: string): HandlerTxFuncs<T> & HandlerWfFuncs<T> {
+  invoke<T extends object>(object: T, workflowUUID?: string): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
@@ -88,27 +96,32 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, params, ...args)
+        ? (...args: any[]) => this.#transaction(op.registeredFunction as OperonTransaction<any[], any>, params, ...args)
         : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
-          : undefined;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.#workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
+        : op.commConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.#external(op.registeredFunction as OperonCommunicator<any[], any>, params, ...args)
+        : undefined;
     }
-    return proxy as (HandlerTxFuncs<T> & HandlerWfFuncs<T>);
+    return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
   }
 
   //////////////////////
   /* PRIVATE METHODS */
   /////////////////////
 
-  // TODO: Make private
-  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async #workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.#operon.workflow(wf, params, ...args);
   }
 
-  // TODO: Make private
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#operon.transaction(txn, params, ...args);
+  }
+
+  async #external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#operon.external(commFn, params, ...args);
   }
 }
 

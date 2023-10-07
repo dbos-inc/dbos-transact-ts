@@ -20,6 +20,7 @@ import { Operon } from "../operon";
 import { Logger } from "winston";
 import { OperonMiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
+import { OperonCommunicator } from '../communicator';
 
 export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 
@@ -141,10 +142,13 @@ export class OperonHttpServer {
             // - If an Operon client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
+            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, { parentCtx: oc, workflowUUID: headerWorkflowUUID}, ...args);
+              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, { parentCtx: oc, workflowUUID : headerWorkflowUUID}, ...args)).getResult();
+              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
+            } else if (ro.commConfig) {
+              koaCtxt.body = await operon.external(ro.registeredFunction as OperonCommunicator<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);

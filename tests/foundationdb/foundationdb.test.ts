@@ -4,6 +4,7 @@ import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_da
 import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
+import { OperonError } from "../../src/error";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -50,19 +51,19 @@ describe("foundationdb-operon", () => {
   test("fdb-communicator", async () => {
     const workflowUUID: string = uuidv1();
 
-    await expect(operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "test").then((x) => x.getResult())).resolves.toBe(0);
+    await expect(operon.external(FdbTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
 
     // Test OAOO. Should return the original result.
-    await expect(operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "test").then((x) => x.getResult())).resolves.toBe(0);
+    await expect(operon.external(FdbTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
     expect(FdbTestClass.cnt).toBe(1);
   });
 
   test("fdb-communicator-error", async () => {
-    await expect(operon.workflow(FdbTestClass.testWorkflow, {}, "error").then((x) => x.getResult())).resolves.toBe("success");
+    await expect(operon.external(FdbTestClass.testErrorCommunicator, {})).resolves.toBe("success");
 
     const workflowUUID: string = uuidv1();
-    await expect(operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "error").then((x) => x.getResult())).resolves.toBe("Communicator reached maximum retries.");
-    await expect(operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "error").then((x) => x.getResult())).resolves.toBe("Communicator reached maximum retries.");
+    await expect(operon.external(FdbTestClass.testErrorCommunicator, { workflowUUID: workflowUUID })).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(operon.external(FdbTestClass.testErrorCommunicator, { workflowUUID: workflowUUID })).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
   });
 
   test("fdb-workflow-status", async () => {
@@ -107,8 +108,8 @@ describe("foundationdb-operon", () => {
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "noretry", 11).then((x) => x.getResult()),
-      operon.workflow(FdbTestClass.testWorkflow, { workflowUUID: workflowUUID }, "noretry", 11).then((x) => x.getResult()),
+      operon.external(FdbTestClass.noRetryComm, { workflowUUID: workflowUUID }, 11),
+      operon.external(FdbTestClass.noRetryComm, { workflowUUID: workflowUUID }, 11),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -175,12 +176,12 @@ class FdbTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
-  static async testErrorCommunicator(_ctxt: CommunicatorContext) {
+  static async testErrorCommunicator(ctxt: CommunicatorContext) {
     FdbTestClass.cnt++;
-    if (FdbTestClass.cnt !== 4) {
+    if (FdbTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
     }
-    return FdbTestClass.cnt;
+    return "success";
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -188,23 +189,6 @@ class FdbTestClass {
   static async noRetryComm(_ctxt: CommunicatorContext, id: number) {
     FdbTestClass.cnt++;
     return id;
-  }
-
-  @OperonWorkflow()
-  static async testWorkflow(workflowCtxt: WorkflowContext, name: string, id?: number) {
-    if (name === "test") {
-      return workflowCtxt.invoke(FdbTestClass).testCommunicator();
-    } else if (name === "error") {
-      try {
-        await workflowCtxt.invoke(FdbTestClass).testErrorCommunicator();
-      } catch (err) {
-        return (err as Error).message;
-      }
-      return "success";
-    } else if (name === "noretry") {
-      const funcResult = await workflowCtxt.invoke(FdbTestClass).noRetryComm(id ?? 0);
-      return funcResult ?? -1;
-    }
   }
 
   static innerResolve: () => void;
