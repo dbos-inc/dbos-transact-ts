@@ -1,5 +1,4 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { IncomingMessage } from "http";
 import { Logger } from "winston";
 import { Logger as OperonLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
