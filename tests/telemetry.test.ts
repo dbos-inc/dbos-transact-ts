@@ -179,9 +179,7 @@ describe("operon-telemetry", () => {
 
       const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
-
       const workflowHandle: WorkflowHandle<string> = await operon.workflow(TestClass.test_workflow, params, username);
-
       const result: string = await workflowHandle.getResult();
 
       // Workflow should have executed correctly
