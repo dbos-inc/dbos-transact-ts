@@ -127,10 +127,11 @@ describe("failures-tests", () => {
     // Run a workflow until pending and start recovery.
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
-    // Create an Operon context to pass authenticated user to the workflow.
+    // Create an Operon context to pass authenticated user and a URL to the workflow.
     const span = operon.tracer.startSpan("test");
     const oc = new OperonContextImpl("testRecovery", span, operon.logger);
     oc.authenticatedUser = "test_recovery_user";
+    oc.request = { url: "test-recovery-url" };
 
     const handle = await operon.workflow(FailureTestClass.testRecoveryWorkflow, { parentCtx: oc }, 5);
 
@@ -235,7 +236,7 @@ class FailureTestClass {
 
   @OperonWorkflow()
   static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    if (ctxt.authenticatedUser === "test_recovery_user") {
+    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request?.url === "test-recovery-url") {
       FailureTestClass.cnt += input;
     }
     await FailureTestClass.promise1;

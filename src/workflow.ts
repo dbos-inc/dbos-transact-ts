@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext, OperonContextImpl } from './context';
+import { HTTPRequest, OperonContext, OperonContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
 export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -42,6 +42,7 @@ export interface WorkflowStatus {
   authenticatedUser: string;
   assumedRole: string;
   authenticatedRoles: string[];
+  request: HTTPRequest;
 }
 
 export interface PgTransactionId {
