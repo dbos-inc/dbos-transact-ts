@@ -56,8 +56,8 @@ function createGlobalLogger(logLevel: string): Logger {
   });
 }
 
-export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
-  const logger = createGlobalLogger(cliOptions.loglevel);
+export function parseConfigFile(cliOptions?: Partial<OperonCLIStartOptions>): [OperonConfig, OperonRuntimeConfig] {
+  const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
 
   let configFile: ConfigFile | undefined;
   try {
@@ -118,7 +118,7 @@ export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfi
 
   // CLI takes precedence over config file, which takes precedence over default config.
   const localRuntimeConfig: OperonRuntimeConfig = {
-    port: cliOptions.port || configFile.localRuntimeConfig?.port || 3000,
+    port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
     logger,
   };
 
