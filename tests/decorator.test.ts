@@ -1,6 +1,6 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, Operon, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { OperonConfig } from "../src/operon";
+import { CommunicatorContext, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { Operon, OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";

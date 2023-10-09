@@ -1,8 +1,8 @@
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
 import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../src/testing/testing_runtime";
 
@@ -23,7 +23,7 @@ describe("operon-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createTestingRuntime([OperonTestClass], config);
-    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon()!;
+    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     OperonTestClass.cnt = 0;

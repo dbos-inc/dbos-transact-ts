@@ -1,6 +1,7 @@
 export {
-  Operon, // TODO: Remove
-} from './operon';
+  createTestingRuntime,
+  OperonTestingRuntime,
+} from './testing/testing_runtime';
 
 export {
   OperonContext,

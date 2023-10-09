@@ -12,6 +12,7 @@ import { OperonTransaction } from "../transaction";
 import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
+import { SystemDatabase } from "../system_database";
 
 export async function createTestingRuntime(userClasses: object[], testConfig?: OperonConfig): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
@@ -24,7 +25,7 @@ export interface OperonTestingRuntime {
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   invoke<T extends object>(object: T, workflowUUID?: string, authenticatedUser?: string, request?: HTTPRequest): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
-  getHandlerCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
+  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   destroy(): Promise<void>; // Release resources after tests.
 }
 
@@ -38,9 +39,9 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: OperonConfig) {
+  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
     const operonConfig = testConfig ? [testConfig] : parseConfigFile();
-    const operon = new Operon(operonConfig[0]);
+    const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
   }
@@ -88,7 +89,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   /**
    * Return a request handler callback for node's native http/http2 server, which includes all registered HTTP endpoints.
    */
-  getHandlerCallback() {
+  getHandlersCallback() {
     if (!this.#server) {
       throw new OperonError("Uninitialized testing runtime! Did you forget to call init() first?");
     }

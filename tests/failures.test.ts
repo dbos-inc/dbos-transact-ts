@@ -1,10 +1,10 @@
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonError, OperonNotRegisteredError } from "../src/error";
-import { OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { OperonContextImpl } from "../src/context";
 
 const testTableName = "operon_failure_test_kv";

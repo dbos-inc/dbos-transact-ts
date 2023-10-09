@@ -1,8 +1,8 @@
-import { CommunicatorContext, Operon, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { CommunicatorContext, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonConfig } from "../src/operon";
+import { Operon, OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
 
 type TestTransactionContext = TransactionContext<PoolClient>;

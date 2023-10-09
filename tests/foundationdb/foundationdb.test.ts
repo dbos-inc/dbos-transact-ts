@@ -1,17 +1,19 @@
-import { Operon, TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, OperonTransaction, OperonCommunicator, OperonWorkflow } from "../../src/";
+import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, OperonTransaction, OperonCommunicator, OperonWorkflow, OperonTestingRuntime } from "../../src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
-import { OperonConfig } from "../../src/operon";
+import { Operon, OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
 import { OperonContextImpl } from "../../src/context";
+import { OperonTestingRuntimeImpl } from "../../src/testing/testing_runtime";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
 describe("foundationdb-operon", () => {
   let operon: Operon;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
@@ -20,8 +22,10 @@ describe("foundationdb-operon", () => {
 
   beforeEach(async () => {
     const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    operon = new Operon(config, systemDB);
-    await operon.init(FdbTestClass);
+    testRuntime = new OperonTestingRuntimeImpl();
+    await (testRuntime as OperonTestingRuntimeImpl).init([FdbTestClass], config, systemDB);
+    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+  
     // Clean up tables.
     await systemDB.workflowStatusDB.clearRangeStartsWith("");
     await systemDB.operationOutputsDB.clearRangeStartsWith([]);
@@ -30,7 +34,7 @@ describe("foundationdb-operon", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("fdb-operon", async () => {

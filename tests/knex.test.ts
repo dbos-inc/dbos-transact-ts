@@ -1,5 +1,5 @@
-import { Operon, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { OperonConfig } from "../src/operon";
+import {OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { Operon, OperonConfig } from "../src/operon";
 import { UserDatabaseName } from "../src/user_database";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";

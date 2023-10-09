@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, Operon, RequiredRole, DefaultRequiredRole, MiddlewareContext, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../../src";
+import { GetApi, RequiredRole, DefaultRequiredRole, MiddlewareContext, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
@@ -8,7 +8,7 @@ import { HandlerContext } from "../../src/httpServer/handler";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 import { OperonNotAuthorizedError } from "../../src/error";
-import { OperonConfig } from "../../src/operon";
+import { Operon, OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 
 describe("httpserver-defsec-tests", () => {
