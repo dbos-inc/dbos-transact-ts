@@ -7,7 +7,8 @@ import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { OperonContext, OperonContextImpl } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
-import { OperonDataValidationError, OperonNotAuthorizedError } from "./error";
+import { OperonNotAuthorizedError } from "./error";
+import { validateOperonMethodArgs } from "./datavalidate";
 
 /**
  * Any column type column can be.
@@ -99,9 +100,15 @@ export enum LogMasks {
   SKIP = "SKIP",
 }
 
+export enum ArgRequiredOptions {
+  REQUIRED = "REQUIRED",
+  OPTIONAL = "OPTIONAL",
+  DEFAULT = "DEFAULT",
+}
+
 export class OperonParameter {
   name: string = "";
-  required: boolean = false;
+  required: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
 
@@ -126,6 +133,7 @@ export interface OperonRegistrationDefaults
 {
   name: string;
   requiredRole: string[] | undefined;
+  defaultArgRequired: ArgRequiredOptions;
 }
 
 export interface OperonMethodRegistrationBase {
@@ -186,6 +194,7 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
 {
   name: string = "";
   requiredRole: string[] | undefined;
+  defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   needsInitialized: boolean = true;
   // eslint-disable-next-line @typescript-eslint/ban-types
   ormEntities: Function[] = [];
@@ -262,14 +271,14 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
     Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
 
-    const wrappedMethod = async function (this: This, ...args: Args) {
+    const wrappedMethod = async function (this: This, ...rawArgs: Args) {
 
       let opCtx : OperonContextImpl | undefined = undefined;
 
       // Validate the user authentication and populate the role field
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
-        opCtx = args[0] as OperonContextImpl;
+        opCtx = rawArgs[0] as OperonContextImpl;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         const set = new Set(curRoles);
@@ -288,166 +297,16 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       }
 
-      const validationError = (msg:string) => {
-        const err = new OperonDataValidationError(msg);
-        opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
-        return err;
-      }
-
-      // Input validation
-      methReg.args.forEach((argDescriptor, idx) => {
-        if (idx === 0)
-        {
-          // Context, may find a more robust way.
-          opCtx = args[idx] as OperonContextImpl;
-          return;
-        }
-
-        // Do we have an arg at all
-        if (idx >= args.length) {
-          if (argDescriptor.required) {
-            throw validationError(`Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`);
-          }
-          return;
-        }
-
-        let argValue = args[idx];
-        if (argValue === undefined && argDescriptor.required) {
-          throw validationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
-        }
-
-        if (argValue instanceof String) {
-          argValue = argValue.toString();
-          args[idx] = argValue;
-        }
-        if (argValue instanceof Boolean) {
-          argValue = argValue.valueOf()
-          args[idx] = argValue;
-        }
-        if (argValue instanceof Number) {
-          argValue = argValue.valueOf()
-          args[idx] = argValue;
-        }
-        if (argValue instanceof BigInt) { // ES2020+
-          argValue = argValue.valueOf()
-          args[idx] = argValue;
-        }
-
-        // Maybe look into https://www.npmjs.com/package/validator
-        //  We could support emails and other validations too with something like that...
-        if (argDescriptor.dataType.dataType === 'text' || argDescriptor.dataType.dataType === 'varchar') {
-          if ((typeof argValue !== 'string')) {
-            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a string`);
-          }
-          if (argDescriptor.dataType.length > 0) {
-            if (argValue.length > argDescriptor.dataType.length) {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' with maximum length ${argDescriptor.dataType.length} but has length ${argValue.length}`);
-            }
-          }
-        }
-        if (argDescriptor.dataType.dataType === 'boolean') {
-          if (typeof argValue !== 'boolean') {
-            if (typeof argValue == 'number') {
-              if (argValue === 0 || argValue === 1) {
-                argValue = (argValue != 0 ? true : false);
-                args[idx] = argValue;
-              }
-              else {
-                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and may be a number (0 or 1) convertible to boolean, but was ${argValue}.`);
-              }
-            }
-            else if (typeof argValue == 'string') {
-              if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true' || argValue === '1') {
-                argValue = true;
-                args[idx] = argValue;
-              }
-              else if (argValue.toLowerCase() === 'f' || argValue.toLowerCase() === 'false' || argValue === '0') {
-                argValue = false;
-                args[idx] = argValue;
-              }
-              else {
-                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and may be a string convertible to boolean, but was ${argValue}.`);
-              }
-            }
-            else {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a boolean`);
-            }
-          }
-        }
-        if (argDescriptor.dataType.dataType === 'decimal') {
-          // Range check precision and scale... wishing there was a bigdecimal
-          //  Floats don't really permit us to check the scale.
-          if (typeof argValue !== 'number') {
-            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
-          }
-          let prec = argDescriptor.dataType.precision;
-          if (prec > 0) {
-            if (argDescriptor.dataType.scale > 0) {
-              prec = prec - argDescriptor.dataType.scale;
-            }
-            if (Math.abs(argValue) >= Math.exp(prec)) {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is out of range for type '${argDescriptor.dataType.formatAsString()}`);
-            }
-          }
-        }
-        if (argDescriptor.dataType.dataType === 'double' || argDescriptor.dataType.dataType === 'integer') {
-          if (typeof argValue !== 'number') {
-            if (typeof argValue === 'string') {
-              const n = parseFloat(argValue);
-              if (isNaN(n)) {
-                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
-              }
-              argValue = n;
-              args[idx] = argValue;
-            }
-            else if (typeof argValue === 'bigint') {
-              // Hum, maybe we should allow bigint as a type, number won't even do 64-bit.
-              argValue = Number(argValue).valueOf();
-              args[idx] = argValue;
-            }
-            else {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and should be a number`);
-            }
-          }
-          if (argDescriptor.dataType.dataType === 'integer') {
-            if (!Number.isInteger(argValue)) {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but has a fractional part`);
-            }
-          }
-        }
-        if (argDescriptor.dataType.dataType === 'timestamp') {
-          if (!(argValue instanceof Date)) {
-            if (typeof argValue == 'string') {
-              const d = Date.parse(argValue);
-              if (isNaN(d)) {
-                throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is a string that will not parse as Date`);
-              }
-              argValue = new Date(d);
-              args[idx] = argValue;
-            }
-            else {
-              throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a date or time`);
-            }
-          }
-        }
-        if (argDescriptor.dataType.dataType === 'uuid') {
-          // This validation is loose.  A tighter one would be:
-          // /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
-          // That matches UUID version 1-5.
-          if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(argValue))) {
-            throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is not a valid UUID`);
-          }
-        }
-        // JSON can be anything.  We can validate it against a schema at some later version...
-      });
+      const validatedArgs = validateOperonMethodArgs(methReg, rawArgs);
 
       // Argument logging
-      args.forEach((argValue, idx) => {
+      validatedArgs.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
         if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
+          opCtx = validatedArgs[0] as OperonContextImpl;
           isCtx = true;
         }
 
@@ -469,7 +328,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         }
       });
 
-      return methReg.origFunction.call(this, ...args);
+      return methReg.origFunction.call(this, ...validatedArgs);
     };
     Object.defineProperty(wrappedMethod, "name", {
       value: methReg.name,
@@ -517,11 +376,18 @@ export function getOrCreateOperonClassRegistration<CT extends { new (...args: un
 /* PARAMETER DECORATORS */
 //////////////////////////
 
-export function Required(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
-  curParam.required = true;
+  curParam.required = ArgRequiredOptions.REQUIRED;
+}
+
+export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+
+  const curParam = existingParameters[parameterIndex];
+  curParam.required = ArgRequiredOptions.OPTIONAL;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -579,6 +445,19 @@ export function DefaultRequiredRole(anyOf: string[]) {
   }
   return clsdec;
 }
+
+export function DefaultArgRequired<T extends { new (...args: unknown[]) : object }>(ctor: T)
+{
+   const clsreg = getOrCreateOperonClassRegistration(ctor);
+   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+}
+
+export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
+{
+   const clsreg = getOrCreateOperonClassRegistration(ctor);
+   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
+}
+
 
 ///////////////////////
 /* METHOD DECORATORS */

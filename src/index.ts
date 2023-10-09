@@ -34,7 +34,8 @@ export {
   Debug,
 
   // Parameter Decorators
-  Required,
+  ArgRequired,
+  ArgOptional,
   SkipLogging,
   LogMask,
   ArgName,
@@ -43,6 +44,8 @@ export {
 
   // Class Decorators
   DefaultRequiredRole,
+  DefaultArgRequired,
+  DefaultArgOptional,
   // Typeorm Class Decorators
   OrmEntities,
 

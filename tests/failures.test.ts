@@ -1,4 +1,4 @@
-import { Operon, WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction } from "../src/";
+import { Operon, WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
@@ -156,7 +156,7 @@ class FailureTestClass {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator({ retriesAllowed: false })
-  static async testCommunicator(_ctxt: CommunicatorContext, code?: number) {
+  static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
     if (code) {
       throw new OperonError("test operon error with code.", code);
     } else {

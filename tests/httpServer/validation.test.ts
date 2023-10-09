@@ -7,6 +7,12 @@ import {
   
   ArgVarchar,
   ArgDate,
+  DefaultArgRequired,
+  DefaultArgOptional,
+
+  Debug,
+  ArgRequired,
+  ArgOptional
 } from "../../src";
 import { OperonHttpServer } from "../../src/httpServer/server";
 import {
@@ -29,7 +35,7 @@ describe("httpserver-datavalidation-tests", () => {
 
   beforeEach(async () => {
     operon = new Operon(config);
-    await operon.init(TestEndpointDataVal);
+    await operon.init(TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired);
     httpServer = new OperonHttpServer(operon);
   });
 
@@ -348,6 +354,37 @@ describe("httpserver-datavalidation-tests", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  test("defined or not", async() => {
+    const attempts = [
+      ["/rrequired", undefined, 400],
+      ["/rrequired", "hasaval", 200],
+      ["/rdefault",  undefined, 400],
+      ["/rdefault",  "hasaval", 200],
+      ["/roptional", undefined, 200],
+      ["/roptional", "hasaval", 200],
+
+      ["/orequired", undefined, 400],
+      ["/orequired", "hasaval", 200],
+      ["/odefault",  undefined, 200],
+      ["/odefault",  "hasaval", 200],
+      ["/ooptional", undefined, 200],
+      ["/ooptional", "hasaval", 200],
+
+      ["/drequired", undefined, 400],
+      ["/drequired", "hasaval", 200],
+      ["/ddefault",  undefined, 400],
+      ["/ddefault",  "hasaval", 200],
+      ["/doptional", undefined, 200],
+      ["/doptional", "hasaval", 200],
+    ]
+
+    for (const v of attempts) {
+      const response = await request(httpServer.app.callback()).post(v[0] as string)
+      .send({v: v[1]});
+      expect(response.statusCode).toBe(v[2]);
+    }
+  })
+
   /*
   // Integer
   test("good integer (get)", async () => {
@@ -517,5 +554,79 @@ describe("httpserver-datavalidation-tests", () => {
     //  Decimal
     //  UUID?
     //  JSON
+  }
+
+  @DefaultArgRequired
+  class DefaultArgToRequired
+  {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/rrequired")
+    @Debug()
+    static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/roptional")
+    @Debug()
+    static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/rdefault")
+    @Debug()
+    static async checkDefValueR(_ctx: HandlerContext, v?: string) {
+      return { message: `Got string ${v}` };
+    }
+  }
+
+  @DefaultArgOptional
+  class DefaultArgToOptional
+  {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/orequired")
+    @Debug()
+    static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/ooptional")
+    @Debug()
+    static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/odefault")
+    @Debug()
+    static async checkDefValueO(_ctx: HandlerContext, v?: string) {
+      return { message: `Got string ${v}` };
+    }
+  }
+
+  class DefaultArgToDefault
+  {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/drequired")
+    @Debug()
+    static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/doptional")
+    @Debug()
+    static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
+      return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @PostApi("/ddefault")
+    @Debug()
+    static async checkDefValueD(_ctx: HandlerContext, v?: string) {
+      return { message: `Got string ${v}` };
+    }
   }
 });
