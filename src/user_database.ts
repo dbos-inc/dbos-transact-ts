@@ -333,13 +333,14 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async query<R>(sql: string, ...params: any[]): Promise<R[]> {
-    const knexSql = sql.replace(/\$\d+/g, '?');
-    const rows = await this.knex.raw<R>(knexSql, params) as { rows: R[] };
-    return rows.rows;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return this.queryWithClient(this.knex, sql, ...params);
   }
 
   async queryWithClient<R>(client: Knex, sql: string, ...params: any[]): Promise<R[]> {
-    const knexSql = sql.replace(/\$\d+/g, '?');
+    const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    params = params.map(i => i === undefined ? null : i); // Set undefined parameters to null.
     const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
     return rows.rows;
   }
