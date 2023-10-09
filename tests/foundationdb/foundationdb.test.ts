@@ -22,9 +22,10 @@ describe("foundationdb-operon", () => {
 
   beforeEach(async () => {
     const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    testRuntime = new OperonTestingRuntimeImpl();
-    await (testRuntime as OperonTestingRuntimeImpl).init([FdbTestClass], config, systemDB);
-    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const testRuntimeImpl = new OperonTestingRuntimeImpl();
+    await testRuntimeImpl.init([FdbTestClass], config, systemDB);
+    operon = testRuntimeImpl.getOperon();
+    testRuntime = testRuntimeImpl;
   
     // Clean up tables.
     await systemDB.workflowStatusDB.clearRangeStartsWith("");
