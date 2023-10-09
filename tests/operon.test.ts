@@ -4,14 +4,16 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
+import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "operon_test_kv";
 
 describe("operon-tests", () => {
-  let operon: Operon;
   let username: string;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
+  let operon: Operon;
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
@@ -20,8 +22,8 @@ describe("operon-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(OperonTestClass);
+    testRuntime = await createTestingRuntime([OperonTestClass], config);
+    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon()!;
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     OperonTestClass.cnt = 0;
@@ -29,11 +31,12 @@ describe("operon-tests", () => {
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("simple-function", async () => {
-    const workflowHandle: WorkflowHandle<string> = await operon.workflow(OperonTestClass.testWorkflow, {}, username);
+    const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(OperonTestClass).testWorkflow(username);
+
     expect(typeof workflowHandle.getWorkflowUUID()).toBe("string");
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
@@ -46,7 +49,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -58,25 +61,24 @@ describe("operon-tests", () => {
 
   test("return-void", async () => {
     const workflowUUID = uuidv1();
-    await operon.transaction(OperonTestClass.testVoidFunction, { workflowUUID: workflowUUID });
-    await expect(operon.transaction(OperonTestClass.testVoidFunction, { workflowUUID: workflowUUID })).resolves.toBeFalsy();
-    await expect(operon.transaction(OperonTestClass.testVoidFunction, { workflowUUID: workflowUUID })).resolves.toBeFalsy();
-    await expect(operon.transaction(OperonTestClass.testVoidFunction, { workflowUUID: workflowUUID })).resolves.toBeFalsy();
+    await testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction();
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
   });
 
   test("tight-loop", async () => {
     for (let i = 0; i < 100; i++) {
-      await expect(operon.workflow(OperonTestClass.testNameWorkflow, {}, username).then((x) => x.getResult())).resolves.toBe(username);
+      await expect(testRuntime.invoke(OperonTestClass).testNameWorkflow(username).then((x) => x.getResult())).resolves.toBe(username);
     }
   });
 
   test("abort-function", async () => {
     for (let i = 0; i < 10; i++) {
-      await expect(operon.workflow(OperonTestClass.testFailWorkflow, {}, username).then((x) => x.getResult())).resolves.toBe(i + 1);
+      await expect(testRuntime.invoke(OperonTestClass).testFailWorkflow(username).then((x) => x.getResult())).resolves.toBe(i + 1);
     }
 
     // Should not appear in the database.
-    await expect(operon.workflow(OperonTestClass.testFailWorkflow, {}, "fail").then((x) => x.getResult())).rejects.toThrow("fail");
+    await expect(testRuntime.invoke(OperonTestClass).testFailWorkflow("fail").then((x) => x.getResult())).rejects.toThrow("fail");
   });
 
   test("oaoo-simple", async () => {
@@ -85,14 +87,14 @@ describe("operon-tests", () => {
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidv1();
       uuidArray.push(workflowUUID);
-      workflowResult = await operon.workflow(OperonTestClass.testOaooWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
+      workflowResult = await testRuntime.invoke(OperonTestClass, workflowUUID).testOaooWorkflow(username).then((x) => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
 
     // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await operon.workflow(OperonTestClass.testOaooWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
+      const workflowResult: number = await testRuntime.invoke(OperonTestClass, workflowUUID).testOaooWorkflow(username).then((x) => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
   });
@@ -100,21 +102,21 @@ describe("operon-tests", () => {
   test("simple-communicator", async () => {
     const workflowUUID: string = uuidv1();
 
-    await expect(operon.external(OperonTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
 
     // Test OAOO. Should return the original result.
-    await expect(operon.external(OperonTestClass.testCommunicator, { workflowUUID: workflowUUID })).resolves.toBe(0);
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
 
     // Should be a new run.
-    await expect(operon.external(OperonTestClass.testCommunicator, {})).resolves.toBe(1);
+    await expect(testRuntime.invoke(OperonTestClass).testCommunicator()).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
     const workflowUUID = uuidv1();
-    const handle = await operon.workflow(OperonTestClass.receiveWorkflow, { workflowUUID: workflowUUID });
-    await operon.workflow(OperonTestClass.sendWorkflow, {}, handle.getWorkflowUUID()).then((x) => x.getResult());
+    const handle = await testRuntime.invoke(OperonTestClass, workflowUUID).receiveWorkflow();
+    await testRuntime.invoke(OperonTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult());
     expect(await handle.getResult()).toBe(true);
-    const retry = await operon.workflow(OperonTestClass.receiveWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult());
+    const retry = await testRuntime.invoke(OperonTestClass, workflowUUID).receiveWorkflow().then((x) => x.getResult());
     expect(retry).toBe(true);
   });
 
@@ -123,36 +125,36 @@ describe("operon-tests", () => {
     const idempotencyKey = "test-suffix";
 
     // Send twice with the same idempotency key.  Only one message should be sent.
-    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
-    await expect(operon.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
+    await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
+    await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
 
     // Receive twice with the same UUID.  Each should get the same result of true.
-    await expect(operon.workflow(OperonTestClass.receiveOaooWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
-    await expect(operon.workflow(OperonTestClass.receiveOaooWorkflow, { workflowUUID: recvWorkflowUUID }, "testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
+    await expect(testRuntime.invoke(OperonTestClass, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
+    await expect(testRuntime.invoke(OperonTestClass, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
 
     // A receive with a different UUID should return false.
-    await expect(operon.workflow(OperonTestClass.receiveOaooWorkflow, {}, "testTopic", 0).then((x) => x.getResult())).resolves.toBe(false);
+    await expect(testRuntime.invoke(OperonTestClass).receiveOaooWorkflow("testTopic", 0).then((x) => x.getResult())).resolves.toBe(false);
   });
 
   test("simple-workflow-events", async () => {
-    const handle: WorkflowHandle<number> = await operon.workflow(OperonTestClass.setEventWorkflow, {});
+    const handle: WorkflowHandle<number> = await testRuntime.invoke(OperonTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
-    await expect(operon.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
-    await expect(operon.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
-    await expect(operon.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+    await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
+    await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
+    await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(operon.workflow(OperonTestClass.setEventWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult())).resolves.toBe(0);
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
   });
 
   test("readonly-recording", async () => {
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(operon.workflow(OperonTestClass.testRecordingWorkflow, { workflowUUID: workflowUUID }, 123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
     expect(OperonTestClass.cnt).toBe(1);
     expect(OperonTestClass.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded same error without running it.
-    await expect(operon.workflow(OperonTestClass.testRecordingWorkflow, { workflowUUID: workflowUUID }, 123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
     expect(OperonTestClass.cnt).toBe(1);
     expect(OperonTestClass.wfCnt).toBe(2);
   });
@@ -160,7 +162,7 @@ describe("operon-tests", () => {
   test("retrieve-workflowstatus", async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await operon.workflow(OperonTestClass.testStatusWorkflow, { workflowUUID: workflowUUID }, 123, "hello");
+    const workflowHandle = await testRuntime.invoke(OperonTestClass, workflowUUID).testStatusWorkflow(123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
@@ -172,7 +174,7 @@ describe("operon-tests", () => {
     await OperonTestClass.promise3;
 
     // Retrieve handle, should get the pending status.
-    await expect(operon.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({ status: StatusString.PENDING, workflowName: OperonTestClass.testStatusWorkflow.name });
+    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({ status: StatusString.PENDING, workflowName: OperonTestClass.testStatusWorkflow.name });
 
     // Proceed to the end.
     OperonTestClass.resolve2();
@@ -180,7 +182,7 @@ describe("operon-tests", () => {
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
     await operon.flushWorkflowStatusBuffer();
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(retrievedHandle.getResult()).resolves.toBe("hello");

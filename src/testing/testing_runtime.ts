@@ -1,0 +1,119 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { IncomingMessage } from "http";
+import { OperonCommunicator } from "../communicator";
+import { HTTPRequest, OperonContextImpl } from "../context";
+import { getRegisteredOperations } from "../decorators";
+import { OperonError } from "../error";
+import { HandlerWfFuncs } from "../httpServer/handler";
+import { OperonHttpServer } from "../httpServer/server";
+import { Operon, OperonConfig } from "../operon";
+import { parseConfigFile } from "../operon-runtime/config";
+import { OperonTransaction } from "../transaction";
+import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from "../workflow";
+import { Http2ServerRequest, Http2ServerResponse } from "http2";
+import { ServerResponse } from "http";
+
+export async function createTestingRuntime(userClasses: object[], testConfig?: OperonConfig): Promise<OperonTestingRuntime> {
+  const otr = new OperonTestingRuntimeImpl();
+  await otr.init(userClasses, testConfig);
+  return otr;
+}
+
+export interface OperonTestingRuntime {
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  invoke<T extends object>(object: T, workflowUUID?: string, authenticatedUser?: string, request?: HTTPRequest): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
+  getHandlerCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
+  destroy(): Promise<void>; // Release resources after tests.
+}
+
+/**
+ * This class provides a runtime to test Opeorn functions in unit tests.
+ */
+export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
+  #server: OperonHttpServer | null = null;
+ 
+  /**
+   * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
+   * This should be the first function call before any subsequent calls.
+   */
+  async init(userClasses: object[], testConfig?: OperonConfig) {
+    const operonConfig = testConfig ? [testConfig] : parseConfigFile();
+    const operon = new Operon(operonConfig[0]);
+    await operon.init(...userClasses);
+    this.#server = new OperonHttpServer(operon);
+  }
+
+  /**
+   * Release resources after tests.
+   */
+  async destroy() {
+    await this.#server?.operon.destroy();
+  }
+
+  /**
+   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
+   * to invoke workflows, transactions, and communicators;
+   */
+  invoke<T extends object>(object: T, workflowUUID?: string, authenticatedUser?: string, request?: HTTPRequest): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
+    const operon = this.getOperon();
+    const ops = getRegisteredOperations(object);
+
+    const proxy: any = {};
+
+    // Creates an Operon context to pass in necessary info.
+    const span = operon.tracer.startSpan("test");
+    const oc = new OperonContextImpl("test", span, operon.logger);
+    oc.authenticatedUser = authenticatedUser ?? "";
+    oc.request = request;
+
+    const params: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.txnConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => operon.transaction(op.registeredFunction as OperonTransaction<any[], any>, params, ...args)
+        : op.workflowConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => operon.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
+        : op.commConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, params, ...args)
+        : undefined;
+    }
+    return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
+  }
+
+  /**
+   * Return a request handler callback for node's native http/http2 server, which includes all registered HTTP endpoints.
+   */
+  getHandlerCallback() {
+    if (!this.#server) {
+      throw new OperonError("Uninitialized testing runtime! Did you forget to call init() first?");
+    }
+    return this.#server.app.callback();
+  }
+
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+    return this.getOperon().send(destinationUUID, message, topic, idempotencyKey);
+  }
+
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
+    return this.getOperon().getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
+    return this.getOperon().retrieveWorkflow(workflowUUID);
+  }
+
+  /**
+   * For internal tests use only -- return the Operon object.
+   */
+  getOperon(): Operon {
+    if (!this.#server) {
+      throw new OperonError("Uninitialized testing runtime! Did you forget to call init() first?");
+    }
+    return this.#server.operon;
+  }
+}
