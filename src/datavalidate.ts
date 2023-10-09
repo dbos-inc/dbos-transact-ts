@@ -32,8 +32,8 @@ export function validateOperonMethodArgs<Args extends unknown[]>(methReg: Operon
         }
 
         let argValue = args[idx];
-        if (argValue === undefined && argDescriptor.required === ArgRequiredOptions.REQUIRED ||
-          argDescriptor.required === ArgRequiredOptions.DEFAULT && methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED)
+        if (argValue === undefined && (argDescriptor.required === ArgRequiredOptions.REQUIRED ||
+          argDescriptor.required === ArgRequiredOptions.DEFAULT && methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED))
         {
           throw validationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
         }

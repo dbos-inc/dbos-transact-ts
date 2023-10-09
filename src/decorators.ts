@@ -306,6 +306,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
+          opCtx = validatedArgs[0] as OperonContextImpl;
           isCtx = true;
         }
 
@@ -386,7 +387,7 @@ export function ArgOptional(target: object, propertyKey: string | symbol, parame
   const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
-  curParam.required = ArgRequiredOptions.DEFAULT;
+  curParam.required = ArgRequiredOptions.OPTIONAL;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
