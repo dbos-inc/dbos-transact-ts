@@ -8,7 +8,7 @@ import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { OperonContext, OperonContextImpl } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonNotAuthorizedError } from "./error";
-import { validateOperonMethodArgs } from "./datavalidate";
+import { validateOperonMethodArgs } from "./data_validation";
 
 /**
  * Any column type column can be.

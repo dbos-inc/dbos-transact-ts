@@ -21,6 +21,12 @@ export interface UserDatabase {
   isRetriableTransactionError(error: unknown): boolean;
   // Is a database error caused by a key conflict (key constraint violation or serialization error)?
   isKeyConflictError(error: unknown): boolean;
+
+  // Not all databases support this, TypeORM can.
+  // Drop the user database tables (for testing)
+  createSchema(): Promise<void>;
+  // Drop the user database tables (for testing)
+  dropSchema(): Promise<void>;
 }
 
 type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
@@ -110,6 +116,13 @@ export class PGNodeUserDatabase implements UserDatabase {
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
   }
+
+  async createSchema(): Promise<void> {
+    throw new Error("createSchema() is not supported in PG user database.");
+  }
+  async dropSchema(): Promise<void> {
+    throw new Error("dropSchema() is not supported in PG user database.");
+  }
 }
 
 /**
@@ -197,6 +210,13 @@ export class PrismaUserDatabase implements UserDatabase {
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
   }
+
+  async createSchema(): Promise<void> {
+    throw new Error("createSchema() is not supported in Prisma user database.");
+  }
+  async dropSchema(): Promise<void> {
+    throw new Error("dropSchema() is not supported in Prisma user database.");
+  }
 }
 
 export interface TypeORMDataSource {
@@ -206,6 +226,9 @@ export interface TypeORMDataSource {
   initialize(): Promise<this>;
   query<T = any>(query: string): Promise<T>;
   destroy(): Promise<void>;
+
+  synchronize(): Promise<void>;
+  dropDatabase(): Promise<void>;
 }
 
 export interface TypeORMEntityManager {
@@ -215,7 +238,6 @@ export interface TypeORMEntityManager {
 
 export interface QueryFailedError<T> {
   driverError: T
-
 }
 
 /**
@@ -289,6 +311,13 @@ export class TypeORMDatabase implements UserDatabase {
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
   }
+
+  async createSchema(): Promise<void> {
+    return this.dataSource.synchronize();
+  }
+  async dropSchema(): Promise<void> {
+    return this.dataSource.dropDatabase();
+  }
 }
 
 /**
@@ -356,5 +385,12 @@ export class KnexUserDatabase implements UserDatabase {
   isKeyConflictError(error: unknown): boolean {
     const pge = this.getPostgresErrorCode(error);
     return pge === "40001" || pge === "23505";
+  }
+
+  async createSchema(): Promise<void> {
+    throw new Error("createSchema() is not supported in Knex user database.");
+  }
+  async dropSchema(): Promise<void> {
+    throw new Error("dropSchema() is not supported in Knex user database.");
   }
 }
