@@ -117,9 +117,11 @@ export class PGNodeUserDatabase implements UserDatabase {
     return pge === "40001" || pge === "23505";
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createSchema(): Promise<void> {
     throw new Error("createSchema() is not supported in PG user database.");
   }
+  // eslint-disable-next-line @typescript-eslint/require-await
   async dropSchema(): Promise<void> {
     throw new Error("dropSchema() is not supported in PG user database.");
   }
@@ -211,9 +213,11 @@ export class PrismaUserDatabase implements UserDatabase {
     return pge === "40001" || pge === "23505";
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createSchema(): Promise<void> {
     throw new Error("createSchema() is not supported in Prisma user database.");
   }
+  // eslint-disable-next-line @typescript-eslint/require-await
   async dropSchema(): Promise<void> {
     throw new Error("dropSchema() is not supported in Prisma user database.");
   }
@@ -387,9 +391,11 @@ export class KnexUserDatabase implements UserDatabase {
     return pge === "40001" || pge === "23505";
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async createSchema(): Promise<void> {
     throw new Error("createSchema() is not supported in Knex user database.");
   }
+  // eslint-disable-next-line @typescript-eslint/require-await
   async dropSchema(): Promise<void> {
     throw new Error("dropSchema() is not supported in Knex user database.");
   }
