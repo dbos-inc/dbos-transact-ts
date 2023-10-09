@@ -1,27 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, operonNull, OperonNull } from "./operon";
+import { operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
-import { OperonContextImpl } from "./context";
+import { HTTPRequest } from "./context";
 
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
-  initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T>;
+  initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
   getPendingWorkflows(): Promise<Array<string>>;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
-  getRecoveryContext(operon: Operon, workflowUUID: string): Promise<OperonContextImpl | null>;
 
   checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
   recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
@@ -86,10 +85,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T> {
     await this.pool.query(
-      `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, output) VALUES($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (workflow_uuid) DO NOTHING`,
-      [workflowUUID, StatusString.PENDING, name, authenticatedUser, assumedRole, JSON.stringify(authenticatedRoles), null]
+      `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output) VALUES($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      [workflowUUID, StatusString.PENDING, name, authenticatedUser, assumedRole, JSON.stringify(authenticatedRoles), JSON.stringify(request), null]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
@@ -148,25 +147,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return null
     }
     return JSON.parse(rows[0].inputs) as T;
-  }
-
-  async getRecoveryContext(operon: Operon, workflowUUID: string): Promise<OperonContextImpl | null> {
-    const status = await this.getWorkflowStatus(workflowUUID);
-    if (!status) {
-      return null;
-    }
-    const span = operon.tracer.startSpan(status.workflowName);
-    span.setAttributes({
-      operationName: status.workflowName,
-    });
-    const oc = new OperonContextImpl(status.workflowName, span, operon.config.logger);
-    // FIXME: pass in the original request. IncomingMessage is not serializable.
-    oc.request = undefined;
-    oc.authenticatedUser = status.authenticatedUser;
-    oc.authenticatedRoles = status.authenticatedRoles;
-    oc.assumedRole = status.assumedRole;
-    oc.workflowUUID = workflowUUID;
-    return oc;
   }
 
   async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
@@ -367,11 +347,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0) {
       return null;
     }
-    return { status: rows[0].status, workflowName: rows[0].name, authenticatedUser: rows[0].authenticated_user, assumedRole: rows[0].assumed_role, authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[] };
+    return { status: rows[0].status, workflowName: rows[0].name, authenticatedUser: rows[0].authenticated_user, assumedRole: rows[0].assumed_role, authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
+    request: JSON.parse(rows[0].request) as HTTPRequest };
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {

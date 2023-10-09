@@ -14,6 +14,7 @@ import {
   WorkflowParams,
   RetrievedHandle,
   WorkflowContextImpl,
+  WorkflowStatus,
 } from './workflow';
 
 import { OperonTransaction, TransactionConfig } from './transaction';
@@ -41,6 +42,7 @@ import {
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
+import { OperonContextImpl } from './context';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -289,7 +291,7 @@ export class Operon {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, args);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request ?? null, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
@@ -387,13 +389,13 @@ export class Operon {
       try {
         const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
         const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
-        if (!inputs) {
+        if (!inputs || !wfStatus) {
           this.config.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
           continue;
         }
-        const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus!.workflowName);
+        const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
 
-        const parentCtx = await this.systemDatabase.getRecoveryContext(this, workflowUUID);
+        const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs))
       } catch (e) {
@@ -401,6 +403,20 @@ export class Operon {
       }
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+  }
+
+  #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): OperonContextImpl {
+    const span = this.tracer.startSpan(status.workflowName);
+    span.setAttributes({
+      operationName: status.workflowName,
+    });
+    const oc = new OperonContextImpl(status.workflowName, span, this.logger);
+    oc.request = status.request ?? undefined;
+    oc.authenticatedUser = status.authenticatedUser;
+    oc.authenticatedRoles = status.authenticatedRoles;
+    oc.assumedRole = status.assumedRole;
+    oc.workflowUUID = workflowUUID;
+    return oc;
   }
 
   /* BACKGROUND PROCESSES */

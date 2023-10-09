@@ -130,6 +130,8 @@ export class OperonHttpServer {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 args.push(koaCtxt.params[marg.name]);
               }
+
+              //console.log(`found arg ${marg.name} ${idx} ${args[idx-1]}`);
             });
 
             // Extract workflow UUID from headers (if any).
