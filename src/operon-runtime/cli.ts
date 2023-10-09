@@ -19,8 +19,8 @@ program.
   version(packageJson.version);
 
 export interface OperonCLIStartOptions {
-  port: number,
-  loglevel: string,
+  port?: number,
+  loglevel?: string,
 }
 
 program
