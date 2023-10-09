@@ -80,7 +80,7 @@ export class Operon {
       this.tempWorkflowName,
       {
         // eslint-disable-next-line @typescript-eslint/require-await
-        workflow: async () => this.config.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
+        workflow: async () => this.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
         config: {},
       },
     ],
@@ -97,24 +97,27 @@ export class Operon {
 
   readonly defaultNotificationTimeoutSec = 60;
 
+  readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
+    this.logger = this.config.logger;
+
     if (systemDatabase) {
-      this.config.logger.debug("Using provided system database"); // XXX print the name or something
+      this.logger.debug("Using provided system database"); // XXX print the name or something
       this.systemDatabase = systemDatabase;
     } else {
-      this.config.logger.debug("Using Postgres system database");
+      this.logger.debug("Using Postgres system database");
       this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
     }
 
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowStatusBuffer();
     }, this.flushBufferIntervalMs);
-    this.config.logger.debug('Started workflow status buffer worker');
+    this.logger.debug('Started workflow status buffer worker');
 
     // Parse requested exporters
     const telemetryExporters = [];
@@ -122,10 +125,10 @@ export class Operon {
       for (const exporter of this.config.telemetryExporters) {
         if (exporter === POSTGRES_EXPORTER) {
           telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
-          this.config.logger.debug("Loaded Postgres Telemetry Exporter");
+          this.logger.debug("Loaded Postgres Telemetry Exporter");
         } else if (exporter === JAEGER_EXPORTER) {
           telemetryExporters.push(new JaegerExporter());
-          this.config.logger.debug("Loaded Jaeger Telemetry Exporter");
+          this.logger.debug("Loaded Jaeger Telemetry Exporter");
         }
       }
     }
@@ -142,7 +145,7 @@ export class Operon {
       const { PrismaClient } = require('@prisma/client');
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       this.userDatabase = new PrismaUserDatabase(new PrismaClient());
-      this.config.logger.debug("Loaded Prisma user database");
+      this.logger.debug("Loaded Prisma user database");
     } else if (userDbClient === UserDatabaseName.TYPEORM) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
       const DataSourceExports = require('typeorm');
@@ -159,9 +162,9 @@ export class Operon {
           entities: this.entities
         }))
       } catch (s) {
-        this.config.logger.error("Error loading TypeORM user database");
+        this.logger.error("Error loading TypeORM user database");
       }
-      this.config.logger.debug("Loaded TypeORM user database");
+      this.logger.debug("Loaded TypeORM user database");
     } else if (userDbClient === UserDatabaseName.KNEX) {
       const knexConfig: Knex.Config = {
         client: 'postgres',
@@ -174,10 +177,10 @@ export class Operon {
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
-      this.config.logger.debug("Loaded Knex user database");
+      this.logger.debug("Loaded Knex user database");
     } else {
       this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
-      this.config.logger.debug("Loaded Postgres user database");
+      this.logger.debug("Loaded Postgres user database");
     }
   }
 
@@ -188,22 +191,22 @@ export class Operon {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as OperonWorkflow<any, any>;
         this.#registerWorkflow(wf, ro.workflowConfig);
-        this.config.logger.debug(`Registered workflow ${ro.name}`);
+        this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as OperonTransaction<any, any>;
         this.#registerTransaction(tx, ro.txnConfig);
-        this.config.logger.debug(`Registered transaction ${ro.name}`);
+        this.logger.debug(`Registered transaction ${ro.name}`);
       } else if (ro.commConfig) {
         const comm = ro.registeredFunction as OperonCommunicator<any, any>;
         this.#registerCommunicator(comm, ro.commConfig);
-        this.config.logger.debug(`Registered communicator ${ro.name}`);
+        this.logger.debug(`Registered communicator ${ro.name}`);
       }
     }
   }
 
   async init(...classes: object[]): Promise<void> {
     if (this.initialized) {
-      this.config.logger.debug("Operon already initialized!");
+      this.logger.error("Operon already initialized!");
       return;
     }
 
@@ -213,14 +216,14 @@ export class Operon {
         const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0) {
           this.entities = this.entities.concat(reg.ormEntities)
-          this.config.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
+          this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
         }
       }
 
       this.configureDbClient();
 
       if (!this.userDatabase) {
-        this.config.logger.error("No user database configured!");
+        this.logger.error("No user database configured!");
         throw new OperonInitializationError("No user database configured!");
       }
 
@@ -233,13 +236,13 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        this.config.logger.error(`failed to initialize Operon: ${err.message}`);
+        this.logger.error(`failed to initialize Operon: ${err.message}`);
         throw new OperonInitializationError(err.message);
       }
     }
     void this.recoverPendingWorkflows();
     this.initialized = true;
-    this.config.logger.info("Operon initialized");
+    this.logger.info("Operon initialized");
   }
 
   async destroy() {
@@ -390,7 +393,7 @@ export class Operon {
         const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
         const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
         if (!inputs || !wfStatus) {
-          this.config.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
+          this.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
           continue;
         }
         const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
@@ -399,7 +402,7 @@ export class Operon {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs))
       } catch (e) {
-        this.config.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
+        this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
     }
     await Promise.allSettled(handlerArray.map((i) => i.getResult()));

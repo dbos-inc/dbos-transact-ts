@@ -45,7 +45,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
       extractedSpanContext.isRemote = true;
       span = operon.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
     }
-    super(koaContext.url, span, operon.config.logger);
+    super(koaContext.url, span, operon.logger);
     this.W3CTraceContextPropagator = httpTracer;
     this.request = {
       headers: koaContext.request.headers,

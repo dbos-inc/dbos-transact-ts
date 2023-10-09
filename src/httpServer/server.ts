@@ -43,7 +43,7 @@ export class OperonHttpServer {
       config.router = new Router();
     }
     this.router = config.router;
-    this.logger = operon.config.logger;
+    this.logger = operon.logger;
 
     if (!config.koa) {
       config.koa = new Koa();
@@ -81,7 +81,7 @@ export class OperonHttpServer {
         const defaults = ro.defaults as OperonMiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            operon.config.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
+            operon.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
           })
         }
@@ -209,10 +209,10 @@ export class OperonHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
-          operon.config.logger.debug(`Operon Server Registered GET ${ro.apiURL}`);
+          operon.logger.debug(`Operon Server Registered GET ${ro.apiURL}`);
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
-          operon.config.logger.debug(`Operon Server Registered POST ${ro.apiURL}`);
+          operon.logger.debug(`Operon Server Registered POST ${ro.apiURL}`);
         }
       }
     });
