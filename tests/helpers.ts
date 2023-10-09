@@ -1,6 +1,7 @@
 import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
+import { createLogger } from "winston";
 
 /* DB management helpers */
 export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
@@ -28,6 +29,7 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     dbClientMetadata: {
       entities: ["KV"],
     },
+    logger: createLogger({silent: true}),
   };
 
   return operonTestConfig;

@@ -1,11 +1,13 @@
 import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
 import { OperonConfig } from "../operon";
+import { transports, createLogger, format, Logger } from "winston";
 import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
-import { UserDatabaseName } from '../user_database';
+import { UserDatabaseName } from "../user_database";
+import { OperonCLIStartOptions } from "./cli";
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -31,7 +33,32 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefined] {
+function createGlobalLogger(logLevel: string): Logger {
+  // TODO We will need to configure the formatter for "production" mode
+  return createLogger({
+    level: logLevel,
+    format: format.combine(
+      format.errors({ stack: true }),
+      format.timestamp(),
+      format.colorize(),
+      format.printf((info) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const { timestamp, level, message, stack, ...args } = info;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const ts = timestamp.slice(0, 19).replace("T", " ");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const formattedStack = stack?.split("\n").slice(1).join("\n");
+        return `${ts} [${level}]: ${message} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
+      })
+    ),
+    transports: [new transports.Console()],
+    handleExceptions: true,
+  });
+}
+
+export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+  const logger = createGlobalLogger(cliOptions.loglevel);
+
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
@@ -53,8 +80,7 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
 
   // Handle "Global" pool configFile
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config
-`);
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config`);
   }
 
   const poolConfig: PoolConfig = {
@@ -71,6 +97,7 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
   }
 
   if (configFile.database.ssl_ca) {
+    logger.debug(`Using SSL CA ${configFile.database.ssl_ca}`);
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
 
@@ -84,9 +111,16 @@ export function parseConfigFile(): [OperonConfig, OperonRuntimeConfig | undefine
     application: configFile.application || undefined,
     dbClientMetadata: {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      entities: configFile.dbClientMetadata?.entities
-    }
+      entities: configFile.dbClientMetadata?.entities,
+    },
+    logger,
   };
 
-  return [operonConfig, configFile.localRuntimeConfig];
+  // CLI takes precedence over config file, which takes precedence over default config.
+  const localRuntimeConfig: OperonRuntimeConfig = {
+    port: cliOptions.port || configFile.localRuntimeConfig?.port || 3000,
+    logger,
+  };
+
+  return [operonConfig, localRuntimeConfig];
 }

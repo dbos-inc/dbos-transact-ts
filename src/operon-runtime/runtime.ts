@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonConfig } from '../operon';
+import { Logger } from 'winston';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -7,22 +7,20 @@ import { Server } from 'http';
 import { OperonError } from '../error';
 
 interface ModuleExports {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
 export interface OperonRuntimeConfig {
   port: number;
-}
-
-const defaultConfig: OperonRuntimeConfig = {
-  port: 3000,
+  logger: Logger;
 }
 
 export class OperonRuntime {
   private operon: Operon;
   private server: Server | null = null;
 
-  constructor(operonConfig: OperonConfig, readonly runtimeConfig: OperonRuntimeConfig = defaultConfig) {
+  constructor(operonConfig: OperonConfig, private readonly runtimeConfig: OperonRuntimeConfig) {
     // Initialize Operon.
     this.operon = new Operon(operonConfig);
   }
@@ -33,6 +31,7 @@ export class OperonRuntime {
   async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
+      this.runtimeConfig.logger.error("userFunctions not found");
       throw new OperonError("userFunctions not found");
     }
 
@@ -40,6 +39,7 @@ export class OperonRuntime {
     for (const key in exports) {
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
+        this.runtimeConfig.logger.debug(`Loaded class: ${key}`);
       }
     }
 
@@ -56,6 +56,7 @@ export class OperonRuntime {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(userFunctions) as Promise<ModuleExports>;
     } else {
+      this.runtimeConfig.logger.warn("userFunctions not found");
       return null;
     }
   }
@@ -63,16 +64,12 @@ export class OperonRuntime {
   /**
    * Start an HTTP server hosting an application's Operon functions.
    */
-  startServer(inputConfig: OperonRuntimeConfig = defaultConfig) {
+  startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
-    const config: OperonRuntimeConfig = {
-      port: inputConfig.port || this.runtimeConfig.port,
-    }
 
-    const server = new OperonHttpServer(this.operon)
+    const server: OperonHttpServer = new OperonHttpServer(this.operon)
 
-    this.server = server.listen(config.port);
-    console.log(`Starting server on port: ${config.port}`);
+    this.server = server.listen(this.runtimeConfig.port);
   }
 
   /**

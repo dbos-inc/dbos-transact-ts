@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger } from "./telemetry/logs";
-import { LogSeverity } from "./telemetry/signals";
+import { Logger } from "winston";
+import { Logger as OperonLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
@@ -28,11 +28,7 @@ export interface OperonContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
 
-  info(message: string): void;
-  warn(message: string): void;
-  log(message: string): void;
-  error(message: string): void;
-  debug(message: string): void;
+  readonly logger: OperonLogger;
 }
 
 export class OperonContextImpl implements OperonContext {
@@ -43,8 +39,10 @@ export class OperonContextImpl implements OperonContext {
   assumedRole: string = ""; ///< Role in use - that user has and provided authorization to current function
 
   workflowUUID: string = "";
+  readonly logger: OperonLogger;
 
-  constructor(readonly operationName: string, readonly span: Span, private readonly logger: Logger, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
+    this.logger = new OperonLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -66,26 +64,5 @@ export class OperonContextImpl implements OperonContext {
       return undefined;
     }
     return get(this.applicationConfig, key);
-  }
-
-  /*** Logging methods ***/
-  info(message: string): void {
-    this.logger.log(this, LogSeverity.Info, message);
-  }
-
-  warn(message: string): void {
-    this.logger.log(this, LogSeverity.Warn, message);
-  }
-
-  log(message: string): void {
-    this.logger.log(this, LogSeverity.Log, message);
-  }
-
-  error(message: string): void {
-    this.logger.log(this, LogSeverity.Error, message);
-  }
-
-  debug(message: string): void {
-    this.logger.log(this, LogSeverity.Debug, message);
   }
 }

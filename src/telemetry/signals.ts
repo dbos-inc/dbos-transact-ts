@@ -20,9 +20,6 @@ export interface TelemetrySignal {
   transactionID?: string;
   traceID?: string;
   traceSpan?: ReadableSpan;
-  severity?: LogSeverity;
-  logMessage?: string;
-  stack?: string;
 }
 
 export interface ProvenanceSignal {

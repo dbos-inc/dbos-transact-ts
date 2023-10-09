@@ -129,7 +129,7 @@ describe("failures-tests", () => {
 
     // Create an Operon context to pass authenticated user and a URL to the workflow.
     const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("testRecovery", span, operon.logger);
+    const oc = new OperonContextImpl("testRecovery", span, operon.config.logger);
     oc.authenticatedUser = "test_recovery_user";
     oc.request = { url: "test-recovery-url" };
 

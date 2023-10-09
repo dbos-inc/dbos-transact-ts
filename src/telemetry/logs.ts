@@ -1,33 +1,49 @@
-import { TelemetryCollector } from "./collector";
-import { LogSeverity, TelemetrySignal } from "./signals";
-import { OperonContextImpl } from "../context";
+import { Logger as winstonLogger } from "winston";
+import { OperonContext } from "../context";
 
-interface ILogger {
-  log(context: OperonContextImpl, severity: LogSeverity, message: string): void;
-  collector: TelemetryCollector;
-}
+/* This is a wrapper around a global Winston logger
+ * It allows us to embed contextual information into the logs
+ **/
+export class Logger {
+  constructor(private readonly globalLogger: winstonLogger, private readonly ctx: OperonContext) {}
 
-export class Logger implements ILogger {
-  constructor(readonly collector: TelemetryCollector) {}
-
-  log(context: OperonContextImpl, severity: LogSeverity, message: string): void {
-    const signal: TelemetrySignal = {
-      workflowUUID: context.workflowUUID,
-      operationName: context.operationName,
-      runAs: context.authenticatedUser,
-      timestamp: Date.now(),
-      severity: severity,
-      logMessage: message,
-      stack: "",
+  // Eventually we this object will implement one of our TelemetrySignal interface
+  formatContextInfo(): object {
+    return {
+      workflowUUID: this.ctx.workflowUUID,
+      authenticatedUser: this.ctx.authenticatedUser,
+      traceId: this.ctx.span.spanContext().traceId,
+      spanId: this.ctx.span.spanContext().spanId,
     };
+  }
 
-    // Retrieve 3 frames above: this frame, the transaction/workflow/communicator/handler frame and finally the user function's frame.
-    // + 1 line for the class name ("Error"). Also remove "at" from the beginning
-    const stack = new Error().stack?.split("\n")[3].trim().substring(3);
-    if (stack) {
-      signal.stack = `-- ${stack}`;
-    }
+  info(message: string, ctx: boolean = false): void {
+    this.globalLogger.info(message, ctx ? this.formatContextInfo() : {});
+  }
 
-    this.collector.push(signal);
+  debug(message: string, ctx: boolean = false): void {
+    this.globalLogger.debug(message, ctx ? this.formatContextInfo() : {});
+  }
+
+  warn(message: string, ctx: boolean = false): void {
+    this.globalLogger.warn(message, ctx ? this.formatContextInfo() : {});
+  }
+
+  emerg(message: string, ctx: boolean = false): void {
+    this.globalLogger.emerg(message, ctx ? this.formatContextInfo() : {});
+  }
+
+  alert(message: string, ctx: boolean = false): void {
+    this.globalLogger.alert(message, ctx ? this.formatContextInfo() : {});
+  }
+
+  crit(message: string, ctx: boolean = false): void {
+    this.globalLogger.crit(message, ctx ? this.formatContextInfo() : {});
+  }
+
+  // We give users the same interface (message: string argument) but create an error to get a stack trace
+  error(message: string, ctx: boolean = false): void {
+    const error = new Error(`${message}${ctx ? " " + JSON.stringify(this.formatContextInfo()) : ""}`);
+    this.globalLogger.error(error);
   }
 }
