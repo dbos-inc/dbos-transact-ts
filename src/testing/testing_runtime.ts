@@ -33,6 +33,7 @@ export interface OperonTestingRuntime {
   invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   destroy(): Promise<void>; // Release resources after tests.
+  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
 }
 
 /**
@@ -115,6 +116,12 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
     return this.getOperon().retrieveWorkflow(workflowUUID);
   }
+
+  async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return this.getOperon().userDatabase.query(sql, ...params);
+  }
+
 
   /**
    * For internal tests use only -- return the Operon object.

@@ -1,11 +1,11 @@
 import { PrismaClient, testkv } from "@prisma/client";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTransaction, TransactionContext } from "../src";
+import { OperonTestingRuntime, OperonTransaction, TransactionContext, createTestingRuntime } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { UserDatabaseName } from "../src/user_database";
-import { Operon, OperonConfig } from "../src/operon";
+import { OperonConfig } from "../src/operon";
 
 interface PrismaPGError {
   code: string;
@@ -51,8 +51,8 @@ class PrismaTestClass {
 }
 
 describe("prisma-tests", () => {
-  let operon: Operon;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig(undefined, UserDatabaseName.PRISMA);
@@ -61,20 +61,19 @@ describe("prisma-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    operon = new Operon(config);
-    await operon.init(PrismaTestClass);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
+    testRuntime = await createTestingRuntime([PrismaTestClass], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("simple-prisma", async () => {
     const workUUID = uuidv1();
-    await expect(operon.transaction(PrismaTestClass.testTxn, { workflowUUID: workUUID }, "test", "value")).resolves.toBe("test");
-    await expect(operon.transaction(PrismaTestClass.testTxn, { workflowUUID: workUUID }, "test", "value")).resolves.toBe("test");
+    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn("test", "value")).resolves.toBe("test");
+    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn("test", "value")).resolves.toBe("test");
   });
 
   test("prisma-duplicate-transaction", async () => {
@@ -82,8 +81,8 @@ describe("prisma-tests", () => {
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      operon.transaction(PrismaTestClass.testTxn, { workflowUUID: workUUID }, "oaootest", "oaoovalue"),
-      operon.transaction(PrismaTestClass.testTxn, { workflowUUID: workUUID }, "oaootest", "oaoovalue"),
+      testRuntime.invoke(PrismaTestClass, workUUID).testTxn("oaootest", "oaoovalue"),
+      testRuntime.invoke(PrismaTestClass, workUUID).testTxn("oaootest", "oaoovalue"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootest");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootest");
@@ -93,8 +92,8 @@ describe("prisma-tests", () => {
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      operon.transaction(PrismaTestClass.readTxn, { workflowUUID: readUUID }, "oaootestread"),
-      operon.transaction(PrismaTestClass.readTxn, { workflowUUID: readUUID }, "oaootestread"),
+      testRuntime.invoke(PrismaTestClass, readUUID).readTxn("oaootestread"),
+      testRuntime.invoke(PrismaTestClass, readUUID).readTxn("oaootestread"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
@@ -107,8 +106,8 @@ describe("prisma-tests", () => {
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
     const results = await Promise.allSettled([
-      operon.transaction(PrismaTestClass.conflictTxn, { workflowUUID: workflowUUID1 }, "conflictkey", "test1"),
-      operon.transaction(PrismaTestClass.conflictTxn, { workflowUUID: workflowUUID2 }, "conflictkey", "test2"),
+      testRuntime.invoke(PrismaTestClass, workflowUUID1).conflictTxn("conflictkey", "test1"),
+      testRuntime.invoke(PrismaTestClass, workflowUUID2).conflictTxn("conflictkey", "test2"),
     ]);
     const errorResult = results.find((result) => result.status === "rejected");
     const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult).reason as PrismaClientKnownRequestError;

@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   GetApi,
   OperonTransaction,
@@ -19,7 +18,7 @@ import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
 import { v1 as uuidv1 } from "uuid";
-import { Operon, OperonConfig } from "../../src/operon";
+import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
 import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../../src/testing/testing_runtime";
@@ -27,7 +26,6 @@ import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
 
-  let operon: Operon;
   let testRuntime: OperonTestingRuntime;
   let config: OperonConfig;
 
@@ -38,15 +36,12 @@ describe("httpserver-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createTestingRuntime([TestEndpoints], config);
-
-    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
     await testRuntime.destroy();
-    jest.restoreAllMocks();
   });
 
   test("get-hello", async () => {
@@ -62,8 +57,6 @@ describe("httpserver-tests", () => {
   });
 
   test("get-query", async () => {
-    // "mute" console.info
-    jest.spyOn(console, "info").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/query?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
@@ -94,8 +87,6 @@ describe("httpserver-tests", () => {
   });
 
   test("endpoint-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).post("/error").send({ name: "alice" });
     expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe("23505"); // Should be the expected error.
@@ -108,16 +99,12 @@ describe("httpserver-tests", () => {
   });
 
   test("response-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
     expect(response.body.message).toBe("customize error");
   });
 
   test("datavalidation-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/query");
     expect(response.statusCode).toBe(400);
     expect(response.body.details.operonErrorCode).toBe(9);
@@ -130,22 +117,16 @@ describe("httpserver-tests", () => {
   });
 
   test("not-authenticated", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
     const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
@@ -161,10 +142,11 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -180,7 +162,7 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
 
     // Retrieve the workflow with UUID.
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -241,7 +223,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`query with name ${name}`);  // Test logging.
+      ctx.logger.info(`query with name ${name}`); // Test logging.
       return `hello ${name}`;
     }
 

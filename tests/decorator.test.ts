@@ -1,9 +1,10 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, OperonCommunicator, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { Operon, OperonConfig } from "../src/operon";
+import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
+import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_test_kv";
 
@@ -64,9 +65,9 @@ class TestClass {
 }
 
 describe("decorator-tests", () => {
-  let operon: Operon;
   let username: string;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
@@ -75,26 +76,32 @@ describe("decorator-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(TestClass);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    testRuntime = await createTestingRuntime([TestClass], config);
+
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("simple-communicator-decorator", async () => {
     const workflowUUID: string = uuidv1();
     const initialCounter = TestClass.counter;
 
-    let result: number = await operon.workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult());
+    let result: number = await testRuntime
+      .invoke(TestClass, workflowUUID)
+      .testCommWorkflow()
+      .then((x) => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
 
     // Test OAOO. Should return the original result.
-    result = await operon.workflow(TestClass.testCommWorkflow, { workflowUUID: workflowUUID }).then((x) => x.getResult());
+    result = await testRuntime
+      .invoke(TestClass, workflowUUID)
+      .testCommWorkflow()
+      .then((x) => x.getResult());
     expect(result).toBe(initialCounter);
     expect(TestClass.counter).toBe(initialCounter + 1);
   });
@@ -106,31 +113,45 @@ describe("decorator-tests", () => {
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidv1();
       uuidArray.push(workflowUUID);
-      workflowResult = await operon.workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
+      workflowResult = await testRuntime
+        .invoke(TestClass, workflowUUID)
+        .testTxWorkflow(username)
+        .then((x) => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
 
     // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await operon.workflow(TestClass.testTxWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
+      const workflowResult: number = await testRuntime
+        .invoke(TestClass, workflowUUID)
+        .testTxWorkflow(username)
+        .then((x) => x.getResult());
       expect(workflowResult).toEqual(i + 1);
     }
   });
 
   test("nested-workflow-oaoo", async () => {
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const workflowUUID = uuidv1();
-    const res = await operon.workflow(TestClass.nestedWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
-    expect(res).toEqual(1);
-
-    const res2 = await operon.workflow(TestClass.nestedWorkflow, { workflowUUID: workflowUUID }, username).then((x) => x.getResult());
-    expect(res2).toBe(1);
+    await expect(
+      testRuntime
+        .invoke(TestClass, workflowUUID)
+        .nestedWorkflow(username)
+        .then((x) => x.getResult())
+    ).resolves.toBe(1);
+    await expect(
+      testRuntime
+        .invoke(TestClass, workflowUUID)
+        .nestedWorkflow(username)
+        .then((x) => x.getResult())
+    ).resolves.toBe(1);
 
     // Retrieve output of the child workflow.
     await operon.flushWorkflowStatusBuffer();
-    const retrievedHandle = operon.retrieveWorkflow(workflowUUID + "-0");
+    const retrievedHandle = testRuntime.retrieveWorkflow(workflowUUID + "-0");
     await expect(retrievedHandle.getResult()).resolves.toBe(1);
   });
 });

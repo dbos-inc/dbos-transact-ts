@@ -1,9 +1,10 @@
-import {OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { Operon, OperonConfig } from "../src/operon";
+import {OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { OperonConfig } from "../src/operon";
 import { UserDatabaseName } from "../src/user_database";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { Knex } from "knex";
+import { DatabaseError } from "pg";
 
 type KnexTransactionContext = TransactionContext<Knex>;
 const testTableName = "operon_test_kv";
@@ -43,7 +44,7 @@ class TestClass {
 }
 
 describe("knex-tests", () => {
-  let operon: Operon;
+  let testRuntime: OperonTestingRuntime;
   let config: OperonConfig;
 
   beforeAll(async () => {
@@ -52,35 +53,31 @@ describe("knex-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(TestClass);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    testRuntime = await createTestingRuntime([TestClass], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     insertCount = 0;
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("simple-knex", async () => {
-    const insertResult = await operon.transaction(TestClass.testInsert, {}, "test-one");
-    expect(insertResult).toEqual(1);
-    const selectResult = await operon.transaction(TestClass.testSelect, {}, 1);
-    expect(selectResult).toEqual("test-one");
-    const wfResult = await operon.workflow(TestClass.testWf, {}, "test-two").then((x) => x.getResult());
-    expect(wfResult).toEqual("test-two");
+    await expect(testRuntime.invoke(TestClass).testInsert("test-one")).resolves.toBe(1);
+    await expect(testRuntime.invoke(TestClass).testSelect(1)).resolves.toBe("test-one");
+    await expect(testRuntime.invoke(TestClass).testWf("test-two").then((x) => x.getResult())).resolves.toBe("test-two");
   });
 
   test("knex-return-void", async () => {
-    await expect(operon.transaction(TestClass.returnVoid, {})).resolves.not.toThrow();
+    await expect(testRuntime.invoke(TestClass).returnVoid()).resolves.not.toThrow();
   });
 
   test("knex-duplicate-workflows", async () => {
     const uuid = uuidv1();
     const results = await Promise.allSettled([
-      operon.workflow(TestClass.testWf, { workflowUUID: uuid }, "test-one").then((x) => x.getResult()),
-      operon.workflow(TestClass.testWf, { workflowUUID: uuid }, "test-one").then((x) => x.getResult()),
+      testRuntime.invoke(TestClass, uuid).testWf("test-one").then((x) => x.getResult()),
+      testRuntime.invoke(TestClass, uuid).testWf("test-one").then((x) => x.getResult()),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("test-one");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("test-one");
@@ -88,12 +85,13 @@ describe("knex-tests", () => {
   });
 
   test("knex-key-conflict", async () => {
-    await operon.transaction(TestClass.unsafeInsert, {}, 1, "test-one");
+    await testRuntime.invoke(TestClass).unsafeInsert(1, "test-one");
     try {
-      await operon.transaction(TestClass.unsafeInsert, {}, 1, "test-two");
+      await testRuntime.invoke(TestClass).unsafeInsert(1, "test-two");
       expect(true).toBe(false); // Fail if no error is thrown.
     } catch (e) {
-      expect(operon.userDatabase.isKeyConflictError(e)).toBe(true);
+      const err: DatabaseError = e as DatabaseError;
+      expect(err.code).toBe("23505");
     }
   });
 });

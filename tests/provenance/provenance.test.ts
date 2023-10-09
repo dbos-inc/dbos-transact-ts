@@ -2,17 +2,18 @@ import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 import { POSTGRES_EXPORTER, PostgresExporter } from "../../src/telemetry/exporters";
 import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
-import { TransactionContext, WorkflowContext } from "../../src";
+import { OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../../src";
 import { PgTransactionId } from "../../src/workflow";
-import { Operon, OperonConfig } from "../../src/operon";
+import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
+import { OperonTestingRuntimeImpl } from "../../src/testing/testing_runtime";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
 
-  let operon: Operon;
   let config: OperonConfig;
   let provDaemon: ProvenanceDaemon;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig([POSTGRES_EXPORTER]);
@@ -20,16 +21,15 @@ describe("operon-provenance", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(TestFunctions);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    testRuntime = await createTestingRuntime([TestFunctions], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     provDaemon = new ProvenanceDaemon(config, "jest_test_slot");
     await provDaemon.start();
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
     await provDaemon.stop();
   });
 
@@ -47,9 +47,14 @@ describe("operon-provenance", () => {
   }
 
   test("basic-provenance", async () => {
-    const xid: string = await operon.workflow(TestFunctions.testWorkflow, {}, "write one").then((x) => x.getResult());
+    const xid: string = await testRuntime
+      .invoke(TestFunctions)
+      .testWorkflow("write one")
+      .then((x) => x.getResult());
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
+
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);

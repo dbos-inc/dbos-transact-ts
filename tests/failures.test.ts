@@ -1,18 +1,18 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional, OperonTestingRuntime, createTestingRuntime } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { OperonError, OperonNotRegisteredError } from "../src/error";
-import { Operon, OperonConfig } from "../src/operon";
-import { OperonContextImpl } from "../src/context";
+import { OperonError } from "../src/error";
+import { OperonConfig } from "../src/operon";
+import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("failures-tests", () => {
-  let operon: Operon;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
@@ -20,23 +20,22 @@ describe("failures-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(FailureTestClass);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    testRuntime = await createTestingRuntime([FailureTestClass], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;
     FailureTestClass.success = "";
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("operon-error", async () => {
     const wfUUID1 = uuidv1();
-    await expect(operon.external(FailureTestClass.testCommunicator, {workflowUUID: wfUUID1}, 11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
 
-    const retrievedHandle = operon.retrieveWorkflow<string>(wfUUID1);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
@@ -45,16 +44,16 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(operon.external(FailureTestClass.testCommunicator, {workflowUUID: wfUUID})).rejects.toThrowError(new OperonError("test operon error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new OperonError("test operon error without code"));
   });
 
   test("readonly-error", async () => {
     const testUUID = uuidv1();
-    await expect(operon.transaction(FailureTestClass.testReadonlyError, { workflowUUID: testUUID })).rejects.toThrowError(new Error("test error"));
+    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrowError(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // The error should be recorded in the database, so the function shouldn't run again.
-    await expect(operon.transaction(FailureTestClass.testReadonlyError, { workflowUUID: testUUID })).rejects.toThrowError(new Error("test error"));
+    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrowError(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(1);
   });
 
@@ -64,8 +63,8 @@ describe("failures-tests", () => {
 
     // Start two concurrent transactions.
     const results = await Promise.allSettled([
-      operon.transaction(FailureTestClass.testKeyConflict, { workflowUUID: workflowUUID1 }, 10, workflowUUID1),
-      operon.transaction(FailureTestClass.testKeyConflict, { workflowUUID: workflowUUID2 }, 10, workflowUUID2),
+      testRuntime.invoke(FailureTestClass, workflowUUID1).testKeyConflict(10, workflowUUID1),
+      testRuntime.invoke(FailureTestClass, workflowUUID2).testKeyConflict(10, workflowUUID2),
     ]);
     const errorResult = results.find((result) => result.status === "rejected");
     const err: DatabaseError = (errorResult as PromiseRejectedResult).reason as DatabaseError;
@@ -77,63 +76,65 @@ describe("failures-tests", () => {
     // Retry with the same failed UUID, should throw the same error.
     const failUUID = FailureTestClass.success === workflowUUID1 ? workflowUUID2 : workflowUUID1;
     try {
-      await operon.transaction(FailureTestClass.testKeyConflict, { workflowUUID: failUUID }, 10, failUUID);
+      await testRuntime.invoke(FailureTestClass, failUUID).testKeyConflict(10, failUUID);
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       expect(err.code).toBe("23505");
       expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
     }
     // Retry with the succeed UUID, should return the expected result.
-    await expect(operon.transaction(FailureTestClass.testKeyConflict, { workflowUUID: FailureTestClass.success }, 10, FailureTestClass.success)).resolves.toStrictEqual({ id: 10 });
+    await expect(testRuntime.invoke(FailureTestClass, FailureTestClass.success).testKeyConflict(10, FailureTestClass.success)).resolves.toStrictEqual({ id: 10 });
   });
 
   test("serialization-error", async () => {
     // Should succeed after retrying 10 times.
-    await expect(operon.workflow(FailureTestClass.testSerialWorkflow, {}, 10).then((x) => x.getResult())).resolves.toBe(10);
+    await expect(
+      testRuntime
+        .invoke(FailureTestClass)
+        .testSerialWorkflow(10)
+        .then((x) => x.getResult())
+    ).resolves.toBe(10);
     expect(FailureTestClass.cnt).toBe(10);
   });
 
   test("failing-communicator", async () => {
-    await expect(operon.external(FailureTestClass.testFailCommunicator, {})).resolves.toBe(4);
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).resolves.toBe(4);
 
-    await expect(operon.external(FailureTestClass.testFailCommunicator, {})).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
   });
 
   test("nonretry-communicator", async () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(operon.external(FailureTestClass.testNoRetry, { workflowUUID: workflowUUID })).rejects.toThrowError(new Error("failed no retry"));
+    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrowError(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(operon.external(FailureTestClass.testNoRetry, { workflowUUID: workflowUUID })).rejects.toThrowError(new Error("failed no retry"));
+    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrowError(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
   });
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   test("no-registration", async () => {
+    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of OperonNotRegisteredError.
+
     // Invoke an unregistered workflow.
-    await expect(operon.workflow(FailureTestClass.noRegWorkflow, {}, 10).then((x) => x.getResult())).rejects.toThrowError(new OperonNotRegisteredError(FailureTestClass.noRegWorkflow.name));
+    expect(() => testRuntime.invoke(FailureTestClass).noRegWorkflow(10)).toThrowError();
 
     // Invoke an unregistered transaction.
-    await expect(operon.transaction(FailureTestClass.noRegTransaction, {}, 10)).rejects.toThrowError(new OperonNotRegisteredError(FailureTestClass.noRegTransaction.name));
+    expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrowError();
 
     // Invoke an unregistered communicator in a workflow.
-    // Note: since we use invoke() in the workflow, it throws "TypeError: ctxt.invoke(...).noRegComm is not a function" instead of OperonNotRegisteredError.
-    await expect(operon.workflow(FailureTestClass.testCommWorkflow, {}).then((x) => x.getResult())).rejects.toThrowError();
+    await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrowError();
   });
 
   test("failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
-    // Create an Operon context to pass authenticated user and a URL to the workflow.
-    const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("testRecovery", span, operon.config.logger);
-    oc.authenticatedUser = "test_recovery_user";
-    oc.request = { url: "test-recovery-url" };
-
-    const handle = await operon.workflow(FailureTestClass.testRecoveryWorkflow, { parentCtx: oc }, 5);
+    const handle = await testRuntime.invoke(FailureTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverPromise = operon.recoverPendingWorkflows();
     FailureTestClass.resolve1();

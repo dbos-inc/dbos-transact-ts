@@ -2,7 +2,7 @@ import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandl
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { Operon, OperonConfig } from "../src/operon";
+import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
 import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../src/testing/testing_runtime";
 
@@ -13,7 +13,6 @@ describe("operon-tests", () => {
   let username: string;
   let config: OperonConfig;
   let testRuntime: OperonTestingRuntime;
-  let operon: Operon;
 
   beforeAll(async () => {
     config = generateOperonTestConfig();
@@ -23,9 +22,8 @@ describe("operon-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createTestingRuntime([OperonTestClass], config);
-    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     OperonTestClass.cnt = 0;
     OperonTestClass.wfCnt = 0;
   });
@@ -45,6 +43,7 @@ describe("operon-tests", () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
 
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -181,6 +180,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
