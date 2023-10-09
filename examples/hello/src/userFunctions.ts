@@ -7,21 +7,29 @@ interface operon_hello {
   name: string;
   greet_count: number;
 }
+
 export class Hello {
 
   @OperonTransaction()
   static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
-    // Increment greet_count.
-    await txnCtxt.client<operon_hello>("operon_hello")
-      .insert({name: name, greet_count: 1})
-      .onConflict('name')
-      .merge({ greet_count: txnCtxt.client.raw('operon_hello.greet_count + 1') });
-    // Retrieve greet_count.
-    const greet_count = await txnCtxt.client<operon_hello>("operon_hello")
+    // Look up greet_count.
+    let greet_count = await txnCtxt.client<operon_hello>("operon_hello")
       .select("greet_count")
-      .where({name:name})
+      .where({ name: name })
       .first()
       .then(row => row?.greet_count);
+    if (greet_count) {
+      // If greet_count is set, increment it.
+      greet_count++;
+      await txnCtxt.client<operon_hello>("operon_hello")
+        .where({ name: name })
+        .increment('greet_count', 1);
+    } else {
+      // If greet_count is not set, set it to 1.
+      greet_count = 1;
+      await txnCtxt.client<operon_hello>("operon_hello")
+        .insert({ name: name, greet_count: 1 })
+    }
     return `Hello, ${name}! You have been greeted ${greet_count} times.\n`;
   }
 
