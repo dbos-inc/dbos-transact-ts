@@ -46,7 +46,8 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * This should be the first function call before any subsequent calls.
    */
   async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
-    const operonConfig = testConfig ? [testConfig] : parseConfigFile();
+    // FIXME: pass in multiple debug levels.
+    const operonConfig = testConfig ? [testConfig] : parseConfigFile({port: 3000, loglevel: "debug"});
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
