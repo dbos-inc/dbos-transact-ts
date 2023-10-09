@@ -20,11 +20,17 @@ export async function createTestingRuntime(userClasses: object[], testConfig?: O
   return otr;
 }
 
+export interface OperonInvokeParams {
+  authenticatedUser?: string;
+  authenticatedRoles?: string[];
+  request?: HTTPRequest;
+}
+
 export interface OperonTestingRuntime {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  invoke<T extends object>(object: T, workflowUUID?: string, authenticatedUser?: string, request?: HTTPRequest): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   destroy(): Promise<void>; // Release resources after tests.
 }
@@ -57,7 +63,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, authenticatedUser?: string, request?: HTTPRequest): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
     const operon = this.getOperon();
     const ops = getRegisteredOperations(object);
 
@@ -66,21 +72,22 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     // Creates an Operon context to pass in necessary info.
     const span = operon.tracer.startSpan("test");
     const oc = new OperonContextImpl("test", span, operon.logger);
-    oc.authenticatedUser = authenticatedUser ?? "";
-    oc.request = request;
+    oc.authenticatedUser = params?.authenticatedUser ?? "";
+    oc.request = params?.request;
+    oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const params: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.transaction(op.registeredFunction as OperonTransaction<any[], any>, params, ...args)
+        ? (...args: any[]) => operon.transaction(op.registeredFunction as OperonTransaction<any[], any>, wfParams, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.workflow(op.registeredFunction as OperonWorkflow<any[], any>, params, ...args)
+        ? (...args: any[]) => operon.workflow(op.registeredFunction as OperonWorkflow<any[], any>, wfParams, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, params, ...args)
+        ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, wfParams, ...args)
         : undefined;
     }
     return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
