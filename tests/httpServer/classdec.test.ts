@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, RequiredRole, DefaultRequiredRole, MiddlewareContext, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../../src";
-import { OperonHttpServer } from "../../src/httpServer/server";
+import { GetApi, RequiredRole, DefaultRequiredRole, MiddlewareContext, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext, OperonTestingRuntime, createTestingRuntime } from "../../src";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
@@ -10,12 +9,13 @@ import { Middleware } from "koa";
 import { OperonNotAuthorizedError } from "../../src/error";
 import { Operon, OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
+import { OperonTestingRuntimeImpl } from "../../src/testing/testing_runtime";
 
 describe("httpserver-defsec-tests", () => {
   const testTableName = "operon_test_kv";
 
   let operon: Operon;
-  let httpServer: OperonHttpServer;
+  let testRuntime: OperonTestingRuntime;
   let config: OperonConfig;
 
   beforeAll(async () => {
@@ -24,11 +24,10 @@ describe("httpserver-defsec-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(TestEndpointDefSec);
+    testRuntime = await createTestingRuntime([TestEndpointDefSec], config);
+    operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
     await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    httpServer = new OperonHttpServer(operon);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
   });
@@ -39,7 +38,7 @@ describe("httpserver-defsec-tests", () => {
   });
 
   test("get-hello", async () => {
-    const response = await request(httpServer.app.callback()).get("/hello");
+    const response = await request(testRuntime.getHandlersCallback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
     expect(middlewareCounter).toBe(1);
@@ -49,36 +48,45 @@ describe("httpserver-defsec-tests", () => {
   test("not-authenticated", async () => {
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
 
   test("authorized", async () => {
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=a_real_user");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
   });
 
   // The handler is authorized, then its child workflow and transaction should also be authroized.
   test("cascade-authorized", async () => {
-    const response = await request(httpServer.app.callback()).get("/workflow?name=alice&userid=a_real_user");
+    const response = await request(testRuntime.getHandlersCallback()).get("/workflow?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
 
-    const txnResponse = await request(httpServer.app.callback()).get("/transaction?name=alice&userid=a_real_user");
+    const txnResponse = await request(testRuntime.getHandlersCallback()).get("/transaction?name=alice&userid=a_real_user");
     expect(txnResponse.statusCode).toBe(200);
+  });
+
+  // We can directly test a transaction with passed in authorizedRoles.
+  test("direct-transaction-test", async () => {
+    const res = await testRuntime.invoke(TestEndpointDefSec, undefined, {authenticatedRoles: ["user"]}).testTranscation("alice");
+    expect(res).toBe("hello 1");
+
+    // Unauthorized.
+    await expect(testRuntime.invoke(TestEndpointDefSec).testTranscation("alice")).rejects.toThrowError(new OperonNotAuthorizedError("User does not have a role with permission to call testTranscation", 403));
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
