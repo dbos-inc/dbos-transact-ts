@@ -28,7 +28,7 @@ export interface OperonContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
 
-  getLogger(): OperonLogger;
+  readonly logger: OperonLogger;
 }
 
 export class OperonContextImpl implements OperonContext {
@@ -64,10 +64,5 @@ export class OperonContextImpl implements OperonContext {
       return undefined;
     }
     return get(this.applicationConfig, key);
-  }
-
-  /*** Logging methods ***/
-  getLogger(): OperonLogger {
-    return this.logger;
   }
 }

@@ -162,8 +162,7 @@ export class OperonHttpServer {
             }
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
-            const logger = oc.getLogger();
-            logger.error(e as Error);
+            oc.logger.error(e as Error);
             if (e instanceof Error) {
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);

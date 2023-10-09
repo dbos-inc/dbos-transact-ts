@@ -28,8 +28,7 @@ class TestClass {
   static async test_function(txnCtxt: TestTransactionContext, name: string): Promise<string> {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     const result = JSON.stringify(rows[0]);
-    const logger = txnCtxt.getLogger();
-    logger.info(`transaction result: ${result}`);
+    txnCtxt.logger.info(`transaction result: ${result}`);
     return result;
   }
 
