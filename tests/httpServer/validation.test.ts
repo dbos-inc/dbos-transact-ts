@@ -377,11 +377,12 @@ describe("httpserver-datavalidation-tests", () => {
       ["/doptional", undefined, 200],
       ["/doptional", "hasaval", 200],
     ]
-    attempts.forEach(async (v) => {
+
+    for (const v of attempts) {
       const response = await request(httpServer.app.callback()).post(v[0] as string)
       .send({v: v[1]});
       expect(response.statusCode).toBe(v[2]);
-    });
+    }
   })
 
   /*
