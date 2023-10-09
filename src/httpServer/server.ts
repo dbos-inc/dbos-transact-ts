@@ -162,8 +162,8 @@ export class OperonHttpServer {
             }
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
-            oc.logger.error(e as Error);
             if (e instanceof Error) {
+              oc.logger.error(e.message);
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = ((e as OperonResponseError)?.status || 500);
               const operonErrorCode = (e as OperonError)?.operonErrorCode;
@@ -177,6 +177,9 @@ export class OperonHttpServer {
                 details: e,
               }
             } else {
+              // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
+              // using stringify() will not produce a pretty output, because our format function uses stringify() too.
+              oc.logger.error(JSON.stringify(e));
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: JSON.stringify(e) });
               koaCtxt.body = e;
               koaCtxt.status = 500;
