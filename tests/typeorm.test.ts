@@ -45,7 +45,6 @@ class KVController {
 }
 
 describe("typeorm-tests", () => {
-  const testTableName = "kv";
   let operon: Operon;
   let config: OperonConfig;
 
@@ -60,8 +59,6 @@ describe("typeorm-tests", () => {
     await operon.init(KVController);
     await operon.userDatabase.dropSchema();
     await operon.userDatabase.createSchema();
-    //await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    //await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
