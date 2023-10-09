@@ -56,7 +56,7 @@ function createGlobalLogger(logLevel: string): Logger {
   });
 }
 
-export function parseConfigFile(cliOptions?: Partial<OperonCLIStartOptions>): [OperonConfig, OperonRuntimeConfig] {
+export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
   const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
 
   let configFile: ConfigFile | undefined;
