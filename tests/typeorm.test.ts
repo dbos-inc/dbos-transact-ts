@@ -38,7 +38,7 @@ class KVController {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonTransaction({ readOnly: true })
-  static async readTxn(txnCtxt: TestTransactionContext, id: string) {
+  static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
     return id;
   }
@@ -58,8 +58,10 @@ describe("typeorm-tests", () => {
     globalCnt = 0;
     operon = new Operon(config);
     await operon.init(KVController);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`);
+    await operon.userDatabase.dropSchema();
+    await operon.userDatabase.createSchema();
+    //await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    //await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT NOT NULL PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
