@@ -1,5 +1,5 @@
 import { OperonTestingRuntime, createTestingRuntime } from "@dbos-inc/operon";
-import { Hello } from "./userFunctions";
+import { Hello } from "./operations";
 import request from "supertest";
 
 describe("operations-test", () => {
