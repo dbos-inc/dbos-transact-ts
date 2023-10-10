@@ -131,7 +131,7 @@ describe("failures-tests", () => {
 
   test("failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const handle = await testRuntime.invoke(FailureTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);

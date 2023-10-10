@@ -43,7 +43,7 @@ describe("operon-tests", () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -180,7 +180,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();

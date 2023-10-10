@@ -132,7 +132,7 @@ describe("decorator-tests", () => {
   });
 
   test("nested-workflow-oaoo", async () => {
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const workflowUUID = uuidv1();

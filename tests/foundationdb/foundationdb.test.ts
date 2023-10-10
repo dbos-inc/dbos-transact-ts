@@ -78,7 +78,7 @@ describe("foundationdb-operon", () => {
     FdbTestClass.innerResolve();
     await expect(invokedHandle.then((x) => x.getResult())).resolves.toBe(3);
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -141,7 +141,7 @@ describe("foundationdb-operon", () => {
 
   test("fdb-failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     clearInterval(operon.flushBufferID);
 
     const handle = await testRuntime.invoke(FdbTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);

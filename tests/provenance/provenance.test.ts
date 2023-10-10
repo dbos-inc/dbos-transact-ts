@@ -54,7 +54,7 @@ describe("operon-provenance", () => {
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);

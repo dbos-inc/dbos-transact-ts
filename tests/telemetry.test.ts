@@ -82,7 +82,7 @@ describe("operon-telemetry", () => {
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER])
       testRuntime = await createTestingRuntime([TestClass], operonConfig);
-      operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+      operon = testRuntime.getOperon();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(PostgresExporter);
     });

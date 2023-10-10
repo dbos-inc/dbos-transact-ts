@@ -67,7 +67,7 @@ describe("concurrency-tests", () => {
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
     ConcurrTestClass.resolve();
     await handle.getResult();

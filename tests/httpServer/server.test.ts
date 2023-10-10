@@ -142,7 +142,7 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.

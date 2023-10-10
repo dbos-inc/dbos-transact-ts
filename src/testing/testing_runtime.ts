@@ -38,6 +38,9 @@ export interface OperonTestingRuntime {
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
   createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
+
+  // TODO: remove it.
+  getOperon(): Operon;
 }
 
 /**
