@@ -58,7 +58,7 @@ export class Logger {
   }
 }
 
-export function createGlobalLogger(logLevel: string, silent: boolean = false): WinstonLogger {
+export function createGlobalLogger(logLevel: string, silent: boolean): WinstonLogger {
   return createLogger({
     format: consoleFormat,
     transports: [

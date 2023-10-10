@@ -44,6 +44,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { OperonContextImpl } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
+import { createGlobalLogger } from './telemetry/logs';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -440,7 +441,7 @@ export class Operon {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         this.logger.info("    " + ro.apiType + "  :  " + ro.apiURL);
-      }  
+      }
     });
   }
 
