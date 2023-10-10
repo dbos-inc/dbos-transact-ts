@@ -7,7 +7,6 @@ import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { OperonCLIStartOptions } from "./cli";
-import { createGlobalLogger } from "../telemetry/logs";
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -34,7 +33,6 @@ export interface ConfigFile {
 }
 
 export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
-  const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
 
   let configFile: ConfigFile | undefined;
   try {
@@ -74,7 +72,6 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   }
 
   if (configFile.database.ssl_ca) {
-    logger.debug(`Using SSL CA ${configFile.database.ssl_ca}`);
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
 
@@ -90,13 +87,13 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    logger,
+    logLevel: cliOptions?.loglevel ?? "info",
+    silenceLogs: false,
   };
 
   // CLI takes precedence over config file, which takes precedence over default config.
   const localRuntimeConfig: OperonRuntimeConfig = {
     port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
-    logger,
   };
 
   return [operonConfig, localRuntimeConfig];
