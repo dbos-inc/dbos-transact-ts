@@ -6,7 +6,7 @@ import { OperonTestingRuntime, TransactionContext, WorkflowContext } from "../..
 import { PgTransactionId } from "../../src/workflow";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
-import { getInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";
@@ -21,7 +21,7 @@ describe("operon-provenance", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await getInternalTestRuntime([TestFunctions], config);
+    testRuntime = await createInternalTestRuntime([TestFunctions], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     provDaemon = new ProvenanceDaemon(config, "jest_test_slot");

@@ -47,7 +47,7 @@ export interface OperonTestingRuntime {
 /**
  * For internal unit tests only.
  */
-export async function getInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
+export async function createInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
   await otr.init(userClasses, testConfig, systemDB);
   return otr;

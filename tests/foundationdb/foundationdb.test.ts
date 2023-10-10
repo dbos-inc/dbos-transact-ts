@@ -5,7 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
-import { getInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -20,7 +20,7 @@ describe("foundationdb-operon", () => {
 
   beforeEach(async () => {
     const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    testRuntime = await getInternalTestRuntime([FdbTestClass], config, systemDB);
+    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB);
   
     // Clean up tables.
     await systemDB.workflowStatusDB.clearRangeStartsWith("");

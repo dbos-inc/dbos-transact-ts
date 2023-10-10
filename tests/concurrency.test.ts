@@ -4,7 +4,7 @@ import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { getInternalTestRuntime } from "../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -20,7 +20,7 @@ describe("concurrency-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await getInternalTestRuntime([ConcurrTestClass], config);
+    testRuntime = await createInternalTestRuntime([ConcurrTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;

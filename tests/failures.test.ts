@@ -5,7 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonError } from "../src/error";
 import { OperonConfig } from "../src/operon";
-import { getInternalTestRuntime } from "../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -20,7 +20,7 @@ describe("failures-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await getInternalTestRuntime([FailureTestClass], config);
+    testRuntime = await createInternalTestRuntime([FailureTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;

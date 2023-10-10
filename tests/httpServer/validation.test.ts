@@ -5,7 +5,7 @@ import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { OperonConfig } from "../../src/operon";
-import { getInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-datavalidation-tests", () => {
   let testRuntime: OperonTestingRuntime;
@@ -14,7 +14,7 @@ describe("httpserver-datavalidation-tests", () => {
   beforeAll(async () => {
     config = generateOperonTestConfig();
     await setupOperonTestDb(config);
-    testRuntime = await getInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
+    testRuntime = await createInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
   });
 
   afterAll(async () => {

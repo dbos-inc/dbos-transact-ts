@@ -5,7 +5,7 @@ import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./help
 import { v1 as uuidv1 } from "uuid";
 import { Knex } from "knex";
 import { DatabaseError } from "pg";
-import { getInternalTestRuntime } from "../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type KnexTransactionContext = TransactionContext<Knex>;
 const testTableName = "operon_test_kv";
@@ -54,7 +54,7 @@ describe("knex-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await getInternalTestRuntime([TestClass], config);
+    testRuntime = await createInternalTestRuntime([TestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     insertCount = 0;

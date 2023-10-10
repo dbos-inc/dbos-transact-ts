@@ -6,7 +6,7 @@ import { OperonConfig } from "../src/operon";
 import { v1 as uuidv1 } from "uuid";
 import { TypeORMEntityManager, UserDatabaseName } from "../src/user_database";
 import { Entity, Column, PrimaryColumn } from "typeorm";
-import { getInternalTestRuntime } from "../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 /**
  * Funtions used in tests.
@@ -56,7 +56,7 @@ describe("typeorm-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await getInternalTestRuntime([KVController], config);
+    testRuntime = await createInternalTestRuntime([KVController], config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();
   });
