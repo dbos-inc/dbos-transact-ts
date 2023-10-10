@@ -52,6 +52,7 @@ export class Logger {
       this.globalLogger.error(message);
     } else {
       // If this is neither a string nor an error, we just log it as is an ommit the context
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       this.globalLogger.error(inputError.toString());
     }
   }
