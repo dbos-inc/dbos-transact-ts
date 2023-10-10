@@ -65,7 +65,6 @@ export function createGlobalLogger(logLevel: string, silent: boolean = false): W
         level: logLevel,
       }),
     ],
-    handleExceptions: true,
     silent,
   });
 }
