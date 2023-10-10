@@ -14,7 +14,7 @@ describe("operations-test", () => {
   });
 
   /**
-   * Test the tansaction.
+   * Test the transaction.
    */
   test("test-transaction", async () => {
     const res = await testRuntime.invoke(Hello).helloTransaction("operon");
