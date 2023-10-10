@@ -4,9 +4,10 @@ import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
-import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext } from "../src";
 import { WorkflowHandle } from "../src/workflow";
 import { PoolClient } from "pg";
+import { getInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
@@ -80,7 +81,7 @@ describe("operon-telemetry", () => {
 
     beforeAll(async () => {
       operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER])
-      testRuntime = await createTestingRuntime([TestClass], operonConfig);
+      testRuntime = await getInternalTestRuntime([TestClass], operonConfig);
       operon = testRuntime.getOperon();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(PostgresExporter);
@@ -210,7 +211,7 @@ describe("operon-telemetry", () => {
     });
 
     beforeEach(async () => {
-      testRuntime = await createTestingRuntime([TestClass], config);
+      testRuntime = await getInternalTestRuntime([TestClass], config);
     });
 
     afterEach(async () => {

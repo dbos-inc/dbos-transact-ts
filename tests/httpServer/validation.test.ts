@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, OperonTestingRuntime, createTestingRuntime } from "../../src";
+import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, OperonTestingRuntime } from "../../src";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { OperonConfig } from "../../src/operon";
+import { getInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-datavalidation-tests", () => {
   let testRuntime: OperonTestingRuntime;
@@ -13,7 +14,7 @@ describe("httpserver-datavalidation-tests", () => {
   beforeAll(async () => {
     config = generateOperonTestConfig();
     await setupOperonTestDb(config);
-    testRuntime = await createTestingRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
+    testRuntime = await getInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
   });
 
   afterAll(async () => {

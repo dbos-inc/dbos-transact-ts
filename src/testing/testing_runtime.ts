@@ -7,16 +7,17 @@ import { OperonError } from "../error";
 import { HandlerWfFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
-import { parseConfigFile } from "../operon-runtime/config";
+import { operonConfigFilePath, parseConfigFile } from "../operon-runtime/config";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 
-export async function createTestingRuntime(userClasses: object[], testConfig?: OperonConfig, logLevel: string="info"): Promise<OperonTestingRuntime> {
+export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  await otr.init(userClasses, testConfig, undefined, logLevel);
+  const [ operonConfig ] = parseConfigFile({loglevel: logLevel}, configFilePath);
+  await otr.init(userClasses, operonConfig);
   return otr;
 }
 
@@ -44,6 +45,15 @@ export interface OperonTestingRuntime {
 }
 
 /**
+ * For internal unit tests only.
+ */
+export async function getInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
+  const otr = new OperonTestingRuntimeImpl();
+  await otr.init(userClasses, testConfig, systemDB);
+  return otr;
+}
+
+/**
  * This class provides a runtime to test Opeorn functions in unit tests.
  */
 export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
@@ -53,8 +63,8 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase, logLevel?: string) {
-    const operonConfig = testConfig ? [testConfig] : parseConfigFile({loglevel: logLevel});
+  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
+    const operonConfig = testConfig ? [testConfig] : parseConfigFile();
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);

@@ -21,7 +21,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, createTestingRuntime } from "../../src/testing/testing_runtime";
+import { OperonTestingRuntime, getInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -35,7 +35,7 @@ describe("httpserver-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([TestEndpoints], config);
+    testRuntime = await getInternalTestRuntime([TestEndpoints], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
   });

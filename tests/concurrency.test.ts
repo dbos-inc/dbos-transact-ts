@@ -1,9 +1,10 @@
-import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
+import { getInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -19,7 +20,7 @@ describe("concurrency-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([ConcurrTestClass], config);
+    testRuntime = await getInternalTestRuntime([ConcurrTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;

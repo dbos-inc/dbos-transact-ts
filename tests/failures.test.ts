@@ -1,10 +1,11 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional, OperonTestingRuntime, createTestingRuntime } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional, OperonTestingRuntime } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonError } from "../src/error";
 import { OperonConfig } from "../src/operon";
+import { getInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -19,7 +20,7 @@ describe("failures-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([FailureTestClass], config);
+    testRuntime = await getInternalTestRuntime([FailureTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;

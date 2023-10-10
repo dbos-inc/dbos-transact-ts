@@ -1,11 +1,12 @@
 import { PrismaClient, testkv } from "@prisma/client";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTestingRuntime, OperonTransaction, TransactionContext, createTestingRuntime } from "../src";
+import { OperonTestingRuntime, OperonTransaction, TransactionContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { UserDatabaseName } from "../src/user_database";
 import { OperonConfig } from "../src/operon";
+import { getInternalTestRuntime } from "../src/testing/testing_runtime";
 
 interface PrismaPGError {
   code: string;
@@ -61,7 +62,7 @@ describe("prisma-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createTestingRuntime([PrismaTestClass], config);
+    testRuntime = await getInternalTestRuntime([PrismaTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
   });

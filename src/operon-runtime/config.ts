@@ -8,7 +8,7 @@ import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { OperonCLIStartOptions } from "./cli";
 
-const operonConfigFilePath = "operon-config.yaml";
+export const operonConfigFilePath = "operon-config.yaml";
 
 export interface ConfigFile {
   database: {
@@ -32,10 +32,11 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+export function parseConfigFile(cliOptions?: OperonCLIStartOptions, configFilePath?: string): [OperonConfig, OperonRuntimeConfig] {
+  configFilePath = configFilePath ?? operonConfigFilePath;
   let configFile: ConfigFile | undefined;
   try {
-    const configFileContent = readFileSync(operonConfigFilePath);
+    const configFileContent = readFileSync(configFilePath);
     const interpolatedConfig = execSync("envsubst", {
       encoding: "utf-8",
       input: configFileContent,
@@ -44,17 +45,17 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
     if (e instanceof Error) {
-      throw new OperonInitializationError(`Failed to load config from ${operonConfigFilePath}: ${e.message}`);
+      throw new OperonInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
     }
   }
 
   if (!configFile) {
-    throw new OperonInitializationError(`Operon configuration file ${operonConfigFilePath} is empty`);
+    throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
 
   // Handle "Global" pool configFile
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config`);
+    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database config`);
   }
 
   const poolConfig: PoolConfig = {
@@ -67,7 +68,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   };
 
   if (!poolConfig.password) {
-    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database password`);
+    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database password`);
   }
 
   if (configFile.database.ssl_ca) {
