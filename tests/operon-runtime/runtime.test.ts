@@ -62,7 +62,7 @@ describe("runtime-tests", () => {
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
-    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS operon_hello (greeting_id SERIAL PRIMARY KEY, greeting TEXT);`);
+    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS operon_hello (name TEXT PRIMARY KEY, greet_count INT);`);
     await pgSystemClient.end();
 
     process.chdir("examples/hello");
