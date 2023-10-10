@@ -26,7 +26,7 @@ npm link <operon repo path>
 npm run build
 ```
 
-We assume the app writes all Operon functions in decorated classes (with endpoint decorators) exported from src/userFunctions.ts.
+We assume the app writes all Operon functions in decorated classes (with endpoint decorators) exported from src/operations.ts.
 
 2.  Then, start your app using the `operon` CLI:
 
