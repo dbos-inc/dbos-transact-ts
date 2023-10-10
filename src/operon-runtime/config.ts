@@ -56,11 +56,11 @@ function createGlobalLogger(logLevel: string): Logger {
   });
 }
 
-export function parseConfigFile(cliOptions?: OperonCLIStartOptions, configFilePath: string = operonConfigFilePath): [OperonConfig, OperonRuntimeConfig] {
+export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
   const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
   let configFile: ConfigFile | undefined;
   try {
-    const configFileContent = readFileSync(configFilePath);
+    const configFileContent = readFileSync(operonConfigFilePath);
     const interpolatedConfig = execSync("envsubst", {
       encoding: "utf-8",
       input: configFileContent,
@@ -69,17 +69,17 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions, configFilePa
     configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
     if (e instanceof Error) {
-      throw new OperonInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
+      throw new OperonInitializationError(`Failed to load config from ${operonConfigFilePath}: ${e.message}`);
     }
   }
 
   if (!configFile) {
-    throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
+    throw new OperonInitializationError(`Operon configuration file ${operonConfigFilePath} is empty`);
   }
 
   // Handle "Global" pool configFile
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database config`);
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database config`);
   }
 
   const poolConfig: PoolConfig = {
@@ -92,7 +92,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions, configFilePa
   };
 
   if (!poolConfig.password) {
-    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database password`);
+    throw new OperonInitializationError(`Operon configuration ${operonConfigFilePath} does not contain database password`);
   }
 
   if (configFile.database.ssl_ca) {

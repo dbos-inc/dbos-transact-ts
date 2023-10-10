@@ -14,9 +14,9 @@ import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 
-export async function createTestingRuntime(userClasses: object[], testConfig?: OperonConfig): Promise<OperonTestingRuntime> {
+export async function createTestingRuntime(userClasses: object[], testConfig?: OperonConfig, logLevel: string="info"): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  await otr.init(userClasses, testConfig);
+  await otr.init(userClasses, testConfig, undefined, logLevel);
   return otr;
 }
 
@@ -50,9 +50,8 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
-    // FIXME: pass in multiple debug levels.
-    const operonConfig = testConfig ? [testConfig] : parseConfigFile({port: 3000, loglevel: "debug"});
+  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase, logLevel?: string) {
+    const operonConfig = testConfig ? [testConfig] : parseConfigFile({loglevel: logLevel});
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
