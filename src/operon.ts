@@ -44,7 +44,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { OperonContextImpl } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
-
+import { createGlobalLogger } from './telemetry/logs';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -58,7 +58,8 @@ export interface OperonConfig {
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
-  readonly logger: Logger;
+  readonly logLevel: string;
+  readonly silenceLogs: boolean;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -106,7 +107,7 @@ export class Operon {
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
-    this.logger = this.config.logger;
+    this.logger = createGlobalLogger(this.config.logLevel, this.config.silenceLogs);
 
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
@@ -440,7 +441,7 @@ export class Operon {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         this.logger.info("    " + ro.apiType + "  :  " + ro.apiURL);
-      }  
+      }
     });
   }
 

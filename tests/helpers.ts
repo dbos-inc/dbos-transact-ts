@@ -1,7 +1,6 @@
 import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
-import { createLogger } from "winston";
 
 /* DB management helpers */
 export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
@@ -9,6 +8,8 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
   if (!dbPassword) {
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
   }
+
+  const silenceLogs: boolean = process.env.SILENCE_LOGS === "true" ? true : false;
 
   const operonTestConfig: OperonConfig = {
     poolConfig: {
@@ -29,7 +30,8 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     dbClientMetadata: {
       entities: ["KV"],
     },
-    logger: createLogger({silent: true}),
+    logLevel: "info",
+    silenceLogs,
   };
 
   return operonTestConfig;

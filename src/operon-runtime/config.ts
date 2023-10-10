@@ -1,7 +1,6 @@
 import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
 import { OperonConfig } from "../operon";
-import { transports, createLogger, format, Logger } from "winston";
 import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
@@ -33,31 +32,7 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-function createGlobalLogger(logLevel: string): Logger {
-  // TODO We will need to configure the formatter for "production" mode
-  return createLogger({
-    level: logLevel,
-    format: format.combine(
-      format.errors({ stack: true }),
-      format.timestamp(),
-      format.colorize(),
-      format.printf((info) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const { timestamp, level, message, stack, ...args } = info;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const ts = timestamp.slice(0, 19).replace("T", " ");
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const formattedStack = stack?.split("\n").slice(1).join("\n");
-        return `${ts} [${level}]: ${message} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
-      })
-    ),
-    transports: [new transports.Console()],
-    handleExceptions: true,
-  });
-}
-
 export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
-  const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
@@ -96,7 +71,6 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   }
 
   if (configFile.database.ssl_ca) {
-    logger.debug(`Using SSL CA ${configFile.database.ssl_ca}`);
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
 
@@ -112,13 +86,13 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    logger: logger,
+    logLevel: cliOptions?.loglevel ?? "info",
+    silenceLogs: false,
   };
 
   // CLI takes precedence over config file, which takes precedence over default config.
   const localRuntimeConfig: OperonRuntimeConfig = {
     port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
-    logger: logger,
   };
 
   return [operonConfig, localRuntimeConfig];
