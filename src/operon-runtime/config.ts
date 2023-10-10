@@ -48,7 +48,8 @@ function createGlobalLogger(logLevel: string): Logger {
         const ts = timestamp.slice(0, 19).replace("T", " ");
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
         const formattedStack = stack?.split("\n").slice(1).join("\n");
-        return `${ts} [${level}]: ${message} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
+        const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
+        return `${ts} [${level}]: ${messageString} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
       })
     ),
     transports: [new transports.Console()],

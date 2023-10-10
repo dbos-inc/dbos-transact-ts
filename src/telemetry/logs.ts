@@ -42,8 +42,17 @@ export class Logger {
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
-  error(message: string, ctx: boolean = false): void {
-    const error = new Error(`${message}${ctx ? " " + JSON.stringify(this.formatContextInfo()) : ""}`);
-    this.globalLogger.error(error);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  error(inputError: any, ctx: boolean = false): void {
+    if (inputError instanceof Error) {
+      inputError.message = `${inputError.message}${ctx ? " " + JSON.stringify(this.formatContextInfo()) : ""}`;
+      this.globalLogger.error(inputError);
+    } else if (typeof inputError === "string") {
+      const message = new Error(`${inputError}${ctx ? " " + JSON.stringify(this.formatContextInfo()) : ""}`);
+      this.globalLogger.error(message);
+    } else {
+      // If this is neither a string nor an error, we just log it as is an ommit the context
+      this.globalLogger.error(inputError);
+    }
   }
 }
