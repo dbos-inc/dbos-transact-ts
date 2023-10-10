@@ -33,7 +33,7 @@ Finally, curl the server to see that it's working!
  curl http://localhost:3000/greeting/operon
 ```
 
-You can add more functionality to the app by modifying `src/userFunctions.ts`, then re-building and re-starting it.
+You can add more functionality to the app by modifying `src/operations.ts`, then re-building and re-starting it.
 
 ## Learn More
 
