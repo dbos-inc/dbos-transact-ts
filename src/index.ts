@@ -3,6 +3,11 @@ export {
 } from './operon';
 
 export {
+  createTestingRuntime,
+  OperonTestingRuntime,
+} from './testing/testing_runtime';
+
+export {
   OperonContext,
 } from './context';
 

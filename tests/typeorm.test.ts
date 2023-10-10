@@ -1,7 +1,7 @@
 // import { PrismaClient, testkv } from "@prisma/client";
 import { EntityManager } from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { Operon, OperonTransaction, OrmEntities, TransactionContext } from "../src";
+import { OperonTestingRuntime, OperonTransaction, OrmEntities, TransactionContext, createTestingRuntime } from "../src";
 import { OperonConfig } from "../src/operon";
 import { v1 as uuidv1 } from "uuid";
 import { TypeORMEntityManager, UserDatabaseName } from "../src/user_database";
@@ -45,8 +45,8 @@ class KVController {
 }
 
 describe("typeorm-tests", () => {
-  let operon: Operon;
   let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
     config = generateOperonTestConfig(undefined, UserDatabaseName.TYPEORM);
@@ -55,20 +55,19 @@ describe("typeorm-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    operon = new Operon(config);
-    await operon.init(KVController);
-    await operon.userDatabase.dropSchema();
-    await operon.userDatabase.createSchema();
+    testRuntime = await createTestingRuntime([KVController], config);
+    await testRuntime.dropUserSchema();
+    await testRuntime.createUserSchema();
   });
 
   afterEach(async () => {
-    await operon.destroy();
+    await testRuntime.destroy();
   });
 
   test("simple-typeorm", async () => {
     const workUUID = uuidv1();
-    await expect(operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")).resolves.toBe("test");
-    await expect(operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "test", "value")).resolves.toBe("test");
+    await expect(testRuntime.invoke(KVController, workUUID).testTxn("test", "value")).resolves.toBe("test");
+    await expect(testRuntime.invoke(KVController, workUUID).testTxn("test", "value")).resolves.toBe("test");
   });
 
   test("typeorm-duplicate-transaction", async () => {
@@ -76,8 +75,9 @@ describe("typeorm-tests", () => {
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "oaootest", "oaoovalue"),
-      operon.transaction(KVController.testTxn, { workflowUUID: workUUID }, "oaootest", "oaoovalue"),
+      testRuntime.invoke(KVController, workUUID).testTxn("oaootest", 
+      "oaoovalue"),
+      testRuntime.invoke(KVController, workUUID).testTxn("oaootest", "oaoovalue"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootest");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootest");
@@ -87,8 +87,8 @@ describe("typeorm-tests", () => {
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      operon.transaction(KVController.readTxn, { workflowUUID: readUUID }, "oaootestread"),
-      operon.transaction(KVController.readTxn, { workflowUUID: readUUID }, "oaootestread"),
+      testRuntime.invoke(KVController, readUUID).readTxn("oaootestread"),
+      testRuntime.invoke(KVController, readUUID).readTxn("oaootestread"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
