@@ -1,13 +1,13 @@
 import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
 import { OperonConfig } from "../operon";
-import { transports, createLogger, format, Logger } from "winston";
 import { PoolConfig } from "pg";
 import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { OperonCLIStartOptions } from "./cli";
+import { createGlobalLogger } from "../telemetry/logs";
 
 const operonConfigFilePath = "operon-config.yaml";
 
@@ -31,30 +31,6 @@ export interface ConfigFile {
   localRuntimeConfig?: OperonRuntimeConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
-}
-
-function createGlobalLogger(logLevel: string): Logger {
-  // TODO We will need to configure the formatter for "production" mode
-  return createLogger({
-    level: logLevel,
-    format: format.combine(
-      format.errors({ stack: true }),
-      format.timestamp(),
-      format.colorize(),
-      format.printf((info) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const { timestamp, level, message, stack, ...args } = info;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const ts = timestamp.slice(0, 19).replace("T", " ");
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const formattedStack = stack?.split("\n").slice(1).join("\n");
-        const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-        return `${ts} [${level}]: ${messageString} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
-      })
-    ),
-    transports: [new transports.Console()],
-    handleExceptions: true,
-  });
 }
 
 export function parseConfigFile(cliOptions: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
