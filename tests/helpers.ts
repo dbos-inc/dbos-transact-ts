@@ -10,6 +10,8 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
   }
 
+  const silenceLogs: boolean = process.env.SILENCE_LOGS === "true" ? true : false;
+
   const operonTestConfig: OperonConfig = {
     poolConfig: {
       host: "localhost",
@@ -29,7 +31,7 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     dbClientMetadata: {
       entities: ["KV"],
     },
-    logger: createGlobalLogger("info", true),
+    logger: createGlobalLogger("info", silenceLogs),
   };
 
   return operonTestConfig;
