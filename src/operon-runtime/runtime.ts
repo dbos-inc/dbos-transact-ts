@@ -1,5 +1,4 @@
 import { Operon, OperonConfig } from '../operon';
-import { Logger } from 'winston';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -13,7 +12,6 @@ interface ModuleExports {
 
 export interface OperonRuntimeConfig {
   port: number;
-  logger: Logger;
 }
 
 export class OperonRuntime {
@@ -31,7 +29,7 @@ export class OperonRuntime {
   async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
-      this.runtimeConfig.logger.error("operations not found");
+      this.operon.logger.error("operations not found");
       throw new OperonError("operations not found");
     }
 
@@ -39,7 +37,7 @@ export class OperonRuntime {
     for (const key in exports) {
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
-        this.runtimeConfig.logger.debug(`Loaded class: ${key}`);
+        this.operon.logger.debug(`Loaded class: ${key}`);
       }
     }
 
@@ -56,7 +54,7 @@ export class OperonRuntime {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(operations) as Promise<ModuleExports>;
     } else {
-      this.runtimeConfig.logger.warn("operations not found");
+      this.operon.logger.warn("operations not found");
       return null;
     }
   }
