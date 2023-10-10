@@ -47,7 +47,10 @@ describe("concurrency-tests", () => {
     ConcurrTestClass.cnt = 0;
 
     const readUUID = uuidv1();
-    results = await Promise.allSettled([testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12), testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12)]);
+    results = await Promise.allSettled([
+      testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12),
+      testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12),
+    ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
     expect(ConcurrTestClass.cnt).toBe(2);
