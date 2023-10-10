@@ -172,7 +172,6 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-
       const username = operonConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["operonAppAdmin"], authenticatedUser: "operonAppAdmin"}).test_workflow(username);
       const result: string = await workflowHandle.getResult();
