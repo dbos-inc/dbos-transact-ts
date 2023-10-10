@@ -4,7 +4,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntime, createTestingRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "operon_test_kv";

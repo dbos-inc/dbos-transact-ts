@@ -6,7 +6,6 @@ import { OperonTestingRuntime, TransactionContext, WorkflowContext, createTestin
 import { PgTransactionId } from "../../src/workflow";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
-import { OperonTestingRuntimeImpl } from "../../src/testing/testing_runtime";
 
 describe("operon-provenance", () => {
   const testTableName = "operon_test_kv";

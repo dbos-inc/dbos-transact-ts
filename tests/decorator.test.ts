@@ -4,7 +4,6 @@ import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
-import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_test_kv";
 

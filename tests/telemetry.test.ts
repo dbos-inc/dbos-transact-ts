@@ -7,7 +7,6 @@ import request from "supertest";
 import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
 import { WorkflowHandle } from "../src/workflow";
 import { PoolClient } from "pg";
-import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 
 type TelemetrySignalDbFields = {
   workflow_uuid: string;

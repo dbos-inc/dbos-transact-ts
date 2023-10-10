@@ -21,7 +21,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, OperonTestingRuntimeImpl, createTestingRuntime } from "../../src/testing/testing_runtime";
+import { OperonTestingRuntime, createTestingRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";

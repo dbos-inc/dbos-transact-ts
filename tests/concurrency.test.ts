@@ -4,7 +4,6 @@ import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
