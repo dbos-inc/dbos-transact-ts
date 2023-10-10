@@ -70,6 +70,7 @@ export class OperonRuntime {
     const server: OperonHttpServer = new OperonHttpServer(this.operon)
 
     this.server = server.listen(this.runtimeConfig.port);
+    this.operon.logRegisteredHTTPUrls();
   }
 
   /**

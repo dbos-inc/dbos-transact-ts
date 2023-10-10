@@ -43,6 +43,8 @@ import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOpero
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { OperonContextImpl } from './context';
+import { OperonHandlerRegistration } from './httpServer/handler';
+
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -430,6 +432,16 @@ export class Operon {
     if (this.initialized) {
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
+  }
+
+  logRegisteredHTTPUrls() {
+    this.logger.info("HTTP endpoints supported:");
+    this.registeredOperations.forEach((registeredOperation) => {
+      const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
+      if (ro.apiURL) {
+        this.logger.info("    " + ro.apiType + "  :  " + ro.apiURL);
+      }  
+    });
   }
 
 }
