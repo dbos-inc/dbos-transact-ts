@@ -31,8 +31,8 @@ export class OperonRuntime {
   async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
-      this.runtimeConfig.logger.error("userFunctions not found");
-      throw new OperonError("userFunctions not found");
+      this.runtimeConfig.logger.error("operations not found");
+      throw new OperonError("operations not found");
     }
 
     const classes: object[] = [];
@@ -51,12 +51,12 @@ export class OperonRuntime {
    */
   private loadFunctions(): Promise<ModuleExports> | null {
     const workingDirectory = process.cwd();
-    const userFunctions = workingDirectory + "/dist/userFunctions.js";
+    const userFunctions = workingDirectory + "/dist/operations.js";
     if (fs.existsSync(userFunctions)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(userFunctions) as Promise<ModuleExports>;
     } else {
-      this.runtimeConfig.logger.warn("userFunctions not found");
+      this.runtimeConfig.logger.warn("operations not found");
       return null;
     }
   }
