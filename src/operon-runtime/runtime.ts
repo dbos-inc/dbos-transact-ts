@@ -51,7 +51,7 @@ export class OperonRuntime {
    */
   private loadFunctions(): Promise<ModuleExports> | null {
     const workingDirectory = process.cwd();
-    const userFunctions = workingDirectory + "/dist/operations.js";
+    const userFunctions = workingDirectory + "/dist/userFunctions.js";
     if (fs.existsSync(userFunctions)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(userFunctions) as Promise<ModuleExports>;
