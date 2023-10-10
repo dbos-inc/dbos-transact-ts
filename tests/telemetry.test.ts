@@ -4,9 +4,8 @@ import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
-import { GetApi, HandlerContext, OperonHttpServer, OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
 import { WorkflowHandle } from "../src/workflow";
-import { OperonContextImpl } from "../src/context";
 import { PoolClient } from "pg";
 import { OperonTestingRuntimeImpl } from "../src/testing/testing_runtime";
 

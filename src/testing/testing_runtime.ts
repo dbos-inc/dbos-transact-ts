@@ -33,7 +33,11 @@ export interface OperonTestingRuntime {
   invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   destroy(): Promise<void>; // Release resources after tests.
+
+  // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
+  createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
+  dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 }
 
 /**
@@ -122,6 +126,13 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     return this.getOperon().userDatabase.query(sql, ...params);
   }
 
+  async createUserSchema(): Promise<void> {
+    return this.getOperon().userDatabase.createSchema();
+  }
+
+  dropUserSchema(): Promise<void> {
+    return this.getOperon().userDatabase.dropSchema();
+  }
 
   /**
    * For internal tests use only -- return the Operon object.
