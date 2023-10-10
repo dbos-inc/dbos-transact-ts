@@ -52,7 +52,7 @@ export class Logger {
       this.globalLogger.error(message);
     } else {
       // If this is neither a string nor an error, we just log it as is an ommit the context
-      this.globalLogger.error(inputError);
+      this.globalLogger.error(inputError.toString());
     }
   }
 }
