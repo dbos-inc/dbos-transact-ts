@@ -74,6 +74,10 @@ describe("runtime-tests", () => {
     process.chdir("../..");
   });
 
+  test("runtime-hello-jest", () => {
+    execSync("npm run test");  // Make sure the hello example passes its own tests.
+  });
+
   // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!
   test("runtime-hello using default runtime configuration", async () => {
     const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start"], {
