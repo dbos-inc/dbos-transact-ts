@@ -4,9 +4,8 @@ import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
-import { GetApi, HandlerContext, OperonHttpServer, TransactionContext, WorkflowContext } from "../src";
+import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
 import { WorkflowHandle } from "../src/workflow";
-import { OperonContextImpl } from "../src/context";
 import { PoolClient } from "pg";
 
 type TelemetrySignalDbFields = {
@@ -77,16 +76,18 @@ describe("operon-telemetry", () => {
   describe("Postgres exporter", () => {
     let operon: Operon;
     let operonConfig: OperonConfig;
+    let testRuntime: OperonTestingRuntime;
+
     beforeAll(async () => {
-      operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
-      operon = new Operon(operonConfig);
-      await operon.init(TestClass);
+      operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER])
+      testRuntime = await createTestingRuntime([TestClass], operonConfig);
+      operon = testRuntime.getOperon();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(PostgresExporter);
     });
 
     afterAll(async () => {
-      await operon.destroy();
+      await testRuntime.destroy();
       // This attempts to clear all our DBs, including the observability one
       await setupOperonTestDb(operonConfig);
     });
@@ -171,14 +172,8 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const span = operon.tracer.startSpan("test");
-      const oc = new OperonContextImpl("testName", span, operon.config.logger);
-      oc.authenticatedRoles = ["operonAppAdmin"];
-      oc.authenticatedUser = "operonAppAdmin";
-
-      const params = { parentCtx: oc };
       const username = operonConfig.poolConfig.user as string;
-      const workflowHandle: WorkflowHandle<string> = await operon.workflow(TestClass.test_workflow, params, username);
+      const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["operonAppAdmin"], authenticatedUser: "operonAppAdmin"}).test_workflow(username);
       const result: string = await workflowHandle.getResult();
 
       // Workflow should have executed correctly
@@ -206,9 +201,8 @@ describe("operon-telemetry", () => {
   });
 
   describe("http Tracer", () => {
-    let operon: Operon;
-    let httpServer: OperonHttpServer;
     let config: OperonConfig;
+    let testRuntime: OperonTestingRuntime;
 
     beforeAll(async () => {
       config = generateOperonTestConfig();
@@ -216,13 +210,11 @@ describe("operon-telemetry", () => {
     });
 
     beforeEach(async () => {
-      operon = new Operon(config);
-      await operon.init(TestClass);
-      httpServer = new OperonHttpServer(operon);
+      testRuntime = await createTestingRuntime([TestClass], config);
     });
 
     afterEach(async () => {
-      await operon.destroy();
+      await testRuntime.destroy();
     });
 
     test("Trace context is propagated in and out Operon", async () => {
@@ -231,7 +223,7 @@ describe("operon-telemetry", () => {
         [TRACE_STATE_HEADER]: "some_state=some_value",
       };
 
-      const response = await request(httpServer.app.callback()).get("/hello").set(headers);
+      const response = await request(testRuntime.getHandlersCallback()).get("/hello").set(headers);
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");
@@ -243,7 +235,7 @@ describe("operon-telemetry", () => {
     });
 
     test("New trace context is propagated out of Operon", async () => {
-      const response = await request(httpServer.app.callback()).get("/hello");
+      const response = await request(testRuntime.getHandlersCallback()).get("/hello");
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");

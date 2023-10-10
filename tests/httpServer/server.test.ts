@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   GetApi,
-  Operon,
   OperonTransaction,
   OperonWorkflow,
   MiddlewareContext,
@@ -14,7 +12,7 @@ import {
   OperonCommunicator,
   CommunicatorContext,
 } from "../../src";
-import { OperonHttpServer, OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
+import { OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
@@ -23,12 +21,12 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
+import { OperonTestingRuntime, createTestingRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
 
-  let operon: Operon;
-  let httpServer: OperonHttpServer;
+  let testRuntime: OperonTestingRuntime;
   let config: OperonConfig;
 
   beforeAll(async () => {
@@ -37,134 +35,118 @@ describe("httpserver-tests", () => {
   });
 
   beforeEach(async () => {
-    operon = new Operon(config);
-    await operon.init(TestEndpoints);
-    await operon.userDatabase.query(`DROP TABLE IF EXISTS ${testTableName};`);
-    await operon.userDatabase.query(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
-    httpServer = new OperonHttpServer(operon);
+    testRuntime = await createTestingRuntime([TestEndpoints], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
-    await operon.destroy();
-    jest.restoreAllMocks();
+    await testRuntime.destroy();
   });
 
   test("get-hello", async () => {
-    const response = await request(httpServer.app.callback()).get("/hello");
+    const response = await request(testRuntime.getHandlersCallback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
   });
 
   test("get-url", async () => {
-    const response = await request(httpServer.app.callback()).get("/hello/alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/hello/alice");
     expect(response.statusCode).toBe(301);
     expect(response.text).toBe("wow alice");
   });
 
   test("get-query", async () => {
-    // "mute" console.info
-    jest.spyOn(console, "info").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/query?name=alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/query?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
   });
 
   test("post-test", async () => {
-    const response = await request(httpServer.app.callback()).post("/testpost").send({ name: "alice" });
+    const response = await request(testRuntime.getHandlersCallback()).post("/testpost").send({ name: "alice" });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
   });
 
   test("endpoint-transaction", async () => {
-    const response = await request(httpServer.app.callback()).post("/transaction/alice");
+    const response = await request(testRuntime.getHandlersCallback()).post("/transaction/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
 
   test("endpoint-communicator", async () => {
-    const response = await request(httpServer.app.callback()).get("/communicator/alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/communicator/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("alice");
   });
 
   test("endpoint-workflow", async () => {
-    const response = await request(httpServer.app.callback()).post("/workflow?name=alice");
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
 
   test("endpoint-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).post("/error").send({ name: "alice" });
+    const response = await request(testRuntime.getHandlersCallback()).post("/error").send({ name: "alice" });
     expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe("23505"); // Should be the expected error.
   });
 
   test("endpoint-handler", async () => {
-    const response = await request(httpServer.app.callback()).get("/handler/alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/handler/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
 
   test("response-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/operon-error");
+    const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
     expect(response.body.message).toBe("customize error");
   });
 
   test("datavalidation-error", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/query");
+    const response = await request(testRuntime.getHandlersCallback()).get("/query");
     expect(response.statusCode).toBe(400);
     expect(response.body.details.operonErrorCode).toBe(9);
   });
 
   test("operon-redirect", async () => {
-    const response = await request(httpServer.app.callback()).get("/redirect");
+    const response = await request(testRuntime.getHandlersCallback()).get("/redirect");
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toBe("/redirect-operon");
   });
 
   test("not-authenticated", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-you", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=go_away");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=go_away");
     expect(response.statusCode).toBe(401);
   });
 
   test("not-authorized", async () => {
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=bob");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=bob");
     expect(response.statusCode).toBe(403);
   });
 
   test("authorized", async () => {
-    const response = await request(httpServer.app.callback()).get("/requireduser?name=alice&userid=a_real_user");
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser?name=alice&userid=a_real_user");
     expect(response.statusCode).toBe(200);
   });
 
   test("test-workflowUUID-header", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(httpServer.app.callback()).post("/workflow?name=bob").set({ "operon-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "operon-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
+    const operon = testRuntime.getOperon();
     await operon.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -175,12 +157,12 @@ describe("httpserver-tests", () => {
 
   test("endpoint-handler-UUID", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(httpServer.app.callback()).get("/handler/bob").set({ "operon-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).get("/handler/bob").set({ "operon-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
     // Retrieve the workflow with UUID.
-    const retrievedHandle = operon.retrieveWorkflow<string>(workflowUUID);
+    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -241,7 +223,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`query with name ${name}`);  // Test logging.
+      ctx.logger.info(`query with name ${name}`); // Test logging.
       return `hello ${name}`;
     }
 

@@ -58,7 +58,6 @@ function createGlobalLogger(logLevel: string): Logger {
 
 export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
   const logger = createGlobalLogger(cliOptions?.loglevel ?? 'info');
-
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(operonConfigFilePath);
@@ -113,13 +112,13 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    logger,
+    logger: logger,
   };
 
   // CLI takes precedence over config file, which takes precedence over default config.
   const localRuntimeConfig: OperonRuntimeConfig = {
     port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
-    logger,
+    logger: logger,
   };
 
   return [operonConfig, localRuntimeConfig];
