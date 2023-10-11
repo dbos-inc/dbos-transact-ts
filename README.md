@@ -1,7 +1,5 @@
 # Operon
 
-## What is Operon?
-
 Operon is a **Typescript framework for the backend**.
 Operon enables you to write backend applications that work right by default, providing native support for application database management, reliable workflow execution, OpenTelemetry-compatible tracing, authentication/authorizaton, and much more.
 
@@ -18,7 +16,7 @@ The fastest way to get started with Operon is by following the [quickstart](http
 
 ## Documentation
 
-You can find our full documentation at [https://dbos-inc.github.io/operon-docs/].
+You can find our full documentation at [https://dbos-inc.github.io/operon-docs/](https://dbos-inc.github.io/operon-docs/).
 
 Check out our [Getting Started](https://dbos-inc.github.io/operon-docs/category/getting-started) for an overview of how to build an application.
 
