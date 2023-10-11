@@ -1,43 +1,34 @@
 # Operon
 
- Operon requires Node.js version 18. You may want to use [nvm](https://github.com/nvm-sh/nvm) to manage Node.js versions.
-```shell
-nvm install 18
-```
+## What is Operon?
 
-Use `npm` to install dependencies, build, and test Operon:
-```shell
-npm install
-npm run build
-npm test
-```
+Operon is a **Typescript framework for the backend**.
+Operon enables you to write backend applications that work right by default, providing native support for application database management, reliable workflow execution, OpenTelemetry-compatible tracing, authentication/authorizaton, and much more.
 
-To run the Operon tests, you must have a Postgres database accessible on `localhost`.
-This database must have the default `postgres` user with password `dbos` (or alternatively, set the password in `jest.setup.ts`).
-Additionally, [`wal_level`](https://www.postgresql.org/docs/current/runtime-config-wal.html) must be set to `logical` in `postgresql.conf` and the [`wal2json`](https://github.com/eulerto/wal2json) Postgres plugin must be installed.
+Unlike in other backend frameworks, your application database is a _first-class citizen_ of Operon.
+Operon makes writing database operations painless for you, regardless of whether you prefer raw SQL or an ORM.
+Under the hood, we also leverage the database to give you _reliable workflows_, so you can write programs that are guaranteed to run to completion despite failures and always resume where they left off when your application is restarted.
 
-# Deploying a Serverless Operon Application
+Operon is also the [**SDK for DBOS's upcoming serverless cloud platform**](https://dbos.dev).
+In the near future, you'll be able to deploy any Operon application serverlessly to the cloud with the push of a button, running effortlessly at scale without worrying about managing infrastructure.
 
-1.  First, build the app you want to deploy:
+## Getting Started
 
-```shell
-cd <app root folder>
-npm link <operon repo path>
-npm run build
-```
+The fastest way to get started with Operon is by following the [quickstart](https://dbos-inc.github.io/operon-docs/getting-started/quickstart), where you'll learn how to get a backend running in less than five minutes.
 
-We assume the app writes all Operon functions in decorated classes (with endpoint decorators) exported from src/operations.ts.
+## Documentation
 
-2.  Then, start your app using the `operon` CLI:
+You can find our full documentation at [https://dbos-inc.github.io/operon-docs/].
 
-```shell
-npx operon start -p <port>
-```
+Check out our [Getting Started](https://dbos-inc.github.io/operon-docs/category/getting-started) for an overview of how to build an application.
 
-It should print the output:
-```shell
-[server]: Server is running at http://localhost:<port>
-```
+Our documentation has the following sections:
 
-3.  Now your app is deployed and you can send HTTP requests to it.
-For example, in the `hello` sample app (examples/hello), open your browser to  `http://localhost:3000/greeting/{name}` and see the output!
+- [Getting Started](https://dbos-inc.github.io/operon-docs/category/getting-started)
+- [Tutorials](https://dbos-inc.github.io/operon-docs/category/tutorials)
+- [API Reference](https://dbos-inc.github.io/operon-docs/category/api-reference)
+- [Concepts and Explanations](https://dbos-inc.github.io/operon-docs/category/concepts-and-explanations)
+
+## Community
+
+Please join our community on [Discord](https://discord.gg/VrYtAZD5v)!  If you see a bug or have a feature request, don't hesitate to open an issue here on GitHub.
