@@ -75,7 +75,7 @@ describe("runtime-tests", () => {
   });
 
   test("runtime-hello-jest", () => {
-    execSync("npm run test");  // Make sure the hello example passes its own tests.
+    execSync("npm run test", { env: process.env });  // Make sure the hello example passes its own tests.
   });
 
   // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!
