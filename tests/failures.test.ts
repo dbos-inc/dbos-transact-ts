@@ -237,7 +237,7 @@ class FailureTestClass {
 
   @OperonWorkflow()
   static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request?.url === "test-recovery-url") {
+    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
       FailureTestClass.cnt += input;
     }
     await FailureTestClass.promise1;
