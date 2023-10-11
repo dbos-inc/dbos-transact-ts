@@ -33,7 +33,14 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
+/*
+ * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
+ * Considers OperonCLIStartOptions if provided, which takes precedence over config file
+ * */
 export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+  /****************************/
+  /* Parse configuration file */
+  /****************************/
   const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
   let configFile: ConfigFile | undefined;
   try {
@@ -54,7 +61,9 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
 
-  // Handle "Global" pool configFile
+  /*******************************/
+  /* Handle user database config */
+  /*******************************/
   if (!configFile.database) {
     throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database config`);
   }
@@ -76,10 +85,28 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   }
 
+  /***************************/
+  /* Handle telemetry config */
+  /***************************/
+
+  // Consider CLI --loglevel flag. A bit verbose because everything is optional.
+  if (cliOptions?.loglevel) {
+    if (!configFile.telemetry) {
+      configFile.telemetry = { logs: { logLevel: cliOptions.loglevel } };
+    } else if (!configFile.telemetry.logs) {
+      configFile.telemetry.logs = { logLevel: cliOptions.loglevel };
+    } else {
+      configFile.telemetry.logs.logLevel = cliOptions.loglevel;
+    }
+  }
+
+  /************************************/
+  /* Build final Operon Configuration */
+  /************************************/
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.PGNODE,
-    telemetry: configFile.telemetry,
+    telemetry: configFile.telemetry || undefined,
     system_database: configFile.database.system_database ?? "operon_systemdb",
     observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -90,7 +117,9 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     },
   };
 
-  // CLI takes precedence over config file, which takes precedence over default config.
+  /*************************************/
+  /* Build final runtime Configuration */
+  /*************************************/
   const localRuntimeConfig: OperonRuntimeConfig = {
     port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
   };

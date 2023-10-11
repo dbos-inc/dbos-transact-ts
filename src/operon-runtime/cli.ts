@@ -28,7 +28,7 @@ program
   .command('start')
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
-  .option('-l, --loglevel <string>', 'Specify Operon log level', 'info')
+  .option('-l, --loglevel <string>', 'Specify Operon log level')
   .option('-c, --configfile <string>', 'Specify the Operon config file path', operonConfigFilePath)
   .action(async (options: OperonCLIStartOptions) => {
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);

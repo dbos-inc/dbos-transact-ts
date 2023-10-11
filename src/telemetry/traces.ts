@@ -8,7 +8,7 @@ import { TelemetrySignal } from "./signals";
 
 // Eventually will hold Jaeger exporter configuration
 export interface TracerConfig {
-  disable?: boolean;
+  disabled?: boolean;
   endpoint?: string;
 }
 
