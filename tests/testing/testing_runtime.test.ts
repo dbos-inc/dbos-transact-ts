@@ -12,7 +12,7 @@ describe("testruntime-test", () => {
   let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
-    const [operonConfig] = parseConfigFile({}, configFilePath);
+    const [operonConfig] = parseConfigFile({configfile: configFilePath});
     await setupOperonTestDb(operonConfig);
 
     testRuntime = await createTestingRuntime([TestClass], configFilePath, "info");

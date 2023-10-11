@@ -32,8 +32,8 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-export function parseConfigFile(cliOptions?: OperonCLIStartOptions, configFilePath?: string): [OperonConfig, OperonRuntimeConfig] {
-  configFilePath = configFilePath ?? operonConfigFilePath;
+export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+  const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(configFilePath);

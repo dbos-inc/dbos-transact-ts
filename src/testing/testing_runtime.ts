@@ -16,7 +16,7 @@ import { SystemDatabase } from "../system_database";
 
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  const [ operonConfig ] = parseConfigFile({loglevel: logLevel}, configFilePath);
+  const [ operonConfig ] = parseConfigFile({loglevel: logLevel, configfile: configFilePath});
   await otr.init(userClasses, operonConfig);
   return otr;
 }
