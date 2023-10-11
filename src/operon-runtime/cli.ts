@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { parseConfigFile } from "./config";
+import { operonConfigFilePath, parseConfigFile } from "./config";
 import { deploy } from "./deploy";
 import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
@@ -21,6 +21,7 @@ program.
 export interface OperonCLIStartOptions {
   port?: number,
   loglevel?: string,
+  configfile?: string,
 }
 
 program
@@ -28,6 +29,7 @@ program
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify Operon log level', 'info')
+  .option('-c, --configfile <string>', 'Specify the Operon config file path', operonConfigFilePath)
   .action(async (options: OperonCLIStartOptions) => {
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);

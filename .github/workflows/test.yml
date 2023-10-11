@@ -45,6 +45,7 @@ jobs:
           npm test
           npm run lint
         env:
+          PGPASSWORD: dbos
           DB_PASSWORD: dbos
           DB_USER: postgres
           NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}

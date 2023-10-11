@@ -1,9 +1,10 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext, createTestingRuntime } from "../src";
+import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_test_kv";
 
@@ -75,7 +76,7 @@ describe("decorator-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([TestClass], config);
+    testRuntime = await createInternalTestRuntime([TestClass], config);
 
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);

@@ -1,11 +1,12 @@
 // import { PrismaClient, testkv } from "@prisma/client";
 import { EntityManager } from "typeorm";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTestingRuntime, OperonTransaction, OrmEntities, TransactionContext, createTestingRuntime } from "../src";
+import { OperonTestingRuntime, OperonTransaction, OrmEntities, TransactionContext } from "../src";
 import { OperonConfig } from "../src/operon";
 import { v1 as uuidv1 } from "uuid";
 import { TypeORMEntityManager, UserDatabaseName } from "../src/user_database";
 import { Entity, Column, PrimaryColumn } from "typeorm";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 /**
  * Funtions used in tests.
@@ -55,7 +56,7 @@ describe("typeorm-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createTestingRuntime([KVController], config);
+    testRuntime = await createInternalTestRuntime([KVController], config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();
   });
