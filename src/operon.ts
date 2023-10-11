@@ -121,7 +121,6 @@ export class Operon {
       telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
       this.logger.debug("Loaded Jaeger Telemetry Exporter");
     }
-
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
