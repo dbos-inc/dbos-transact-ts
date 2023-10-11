@@ -1,8 +1,19 @@
-import { transports, createLogger, format, Logger as WinstonLogger } from "winston";
+import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import { OperonContext } from "../context";
 
-/* This is a wrapper around a global Winston logger
- * It allows us to embed contextual information into the logs
+export interface LoggerConfig {
+  logLevel?: string;
+  silent?: boolean;
+  addContextMetadata?: boolean;
+}
+
+// A simple extension of Winston adding a flag for the addition of context metadata to log entries.
+export interface WinstonLogger extends IWinstonLogger {
+  addContextMetadata: boolean;
+}
+
+/* This is a wrapper around a global Winston logger. It holds a reference to the global logger.
+ * This class is expected to be instantiated by new OperonContext such that they can share context information.
  **/
 export class Logger {
   constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {}
@@ -17,28 +28,28 @@ export class Logger {
     };
   }
 
-  info(message: string, ctx: boolean = false): void {
-    this.globalLogger.info(message, ctx ? this.formatContextInfo() : {});
+  info(message: string): void {
+    this.globalLogger.info(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
-  debug(message: string, ctx: boolean = false): void {
-    this.globalLogger.debug(message, ctx ? this.formatContextInfo() : {});
+  debug(message: string): void {
+    this.globalLogger.debug(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
-  warn(message: string, ctx: boolean = false): void {
-    this.globalLogger.warn(message, ctx ? this.formatContextInfo() : {});
+  warn(message: string): void {
+    this.globalLogger.warn(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
-  emerg(message: string, ctx: boolean = false): void {
-    this.globalLogger.emerg(message, ctx ? this.formatContextInfo() : {});
+  emerg(message: string): void {
+    this.globalLogger.emerg(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
-  alert(message: string, ctx: boolean = false): void {
-    this.globalLogger.alert(message, ctx ? this.formatContextInfo() : {});
+  alert(message: string): void {
+    this.globalLogger.alert(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
-  crit(message: string, ctx: boolean = false): void {
-    this.globalLogger.crit(message, ctx ? this.formatContextInfo() : {});
+  crit(message: string): void {
+    this.globalLogger.crit(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
@@ -58,16 +69,18 @@ export class Logger {
   }
 }
 
-export function createGlobalLogger(logLevel: string, silent: boolean): WinstonLogger {
-  return createLogger({
+export function createGlobalLogger(config?: LoggerConfig): WinstonLogger {
+  const logger: WinstonLogger = createLogger({
     format: consoleFormat,
     transports: [
       new transports.Console({
-        level: logLevel,
+        level: config?.logLevel || "info",
       }),
     ],
-    silent,
-  });
+    silent: config?.silent || false,
+  }) as WinstonLogger;
+  logger.addContextMetadata = config?.addContextMetadata || false;
+  return logger;
 }
 
 const consoleFormat = format.combine(

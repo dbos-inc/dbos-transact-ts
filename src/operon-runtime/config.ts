@@ -7,6 +7,7 @@ import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { OperonCLIStartOptions } from "./cli";
+import { TelemetryConfig } from "../telemetry";
 
 export const operonConfigFilePath = "operon-config.yaml";
 
@@ -24,7 +25,7 @@ export interface ConfigFile {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
   };
-  telemetryExporters?: string[];
+  telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
   localRuntimeConfig?: OperonRuntimeConfig;
@@ -78,7 +79,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.PGNODE,
-    telemetryExporters: configFile.telemetryExporters || [],
+    telemetry: configFile.telemetry,
     system_database: configFile.database.system_database ?? "operon_systemdb",
     observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -87,8 +88,6 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    logLevel: cliOptions?.loglevel ?? "info",
-    silenceLogs: false,
   };
 
   // CLI takes precedence over config file, which takes precedence over default config.

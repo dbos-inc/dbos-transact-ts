@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger } from "winston";
+import { WinstonLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { OperonContext, OperonContextImpl } from "./context";
 
