@@ -4,7 +4,7 @@ import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonTestingRuntime, OperonTransaction, OrmEntities, TransactionContext } from "../src";
 import { OperonConfig } from "../src/operon";
 import { v1 as uuidv1 } from "uuid";
-import { TypeORMEntityManager, UserDatabaseName } from "../src/user_database";
+import { UserDatabaseName } from "../src/user_database";
 import { Entity, Column, PrimaryColumn } from "typeorm";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
@@ -22,17 +22,16 @@ export class KV {
 
 let globalCnt = 0;
 
-type TestTransactionContext = TransactionContext<TypeORMEntityManager>;
+type TestTransactionContext = TransactionContext<EntityManager>;
 
 @OrmEntities([KV])
 class KVController {
   @OperonTransaction()
   static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
-    const p = txnCtxt.client as EntityManager;
     const kv: KV = new KV();
     kv.id = id;
     kv.value = value;
-    const res = await p.save(kv);
+    const res = await txnCtxt.client.save(kv);
     globalCnt += 1;
     return res.id;
   }
