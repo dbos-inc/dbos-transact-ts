@@ -91,7 +91,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     const span = operon.tracer.startSpan("test");
     const oc = new OperonContextImpl("test", span, operon.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
-    oc.request = params?.request;
+    oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };

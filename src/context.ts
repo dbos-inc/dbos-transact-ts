@@ -19,7 +19,7 @@ export interface HTTPRequest {
 }
 
 export interface OperonContext {
-  request?: HTTPRequest;
+  request: HTTPRequest;
   workflowUUID: string;
   authenticatedUser: string;
 
@@ -32,7 +32,7 @@ export interface OperonContext {
 }
 
 export class OperonContextImpl implements OperonContext {
-  request?: HTTPRequest; // Raw incoming HTTP request.
+  request: HTTPRequest = {}; // Raw incoming HTTP request.
 
   authenticatedUser: string = ""; ///< The user that has been authenticated
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
