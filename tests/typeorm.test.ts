@@ -50,7 +50,7 @@ describe("typeorm-tests", () => {
   let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(undefined, UserDatabaseName.TYPEORM);
+    config = generateOperonTestConfig(UserDatabaseName.TYPEORM);
     await setupOperonTestDb(config);
   });
 
@@ -76,7 +76,7 @@ describe("typeorm-tests", () => {
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      testRuntime.invoke(KVController, workUUID).testTxn("oaootest", 
+      testRuntime.invoke(KVController, workUUID).testTxn("oaootest",
       "oaoovalue"),
       testRuntime.invoke(KVController, workUUID).testTxn("oaootest", "oaoovalue"),
     ]);

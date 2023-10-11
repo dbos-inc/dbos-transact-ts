@@ -56,7 +56,7 @@ describe("prisma-tests", () => {
   let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(undefined, UserDatabaseName.PRISMA);
+    config = generateOperonTestConfig(UserDatabaseName.PRISMA);
     await setupOperonTestDb(config);
   });
 

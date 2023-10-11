@@ -49,7 +49,7 @@ describe("knex-tests", () => {
   let config: OperonConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(undefined, UserDatabaseName.KNEX);
+    config = generateOperonTestConfig(UserDatabaseName.KNEX);
     await setupOperonTestDb(config);
   });
 
