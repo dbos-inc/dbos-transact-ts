@@ -297,7 +297,7 @@ export class Operon {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request ?? null, args);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
@@ -417,7 +417,7 @@ export class Operon {
       operationName: status.workflowName,
     });
     const oc = new OperonContextImpl(status.workflowName, span, this.logger);
-    oc.request = status.request ?? undefined;
+    oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;
