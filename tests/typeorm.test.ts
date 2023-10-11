@@ -38,9 +38,10 @@ class KVController {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonTransaction({ readOnly: true })
-  static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
+  static async readTxn(txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
-    return id;
+    const kvp = await txnCtxt.client.findOneBy(KV, {id: id});
+    return kvp?.value || "<Not Found>";
   }
 }
 
@@ -87,11 +88,11 @@ describe("typeorm-tests", () => {
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      testRuntime.invoke(KVController, readUUID).readTxn("oaootestread"),
-      testRuntime.invoke(KVController, readUUID).readTxn("oaootestread"),
+      testRuntime.invoke(KVController, readUUID).readTxn("oaootest"),
+      testRuntime.invoke(KVController, readUUID).readTxn("oaootest"),
     ]);
-    expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
-    expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
+    expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaoovalue");
+    expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaoovalue");
     expect(globalCnt).toBeGreaterThanOrEqual(1);
   });
 });
