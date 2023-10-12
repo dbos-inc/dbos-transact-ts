@@ -2,7 +2,7 @@ import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@
 import { Knex } from 'knex';
 
 // The schema of the database table used in this example.
-interface operon_hello {
+export interface operon_hello {
   name: string;
   greet_count: number;
 }
