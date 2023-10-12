@@ -1,8 +1,7 @@
 import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
-type KnexTransactionContext = TransactionContext<Knex>;
-
+// The schema of the database table used in this example.
 interface operon_hello {
   name: string;
   greet_count: number;
@@ -10,31 +9,23 @@ interface operon_hello {
 
 export class Hello {
 
-  @OperonTransaction()
-  static async helloTransaction(txnCtxt: KnexTransactionContext, name: string) {
-    // Look up greet_count.
-    let greet_count = await txnCtxt.client<operon_hello>("operon_hello")
-      .select("greet_count")
-      .where({ name: name })
-      .first()
-      .then(row => row?.greet_count);
-    if (greet_count) {
-      // If greet_count is set, increment it.
-      greet_count++;
-      await txnCtxt.client<operon_hello>("operon_hello")
-        .where({ name: name })
-        .increment('greet_count', 1);
-    } else {
-      // If greet_count is not set, set it to 1.
-      greet_count = 1;
-      await txnCtxt.client<operon_hello>("operon_hello")
-        .insert({ name: name, greet_count: 1 })
-    }
-    return `Hello, ${name}! You have been greeted ${greet_count} times.\n`;
+  @OperonTransaction()  // Declare this function to be a transaction.
+  static async helloTransaction(txnCtxt: TransactionContext<Knex>, user: string) {
+    // Retrieve and increment the number of times this user has been greeted.
+    const rows = await txnCtxt.client<operon_hello>("operon_hello")
+      // Insert greet_count for this user.
+      .insert({ name: user, greet_count: 1 })
+      // If already present, increment it instead.
+      .onConflict("name").merge({ greet_count: txnCtxt.client.raw('operon_hello.greet_count + 1') })
+      // Return the inserted or incremented value.
+      .returning("greet_count");               
+    const greet_count = rows[0].greet_count;
+    return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 
-  @GetApi('/greeting/:name')
-  static async helloHandler(handlerCtxt: HandlerContext, name: string) {
-    return handlerCtxt.invoke(Hello).helloTransaction(name);
+  @GetApi('/greeting/:user') // Serve this function from the /greeting endpoint with 'user' as a path parameter
+  static async helloHandler(handlerCtxt: HandlerContext, user: string) {
+    // Invoke helloTransaction on the input user.
+    return handlerCtxt.invoke(Hello).helloTransaction(user);
   }
 }
