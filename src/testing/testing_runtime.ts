@@ -14,6 +14,7 @@ import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 import { Client } from "pg";
+import { get, has } from "lodash";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -53,6 +54,8 @@ export interface OperonTestingRuntime {
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>; 
 
+  getConfig(key: string): any; // Get application configuration.
+
   destroy(): Promise<void>; // Release resources after tests.
 
   // User database operations.
@@ -78,6 +81,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
  */
 export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   #server: OperonHttpServer | null = null;
+  #applicationConfig: unknown = undefined;
  
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
@@ -88,6 +92,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
+    this.#applicationConfig = operon.config.application;
   }
 
   /**
@@ -95,6 +100,19 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    */
   async destroy() {
     await this.#server?.operon.destroy();
+  }
+
+  /**
+   * Get Application Configuration.
+  */
+  getConfig(key: string): any {
+    if (!this.#applicationConfig) {
+      return undefined;
+    }
+    if (!has(this.#applicationConfig, key)) {
+      return undefined;
+    }
+    return get(this.#applicationConfig, key);
   }
 
   /**

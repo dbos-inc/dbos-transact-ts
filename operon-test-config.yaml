@@ -12,3 +12,5 @@ telemetry:
     logLevel: 'debug'
     addContextMetadata: true
     silent: true
+application:
+  testvalue: 'postgres'

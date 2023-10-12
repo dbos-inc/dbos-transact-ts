@@ -19,7 +19,8 @@ describe("testruntime-test", () => {
 
   test("simple-workflow", async () => {
     const res = await testRuntime.invoke(TestClass).testWorkflow(username).then(x => x.getResult());
-    expect(JSON.parse(res)).toEqual({ current_user: username });
+    const expectName = testRuntime.getConfig("testvalue") as string; // Read application config.
+    expect(JSON.parse(res)).toEqual({ current_user: expectName });
   });
 
 });
