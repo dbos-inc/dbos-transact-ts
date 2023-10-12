@@ -3,7 +3,7 @@ import { Knex } from 'knex';
 
 type KnexTransactionContext = TransactionContext<Knex>;
 
-interface operon_hello {
+export interface operon_hello {
   name: string;
   greet_count: number;
 }

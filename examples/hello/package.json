@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
-    "test": "jest --runInBand"
+    "test": "npx knex migrate:rollback && npx knex migrate:up && jest"
   },
   "devDependencies": {
     "@types/jest": "^29.5.5",
