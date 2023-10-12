@@ -37,12 +37,12 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  status: string;
-  workflowName: string;
-  authenticatedUser: string;
-  assumedRole: string;
-  authenticatedRoles: string[];
-  request: HTTPRequest;
+  status: string; // The status of the workflow.  One of PENDING, SUCCESS, or ERROR.
+  workflowName: string; // The name of the workflow function.
+  authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
+  assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
+  authenticatedRoles: string[]; // All roles the authenticated user has, if any.
+  request: HTTPRequest; // The parent request for this workflow, if any.
 }
 
 export interface PgTransactionId {
