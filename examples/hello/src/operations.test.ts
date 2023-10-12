@@ -1,5 +1,5 @@
 import { OperonTestingRuntime, createTestingRuntime } from "@dbos-inc/operon";
-import { Hello } from "./operations";
+import { Hello, operon_hello } from "./operations";
 import request from "supertest";
 
 describe("operations-test", () => {
@@ -19,6 +19,10 @@ describe("operations-test", () => {
   test("test-transaction", async () => {
     const res = await testRuntime.invoke(Hello).helloTransaction("operon");
     expect(res).toMatch("Hello, operon! You have been greeted");
+
+    // Check the greet count.
+    const rows = await testRuntime.queryUserDB<operon_hello>("SELECT * FROM operon_hello WHERE name=$1", "operon");
+    expect(rows[0].greet_count).toBe(1);
   });
 
   /**

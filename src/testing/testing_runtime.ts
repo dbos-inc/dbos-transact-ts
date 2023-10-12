@@ -41,9 +41,9 @@ export async function createTestingRuntime(userClasses: object[], configFilePath
 }
 
 export interface OperonInvokeParams {
-  authenticatedUser?: string;
-  authenticatedRoles?: string[];
-  request?: HTTPRequest;
+  readonly authenticatedUser?: string; // The user who ran the function.
+  readonly authenticatedRoles?: string[]; // Roles the authenticated user has.
+  readonly request?: HTTPRequest; // The originating HTTP request.
 }
 
 export interface OperonTestingRuntime {
