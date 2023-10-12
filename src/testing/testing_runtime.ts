@@ -28,7 +28,7 @@ export interface OperonInvokeParams {
 }
 
 export interface OperonTestingRuntime {
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
@@ -91,7 +91,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     const span = operon.tracer.startSpan("test");
     const oc = new OperonContextImpl("test", span, operon.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
-    oc.request = params?.request;
+    oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
@@ -121,7 +121,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     return this.#server.app.callback();
   }
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.getOperon().send(destinationUUID, message, topic, idempotencyKey);
   }
 

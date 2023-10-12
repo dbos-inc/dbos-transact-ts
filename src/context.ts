@@ -6,32 +6,31 @@ import { ParsedUrlQuery } from "querystring";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
-  headers?: IncomingHttpHeaders;  // HTTP headers.
-  rawHeaders?: string[];
-  params?: unknown; // Parsed argument from URL.
-  body?: unknown;  // parsed HTTP body as an object.
-  rawBody?: string; // unparsed raw HTTP body string.
-  query?: ParsedUrlQuery; // parsed query string.
-  querystring?: string; // unparsed query string.
-  url?: string; // request url.
-  ip?: string; // request remote address.
+  readonly headers?: IncomingHttpHeaders;  // A node's http.IncomingHttpHeaders object.
+  readonly rawHeaders?: string[];          // Raw headers.
+  readonly params?: unknown;               // Parsed path parameters from the URL.
+  readonly body?: unknown;                 // parsed HTTP body as an object.
+  readonly rawBody?: string;               // Unparsed raw HTTP body string.
+  readonly query?: ParsedUrlQuery;         // Parsed query string.
+  readonly querystring?: string;           // Unparsed raw query string.
+  readonly url?: string;                   // Request URL.
+  readonly ip?: string;                    // Request remote address.
 }
 
 export interface OperonContext {
-  request?: HTTPRequest;
-  workflowUUID: string;
-  authenticatedUser: string;
+  readonly request: HTTPRequest;
+  readonly workflowUUID: string;
+  readonly authenticatedUser: string;
 
-  span: Span;
+  readonly logger: OperonLogger;
+  readonly span: Span;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
-
-  readonly logger: OperonLogger;
 }
 
 export class OperonContextImpl implements OperonContext {
-  request?: HTTPRequest; // Raw incoming HTTP request.
+  request: HTTPRequest = {}; // Raw incoming HTTP request.
 
   authenticatedUser: string = ""; ///< The user that has been authenticated
   authenticatedRoles: string[] = []; ///< All roles the user has according to authentication

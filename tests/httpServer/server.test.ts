@@ -216,7 +216,7 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/redirect")
     static async redirectUrl(ctx: HandlerContext) {
-      const url = ctx.request?.url || "bad url"; // Get the raw url from request.
+      const url = ctx.request.url || "bad url"; // Get the raw url from request.
       ctx.koaContext.redirect(url + "-operon");
     }
 

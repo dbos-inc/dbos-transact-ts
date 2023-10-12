@@ -12,17 +12,18 @@ import { OperonCommunicator } from "../communicator";
 
 // local type declarations for Operon workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
+type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
 
 export type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
 export interface HandlerContext extends OperonContext {
-  koaContext: Koa.Context;
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  readonly koaContext: Koa.Context;
+  invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  invoke<T extends object>(object: T, workflowUUID?: string): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 }
 
 export class HandlerContextImpl extends OperonContextImpl implements HandlerContext {
@@ -71,7 +72,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
   /* PUBLIC INTERFACE  */
   ///////////////////////
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.#operon.send(destinationUUID, message, topic, idempotencyKey);
   }
 
@@ -87,7 +88,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T, workflowUUID?: string): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
+  invoke<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
@@ -105,7 +106,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
         ? (...args: any[]) => this.#external(op.registeredFunction as OperonCommunicator<any[], any>, params, ...args)
         : undefined;
     }
-    return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
+    return proxy as InvokeFuncs<T>;
   }
 
   //////////////////////

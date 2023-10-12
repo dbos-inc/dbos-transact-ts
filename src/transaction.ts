@@ -23,7 +23,7 @@ export const IsolationLevel = {
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export interface TransactionContext<T extends UserDatabaseClient> extends OperonContext {
-  client: T;
+  readonly client: T;
 }
 
 export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T>  {
