@@ -56,11 +56,12 @@ export const StatusString = {
 } as const;
 
 export interface WorkflowContext extends OperonContext {
-  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
-  recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>
-  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
   childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
