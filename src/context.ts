@@ -23,12 +23,11 @@ export interface OperonContext {
   readonly workflowUUID: string;
   readonly authenticatedUser: string;
 
+  readonly logger: OperonLogger;
   readonly span: Span;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getConfig(key: string): any;
-
-  readonly logger: OperonLogger;
 }
 
 export class OperonContextImpl implements OperonContext {

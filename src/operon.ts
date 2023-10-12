@@ -358,7 +358,7 @@ export class Operon {
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
+    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
