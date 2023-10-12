@@ -13,10 +13,28 @@ import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from ".
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
+import { Client } from "pg";
 
+/**
+ * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
+ */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
   const [ operonConfig ] = parseConfigFile({loglevel: logLevel, configfile: configFilePath});
+
+  // Drop system database
+  const pgSystemClient = new Client({
+    user: operonConfig.poolConfig.user,
+    port: operonConfig.poolConfig.port,
+    host: operonConfig.poolConfig.host,
+    password: operonConfig.poolConfig.password,
+    database: "postgres",
+  });
+  await pgSystemClient.connect();
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
+  await pgSystemClient.end();
+
+  // Initialize the runtime.
   await otr.init(userClasses, operonConfig);
   return otr;
 }
@@ -45,7 +63,7 @@ export interface OperonTestingRuntime {
 }
 
 /**
- * For internal unit tests only.
+ * For internal unit tests only. We do not drop the system database for internal unit tests because we want more control over the behavior.
  */
 export async function createInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();

@@ -1,8 +1,6 @@
 import { PoolClient } from "pg";
 import { TransactionContext } from "../../src/transaction";
 import { OperonTestingRuntime, OperonTransaction, OperonWorkflow, WorkflowContext, createTestingRuntime } from "../../src";
-import { setupOperonTestDb } from "../helpers";
-import { parseConfigFile } from "../../src/operon-runtime/config";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -12,9 +10,6 @@ describe("testruntime-test", () => {
   let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
-    const [operonConfig] = parseConfigFile({configfile: configFilePath});
-    await setupOperonTestDb(operonConfig);
-
     testRuntime = await createTestingRuntime([TestClass], configFilePath, "info");
   });
 
