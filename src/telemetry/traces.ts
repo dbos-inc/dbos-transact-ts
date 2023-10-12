@@ -7,7 +7,7 @@ import { TelemetryCollector } from "./collector";
 import { TelemetrySignal } from "./signals";
 
 export interface TracerConfig {
-  disabled?: boolean;
+  enabled?: boolean;
   endpoint?: string;
 }
 

@@ -17,9 +17,6 @@ import { SystemDatabase } from "../system_database";
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
   const [ operonConfig ] = parseConfigFile({loglevel: logLevel, configfile: configFilePath});
-  if (operonConfig.telemetry?.traces) {
-    operonConfig.telemetry.traces.disabled = true;
-  }
   await otr.init(userClasses, operonConfig);
   return otr;
 }

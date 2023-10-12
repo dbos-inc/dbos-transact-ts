@@ -117,7 +117,7 @@ export class Operon {
 
     // Add Jaeger exporter if tracing is enabled
     const telemetryExporters = [];
-    if (!this.config.telemetry?.traces?.disabled) {
+    if (this.config.telemetry?.traces?.enabled) {
       telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
       this.logger.debug("Loaded Jaeger Telemetry Exporter");
     }

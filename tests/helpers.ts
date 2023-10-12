@@ -28,7 +28,7 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
         silent: silenceLogs,
       },
       traces: {
-        disabled: true,
+        enabled: false,
       },
     },
     system_database: "operontest_systemdb",
