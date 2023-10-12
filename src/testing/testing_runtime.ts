@@ -47,7 +47,7 @@ export interface OperonInvokeParams {
 }
 
 export interface OperonTestingRuntime {
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T>;
+  invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -56,12 +56,12 @@ export interface OperonTestingRuntime {
 
   getConfig(key: string): any; // Get application configuration.
 
-  destroy(): Promise<void>; // Release resources after tests.
-
   // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
   createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
+
+  destroy(): Promise<void>; // Release resources after tests.
 
   // TODO: remove it.
   getOperon(): Operon;
