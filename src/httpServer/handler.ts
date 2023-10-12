@@ -12,9 +12,9 @@ import { OperonCommunicator } from "../communicator";
 
 // local type declarations for Operon workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
-type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
+export type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
 
-export type HandlerWfFuncs<T> = {
+type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 

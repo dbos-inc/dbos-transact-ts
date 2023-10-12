@@ -4,12 +4,12 @@ import { OperonCommunicator } from "../communicator";
 import { HTTPRequest, OperonContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { OperonError } from "../error";
-import { HandlerWfFuncs } from "../httpServer/handler";
+import { InvokeFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
 import { operonConfigFilePath, parseConfigFile } from "../operon-runtime/config";
 import { OperonTransaction } from "../transaction";
-import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
@@ -46,11 +46,13 @@ export interface OperonInvokeParams {
 }
 
 export interface OperonTestingRuntime {
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
-  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
+
+  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>; 
+
   destroy(): Promise<void>; // Release resources after tests.
 
   // User database operations.
@@ -99,7 +101,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T> {
     const operon = this.getOperon();
     const ops = getRegisteredOperations(object);
 
@@ -126,7 +128,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
         ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, wfParams, ...args)
         : undefined;
     }
-    return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
+    return proxy as InvokeFuncs<T>;
   }
 
   /**
