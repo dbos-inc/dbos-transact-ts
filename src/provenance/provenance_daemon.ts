@@ -1,8 +1,5 @@
 import { Client, DatabaseError } from "pg";
-import {
-  POSTGRES_EXPORTER,
-  PostgresExporter,
-} from "../telemetry/exporters";
+import { PostgresExporter } from "../telemetry/exporters";
 import { TelemetryCollector } from "../telemetry/collector";
 import { OperonConfig } from "../operon";
 import { ProvenanceSignal } from "../telemetry/signals";
@@ -54,15 +51,7 @@ export class ProvenanceDaemon {
     this.daemonID = setInterval(() => {
       void this.recordProvenance();
     }, this.recordProvenanceIntervalMs);
-    const telemetryExporters = [];
-    if (operonConfig.telemetryExporters) {
-      for (const exporter of operonConfig.telemetryExporters) {
-        if (exporter === POSTGRES_EXPORTER) {
-          telemetryExporters.push(new PostgresExporter(operonConfig.poolConfig, operonConfig?.observability_database));
-        }
-      }
-    }
-
+    const telemetryExporters = [new PostgresExporter(operonConfig.poolConfig, operonConfig?.observability_database)];
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
   }
 

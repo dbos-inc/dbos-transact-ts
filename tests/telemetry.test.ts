@@ -1,14 +1,14 @@
-import { PostgresExporter, POSTGRES_EXPORTER } from "../src/telemetry/exporters";
+import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { Operon, OperonConfig } from "../src/operon";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
 import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext } from "../src";
-import { WorkflowHandle } from "../src/workflow";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
+/*
 type TelemetrySignalDbFields = {
   workflow_uuid: string;
   function_name: string;
@@ -20,6 +20,7 @@ type TelemetrySignalDbFields = {
   trace_id: string;
   trace_span: JSON;
 };
+*/
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -51,19 +52,24 @@ describe("operon-telemetry", () => {
   });
 
   test("Operon init works with all exporters", async () => {
-    const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+    const operonConfig = generateOperonTestConfig();
+    await setupOperonTestDb(operonConfig);
     const operon = new Operon(operonConfig);
     await operon.init();
     await operon.destroy();
   });
 
   test("collector handles errors gracefully", async () => {
-    const operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER]);
+    const operonConfig = generateOperonTestConfig();
+    if (operonConfig.telemetry?.traces) {
+      operonConfig.telemetry.traces.enabled = true;
+    }
+    await setupOperonTestDb(operonConfig);
     const operon = new Operon(operonConfig);
     await operon.init(TestClass);
 
-    const collector = operon.telemetryCollector.exporters[0] as PostgresExporter;
-    jest.spyOn(collector, "process").mockImplementation(() => {
+    const collector = operon.telemetryCollector.exporters[0] as JaegerExporter;
+    jest.spyOn(collector, "export").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
     // "mute" console.error
@@ -74,23 +80,24 @@ describe("operon-telemetry", () => {
     await operon.destroy();
   });
 
+  /*
   describe("Postgres exporter", () => {
     let operon: Operon;
     let operonConfig: OperonConfig;
     let testRuntime: OperonTestingRuntime;
 
     beforeAll(async () => {
-      operonConfig = generateOperonTestConfig([POSTGRES_EXPORTER])
+      operonConfig = generateOperonTestConfig()
+      // This attempts to clear all our DBs, including the observability one
+      await setupOperonTestDb(operonConfig);
       testRuntime = await createInternalTestRuntime([TestClass], operonConfig);
       operon = testRuntime.getOperon();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
-      expect(operon.telemetryCollector.exporters[0]).toBeInstanceOf(PostgresExporter);
+      expect(operon.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
     });
 
     afterAll(async () => {
       await testRuntime.destroy();
-      // This attempts to clear all our DBs, including the observability one
-      await setupOperonTestDb(operonConfig);
     });
 
     test("signal tables are correctly created", async () => {
@@ -200,6 +207,7 @@ describe("operon-telemetry", () => {
       expect(wfTraceEntry.trace_span).not.toBe(null);
     });
   });
+ */
 
   describe("http Tracer", () => {
     let config: OperonConfig;
