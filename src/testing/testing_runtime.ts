@@ -4,19 +4,38 @@ import { OperonCommunicator } from "../communicator";
 import { HTTPRequest, OperonContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { OperonError } from "../error";
-import { HandlerWfFuncs } from "../httpServer/handler";
+import { InvokeFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
 import { operonConfigFilePath, parseConfigFile } from "../operon-runtime/config";
 import { OperonTransaction } from "../transaction";
-import { OperonWorkflow, WFInvokeFuncs, WorkflowHandle, WorkflowParams } from "../workflow";
+import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
+import { Client } from "pg";
+import { get, has } from "lodash";
 
-export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
+/**
+ * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
+ */
+export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  const [ operonConfig ] = parseConfigFile({loglevel: logLevel, configfile: configFilePath});
+  const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
+
+  // Drop system database
+  const pgSystemClient = new Client({
+    user: operonConfig.poolConfig.user,
+    port: operonConfig.poolConfig.port,
+    host: operonConfig.poolConfig.host,
+    password: operonConfig.poolConfig.password,
+    database: "postgres",
+  });
+  await pgSystemClient.connect();
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
+  await pgSystemClient.end();
+
+  // Initialize the runtime.
   await otr.init(userClasses, operonConfig);
   return otr;
 }
@@ -28,11 +47,15 @@ export interface OperonInvokeParams {
 }
 
 export interface OperonTestingRuntime {
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T>;
-  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
+
+  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>; 
+
+  getConfig(key: string): any; // Get application configuration.
+
   destroy(): Promise<void>; // Release resources after tests.
 
   // User database operations.
@@ -45,7 +68,7 @@ export interface OperonTestingRuntime {
 }
 
 /**
- * For internal unit tests only.
+ * For internal unit tests only. We do not drop the system database for internal unit tests because we want more control over the behavior.
  */
 export async function createInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
@@ -58,6 +81,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
  */
 export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   #server: OperonHttpServer | null = null;
+  #applicationConfig: unknown = undefined;
  
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
@@ -68,6 +92,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
+    this.#applicationConfig = operon.config.application;
   }
 
   /**
@@ -78,10 +103,23 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   }
 
   /**
+   * Get Application Configuration.
+  */
+  getConfig(key: string): any {
+    if (!this.#applicationConfig) {
+      return undefined;
+    }
+    if (!has(this.#applicationConfig, key)) {
+      return undefined;
+    }
+    return get(this.#applicationConfig, key);
+  }
+
+  /**
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): WFInvokeFuncs<T> & HandlerWfFuncs<T> {
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T> {
     const operon = this.getOperon();
     const ops = getRegisteredOperations(object);
 
@@ -108,7 +146,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
         ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, wfParams, ...args)
         : undefined;
     }
-    return proxy as (WFInvokeFuncs<T> & HandlerWfFuncs<T>);
+    return proxy as InvokeFuncs<T>;
   }
 
   /**
