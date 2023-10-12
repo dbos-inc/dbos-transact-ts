@@ -2,6 +2,7 @@
   "name": "operon-hello",
   "version": "0.0.1",
   "scripts": {
+    "operon-quickstart-setup": "PGPASSWORD=dbos ./start_postgres_docker.sh && knex migrate:latest && tsc",
     "build": "tsc",
     "test": "jest --runInBand"
   },
