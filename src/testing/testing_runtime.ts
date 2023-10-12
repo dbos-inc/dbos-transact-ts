@@ -29,7 +29,7 @@ export async function createTestingRuntime(userClasses: object[], configFilePath
     port: operonConfig.poolConfig.port,
     host: operonConfig.poolConfig.host,
     password: operonConfig.poolConfig.password,
-    database: "postgres",
+    database: operonConfig.poolConfig.database,
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
