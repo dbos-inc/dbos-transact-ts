@@ -377,7 +377,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Send a message to a workflow identified by a UUID.
    * The message can optionally be tagged with a topic.
    */
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string | null = null): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -385,7 +385,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     }, {});
     this.resultBuffer.clear();
 
-    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
+    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
   /**
@@ -393,7 +393,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = this.#operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {

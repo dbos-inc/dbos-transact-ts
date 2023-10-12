@@ -98,7 +98,7 @@ export class Operon {
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
-  readonly defaultNotificationTimeoutSec = 60;
+  static readonly defaultNotificationTimeoutSec = 60;
 
   readonly logger: Logger;
   readonly tracer: Tracer;
@@ -356,7 +356,7 @@ export class Operon {
     return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
@@ -368,7 +368,7 @@ export class Operon {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

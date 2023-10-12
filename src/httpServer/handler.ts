@@ -72,7 +72,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
   /* PUBLIC INTERFACE  */
   ///////////////////////
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.#operon.send(destinationUUID, message, topic, idempotencyKey);
   }
 
