@@ -32,6 +32,14 @@ export function validateOperonMethodArgs<Args extends unknown[]>(methReg: Operon
         }
 
         let argValue = args[idx];
+
+        // So... there is such a thing as "undefined", and another thing called "null"
+        // We will fold this to "undefined" for our APIs.  It's just a rule of ours.
+        if (argValue === null) {
+          argValue = undefined;
+          args[idx] = undefined;
+        }
+
         if (argValue === undefined && (argDescriptor.required === ArgRequiredOptions.REQUIRED ||
           (argDescriptor.required === ArgRequiredOptions.DEFAULT && methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED)))
         {
