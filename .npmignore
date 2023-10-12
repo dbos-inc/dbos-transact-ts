@@ -22,3 +22,6 @@ coverage/
 
 # ignore any packed packages in the repo
 *.tgz
+
+# Do not ignore any files or directories inside the examples directory
+!examples/**
