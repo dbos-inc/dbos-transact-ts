@@ -61,6 +61,9 @@ describe("operon-telemetry", () => {
 
   test("collector handles errors gracefully", async () => {
     const operonConfig = generateOperonTestConfig();
+    if (operonConfig.telemetry?.traces) {
+      operonConfig.telemetry.traces.enabled = true;
+    }
     await setupOperonTestDb(operonConfig);
     const operon = new Operon(operonConfig);
     await operon.init(TestClass);
