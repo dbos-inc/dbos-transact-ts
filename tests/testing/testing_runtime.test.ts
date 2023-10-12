@@ -10,7 +10,7 @@ describe("testruntime-test", () => {
   let testRuntime: OperonTestingRuntime;
 
   beforeAll(async () => {
-    testRuntime = await createTestingRuntime([TestClass], configFilePath, "info");
+    testRuntime = await createTestingRuntime([TestClass], configFilePath);
   });
 
   afterAll(async () => {
@@ -28,6 +28,7 @@ class TestClass {
   @OperonTransaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+    txnCtxt.logger.debug("Name: " + name);
     return JSON.stringify(rows[0]);
   }
 

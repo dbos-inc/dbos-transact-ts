@@ -18,9 +18,9 @@ import { Client } from "pg";
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
-export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath, logLevel: string = "info"): Promise<OperonTestingRuntime> {
+export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  const [ operonConfig ] = parseConfigFile({loglevel: logLevel, configfile: configFilePath});
+  const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
 
   // Drop system database
   const pgSystemClient = new Client({
