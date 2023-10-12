@@ -2,7 +2,7 @@
   "name": "operon-hello",
   "version": "0.0.1",
   "scripts": {
-    "build": "npx knex migrate:up && tsc",
+    "build": "tsc",
     "test": "npx knex migrate:rollback && npx knex migrate:up && jest"
   },
   "devDependencies": {

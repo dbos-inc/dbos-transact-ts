@@ -67,6 +67,7 @@ describe("runtime-tests", () => {
     process.chdir("examples/hello");
     execSync("npm i");
     execSync("npm run build");
+    execSync("npx knex migrate:up");
   });
 
   afterAll(() => {
