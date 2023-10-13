@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/dbos-inc/operon"
   },
-  "homepage": "https://www.dbos.dev/",
+  "homepage": "https://docs.www.dbos.dev/",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
