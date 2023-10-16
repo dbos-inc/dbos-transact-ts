@@ -34,14 +34,28 @@ export class OperonRuntime {
     }
 
     const classes: object[] = [];
+    var initFunction = null;
     for (const key in exports) {
+      this.operon.logger.info("found key " + key);
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
         this.operon.logger.debug(`Loaded class: ${key}`);
       }
+      if (key === "initializeApp") {
+        initFunction = exports[key] as Function ;
+      }
+    }
+
+    if (initFunction != null) {
+      this.operon.logger.info("Executing init function");
+      initFunction();
+      this.operon.logger.info("Done Executing init function");
+    } else {
+      this.operon.logger.info("initfunction is still null");
     }
 
     await this.operon.init(...classes);
+    
   }
 
   /**

@@ -1,6 +1,10 @@
 import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
+export const initializeApp = () => {
+    console.log("Executing init code");
+}
+
 // The schema of the database table used in this example.
 export interface operon_hello {
   name: string;
