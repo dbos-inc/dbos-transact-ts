@@ -122,6 +122,28 @@ describe("operon-config", () => {
       await operon.telemetryCollector.destroy();
     });
 
+    test("getConfig returns the default value when no application config is provided", async () => {
+      const localMockOperonConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          user_database: 'some DB'
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockOperonConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const operon = new Operon(operonConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
+      expect(ctx.getConfig<string>("payments_url", "default")).toBe("default");
+      // We didn't init, so do some manual cleanup only
+      clearInterval(operon.flushBufferID);
+      await operon.telemetryCollector.destroy();
+    });
+
     test("getConfig throws when it finds a value of different type than the default", async () => {
       const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const operon = new Operon(operonConfig);
