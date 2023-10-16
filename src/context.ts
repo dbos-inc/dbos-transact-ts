@@ -27,7 +27,7 @@ export interface OperonContext {
   readonly span: Span;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getConfig<T>(key: string, defaultValue?: T): T;
+  getConfig<T>(key: string, defaultValue?: T): T | undefined;
 }
 
 export class OperonContextImpl implements OperonContext {
@@ -52,13 +52,13 @@ export class OperonContextImpl implements OperonContext {
   /*** Application configuration ***/
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any;
-  getConfig<T>(key: string, defaultValue?: T): T {
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
     // If there is no application config at all, or the key is missing, return the default value or undefined.
     if (!this.applicationConfig || !has(this.applicationConfig, key)) {
       if (defaultValue) {
         return defaultValue;
       }
-      return undefined as T;
+      return undefined;
     }
 
     // If the key is found and the default value is provided, check whether the value is of the same type.
