@@ -53,16 +53,8 @@ export class OperonContextImpl implements OperonContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any;
   getConfig<T>(key: string, defaultValue?: T): T {
-    // If there is no application config at all, return the default value or undefined.
-    if (!this.applicationConfig) {
-      if (defaultValue) {
-        return defaultValue;
-      }
-      return undefined as T;
-    }
-
-    // If the key is not found in the application config, return the default value or undefined.
-    if (!has(this.applicationConfig, key)) {
+    // If there is no application config at all, or the key is missing, return the default value or undefined.
+    if (!this.applicationConfig || !has(this.applicationConfig, key)) {
       if (defaultValue) {
         return defaultValue;
       }
