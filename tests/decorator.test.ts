@@ -17,7 +17,7 @@ class TestClass {
   }
   @OperonCommunicator()
   static async testCommunicator(commCtxt: CommunicatorContext) {
-    expect(commCtxt.getConfig("counter")).toBe(3);
+    expect(commCtxt.getConfig<number>("counter")).toBe(3);
     void commCtxt;
     await sleep(1);
     return TestClass.#counter++;
@@ -25,14 +25,14 @@ class TestClass {
 
   @OperonWorkflow()
   static async testCommWorkflow(workflowCtxt: WorkflowContext) {
-    expect(workflowCtxt.getConfig("counter")).toBe(3);
+    expect(workflowCtxt.getConfig<number>("counter")).toBe(3);
     const funcResult = await workflowCtxt.invoke(TestClass).testCommunicator();
     return funcResult ?? -1;
   }
 
   @OperonTransaction()
   static async testInsertTx(txnCtxt: TestTransactionContext, name: string) {
-    expect(txnCtxt.getConfig("counter")).toBe(3);
+    expect(txnCtxt.getConfig<number>("counter")).toBe(3);
     const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
     return Number(rows[0].id);
   }
@@ -51,7 +51,7 @@ class TestClass {
   @OperonWorkflow()
   static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(wfCtxt.getConfig("counter")).toBe(3);
+    expect(wfCtxt.getConfig<number>("counter")).toBe(3);
     const funcResult: number = await wfCtxt.invoke(TestClass).testInsertTx(name);
     const checkResult: number = await wfCtxt.invoke(TestClass).testReadTx(funcResult);
     return checkResult;
