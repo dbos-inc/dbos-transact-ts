@@ -3,7 +3,7 @@ import { IncomingMessage } from "http";
 import { OperonCommunicator } from "../communicator";
 import { HTTPRequest, OperonContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
-import { OperonError } from "../error";
+import { OperonConfigKeyTypeError, OperonError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
@@ -102,14 +102,20 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   /**
    * Get Application Configuration.
   */
-  getConfig(key: string): any {
-    if (!this.#applicationConfig) {
-      return undefined;
+  getConfig<T>(key: string, defaultValue?: T): T {
+    if (!this.#applicationConfig || !has(this.#applicationConfig, key)) {
+      if (defaultValue) {
+        return defaultValue;
+      }
+      return undefined as T;
     }
-    if (!has(this.#applicationConfig, key)) {
-      return undefined;
+
+    // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment
+    const value = get(this.#applicationConfig, key);
+    if (defaultValue && typeof value !== typeof defaultValue) {
+      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
-    return get(this.#applicationConfig, key);
+    return value as T;
   }
 
   /**
