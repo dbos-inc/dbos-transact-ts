@@ -91,7 +91,7 @@ describe("runtime-entrypoint-tests", () => {
     await waitForMessageTest(command, "1234");
   });
 
-  test("runtime-hello using entrypoint localRuntimeConfig", async () => {
+  test("runtime-hello using entrypoint runtimeConfig", async () => {
     const mockOperonConfigYamlString = `
 database:
   hostname: 'localhost'
@@ -102,7 +102,7 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
-localRuntimeConfig:
+runtimeConfig:
   entrypoint: dist/entrypoint.js
 `;
     const filePath = "operon-config.yaml";
@@ -163,7 +163,7 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
-localRuntimeConfig:
+runtimeConfig:
   port: 6666
 `;
     const filePath = "operon-config.yaml";

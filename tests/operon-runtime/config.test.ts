@@ -17,7 +17,7 @@ describe("operon-config", () => {
         password: \${PGPASSWORD}
         connectionTimeoutMillis: 3000
         user_database: 'some DB'
-      localRuntimeConfig:
+      runtimeConfig:
         port: 1234
         entrypoint: fake-entrypoint
       application:
