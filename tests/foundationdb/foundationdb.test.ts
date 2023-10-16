@@ -5,7 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
-import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -76,7 +76,7 @@ describe("foundationdb-operon", () => {
     FdbTestClass.innerResolve();
     await expect(invokedHandle.then((x) => x.getResult())).resolves.toBe(3);
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -139,7 +139,7 @@ describe("foundationdb-operon", () => {
 
   test("fdb-failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID);
 
     const handle = await testRuntime.invoke(FdbTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);

@@ -21,7 +21,7 @@ import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -142,7 +142,7 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.

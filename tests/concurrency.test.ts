@@ -4,7 +4,7 @@ import { sleep } from "../src/utils";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -67,7 +67,7 @@ describe("concurrency-tests", () => {
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     ConcurrTestClass.resolve();
     await handle.getResult();
