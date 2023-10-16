@@ -26,7 +26,7 @@ export interface OperonContext {
   readonly span: Span;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getConfig(key: string): any;
+  getConfig<T>(key: string): T;
 }
 
 export class OperonContextImpl implements OperonContext {
