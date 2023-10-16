@@ -54,7 +54,7 @@ export interface OperonTestingRuntime {
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
 
-  getConfig<T>(key: string, defaultValue?: T): T; // Get application configuration.
+  getConfig<T>(key: string, defaultValue?: T): T | undefined; // Get application configuration.
 
   // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
@@ -102,12 +102,12 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   /**
    * Get Application Configuration.
   */
-  getConfig<T>(key: string, defaultValue?: T): T {
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
     if (!this.#applicationConfig || !has(this.#applicationConfig, key)) {
       if (defaultValue) {
         return defaultValue;
       }
-      return undefined as T;
+      return undefined;
     }
 
     // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment
