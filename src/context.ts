@@ -3,6 +3,7 @@ import { WinstonLogger as Logger, Logger as OperonLogger } from "./telemetry/log
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
+import { OperonConfigKeyTypeError } from "./error";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
@@ -26,18 +27,16 @@ export interface OperonContext {
   readonly span: Span;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getConfig<T>(key: string): T;
+  getConfig<T>(key: string, defaultValue?: T): T;
 }
 
 export class OperonContextImpl implements OperonContext {
-  request: HTTPRequest = {}; // Raw incoming HTTP request.
-
-  authenticatedUser: string = ""; ///< The user that has been authenticated
-  authenticatedRoles: string[] = []; ///< All roles the user has according to authentication
-  assumedRole: string = ""; ///< Role in use - that user has and provided authorization to current function
-
-  workflowUUID: string = "";
-  readonly logger: OperonLogger;
+  request: HTTPRequest = {};          // Raw incoming HTTP request.
+  authenticatedUser: string = "";     // The user that has been authenticated
+  authenticatedRoles: string[] = [];  // All roles the user has according to authentication
+  assumedRole: string = "";           // Role in use - that user has and provided authorization to current function
+  workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
+  readonly logger: OperonLogger;      // Wrapper around the global logger for this context.
 
   constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
     this.logger = new OperonLogger(logger, this);
@@ -53,14 +52,30 @@ export class OperonContextImpl implements OperonContext {
   /*** Application configuration ***/
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getConfig(key: string): any {
+  getConfig<T>(key: string, defaultValue?: T): T {
+    // If there is no application config at all, return the default value or undefined.
     if (!this.applicationConfig) {
-      return undefined;
+      if (defaultValue) {
+        return defaultValue;
+      }
+      return undefined as T;
     }
+
+    // If the key is not found in the application config, return the default value or undefined.
     if (!has(this.applicationConfig, key)) {
-      return undefined;
+      if (defaultValue) {
+        return defaultValue;
+      }
+      return undefined as T;
     }
-    return get(this.applicationConfig, key);
+
+    // If the key is found and the default value is provided, check whether the value is of the same type.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const value = get(this.applicationConfig, key);
+    if (defaultValue && typeof value !== typeof defaultValue) {
+      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
+    }
+
+    return value as T;
   }
 }
