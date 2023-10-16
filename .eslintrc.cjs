@@ -13,7 +13,7 @@ module.exports = {
     tsconfigRootDir: __dirname,
   },
   root: true,
-  ignorePatterns: ["dist/", "knexfile.ts", "**/migrations/*"],
+  ignorePatterns: ["dist/", "knexfile.ts", "**/migrations/*", "examples/"],
   overrides: [
     {
       files: ["*.js"],
