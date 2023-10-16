@@ -40,8 +40,7 @@ describe("operon-config", () => {
 
   describe("Configuration parsing", () => {
     test("Config is valid and is parsed as expected", () => {
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockOperonConfigYamlString);
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      jest.spyOn(utils, "readFileSync").mockReturnValue(mockOperonConfigYamlString);
 
       const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
 
@@ -101,8 +100,7 @@ describe("operon-config", () => {
 
   describe("context getConfig()", () => {
     beforeEach(() => {
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockOperonConfigYamlString);
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      jest.spyOn(utils, "readFileSync").mockReturnValue(mockOperonConfigYamlString);
     });
 
     afterEach(() => {
@@ -135,8 +133,7 @@ describe("operon-config", () => {
           user_database: 'some DB'
       `;
       jest.restoreAllMocks();
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockOperonConfigYamlString);
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockOperonConfigYamlString);
       const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const operon = new Operon(operonConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
