@@ -26,8 +26,8 @@ export interface OperonContext {
   readonly logger: OperonLogger;
   readonly span: Span;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getConfig<T>(key: string, defaultValue?: T): T | undefined;
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
 }
 
 export class OperonContextImpl implements OperonContext {
@@ -52,6 +52,8 @@ export class OperonContextImpl implements OperonContext {
   /*** Application configuration ***/
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   applicationConfig?: any;
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     // If there is no application config at all, or the key is missing, return the default value or undefined.
     if (!this.applicationConfig || !has(this.applicationConfig, key)) {
