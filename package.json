@@ -16,7 +16,7 @@
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
     "setversion": "grunt setversion",
-    "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=tests/foundationdb/*",
+    "test": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=tests/foundationdb/* --testPathIgnorePatterns=tests/provenance/*",
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
   "bin": {
