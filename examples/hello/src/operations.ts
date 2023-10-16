@@ -3,7 +3,7 @@ import { Knex } from 'knex';
 
 export const initializeApp = (ctx: InitContext) => {
     console.log("Executing init code");
-    ctx.logger.info("Database is "+ ctx.db.getName());
+    ctx.logger.info("Database is "+ ctx.userDatabase.getName());
 }
 
 // The schema of the database table used in this example.

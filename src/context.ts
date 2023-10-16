@@ -68,17 +68,17 @@ export class OperonContextImpl implements OperonContext {
 }
 
 export interface InitContext extends OperonContext {
-  readonly db: UserDatabase;
+  readonly userDatabase: UserDatabase;
   
 }
 
 export class InitContextImpl extends OperonContextImpl implements InitContext {
   
-  readonly db: UserDatabase = null as unknown as UserDatabase;
+  readonly userDatabase: UserDatabase = null as unknown as UserDatabase;
 
   constructor(readonly operon: Operon) {
     super("",operon.tracer.startSpan("init") , operon.logger) ;
-    this.db = operon.userDatabase;
+    this.userDatabase = operon.userDatabase;
   }
 
 }
