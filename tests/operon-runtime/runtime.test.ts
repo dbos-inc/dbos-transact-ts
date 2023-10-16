@@ -62,16 +62,20 @@ describe("runtime-tests", () => {
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
-    await pgSystemClient.query(`CREATE TABLE IF NOT EXISTS operon_hello (name TEXT PRIMARY KEY, greet_count INT);`);
     await pgSystemClient.end();
 
     process.chdir("examples/hello");
     execSync("npm i");
     execSync("npm run build");
+    execSync("npx knex migrate:up");
   });
 
   afterAll(() => {
     process.chdir("../..");
+  });
+
+  test("runtime-hello-jest", () => {
+    execSync("npm run test", { env: process.env });  // Make sure the hello example passes its own tests.
   });
 
   // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!

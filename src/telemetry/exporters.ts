@@ -18,9 +18,9 @@ export interface ITelemetryExporter<T, U> {
 export const JAEGER_EXPORTER = "JaegerExporter";
 export class JaegerExporter implements ITelemetryExporter<void, undefined> {
   private readonly exporter: OTLPTraceExporter;
-  constructor() {
+  constructor(endpoint: string = "http://localhost:4318/v1/traces") {
     this.exporter = new OTLPTraceExporter({
-      url: process.env.JAEGER_OTLP_ENDPOINT || "http://localhost:4318/v1/traces",
+      url: endpoint,
     });
   }
 

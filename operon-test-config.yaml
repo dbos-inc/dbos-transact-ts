@@ -1,0 +1,16 @@
+database:
+  hostname: 'localhost'
+  port: 5432
+  username: 'postgres'
+  password: ${PGPASSWORD}
+  user_database: 'operontest'
+  system_database: 'operontest_systemdb'
+  user_dbclient: 'pg-node'
+  connectionTimeoutMillis: 3000
+telemetry:
+  logs:
+    logLevel: 'debug'
+    addContextMetadata: true
+    silent: true
+application:
+  testvalue: 'postgres'

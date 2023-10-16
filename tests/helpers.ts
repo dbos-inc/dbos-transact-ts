@@ -3,7 +3,7 @@ import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
 
 /* DB management helpers */
-export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDatabaseName): OperonConfig {
+export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
@@ -23,15 +23,20 @@ export function generateOperonTestConfig(exporters?: string[], dbClient?: UserDa
     application: {
       counter: 3,
     },
-    telemetryExporters: exporters || [],
+    telemetry: {
+      logs: {
+        silent: silenceLogs,
+      },
+      traces: {
+        enabled: false,
+      },
+    },
     system_database: "operontest_systemdb",
-    observability_database: "operontest_observabilitydb",
+    // observability_database: "operontest_observabilitydb",
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
       entities: ["KV"],
     },
-    logLevel: "info",
-    silenceLogs,
   };
 
   return operonTestConfig;

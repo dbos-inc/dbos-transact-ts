@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { operonNull, OperonNull } from "./operon";
+import { Operon, operonNull, OperonNull } from "./operon";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
@@ -29,8 +29,8 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
-  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void>;
-  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null>;
+  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
+  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
@@ -211,8 +211,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = "__null__topic__";
 
-  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string | null, message: T): Promise<void> {
-    topic = topic === null ? this.nullTopic : topic;
+  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void> {
+    topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -231,8 +231,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic: string | null, timeoutSeconds: number): Promise<T | null> {
-    topic = topic === null ? this.nullTopic : topic;
+  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+    topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
@@ -244,7 +244,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const messagePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    const payload = topic === null ? workflowUUID : `${workflowUUID}::${topic}`;
+    const payload = `${workflowUUID}::${topic}`;
     this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
     let timer: NodeJS.Timeout;
     const timeoutPromise = new Promise<void>((resolve) => {

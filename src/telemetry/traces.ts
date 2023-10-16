@@ -6,6 +6,11 @@ import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions"
 import { TelemetryCollector } from "./collector";
 import { TelemetrySignal } from "./signals";
 
+export interface TracerConfig {
+  enabled?: boolean;
+  endpoint?: string;
+}
+
 export function spanToString(span: ReadableSpan): string {
   return JSON.stringify({
     name: span.name,

@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, OperonTestingRuntime, createTestingRuntime } from "../../src";
+import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, OperonTestingRuntime, OperonWorkflow } from "../../src";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { OperonConfig } from "../../src/operon";
+import { WorkflowContext } from "../../src";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-datavalidation-tests", () => {
   let testRuntime: OperonTestingRuntime;
@@ -13,7 +15,7 @@ describe("httpserver-datavalidation-tests", () => {
   beforeAll(async () => {
     config = generateOperonTestConfig();
     await setupOperonTestDb(config);
-    testRuntime = await createTestingRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
+    testRuntime = await createInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
   });
 
   afterAll(async () => {
@@ -59,6 +61,12 @@ describe("httpserver-datavalidation-tests", () => {
   test("string post not a number", async () => {
     const response = await request(testRuntime.getHandlersCallback()).post("/string").send({ v: 1234 });
     expect(response.statusCode).toBe(400);
+  });
+
+  // No string to optional arg -- in a workflow
+  test("no string to workflow w optional arg", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).post("/doworkflow").send({});
+    expect(response.statusCode).toBe(200);
   });
 
   // Varchar(10)
@@ -560,6 +568,20 @@ describe("httpserver-datavalidation-tests", () => {
     @Debug()
     static async checkDefValueD(_ctx: HandlerContext, v?: string) {
       return { message: `Got string ${v}` };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @OperonWorkflow()
+    static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
+    {
+      return {message: v};
+    }
+    
+    @PostApi("/doworkflow")
+    static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string)
+    {
+      const wh = await ctx.invoke(DefaultArgToDefault).opworkflow(v);
+      return await wh.getResult();
     }
   }
 });

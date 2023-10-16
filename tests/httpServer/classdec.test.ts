@@ -8,7 +8,6 @@ import {
   TransactionContext,
   WorkflowContext,
   OperonTestingRuntime,
-  createTestingRuntime,
 } from "../../src";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import request from "supertest";
@@ -18,6 +17,7 @@ import { Middleware } from "koa";
 import { OperonNotAuthorizedError } from "../../src/error";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-defsec-tests", () => {
   const testTableName = "operon_test_kv";
@@ -31,7 +31,7 @@ describe("httpserver-defsec-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([TestEndpointDefSec], config);
+    testRuntime = await createInternalTestRuntime([TestEndpointDefSec], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;

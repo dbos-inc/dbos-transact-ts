@@ -37,12 +37,12 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  status: string;
-  workflowName: string;
-  authenticatedUser: string;
-  assumedRole: string;
-  authenticatedRoles: string[];
-  request: HTTPRequest;
+  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, or ERROR.
+  readonly workflowName: string; // The name of the workflow function.
+  readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
+  readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
+  readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
+  readonly request: HTTPRequest; // The parent request for this workflow, if any.
 }
 
 export interface PgTransactionId {
@@ -56,11 +56,12 @@ export const StatusString = {
 } as const;
 
 export interface WorkflowContext extends OperonContext {
-  invoke<T extends object>(object: T): WFInvokeFuncs<T>;
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | null): Promise<void>;
-  recv<T extends NonNullable<any>>(topic?: string | null, timeoutSeconds?: number): Promise<T | null>
-  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
   childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -376,7 +377,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Send a message to a workflow identified by a UUID.
    * The message can optionally be tagged with a topic.
    */
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string | null = null): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -384,7 +385,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     }, {});
     this.resultBuffer.clear();
 
-    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, topic, message);
+    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
   /**
@@ -392,7 +393,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic: string | null = null, timeoutSeconds: number = this.#operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {

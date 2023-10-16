@@ -19,15 +19,11 @@ import {
 
 import { OperonTransaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, OperonCommunicator } from './communicator';
-import {
-  PostgresExporter,
-  POSTGRES_EXPORTER,
-  JAEGER_EXPORTER,
-  JaegerExporter,
-} from './telemetry/exporters';
+import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
-import { Logger } from 'winston';
+import { createGlobalLogger, WinstonLogger as Logger } from './telemetry/logs';
+import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
@@ -44,7 +40,6 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { OperonContextImpl } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
-import { createGlobalLogger } from './telemetry/logs';
 
 export interface OperonNull { }
 export const operonNull: OperonNull = {};
@@ -53,13 +48,11 @@ export const operonNull: OperonNull = {};
 export interface OperonConfig {
   readonly poolConfig: PoolConfig;
   readonly userDbclient?: UserDatabaseName;
-  readonly telemetryExporters?: string[];
+  readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
-  readonly logLevel: string;
-  readonly silenceLogs: boolean;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -98,7 +91,7 @@ export class Operon {
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
 
-  readonly defaultNotificationTimeoutSec = 60;
+  static readonly defaultNotificationTimeoutSec = 60;
 
   readonly logger: Logger;
   readonly tracer: Tracer;
@@ -107,7 +100,7 @@ export class Operon {
 
   /* OPERON LIFE CYCLE MANAGEMENT */
   constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
-    this.logger = createGlobalLogger(this.config.logLevel, this.config.silenceLogs);
+    this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
@@ -122,18 +115,11 @@ export class Operon {
     }, this.flushBufferIntervalMs);
     this.logger.debug('Started workflow status buffer worker');
 
-    // Parse requested exporters
+    // Add Jaeger exporter if tracing is enabled
     const telemetryExporters = [];
-    if (this.config.telemetryExporters && this.config.telemetryExporters.length > 0) {
-      for (const exporter of this.config.telemetryExporters) {
-        if (exporter === POSTGRES_EXPORTER) {
-          telemetryExporters.push(new PostgresExporter(this.config.poolConfig, this.config.observability_database));
-          this.logger.debug("Loaded Postgres Telemetry Exporter");
-        } else if (exporter === JAEGER_EXPORTER) {
-          telemetryExporters.push(new JaegerExporter());
-          this.logger.debug("Loaded Jaeger Telemetry Exporter");
-        }
-      }
+    if (this.config.telemetry?.traces?.enabled) {
+      telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
+      this.logger.debug("Loaded Jaeger Telemetry Exporter");
     }
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.tracer = new Tracer(this.telemetryCollector);
@@ -297,7 +283,7 @@ export class Operon {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request ?? null, args);
+      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
     }
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
@@ -356,9 +342,9 @@ export class Operon {
     return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
   }
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic: string) => {
+    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
@@ -368,7 +354,7 @@ export class Operon {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = this.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -417,7 +403,7 @@ export class Operon {
       operationName: status.workflowName,
     });
     const oc = new OperonContextImpl(status.workflowName, span, this.logger);
-    oc.request = status.request ?? undefined;
+    oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;

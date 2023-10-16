@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { OperonNull, operonNull } from "../operon";
+import { Operon, OperonNull, operonNull } from "../operon";
 import { SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
@@ -227,7 +227,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async send<T>(workflowUUID: string, functionID: number, destinationUUID: string, topic: string, message: T): Promise<void> {
+  readonly nullTopic = "__null__topic__";
+
+  async send<T>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void> {
+    const currTopic: string = topic ?? this.nullTopic;
+
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
@@ -238,26 +242,27 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
 
       // Retrieve the message queue.
-      const exists = (await notifications.get([destinationUUID, topic])) as Array<unknown> | undefined;
+      const exists = (await notifications.get([destinationUUID, currTopic])) as Array<unknown> | undefined;
       if (exists === undefined) {
-        notifications.set([destinationUUID, topic], [message]);
+        notifications.set([destinationUUID, currTopic], [message]);
       } else {
         // Append to the existing message queue.
         exists.push(message);
-        notifications.set([destinationUUID, topic], exists);
+        notifications.set([destinationUUID, currTopic], exists);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
   }
 
-  async recv<T>(workflowUUID: string, functionID: number, topic: string, timeoutSeconds: number): Promise<T | null> {
+  async recv<T>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+    const currTopic = topic ?? this.nullTopic;
     // For OAOO, check if the recv already ran.
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;
     if (output !== undefined) {
       return output.output;
     }
     // Check if there is a message in the queue, waiting for one to arrive if not.
-    const watch = await this.notificationsDB.getAndWatch([workflowUUID, topic]);
+    const watch = await this.notificationsDB.getAndWatch([workflowUUID, currTopic]);
     if (watch.value === undefined) {
       const timeout = setTimeout(() => {
         watch.cancel();
@@ -271,7 +276,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
-      const messages = (await notifications.get([workflowUUID, topic])) as Array<unknown> | undefined;
+      const messages = (await notifications.get([workflowUUID, currTopic])) as Array<unknown> | undefined;
       const message = (messages ? messages.shift() as T : undefined) ?? null;  // If no message is found, return null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
@@ -279,9 +284,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
       if (messages && messages.length > 0) {
-        notifications.set([workflowUUID, topic], messages);  // Update the message table.
+        notifications.set([workflowUUID, currTopic], messages);  // Update the message table.
       } else {
-        notifications.clear([workflowUUID, topic]);
+        notifications.clear([workflowUUID, currTopic]);
       }
       return message;
     });
