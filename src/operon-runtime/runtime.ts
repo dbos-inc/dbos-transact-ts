@@ -46,11 +46,11 @@ export class OperonRuntime {
       }
     }
 
+    await this.operon.init(...classes);
+
     if (initFunction != null) {
       initFunction();
     } 
-    
-    await this.operon.init(...classes);
   
   }
 
