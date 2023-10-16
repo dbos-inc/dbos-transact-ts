@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { isObject } from 'lodash';
 import { Server } from 'http';
 import { OperonError } from '../error';
+import { InitContextImpl } from '../context';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,7 +50,7 @@ export class OperonRuntime {
     await this.operon.init(...classes);
 
     if (initFunction != null) {
-      initFunction();
+      initFunction(new InitContextImpl(this.operon.userDatabase, this.operon));
     } 
   
   }

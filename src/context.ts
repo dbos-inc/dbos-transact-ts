@@ -3,6 +3,8 @@ import { WinstonLogger as Logger, Logger as OperonLogger } from "./telemetry/log
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
+import { UserDatabase, UserDatabaseName } from "./user_database";
+import { Operon } from "./operon";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
@@ -63,4 +65,17 @@ export class OperonContextImpl implements OperonContext {
     }
     return get(this.applicationConfig, key);
   }
+}
+
+export interface InitContext extends OperonContext {
+  readonly db: UserDatabase;
+  
+}
+
+export class InitContextImpl extends OperonContextImpl implements InitContext {
+  
+  constructor(readonly db:UserDatabase, readonly operon: Operon) {
+    super("",operon.tracer.startSpan("init") , operon.logger) ;
+  }
+
 }

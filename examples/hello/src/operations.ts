@@ -1,8 +1,9 @@
-import { TransactionContext, OperonTransaction, GetApi, HandlerContext } from '@dbos-inc/operon'
+import { TransactionContext, OperonTransaction, GetApi, HandlerContext, InitContext } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
-export const initializeApp = () => {
+export const initializeApp = (ctx: InitContext) => {
     console.log("Executing init code");
+    ctx.logger.info("Database is "+ ctx.db.getName());
 }
 
 // The schema of the database table used in this example.

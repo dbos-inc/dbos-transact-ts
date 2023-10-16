@@ -9,6 +9,7 @@ export {
 
 export {
   OperonContext,
+  InitContext,
 } from './context';
 
 export {
