@@ -103,6 +103,8 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   /**
    * Get Application Configuration.
   */
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     if (!this.#applicationConfig || !has(this.#applicationConfig, key)) {
       if (defaultValue) {
