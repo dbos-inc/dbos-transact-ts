@@ -112,11 +112,11 @@ describe("operon-config", () => {
       const operon = new Operon(operonConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
       // Config key exists
-      expect(ctx.getConfig<string>("payments_url")).toBe("http://somedomain.com/payment");
+      expect(ctx.getConfig("payments_url")).toBe("http://somedomain.com/payment");
       // Config key does not exist, no default value
-      expect(ctx.getConfig<string>("no_key")).toBeUndefined();
+      expect(ctx.getConfig("no_key")).toBeUndefined();
       // Config key does not exist, default value
-      expect(ctx.getConfig<string>("no_key", "default")).toBe("default");
+      expect(ctx.getConfig("no_key", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
       clearInterval(operon.flushBufferID);
       await operon.telemetryCollector.destroy();
