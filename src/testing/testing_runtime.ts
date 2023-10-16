@@ -54,7 +54,8 @@ export interface OperonTestingRuntime {
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
 
-  getConfig<T>(key: string, defaultValue?: T): T | undefined; // Get application configuration.
+  getConfig<T>(key: string): T | undefined; // Get application configuration.
+  getConfig<T>(key: string, defaultValue: T): T;
 
   // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
