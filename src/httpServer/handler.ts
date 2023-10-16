@@ -76,7 +76,7 @@ export class HandlerContextImpl extends OperonContextImpl implements HandlerCont
     return this.#operon.send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

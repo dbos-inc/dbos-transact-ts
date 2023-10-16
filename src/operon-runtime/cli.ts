@@ -22,6 +22,7 @@ export interface OperonCLIStartOptions {
   port?: number,
   loglevel?: string,
   configfile?: string,
+  entrypoint?: string,
 }
 
 program
@@ -30,6 +31,7 @@ program
   .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify Operon log level')
   .option('-c, --configfile <string>', 'Specify the Operon config file path', operonConfigFilePath)
+  .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async (options: OperonCLIStartOptions) => {
     const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);

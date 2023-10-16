@@ -28,7 +28,7 @@ export interface ConfigFile {
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
-  localRuntimeConfig?: OperonRuntimeConfig;
+  runtimeConfig?: OperonRuntimeConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
 }
@@ -120,9 +120,10 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
-  const localRuntimeConfig: OperonRuntimeConfig = {
-    port: cliOptions?.port || configFile.localRuntimeConfig?.port || 3000,
+  const runtimeConfig: OperonRuntimeConfig = {
+    entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint,
+    port: cliOptions?.port || configFile.runtimeConfig?.port || 3000,
   };
 
-  return [operonConfig, localRuntimeConfig];
+  return [operonConfig, runtimeConfig];
 }

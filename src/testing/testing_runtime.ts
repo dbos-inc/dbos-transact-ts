@@ -62,9 +62,6 @@ export interface OperonTestingRuntime {
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
   destroy(): Promise<void>; // Release resources after tests.
-
-  // TODO: remove it.
-  getOperon(): Operon;
 }
 
 /**
@@ -163,7 +160,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     return this.getOperon().send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = 60): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.getOperon().getEvent(workflowUUID, key, timeoutSeconds);
   }
 

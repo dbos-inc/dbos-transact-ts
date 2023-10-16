@@ -48,26 +48,85 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
   }
 }
 
-describe("runtime-tests", () => {
+async function dropHelloSystemDB() {
+  const config = generateOperonTestConfig();
+  config.poolConfig.database = "hello";
+  await setupOperonTestDb(config);
+  const pgSystemClient = new Client({
+    user: config.poolConfig.user,
+    port: config.poolConfig.port,
+    host: config.poolConfig.host,
+    password: config.poolConfig.password,
+    database: "hello",
+  });
+  await pgSystemClient.connect();
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
+  await pgSystemClient.end();
+}
+
+function configureHelloExample() {
+  execSync("npm i");
+  execSync("npm run build");
+  execSync("npx knex migrate:up");
+}
+
+describe("runtime-entrypoint-tests", () => {
   beforeAll(async () => {
-    const config = generateOperonTestConfig();
-    config.poolConfig.database = "hello";
-    await setupOperonTestDb(config);
-    const pgSystemClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: "hello",
-    });
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
-    await pgSystemClient.end();
+    await dropHelloSystemDB();
 
     process.chdir("examples/hello");
-    execSync("npm i");
-    execSync("npm run build");
-    execSync("npx knex migrate:up");
+    execSync("mv src/operations.ts src/entrypoint.ts");
+    configureHelloExample();
+  });
+
+  afterAll(() => {
+    execSync("mv src/entrypoint.ts src/operations.ts");
+    process.chdir("../..");
+  });
+
+  test("runtime-hello using entrypoint CLI option", async () => {
+    const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start", "--port", "1234", "--entrypoint", "dist/entrypoint.js"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "1234");
+  });
+
+  test("runtime-hello using entrypoint runtimeConfig", async () => {
+    const mockOperonConfigYamlString = `
+database:
+  hostname: 'localhost'
+  port: 5432
+  username: 'postgres'
+  password: \${PGPASSWORD}
+  user_database: 'hello'
+  system_database: 'hello_systemdb'
+  connectionTimeoutMillis: 3000
+  user_dbclient: 'knex'
+runtimeConfig:
+  entrypoint: dist/entrypoint.js
+`;
+    const filePath = "operon-config.yaml";
+    fs.copyFileSync(filePath, `${filePath}.bak`);
+    fs.writeFileSync(filePath, mockOperonConfigYamlString, "utf-8");
+
+    try {
+      const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start", "--port", "1234"], {
+        env: process.env,
+      });
+      await waitForMessageTest(command, "1234");
+    } finally {
+      fs.copyFileSync(`${filePath}.bak`, filePath);
+      fs.unlinkSync(`${filePath}.bak`);
+    }
+  });
+});
+
+describe("runtime-tests", () => {
+  beforeAll(async () => {
+    await dropHelloSystemDB();
+
+    process.chdir("examples/hello");
+    configureHelloExample();
   });
 
   afterAll(() => {
@@ -104,7 +163,7 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
-localRuntimeConfig:
+runtimeConfig:
   port: 6666
 `;
     const filePath = "operon-config.yaml";
@@ -122,3 +181,4 @@ localRuntimeConfig:
     }
   });
 });
+

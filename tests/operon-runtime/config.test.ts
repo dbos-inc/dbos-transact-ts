@@ -17,8 +17,9 @@ describe("operon-config", () => {
         password: \${PGPASSWORD}
         connectionTimeoutMillis: 3000
         user_database: 'some DB'
-      localRuntimeConfig:
+      runtimeConfig:
         port: 1234
+        entrypoint: fake-entrypoint
       application:
         payments_url: 'http://somedomain.com/payment'
         foo: \${FOO}
@@ -64,6 +65,7 @@ describe("operon-config", () => {
     // local runtime config
     expect(runtimeConfig).toBeDefined();
     expect(runtimeConfig?.port).toBe(1234);
+    expect(runtimeConfig?.entrypoint).toBe("fake-entrypoint");
   });
 
   test("fails to read config file", () => {

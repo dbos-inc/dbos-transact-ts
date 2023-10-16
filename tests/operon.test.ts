@@ -4,7 +4,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "operon_test_kv";
@@ -43,7 +43,7 @@ describe("operon-tests", () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -180,7 +180,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
