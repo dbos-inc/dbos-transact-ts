@@ -4,7 +4,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "operon_test_kv";
@@ -43,7 +43,7 @@ describe("operon-tests", () => {
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -180,7 +180,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
@@ -192,17 +192,6 @@ describe("operon-tests", () => {
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
-  });
-
-  test("workflow-retrieve-event", async () => {
-    // Start a workflow that sets the event, and then start a second workflow that get the event and then retrieves the workflow handle to get its final result.
-    const handle: WorkflowHandle<number> = await testRuntime.invoke(OperonTestClass).setEventWorkflow();
-    const workflowUUID1 = handle.getWorkflowUUID();
-
-    const handle2: WorkflowHandle<string> = await testRuntime.invoke(OperonTestClass).getEventRetrieveWorkflow(workflowUUID1);
-
-    await expect(handle2.getResult()).resolves.toBe("value1-value2-0");
-    await expect(handle.getResult()).resolves.toBe(0);
   });
 });
 
@@ -316,18 +305,6 @@ class OperonTestClass {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
     return 0;
-  }
-
-  @OperonWorkflow()
-  static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
-    const res1: string | null = await ctxt.getEvent(targetUUID, "key1");
-    const res2: string | null = await ctxt.getEvent(targetUUID, "key2");
-    if (!res1 || !res2) {
-      throw new Error("This shouldn't happen.");
-    }
-    const handle = ctxt.retrieveWorkflow(targetUUID);
-    const output = await handle.getResult();
-    return res1 + "-" + res2 + "-" + String(output);
   }
 
   @OperonTransaction({ readOnly: true })

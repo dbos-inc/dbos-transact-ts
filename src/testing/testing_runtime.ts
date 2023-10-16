@@ -62,9 +62,6 @@ export interface OperonTestingRuntime {
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
   destroy(): Promise<void>; // Release resources after tests.
-
-  // TODO: remove it.
-  getOperon(): Operon;
 }
 
 /**

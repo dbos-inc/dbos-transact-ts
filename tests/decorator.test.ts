@@ -4,7 +4,7 @@ import { OperonConfig } from "../src/operon";
 import { sleep } from "../src/utils";
 import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_test_kv";
 
@@ -132,7 +132,7 @@ describe("decorator-tests", () => {
   });
 
   test("nested-workflow-oaoo", async () => {
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const workflowUUID = uuidv1();

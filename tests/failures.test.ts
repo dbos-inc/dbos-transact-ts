@@ -5,7 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonError } from "../src/error";
 import { OperonConfig } from "../src/operon";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -131,7 +131,7 @@ describe("failures-tests", () => {
 
   test("failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const handle = await testRuntime.invoke(FailureTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);

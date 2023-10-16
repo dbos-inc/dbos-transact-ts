@@ -91,7 +91,7 @@ describe("operon-telemetry", () => {
       // This attempts to clear all our DBs, including the observability one
       await setupOperonTestDb(operonConfig);
       testRuntime = await createInternalTestRuntime([TestClass], operonConfig);
-      operon = testRuntime.getOperon();
+      operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
     });
