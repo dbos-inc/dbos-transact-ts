@@ -35,7 +35,7 @@ export class OperonRuntime {
     }
 
     const classes: object[] = [];
-    var initFunction = null;
+    let initFunction = null;
     for (const key in exports) {
       this.operon.logger.info("found key " + key);
       if (isObject(exports[key])) {
@@ -43,6 +43,7 @@ export class OperonRuntime {
         this.operon.logger.debug(`Loaded class: ${key}`);
       }
       if (key === "initializeApp") {
+        // eslint-disable-next-line @typescript-eslint/ban-types
         initFunction = exports[key] as Function ;
       }
     }

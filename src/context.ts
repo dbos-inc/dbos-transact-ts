@@ -3,7 +3,7 @@ import { WinstonLogger as Logger, Logger as OperonLogger } from "./telemetry/log
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
-import { UserDatabase, UserDatabaseName } from "./user_database";
+import { UserDatabase } from "./user_database";
 import { Operon } from "./operon";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
