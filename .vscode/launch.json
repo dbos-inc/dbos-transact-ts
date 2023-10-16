@@ -5,17 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "node",
-            "request": "launch",
+            "command": "npx operon start",
             "name": "Launch Example",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
             "preLaunchTask": "build example",
-            "program": "${workspaceFolder}/examples/hello/dist/app.js",
-            "outFiles": [
-                "${workspaceFolder}/**/*.js"
-            ],
+            "request": "launch",
+            "type": "node-terminal",
             "cwd": "${workspaceFolder}/examples/hello",
             "envFile": "${workspaceFolder}/examples/hello/.env"
         }

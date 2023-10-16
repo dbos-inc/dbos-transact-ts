@@ -1,8 +1,4 @@
 export {
-  Operon, // TODO: Remove
-} from './operon';
-
-export {
   createTestingRuntime,
   OperonTestingRuntime,
 } from './testing/testing_runtime';

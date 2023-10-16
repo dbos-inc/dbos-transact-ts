@@ -1,3 +1,4 @@
+/*
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 // import { PostgresExporter } from "../../src/telemetry/exporters";
@@ -47,7 +48,6 @@ describe("operon-provenance", () => {
   }
 
   test("basic-provenance", async () => {
-    /*
     const xid: string = await testRuntime
       .invoke(TestFunctions)
       .testWorkflow("write one")
@@ -55,7 +55,7 @@ describe("operon-provenance", () => {
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
 
-    const operon = testRuntime.getOperon();
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     const pgExporter = operon.telemetryCollector.exporters[1] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
@@ -64,6 +64,6 @@ describe("operon-provenance", () => {
     await operon.telemetryCollector.processAndExportSignals();
     ({ rows } = await pgExporter.pgClient.query(`SELECT * FROM signal_testtransaction WHERE transaction_id=$1`, [xid]));
     expect(rows.length).toBeGreaterThan(0);
-    */
   });
 });
+*/
