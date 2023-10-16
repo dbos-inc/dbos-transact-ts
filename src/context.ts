@@ -74,8 +74,11 @@ export interface InitContext extends OperonContext {
 
 export class InitContextImpl extends OperonContextImpl implements InitContext {
   
-  constructor(readonly db:UserDatabase, readonly operon: Operon) {
+  readonly db: UserDatabase = null as unknown as UserDatabase;
+
+  constructor(readonly operon: Operon) {
     super("",operon.tracer.startSpan("init") , operon.logger) ;
+    this.db = operon.userDatabase;
   }
 
 }

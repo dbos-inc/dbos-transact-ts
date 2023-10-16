@@ -50,7 +50,7 @@ export class OperonRuntime {
     await this.operon.init(...classes);
 
     if (initFunction != null) {
-      initFunction(new InitContextImpl(this.operon.userDatabase, this.operon));
+      initFunction(new InitContextImpl(this.operon));
     } 
   
   }
