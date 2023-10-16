@@ -62,6 +62,8 @@ export interface WorkflowContext extends OperonContext {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -439,6 +441,21 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     }
     return proxy as WFInvokeFuncs<T>;
   }
+
+  /**
+   * Wait for a workflow to emit an event, then return its value.
+   */
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
+  }
+
+  /**
+   * Retrieve a handle for a workflow UUID.
+   */
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
+    return this.#operon.retrieveWorkflow(workflowUUID);
+  }
+
 }
 
 /**

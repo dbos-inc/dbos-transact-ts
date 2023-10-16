@@ -152,6 +152,17 @@ describe("foundationdb-operon", () => {
     await expect(handle.getResult()).resolves.toBe(5);
     expect(FdbTestClass.cnt).toBe(10); // Should run twice.
   });
+
+  test("workflow-retrieve-event", async () => {
+    // Start a workflow that sets the event, and then start a second workflow that get the event and then retrieves the workflow handle to get its final result.
+    const handle: WorkflowHandle<number> = await testRuntime.invoke(FdbTestClass).setEventWorkflow();
+    const workflowUUID1 = handle.getWorkflowUUID();
+
+    const handle2: WorkflowHandle<string> = await testRuntime.invoke(FdbTestClass).getEventRetrieveWorkflow(workflowUUID1);
+
+    await expect(handle2.getResult()).resolves.toBe("value1-value2-0");
+    await expect(handle.getResult()).resolves.toBe(0);
+  });
 });
 
 class FdbTestClass {
@@ -239,6 +250,18 @@ class FdbTestClass {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
     return 0;
+  }
+
+  @OperonWorkflow()
+  static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
+    const res1: string | null = await ctxt.getEvent(targetUUID, "key1");
+    const res2: string | null = await ctxt.getEvent(targetUUID, "key2");
+    if (!res1 || !res2) {
+      throw new Error("This shouldn't happen.");
+    }
+    const handle = ctxt.retrieveWorkflow(targetUUID);
+    const output = await handle.getResult();
+    return res1 + "-" + res2 + "-" + String(output);
   }
 
   @OperonWorkflow()

@@ -310,6 +310,7 @@ export class Operon {
         } else {
           // Record the error.
           const e: Error = err as Error;
+          this.logger.error(e);
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
