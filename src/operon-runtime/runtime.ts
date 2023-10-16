@@ -47,15 +47,11 @@ export class OperonRuntime {
     }
 
     if (initFunction != null) {
-      this.operon.logger.info("Executing init function");
       initFunction();
-      this.operon.logger.info("Done Executing init function");
-    } else {
-      this.operon.logger.info("initfunction is still null");
-    }
-
-    await this.operon.init(...classes);
+    } 
     
+    await this.operon.init(...classes);
+  
   }
 
   /**
