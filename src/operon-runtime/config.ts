@@ -73,7 +73,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis,
+    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
     database: configFile.database.user_database,
   };
 
@@ -105,7 +105,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /************************************/
   const operonConfig: OperonConfig = {
     poolConfig: poolConfig,
-    userDbclient: configFile.database.user_dbclient || UserDatabaseName.PGNODE,
+    userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
     system_database: configFile.database.system_database ?? "operon_systemdb",
     observability_database: configFile.database.observability_database || undefined,
