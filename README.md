@@ -7,7 +7,6 @@ It runs your Typescript functions as database transactions, guarantees they run 
 In the near future, DBOS Inc. expects to release a hosted cloud runtime for Operon applications.
 This scalable, secure runtime will allow you to deploy Operon applications with the push of a button.
 Also coming soon is our cloud “time-travel” debugger, which will set up and replay any scenario that occurred in production for analysis in the development environment.
-This hosting platform and debugger comprise a revolutionary system software stack inspired by research prototypes developed over the last three years at MIT and Stanford.
 
 ## Getting Started
 
