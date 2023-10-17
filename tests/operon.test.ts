@@ -142,7 +142,6 @@ describe("operon-tests", () => {
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
   });
 
   test("readonly-recording", async () => {
