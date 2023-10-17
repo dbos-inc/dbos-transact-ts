@@ -146,3 +146,11 @@ export class OperonUndefinedDecoratorInputError extends OperonError {
     super(`${decoratorName} received undefined input. Possible circular dependency?`, UndefinedDecoratorInputError);
   }
 }
+
+const ConfigKeyTypeError = 14;
+export class OperonConfigKeyTypeError extends OperonError {
+  constructor(configKey: string, expectedType: string, actualType: string) {
+    super(`${configKey} should be of type ${expectedType}, but got ${actualType}`, ConfigKeyTypeError);
+  }
+}
+

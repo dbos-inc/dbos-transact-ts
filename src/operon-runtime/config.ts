@@ -121,7 +121,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /* Build final runtime Configuration */
   /*************************************/
   const runtimeConfig: OperonRuntimeConfig = {
-    entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint,
+    entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint || "dist/operations.js",
     port: cliOptions?.port || configFile.runtimeConfig?.port || 3000,
   };
 
