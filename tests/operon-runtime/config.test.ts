@@ -1,6 +1,7 @@
 /* eslint-disable */
 
 import * as utils from "../../src/utils";
+import { UserDatabaseName } from "../../src/user_database";
 import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/operon-runtime/config";
 import { OperonRuntimeConfig } from "../../src/operon-runtime/runtime";
@@ -16,7 +17,6 @@ describe("operon-config", () => {
         port: 1234
         username: 'some user'
         password: \${PGPASSWORD}
-        connectionTimeoutMillis: 3000
         user_database: 'some DB'
       runtimeConfig:
         port: 1234
@@ -52,6 +52,8 @@ describe("operon-config", () => {
       expect(poolConfig.password).toBe(process.env.PGPASSWORD);
       expect(poolConfig.connectionTimeoutMillis).toBe(3000);
       expect(poolConfig.database).toBe("some DB");
+
+      expect(operonConfig.userDbclient).toBe(UserDatabaseName.KNEX);
 
       // Application config
       const applicationConfig: any = operonConfig.application;
