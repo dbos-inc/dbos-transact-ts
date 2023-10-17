@@ -22,6 +22,8 @@ export interface OperonContext {
   readonly request: HTTPRequest;
   readonly workflowUUID: string;
   readonly authenticatedUser: string;
+  readonly authenticatedRoles: string[];
+  readonly assumedRole: string;
 
   readonly logger: OperonLogger;
   readonly span: Span;

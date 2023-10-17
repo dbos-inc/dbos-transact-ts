@@ -283,7 +283,16 @@ describe("httpserver-tests", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/requireduser")
     @RequiredRole(["user"])
-    static async testAuth(_ctxt: HandlerContext, name: string) {
+    static async testAuth(ctxt: HandlerContext, name: string) {
+      if (ctxt.authenticatedUser !== "a_real_user") {
+        throw new OperonResponseError("uid not a real user!", 400);
+      }
+      if (!ctxt.authenticatedRoles.includes("user")) {
+        throw new OperonResponseError("roles don't include user!", 400);
+      }
+      if (ctxt.assumedRole !== "user") {
+        throw new OperonResponseError("Should never happen! Not assumed to be user", 400);
+      }
       return `Please say hello to ${name}`;
     }
   }
