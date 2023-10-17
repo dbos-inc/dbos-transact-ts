@@ -38,7 +38,7 @@ import {
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { OperonContextImpl } from './context';
+import { InitContext, OperonContextImpl } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
 
 export interface OperonNull { }
@@ -58,6 +58,12 @@ export interface OperonConfig {
 interface WorkflowInfo<T extends any[], R> {
   workflow: OperonWorkflow<T, R>;
   config: WorkflowConfig;
+}
+
+export interface OperonInitializer {
+
+  initializeApplication (ctx: InitContext): any;
+
 }
 
 export class Operon {

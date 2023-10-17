@@ -83,3 +83,7 @@ export {
   Authentication,
   KoaMiddleware,
 } from "./httpServer/middleware";
+
+export {
+  OperonInitializer
+} from './operon'

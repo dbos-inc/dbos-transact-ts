@@ -1,4 +1,4 @@
-import { Operon, OperonConfig } from '../operon';
+import { Operon, OperonConfig, OperonInitializer } from '../operon';
 import { OperonHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -38,27 +38,41 @@ export class OperonRuntime {
     }
 
     const classes: object[] = [];
-    let initFunction = null;
+    let initClass = null;
     for (const key in exports) {
-      this.operon.logger.info("found key " + key);
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
         this.operon.logger.debug(`Loaded class: ${key}`);
-      }
-      if (key === "initializeApp") {
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        initFunction = exports[key] as Function ;
-      }
+
+        if (initClass === null && this.isInitClass(key, exports[key])) {
+          initClass = new exports[key]();
+        }
+
+      } 
+      
     }
 
     await this.operon.init(...classes);
+    initClass.initializeApplication(new InitContextImpl(this.operon));
 
-    if (initFunction != null) {
-      initFunction(new InitContextImpl(this.operon));
-    } 
-  
   }
 
+  private isInitClass(key: string, exportvalue: any) : boolean {
+
+        // const classPrototype = Object.getPrototypeOf(new exportvalue());
+        const classPrototype = exportvalue.prototype;
+        const classMethods = Object.getOwnPropertyNames(classPrototype);
+
+        for (var m of classMethods) {
+          if (m === "initializeApplication") {
+            this.operon.logger.info("Found Initialization class :" + key + " with method " + m);
+            return true;
+          } 
+        }
+        return false;
+  }
+
+  
   /**
    * Load an application's Operon functions, assumed to be in src/operations.ts (which is compiled to dist/operations.js).
    */

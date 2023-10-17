@@ -1,10 +1,6 @@
-import { TransactionContext, OperonTransaction, GetApi, HandlerContext, InitContext } from '@dbos-inc/operon'
+import { TransactionContext, OperonTransaction, GetApi, HandlerContext, InitContext, OperonInitializer } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
-export const initializeApp = (ctx: InitContext) => {
-    console.log("Executing init code");
-    ctx.logger.info("Database is "+ ctx.userDatabase.getName());
-}
 
 // The schema of the database table used in this example.
 export interface operon_hello {
@@ -32,5 +28,11 @@ export class Hello {
       .returning("greet_count");               
     const greet_count = rows[0].greet_count;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
+  }
+}
+
+export class HelloInitializer implements OperonInitializer {
+  initializeApplication(ctx: InitContext) {
+    ctx.logger.info("In the initializer interface Database is "+ ctx.userDatabase.getName());
   }
 }
