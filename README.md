@@ -1,14 +1,16 @@
 # Operon
 
-Operon is a **Typescript framework for the backend**.
-Operon enables you to write backend applications that work right by default, providing native support for application database management, reliable workflow execution, OpenTelemetry-compatible tracing, authentication/authorization, and much more.
+Operon is the programming framework for DBOS, a revolutionary system software stack developed as a research prototype over the last three years at MIT and Stanford and now commercialized by DBOS, Inc.
+We're rolling out DBOS in two phases.
 
-Unlike with other backend frameworks, your application database is a _first-class citizen_ of Operon.
-Operon makes writing database operations painless for you, regardless of whether you prefer raw SQL or an ORM.
-Under the hood, Operon also leverages the database to give you _reliable workflows_, so you can write programs guaranteed to run to completion despite failures and always resume where they left off when your application is restarted.
+Starting now, we're releasing Operon, a **Typescript framework built for the database** that helps you develop database-backed backend applications.
+Operon fully embraces the power of your application database, helping you write backend applications that are reliable by default.
+It runs your Typescript functions as database transactions, guarantees they run "once and only once" for each request, and orchestrates them into workflows so reliable that if your server restarts, they resume exactly where they left off.
 
-Operon is also the [**SDK for DBOS's upcoming serverless cloud platform**](https://dbos.dev).
-In the near future, you'll be able to deploy any Operon application serverlessly to the cloud with the push of a button, running effortlessly at scale without worrying about managing infrastructure.
+In early 2024, we'll launch DBOS, a **cloud platform built on a revolutionary new operating system** that runs OS services on top of the DBMS instead of the other way around.
+This "upside-down" approach leverages the robustness and scalability of modern databases to make DBOS more secure, more resilient, and simpler than current cloud infrastructure.
+It also enables powerful new capabilities, like a "time travel debugger" that uses database logs to step through any trace in your application's history to help you reproduce your most obscure bugs.
+Once we release DBOS, you'll be able to serverlessly deploy any Operon application to it with the push of a button.
 
 ## Getting Started
 
