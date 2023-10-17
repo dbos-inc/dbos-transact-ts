@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Operon Config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string"
+        },
+        "port": {
+          "type": "number"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "connectionTimeoutMillis": {
+          "type": "number"
+        },
+        "user_database": {
+          "type": "string"
+        },
+        "system_database": {
+          "type": "string"
+        },
+        "ssl_ca": {
+          "type": "string"
+        },
+        "observability_database": {
+          "type": "string"
+        },
+        "user_dbclient": {
+          "type": "string",
+          "enum": [
+            "pg-node",
+            "prisma",
+            "typeorm",
+            "knex"
+          ]
+        }
+      },
+      "required": [
+        "hostname",
+        "port",
+        "username",
+        "connectionTimeoutMillis",
+        "user_database"
+      ]
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addContextMetadata": {
+              "type": "boolean"
+            },
+            "logLevel": {
+              "type": "string"
+            },
+            "silent": {
+              "type": "boolean"
+            }
+          }
+        },
+        "traces": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "runtimeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entrypoint": {
+          "type": "string"
+        },
+        "port": {
+          "type": "number"
+        }
+      }
+    },
+    "application": {},
+    "dbClientMetadata": {}
+  },
+  "required": [
+    "database"
+  ]
+}

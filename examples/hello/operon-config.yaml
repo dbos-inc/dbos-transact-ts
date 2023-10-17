@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../operon-config.schema.json
 database:
   hostname: 'localhost'
   port: 5432
@@ -7,3 +8,4 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
+  
