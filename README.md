@@ -1,6 +1,6 @@
 # Operon
 
-Operon (from [DBOS, Inc.](https://dbos.dev)) is a **Typescript framework built on the database** that helps you develop database-backed backend applications.
+Operon (from [DBOS, Inc.](https://dbos.dev)) is a **Typescript framework built on the database** that helps you develop transactional backend applications.
 Operon fully embraces the power of your application database, helping you write backend applications that are reliable by default.
 It runs your Typescript functions as database transactions, guarantees they run "once and only once" for each request, and orchestrates them into workflows so reliable that if your server restarts, they resume exactly where they left off.
 
