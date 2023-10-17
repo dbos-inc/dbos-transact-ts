@@ -49,7 +49,6 @@
         "hostname",
         "port",
         "username",
-        "connectionTimeoutMillis",
         "user_database"
       ]
     },

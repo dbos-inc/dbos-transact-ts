@@ -1,3 +1,4 @@
+# TODO: Update to final schema URL
 # yaml-language-server: $schema=../../operon-config.schema.json
 database:
   hostname: 'localhost'
