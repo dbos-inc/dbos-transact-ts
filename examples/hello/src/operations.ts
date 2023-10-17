@@ -10,10 +10,6 @@ export interface operon_hello {
 export class Hello {
 
   @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
-  static async helloHandler(ctxt: HandlerContext, user: string) {
-    return ctxt.invoke(Hello).helloTransaction(user);
-  }
-
   @OperonTransaction()  // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, user: string) {
     // Retrieve and increment the number of times this user has been greeted.
