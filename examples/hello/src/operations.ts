@@ -14,7 +14,7 @@ export class Hello {
     return ctxt.invoke(Hello).helloTransaction(user);
   }
 
-  @OperonTransaction()  // Declare this function to be a transaction.
+  @OperonTransaction()  // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, user: string) {
     // Retrieve and increment the number of times this user has been greeted.
     const query = `INSERT INTO operon_hello (name, greet_count) VALUES (?, 1)
