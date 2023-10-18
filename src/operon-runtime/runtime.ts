@@ -7,7 +7,6 @@ import { OperonError } from '../error';
 import { InitContextImpl } from '../context';
 import path from 'node:path';
 
-
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
@@ -38,20 +37,14 @@ export class OperonRuntime {
     }
 
     const classes: object[] = [];
-    let initFunction = null;
     for (const key in exports) {
-      
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
         this.operon.logger.debug(`Loaded class: ${key}`);
       }
-      
     }
 
     await this.operon.init(...classes);
-
-  
-  
   }
 
   /**
