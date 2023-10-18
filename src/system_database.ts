@@ -33,7 +33,7 @@ export interface SystemDatabase {
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -315,7 +315,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null> {
+    // Check if the operation has been done before for OAOO (only do this inside a workflow).
+    if (functionID !== undefined) {
+      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+      if (rows.length > 0) {
+        return JSON.parse(rows[0].output) as T;
+      }
+    }
+
     // Register the key with the global notifications listener.
     let resolveNotification: () => void;
     const valuePromise = new Promise<void>((resolve) => {
@@ -331,17 +339,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key, value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     let value: T | null = null;
-    if (finalRecvRows.length > 0) {
-      value = JSON.parse(finalRecvRows[0].value) as T;
+    if (initRecvRows.length > 0) {
+      value = JSON.parse(initRecvRows[0].value) as T;
+    } else {
+      // Read it again from the database.
+      const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+      if (finalRecvRows.length > 0) {
+        value = JSON.parse(finalRecvRows[0].value) as T;
+      }
+    }
+
+    // Record the output if it is inside a workflow.
+    if (functionID !== undefined) {
+      const client: PoolClient = await this.pool.connect();
+      await this.recordNotificationOutput(client, workflowUUID, functionID, value);
     }
     return value;
   }

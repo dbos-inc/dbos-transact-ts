@@ -62,6 +62,9 @@ export interface WorkflowContext extends OperonContext {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -444,15 +447,15 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Wait for a workflow to emit an event, then return its value.
    */
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
-    // FIXME: make this deterministic and expose in the public interface.
-    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
+    const functionID: number = this.functionIDGetIncrement();
+    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds, functionID);
   }
 
   /**
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    // FIXME: make this deterministic and expose in the public interface.
+    // TODO: make workflow handle deterministic. E.g., getStatus is not deterministic.
     return this.#operon.retrieveWorkflow(workflowUUID);
   }
 

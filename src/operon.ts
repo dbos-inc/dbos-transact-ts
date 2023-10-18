@@ -354,9 +354,10 @@ export class Operon {
 
   /**
    * Wait for a workflow to emit an event, then return its value.
+   * If functionID is set, the getEvent is called from within a workflow.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
-    return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec, functionID?: number): Promise<T | null> {
+    return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds, functionID);
   }
 
   /**

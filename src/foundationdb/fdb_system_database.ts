@@ -313,7 +313,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null> {
     // Check if the value is present, otherwise wait for it to arrive.
     const watch = await this.workflowEventsDB.getAndWatch([workflowUUID, key]);
     if (watch.value === undefined) {
