@@ -203,8 +203,9 @@ class OperonTestClass {
     OperonTestClass.resolve = r;
   });
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   @OperonInitializer()
-  static async init(ctx: InitContext) {
+  static async init(_ctx: InitContext) { 
     OperonTestClass.initialized = true;
   }
 
