@@ -1,34 +1,33 @@
 import * as ts from 'typescript';
 import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 
-export interface ImportNameInfo {
-  readonly identifier: ts.Identifier;
-  readonly module: string;
-}
-
 export interface DecoratorInfo {
+  readonly node: ts.Decorator;
   readonly args: readonly ts.Expression[];
   readonly identifier: ts.Identifier;
   readonly module: string;
 }
 
-export interface ParameterInfo {
+export interface ClassInfo {
+  readonly node: ts.ClassDeclaration;
   readonly symbol?: ts.Symbol;
-  readonly type?: ts.Type;
   readonly decorators: readonly DecoratorInfo[];
+  readonly methods: readonly MethodInfo[];
 }
 
 export interface MethodInfo {
+  readonly node: ts.MethodDeclaration;
   readonly symbol?: ts.Symbol;
   readonly decorators: readonly DecoratorInfo[];
   readonly parameters: readonly ParameterInfo[];
   readonly returnType?: ts.Type;
 }
 
-export interface ClassInfo {
+export interface ParameterInfo {
+  readonly node: ts.ParameterDeclaration;
   readonly symbol?: ts.Symbol;
   readonly decorators: readonly DecoratorInfo[];
-  readonly methods: readonly MethodInfo[];
+  readonly type?: ts.Type;
 }
 
 export class TypeParser {
@@ -47,60 +46,42 @@ export class TypeParser {
     for (const sourceFile of sourceFiles) {
       ts.forEachChild(sourceFile, node => {
         if (ts.isClassDeclaration(node)) {
-          const decorators = this.getDecorators(node);
-          const symbol = node.name ? this.#checker.getSymbolAtLocation(node.name) : undefined;
-          const methods = node.members.filter(m => ts.isMethodDeclaration(m)).map(m => this.getMethodInfo(m as ts.MethodDeclaration));
-          classInfos.push({ symbol, decorators, methods });
+          classInfos.push(this.getClassInfo(node));
         }
       });
     }
     return classInfos;
   }
 
-  getMethodInfo(node: ts.MethodDeclaration): MethodInfo {
-    if (!ts.isIdentifier(node.name)) throw new Error(`Expected method name to be an identifier but found ${ts.SyntaxKind[node.name.kind]}`);
+  getClassInfo(node: ts.ClassDeclaration): ClassInfo {
+    const symbol = node.name ? this.#checker.getSymbolAtLocation(node.name) : undefined;
+    const decorators = this.getDecorators(node);
+    const methods = node.members
+      .filter(m => ts.isMethodDeclaration(m))
+      .map(m => this.getMethodInfo(m as ts.MethodDeclaration));
+    return { node, symbol, decorators, methods };
+  }
 
+  getMethodInfo(node: ts.MethodDeclaration): MethodInfo {
     const symbol = this.#checker.getSymbolAtLocation(node.name);
     const decorators = this.getDecorators(node);
-
+    const parameters = node.parameters
+      .map(p => this.getParameterInfo(p))
+      .filter(p => p !== undefined) as ParameterInfo[];
     const signature = this.#checker.getSignatureFromDeclaration(node);
     const returnType = signature ? this.#checker.getReturnTypeOfSignature(signature) : undefined;
-    const parameters = node.parameters.map(p => this.getParameterInfo(p));
-    return { symbol, decorators, parameters, returnType };
+    return { node, symbol, decorators, parameters, returnType };
   }
 
   getParameterInfo(node: ts.ParameterDeclaration): ParameterInfo {
     const decorators = this.getDecorators(node);
     const symbol = this.#checker.getSymbolAtLocation(node.name);
+
     const type = node.type
       ? this.#checker.getTypeFromTypeNode(node.type)
       : symbol ? this.#checker.getTypeOfSymbol(symbol) : undefined;
 
-    return { symbol, type, decorators };
-  }
-
-  getImportName(node: ts.Identifier): ImportNameInfo {
-    const symbol = this.#checker.getSymbolAtLocation(node);
-    const decls = symbol?.getDeclarations() ?? [];
-    if (decls.length !== 1) {
-      throw new Error(`Expected exactly one declaration for ${node.text} symbol but found ${decls.length}`);
-    }
-    for (const decl of decls) {
-      if (ts.isImportSpecifier(decl)) {
-        // propertyName is the name as specified in the defining module
-        // name is the (potentially different) name used in the local module
-        // propertyName is undefined if the name isn't overridden
-        const identifier = (decl.propertyName ?? decl.name);
-        const moduleSpecifier = decl.parent.parent.parent.moduleSpecifier;
-        if (ts.isStringLiteral(moduleSpecifier)) {
-          const module = moduleSpecifier.text;
-          return { identifier, module };
-        } else {
-          throw new Error(`Unsupported module specifier kind ${ts.SyntaxKind[moduleSpecifier.kind]}`);
-        }
-      }
-    }
-    throw new Error(`No supported declarations for ${node.text} symbol found`);
+    return { node, symbol, decorators, type };
   }
 
   getDecorators(node: ts.HasDecorators): readonly DecoratorInfo[] {
@@ -108,14 +89,41 @@ export class TypeParser {
   }
 
   getDecorator(node: ts.Decorator): DecoratorInfo {
-    if (ts.isCallExpression(node.expression) && ts.isIdentifier(node.expression.expression)) {
-      const importName = this.getImportName(node.expression.expression);
-      return { ...importName, args: node.expression.arguments };
-    } else if (ts.isIdentifier(node.expression)) {
-      const importName = this.getImportName(node.expression);
-      return { ...importName, args: [] };
+    if (ts.isCallExpression(node.expression)) {
+      if (ts.isIdentifier(node.expression.expression)) {
+        const { identifier, module } = this.getImportName(node.expression.expression);
+        return { node, identifier, module, args: node.expression.arguments };
+      }
+      throw new Error(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`)
     }
 
-    throw new Error(`Invalid decorator expression kind ${ts.SyntaxKind[node.expression.kind]}`);
+    if (ts.isIdentifier(node.expression)) {
+      const { identifier, module } = this.getImportName(node.expression);
+      return { node, identifier, module, args: [] };
+    }
+
+    throw new Error(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`)
+  }
+
+  getImportName(node: ts.Identifier): { identifier: ts.Identifier; module: string; } {
+    const symbol = this.#checker.getSymbolAtLocation(node);
+    const decls = symbol?.getDeclarations() ?? [];
+
+    for (const decl of decls) {
+      if (ts.isImportSpecifier(decl)) {
+        // propertyName is the name as specified in the defining module
+        // name is the (potentially different) name used in the local module
+        // propertyName is undefined if the name isn't overridden
+        const identifier = (decl.propertyName ?? decl.name);
+        const module = decl.parent.parent.parent.moduleSpecifier;
+        if (ts.isStringLiteral(module)) {
+          return { identifier, module: module.text };
+        }
+
+        throw new Error(`Unexpected module specifier type: ${ts.SyntaxKind[module.kind]}`)
+      }
+      throw new Error(`Unexpected decorator declaration type: ${ts.SyntaxKind[decl.kind]}`)
+    }
+    throw new Error(`Could not find import specifier for ${node.getText()}`);
   }
 }
