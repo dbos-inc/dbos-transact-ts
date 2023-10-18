@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import { isObject } from 'lodash';
 import { Server } from 'http';
 import { OperonError } from '../error';
-import { InitContextImpl } from '../context';
 import path from 'node:path';
 
 
@@ -38,7 +37,6 @@ export class OperonRuntime {
     }
 
     const classes: object[] = [];
-    let initFunction = null;
     for (const key in exports) {
       
       if (isObject(exports[key])) {

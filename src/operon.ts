@@ -232,12 +232,12 @@ export class Operon {
     void this.recoverPendingWorkflows();
     this.initialized = true;
 
-    for ( var v of this.registeredOperations) {
+    for ( const v of this.registeredOperations) {
       // console.log(v);
       const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
         console.log("Found init method: " + m.name);
-        m.origFunction(new InitContextImpl(this));
+        await m.origFunction(new InitContextImpl(this));
       }
 
     } 
