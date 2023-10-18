@@ -14,7 +14,7 @@ interface ModuleExports {
 }
 
 export interface OperonRuntimeConfig {
-  entrypoint?: string;
+  entrypoint: string;
   port: number;
 }
 
@@ -58,7 +58,7 @@ export class OperonRuntime {
    * Load an application's Operon functions, assumed to be in src/operations.ts (which is compiled to dist/operations.js).
    */
   private loadFunctions(): Promise<ModuleExports> | null {
-    const entrypoint = this.runtimeConfig.entrypoint ?? "dist/operations.js";
+    const entrypoint = this.runtimeConfig.entrypoint;
     const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
     if (fs.existsSync(operations)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */

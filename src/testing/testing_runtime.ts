@@ -3,7 +3,7 @@ import { IncomingMessage } from "http";
 import { OperonCommunicator } from "../communicator";
 import { HTTPRequest, OperonContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
-import { OperonError } from "../error";
+import { OperonConfigKeyTypeError, OperonError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
@@ -52,9 +52,10 @@ export interface OperonTestingRuntime {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
-  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>; 
+  getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
 
-  getConfig(key: string): any; // Get application configuration.
+  getConfig<T>(key: string): T | undefined; // Get application configuration.
+  getConfig<T>(key: string, defaultValue: T): T;
 
   // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
@@ -102,14 +103,22 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   /**
    * Get Application Configuration.
   */
-  getConfig(key: string): any {
-    if (!this.#applicationConfig) {
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
+    if (!this.#applicationConfig || !has(this.#applicationConfig, key)) {
+      if (defaultValue) {
+        return defaultValue;
+      }
       return undefined;
     }
-    if (!has(this.#applicationConfig, key)) {
-      return undefined;
+
+    // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment
+    const value = get(this.#applicationConfig, key);
+    if (defaultValue && typeof value !== typeof defaultValue) {
+      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
-    return get(this.#applicationConfig, key);
+    return value as T;
   }
 
   /**

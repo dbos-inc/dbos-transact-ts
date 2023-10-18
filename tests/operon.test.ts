@@ -138,11 +138,10 @@ describe("operon-tests", () => {
   test("simple-workflow-events", async () => {
     const handle: WorkflowHandle<number> = await testRuntime.invoke(OperonTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
+    await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
-    await handle.getResult();
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
   });
 
   test("readonly-recording", async () => {

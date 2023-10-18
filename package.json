@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/operon",
   "version": "0.0.0-placeholder",
-  "description": "A Typescript framework for the backend",
+  "description": "A Typescript framework built on the database",
   "license": "MIT",
   "repository": {
     "type": "git",
