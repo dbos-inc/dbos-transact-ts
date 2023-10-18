@@ -159,7 +159,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return await this.workflowInputsDB.get(workflowUUID) as T ?? null;
   }
 
-  async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
+  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<R> | undefined;
     if (output === undefined) {
       return operonNull;
@@ -170,7 +170,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
+  async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
@@ -184,7 +184,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
+  async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
@@ -199,7 +199,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(workflowUUID: string, functionID?: number): Promise<WorkflowStatus | null> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
       return null;

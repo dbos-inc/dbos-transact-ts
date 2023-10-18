@@ -321,7 +321,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
+    const check: R | OperonNull = await this.#operon.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== operonNull) {
       ctxt.span.setAttribute("cached", true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
@@ -363,13 +363,13 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     if (result === operonNull) {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
-      await this.#operon.systemDatabase.recordCommunicatorError(this.workflowUUID, ctxt.functionID, err as Error);
+      await this.#operon.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.#operon.tracer.endSpan(ctxt.span);
       throw err;
     } else {
       // Record the execution and return.
-      await this.#operon.systemDatabase.recordCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
+      await this.#operon.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.#operon.tracer.endSpan(ctxt.span);
       return result as R;
