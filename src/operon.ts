@@ -233,10 +233,9 @@ export class Operon {
     this.initialized = true;
 
     for ( const v of this.registeredOperations) {
-      // console.log(v);
       const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
-        console.log("Found init method: " + m.name);
+        this.logger.debug("Executing init method: " + m.name);
         await m.origFunction(new InitContextImpl(this));
       }
 

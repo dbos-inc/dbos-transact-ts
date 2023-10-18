@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator, OperonInitializer, InitContext } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
@@ -198,9 +198,15 @@ class OperonTestClass {
   static cnt = 0;
   static wfCnt = 0;
   static resolve: () => void;
+  static initialized = false;
   static promise = new Promise<void>((r) => {
     OperonTestClass.resolve = r;
   });
+
+  @OperonInitializer()
+  static async init(ctx: InitContext) {
+    OperonTestClass.initialized = true;
+  }
 
   @OperonTransaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
@@ -210,6 +216,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     const funcResult = await ctxt.invoke(OperonTestClass).testFunction(name);
     return funcResult;
   }
@@ -253,6 +260,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     const funcResult: number = await workflowCtxt.invoke(OperonTestClass).testFailFunction(name);
     const checkResult: number = await workflowCtxt.invoke(OperonTestClass).testKvFunctionRead(funcResult);
     return checkResult;
@@ -279,6 +287,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
+    expect(OperonTestClass.initialized).toBe(true);
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
     const fail = await ctxt.recv("fail", 0);
@@ -327,6 +336,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     await workflowCtxt.invoke(OperonTestClass).testReadFunction(id);
     OperonTestClass.wfCnt++;
     await workflowCtxt.invoke(OperonTestClass).testWriteFunction(id, name);
@@ -353,6 +363,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     await OperonTestClass.promise1;
     const value = await workflowCtxt.invoke(OperonTestClass).testWriteFunction(id, name);
     OperonTestClass.resolve3(); // Signal the execution has done.
