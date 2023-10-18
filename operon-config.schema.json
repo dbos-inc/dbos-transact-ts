@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Operon Config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "description": "The hostname or IP address of the application database"
+        },
+        "port": {
+          "type": "number",
+          "description": "The port number of the application database"
+        },
+        "username": {
+          "type": "string",
+          "description": "The username to use when connecting to the application database"
+        },
+        "password": {
+          "type": "string",
+          "description": "The password to use when connecting to the application database. Developers are strongly encouraged to use environment variable substitution to avoid storing secrets in source."
+        },
+        "connectionTimeoutMillis": {
+          "type": "number",
+          "description": "The number of milliseconds the system waits before timing out when connecting to the application database"
+        },
+        "user_database": {
+          "type": "string",
+          "description": "The name of the application database"
+        },
+        "system_database": {
+          "type": "string",
+          "description": "The name of a database to which Operon can write system data. Defaults to `operon_systemdb`"
+        },
+        "ssl_ca": {
+          "type": "string",
+          "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file"
+        },
+        "observability_database": {
+          "type": "string"
+        },
+        "user_dbclient": {
+          "type": "string",
+          "description": "Specify the database client to use to connect to the application database",
+          "enum": [
+            "pg-node",
+            "prisma",
+            "typeorm",
+            "knex"
+          ]
+        }
+      },
+      "required": [
+        "hostname",
+        "port",
+        "username",
+        "password",
+        "user_database"
+      ]
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addContextMetadata": {
+              "type": "boolean",
+              "description": "Adds contextual information, such as workflow UUID, to each log entry"
+            },
+            "logLevel": {
+              "type": "string",
+              "description": "A filter on what logs should be printed to the standard output"
+            },
+            "silent": {
+              "type": "boolean",
+              "description": "Silences the logger such that nothing is printed to the standard output"
+            }
+          }
+        },
+        "traces": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether or not to export traces in Open Telemetry format"
+            },
+            "endpoint": {
+              "type": "string",
+              "description": "The FQDN of a Jaeger endpoint."
+            }
+          }
+        }
+      }
+    },
+    "runtimeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entrypoint": {
+          "type": "string"
+        },
+        "port": {
+          "type": "number"
+        }
+      }
+    },
+    "application": {},
+    "dbClientMetadata": {}
+  },
+  "required": [
+    "database"
+  ]
+}
