@@ -446,17 +446,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds, functionID);
+    return this.#operon.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
 
   /**
    * Retrieve a handle for a workflow UUID.
    */
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    // TODO: make workflow handle deterministic. E.g., getStatus is not deterministic.
-    return this.#operon.retrieveWorkflow(workflowUUID);
+  retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
+    const functionID: number = this.functionIDGetIncrement();
+    return new RetrievedHandle(this.#operon.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
 }
@@ -504,14 +504,14 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
  * The handle returned when retrieving a workflow with Operon.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly functionID?: number) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.functionID);
   }
 
   async getResult(): Promise<R> {

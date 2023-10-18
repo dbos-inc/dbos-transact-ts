@@ -26,14 +26,14 @@ export interface SystemDatabase {
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string, functionID?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -315,10 +315,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    if (functionID !== undefined) {
-      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
       if (rows.length > 0) {
         return JSON.parse(rows[0].output) as T;
       }
@@ -358,16 +358,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Record the output if it is inside a workflow.
-    if (functionID !== undefined) {
-      await this.recordOperationOutput(workflowUUID, functionID, value);
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
   }
 
-  async getWorkflowStatus(workflowUUID: string, functionID?: number): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    if (functionID !== undefined) {
-      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
       if (rows.length > 0) {
         return JSON.parse(rows[0].output) as WorkflowStatus;
       }
@@ -387,8 +387,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Record the output if it is inside a workflow.
-    if (functionID !== undefined) {
-      await this.recordOperationOutput(workflowUUID, functionID, value);
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
   }

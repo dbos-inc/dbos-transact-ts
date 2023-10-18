@@ -199,7 +199,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getWorkflowStatus(workflowUUID: string, functionID?: number): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
     if (output === undefined) {
       return null;
@@ -313,7 +313,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, functionID?: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
     // Check if the value is present, otherwise wait for it to arrive.
     const watch = await this.workflowEventsDB.getAndWatch([workflowUUID, key]);
     if (watch.value === undefined) {
