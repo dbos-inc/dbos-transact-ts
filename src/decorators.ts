@@ -544,14 +544,12 @@ export function OrmEntities(entities: Function[]) {
 }
 
 export function OperonInitializer() {
-  console.log("Operon Initializer decorator called");
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
-    console.log("Operon Initializer decorator called");
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
