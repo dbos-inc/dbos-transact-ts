@@ -6,6 +6,18 @@ import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
 import { init } from "./init";
+import * as ts from 'typescript';
+import { TypeParser } from "./TypeParser";
+
+function getErrorMessage(e: unknown) {
+  if (e instanceof Error) {
+    return e.message;
+  } else if (typeof e === "string") {
+    return e;
+  } else {
+    return (e as any).toString();
+  }
+}
 
 const program = new Command();
 
@@ -24,6 +36,22 @@ export interface OperonCLIStartOptions {
   configfile?: string,
   entrypoint?: string,
 }
+
+program
+  .command("generate")
+  .requiredOption('-e, --entrypoint <string>', 'Specify the entrypoint file path')
+  .action(async ({ entrypoint }: { entrypoint: string }) => {
+    const program = ts.createProgram([entrypoint], {});
+    const parser = new TypeParser(program);
+
+    try {
+      const classes = parser.getTypeInfo();
+      console.log();
+
+    } catch (e) {
+      parser.log.error(getErrorMessage(e));
+    }
+  });
 
 program
   .command('start')
