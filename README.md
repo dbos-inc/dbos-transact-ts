@@ -1,14 +1,12 @@
 # Operon
 
-Operon is a **Typescript framework for the backend**.
-Operon enables you to write backend applications that work right by default, providing native support for application database management, reliable workflow execution, OpenTelemetry-compatible tracing, authentication/authorization, and much more.
+Operon (from [DBOS, Inc.](https://dbos.dev)) is a **Typescript framework built on the database** that helps you develop transactional backend applications.
+Operon fully embraces the power of your application database, helping you write backend applications that are reliable by default.
+It runs your Typescript functions as database transactions, guarantees they run "once and only once" for each request, and orchestrates them into workflows so reliable that if your server restarts, they resume exactly where they left off.
 
-Unlike with other backend frameworks, your application database is a _first-class citizen_ of Operon.
-Operon makes writing database operations painless for you, regardless of whether you prefer raw SQL or an ORM.
-Under the hood, Operon also leverages the database to give you _reliable workflows_, so you can write programs guaranteed to run to completion despite failures and always resume where they left off when your application is restarted.
-
-Operon is also the [**SDK for DBOS's upcoming serverless cloud platform**](https://dbos.dev).
-In the near future, you'll be able to deploy any Operon application serverlessly to the cloud with the push of a button, running effortlessly at scale without worrying about managing infrastructure.
+In the near future, DBOS Inc. expects to release a hosted cloud runtime for Operon applications.
+This scalable, secure runtime will allow you to deploy Operon applications with the push of a button.
+Also coming soon is our cloud “time-travel” debugger, which will set up and replay any scenario that occurred in production for analysis in the development environment.
 
 ## Getting Started
 
