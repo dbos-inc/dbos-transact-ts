@@ -1,11 +1,5 @@
-import {
-  TransactionContext,
-  OperonTransaction,
-  GetApi,
-} from '@dbos-inc/operon'
-
+import { TransactionContext, OperonTransaction, GetApi, } from '@dbos-inc/operon'
 import { Knex } from 'knex';
-
 
 // The schema of the database table used in this example.
 export interface operon_hello {
@@ -24,5 +18,4 @@ export class Hello {
     const greet_count = rows[0].greet_count;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
-
 }
