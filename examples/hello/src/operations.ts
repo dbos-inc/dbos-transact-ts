@@ -2,8 +2,6 @@ import {
   TransactionContext,
   OperonTransaction,
   GetApi,
-  InitContext,
-  OperonInitializer
 } from '@dbos-inc/operon'
 
 import { Knex } from 'knex';
@@ -27,9 +25,4 @@ export class Hello {
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 
-  @OperonInitializer()
-  static async init(ctx: InitContext) {
-    ctx.logger.info("Executing init code");
-    ctx.logger.info("Database is "+ ctx.userDatabase.getName());
-  }
 }
