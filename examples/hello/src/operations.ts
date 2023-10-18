@@ -1,4 +1,4 @@
-import { TransactionContext, OperonTransaction, GetApi, } from '@dbos-inc/operon'
+import { TransactionContext, OperonTransaction, GetApi } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
 // The schema of the database table used in this example.
