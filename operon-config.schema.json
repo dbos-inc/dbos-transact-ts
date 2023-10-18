@@ -58,6 +58,7 @@
         "hostname",
         "port",
         "username",
+        "password",
         "user_database"
       ]
     },
