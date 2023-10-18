@@ -2,31 +2,33 @@ import * as ts from 'typescript';
 import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 
 export interface ImportNameInfo {
-  identifier: ts.Identifier;
-  module: string;
+  readonly identifier: ts.Identifier;
+  readonly module: string;
 }
 
 export interface DecoratorInfo {
-  args: readonly ts.Expression[];
-  identifier: ts.Identifier;
-  module: string;
+  readonly args: readonly ts.Expression[];
+  readonly identifier: ts.Identifier;
+  readonly module: string;
 }
 
 export interface ParameterInfo {
-  symbol: ts.Symbol;
-  type: ts.Type;
+  readonly symbol?: ts.Symbol;
+  readonly type?: ts.Type;
+  readonly decorators: readonly DecoratorInfo[];
 }
 
 export interface MethodInfo {
-  symbol: ts.Symbol | undefined;
-  decorators: DecoratorInfo[];
-  parameters: ParameterInfo[];
-  returnType: ts.Type;
+  readonly symbol?: ts.Symbol;
+  readonly decorators: readonly DecoratorInfo[];
+  readonly parameters: readonly ParameterInfo[];
+  readonly returnType?: ts.Type;
 }
 
 export interface ClassInfo {
-  symbol: ts.Symbol | undefined;
-  methods: MethodInfo[];
+  readonly symbol?: ts.Symbol;
+  readonly decorators: readonly DecoratorInfo[];
+  readonly methods: readonly MethodInfo[];
 }
 
 export class TypeParser {
@@ -38,34 +40,43 @@ export class TypeParser {
   }
 
   getTypeInfo(): ClassInfo[] {
-    const sourceFiles = this.program.getSourceFiles().filter(sf => !sf.isDeclarationFile);
+    const sourceFiles = this.program.getSourceFiles()
+      .filter(sf => !sf.isDeclarationFile);
 
     const classInfos = new Array<ClassInfo>();
     for (const sourceFile of sourceFiles) {
       ts.forEachChild(sourceFile, node => {
         if (ts.isClassDeclaration(node)) {
-          classInfos.push(this.getClassInfo(node));
+          const decorators = this.getDecorators(node);
+          const symbol = node.name ? this.#checker.getSymbolAtLocation(node.name) : undefined;
+          const methods = node.members.filter(m => ts.isMethodDeclaration(m)).map(m => this.getMethodInfo(m as ts.MethodDeclaration));
+          classInfos.push({ symbol, decorators, methods });
         }
       });
     }
     return classInfos;
   }
 
-  getClassInfo(node: ts.ClassDeclaration): ClassInfo {
-    const symbol = node.name ? this.#checker.getSymbolAtLocation(node.name) : undefined;
-    const methods = node.members.filter(m => ts.isMethodDeclaration(m)).map(m => this.getMethodInfo(m as ts.MethodDeclaration));
-    return { symbol, methods };
-  }
-
   getMethodInfo(node: ts.MethodDeclaration): MethodInfo {
     if (!ts.isIdentifier(node.name)) throw new Error(`Expected method name to be an identifier but found ${ts.SyntaxKind[node.name.kind]}`);
-    const symbol = this.#checker.getSymbolAtLocation(node.name);
-    const decorators = (ts.getDecorators(node) ?? []).map(d => this.getDecorator(d));
 
-    const sig = this.#checker.getSignatureFromDeclaration(node);
-    const returnType = this.#checker.getReturnTypeOfSignature(sig!);
-    const parameters = sig!.parameters.map(s => ({ symbol: s, type: this.#checker.getTypeOfSymbol(s) }));
+    const symbol = this.#checker.getSymbolAtLocation(node.name);
+    const decorators = this.getDecorators(node);
+
+    const signature = this.#checker.getSignatureFromDeclaration(node);
+    const returnType = signature ? this.#checker.getReturnTypeOfSignature(signature) : undefined;
+    const parameters = node.parameters.map(p => this.getParameterInfo(p));
     return { symbol, decorators, parameters, returnType };
+  }
+
+  getParameterInfo(node: ts.ParameterDeclaration): ParameterInfo {
+    const decorators = this.getDecorators(node);
+    const symbol = this.#checker.getSymbolAtLocation(node.name);
+    const type = node.type
+      ? this.#checker.getTypeFromTypeNode(node.type)
+      : symbol ? this.#checker.getTypeOfSymbol(symbol) : undefined;
+
+    return { symbol, type, decorators };
   }
 
   getImportName(node: ts.Identifier): ImportNameInfo {
@@ -90,6 +101,10 @@ export class TypeParser {
       }
     }
     throw new Error(`No supported declarations for ${node.text} symbol found`);
+  }
+
+  getDecorators(node: ts.HasDecorators): readonly DecoratorInfo[] {
+    return ts.getDecorators(node)?.map(d => this.getDecorator(d)) ?? [];
   }
 
   getDecorator(node: ts.Decorator): DecoratorInfo {
