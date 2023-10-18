@@ -56,6 +56,7 @@ export {
   OperonWorkflow,
   OperonCommunicator,
   RequiredRole,
+  OperonInitializer,
 } from "./decorators";
 
 export {

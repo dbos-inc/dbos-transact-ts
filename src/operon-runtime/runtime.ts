@@ -40,22 +40,17 @@ export class OperonRuntime {
     const classes: object[] = [];
     let initFunction = null;
     for (const key in exports) {
-      this.operon.logger.info("found key " + key);
+      
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
         this.operon.logger.debug(`Loaded class: ${key}`);
       }
-      if (key === "initializeApp") {
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        initFunction = exports[key] as Function ;
-      }
+      
     }
 
     await this.operon.init(...classes);
 
-    if (initFunction != null) {
-      initFunction(new InitContextImpl(this.operon));
-    } 
+  
   
   }
 
