@@ -78,18 +78,55 @@ export class OperonContextImpl implements OperonContext {
   }
 }
 
-export interface InitContext extends OperonContext {
-  readonly userDatabase: UserDatabase;
-  
-}
 
-export class InitContextImpl extends OperonContextImpl implements InitContext {
+/**
+ * TODO : move logger and application, getConfig to a BaseContext which is at the root of all contexts
+ */
+export class InitContext {
   
-  readonly userDatabase: UserDatabase = null as unknown as UserDatabase;
+  readonly logger: Logger ;
+
+  // All private Not exposed
+  private userDatabase: UserDatabase;
+  private application: any;
 
   constructor(readonly operon: Operon) {
-    super("",operon.tracer.startSpan("init") , operon.logger) ;
+    this.logger = operon.logger;
     this.userDatabase = operon.userDatabase;
+    this.application = operon.config.application;
+
   }
 
+  createUserSchema(): Promise<void> {
+    return this.userDatabase.createSchema()  ;
+  }
+    
+  dropUserSchema(): Promise<void> {
+    return this.userDatabase.dropSchema();
+  }
+
+  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
+    return this.userDatabase.query(sql, ...params);
+  }
+
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
+    // If there is no application config at all, or the key is missing, return the default value or undefined.
+    if (!this.application|| !has(this.application, key)) {
+      if (defaultValue) {
+        return defaultValue;
+      }
+      return undefined;
+    }
+
+    // If the key is found and the default value is provided, check whether the value is of the same type.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const value = get(this.operon.config.application, key);
+    if (defaultValue && typeof value !== typeof defaultValue) {
+      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
+    }
+
+    return value as T;
+  }
 }

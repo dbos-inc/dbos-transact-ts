@@ -38,7 +38,7 @@ import {
 import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration, OperonMethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { OperonContextImpl, InitContextImpl } from './context';
+import { OperonContextImpl, InitContext } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
 
 export interface OperonNull { }
@@ -236,7 +236,7 @@ export class Operon {
       const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
         this.logger.debug("Executing init method: " + m.name);
-        await m.origFunction(new InitContextImpl(this));
+        await m.origFunction(new InitContext(this));
       }
 
     } 
