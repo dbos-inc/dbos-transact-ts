@@ -1,8 +1,9 @@
 import { execSync } from "child_process";
 import { TAlgorithm, encode } from "jwt-simple";
 import { createGlobalLogger } from "../telemetry/logs";
+import fs from "fs";
 
-const operonEnvPath = ".operon";
+export const operonEnvPath = ".operon";
 const secretKey = "SOME SECRET";
 
 interface Session {
@@ -35,7 +36,7 @@ export function login (userName: string) {
   const token = encode(session, secretKey, algorithm);
 
   execSync(`mkdir -p ${operonEnvPath}`);
-  execSync(`echo ${token} > ${operonEnvPath}/credentials`);
+  fs.writeFileSync(`${operonEnvPath}/credentials`, token, "utf-8");
 
   logger.info(`Successfully logged in as user: ${userName}`);
   logger.info(`You can view your credentials in: ./${operonEnvPath}/credentials`);
