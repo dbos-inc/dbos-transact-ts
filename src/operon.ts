@@ -163,6 +163,7 @@ export class Operon {
           user: this.config.poolConfig.user,
           password: this.config.poolConfig.password,
           database: this.config.poolConfig.database,
+          ssl: this.config.poolConfig.ssl,
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
