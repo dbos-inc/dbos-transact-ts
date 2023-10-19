@@ -56,8 +56,8 @@ program
   .command('login')
   .description('Log in Operon cloud')
   .requiredOption('-u, --userName <string>', 'User name for login', )
-  .action(async (options: { userName: string }) => {
-    await login(options.userName);
+  .action((options: { userName: string }) => {
+    login(options.userName);
   });
 
 program
