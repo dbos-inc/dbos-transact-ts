@@ -7,28 +7,15 @@ import { Command } from 'commander';
 import { OperonConfig } from "../operon";
 import { init } from "./init";
 import * as ts from 'typescript';
-import { TypeParser } from "./TypeParser";
-
-function getErrorMessage(e: unknown) {
-  if (e instanceof Error) {
-    return e.message;
-  } else if (typeof e === "string") {
-    return e;
-  } else {
-    return (e as any).toString();
-  }
-}
+import { generateOpenApi } from "./openApi";
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 const program = new Command();
 
 ////////////////////////
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson = require('../../../package.json') as { version: string };
-program.
-  version(packageJson.version);
 
 export interface OperonCLIStartOptions {
   port?: number,
@@ -42,15 +29,11 @@ program
   .requiredOption('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async ({ entrypoint }: { entrypoint: string }) => {
     const program = ts.createProgram([entrypoint], {});
-    const parser = new TypeParser(program);
+    const openapi = generateOpenApi(program);
 
-    try {
-      const classes = parser.getTypeInfo();
-      console.log();
-
-    } catch (e) {
-      parser.log.error(getErrorMessage(e));
-    }
+    const filename = path.join(path.dirname(entrypoint), "swagger.json");
+    const json = JSON.stringify(openapi, undefined, 4);
+    await fs.writeFile(filename, json, { encoding: 'utf-8' });
   });
 
 program

@@ -1,23 +1,16 @@
 import * as ts from 'typescript';
 import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 
-export interface DecoratorInfo {
-  readonly node: ts.Decorator;
-  readonly args: readonly ts.Expression[];
-  readonly identifier: ts.Identifier;
-  readonly module: string;
-}
-
 export interface ClassInfo {
   readonly node: ts.ClassDeclaration;
-  readonly symbol?: ts.Symbol;
+  readonly name?: string;
   readonly decorators: readonly DecoratorInfo[];
   readonly methods: readonly MethodInfo[];
 }
 
 export interface MethodInfo {
   readonly node: ts.MethodDeclaration;
-  readonly symbol?: ts.Symbol;
+  readonly name: string;
   readonly decorators: readonly DecoratorInfo[];
   readonly parameters: readonly ParameterInfo[];
   readonly returnType?: ts.Type;
@@ -25,9 +18,21 @@ export interface MethodInfo {
 
 export interface ParameterInfo {
   readonly node: ts.ParameterDeclaration;
-  readonly symbol?: ts.Symbol;
+  readonly name: string;
   readonly decorators: readonly DecoratorInfo[];
   readonly type?: ts.Type;
+}
+
+export interface DecoratorInfo {
+  node: ts.Decorator;
+  identifier: ts.Identifier;
+  args: readonly ts.Expression[];
+  name?: string;
+  module?: string;
+}
+function isStaticMethod(node: ts.MethodDeclaration): boolean {
+  const mods = node.modifiers ?? [];
+  return mods.some(m => m.kind === ts.SyntaxKind.StaticKeyword);
 }
 
 export class TypeParser {
@@ -38,92 +43,90 @@ export class TypeParser {
     this.#checker = program.getTypeChecker();
   }
 
-  getTypeInfo(): ClassInfo[] {
-    const sourceFiles = this.program.getSourceFiles()
-      .filter(sf => !sf.isDeclarationFile);
+  parse(): readonly ClassInfo[] {
+    const classes = new Array<ClassInfo>();
+    for (const file of this.program.getSourceFiles()) {
+      if (file.isDeclarationFile) continue;
+      for (const stmt of file.statements) {
+        if (ts.isClassDeclaration(stmt)) {
 
-    const classInfos = new Array<ClassInfo>();
-    for (const sourceFile of sourceFiles) {
-      ts.forEachChild(sourceFile, node => {
-        if (ts.isClassDeclaration(node)) {
-          classInfos.push(this.getClassInfo(node));
+          const staticMethods = stmt.members
+            .filter(ts.isMethodDeclaration)
+            // Operon only supports static methods, so filter out instance methods by default
+            .filter(isStaticMethod)
+            .map(m => this.getMethod(m));
+
+          classes.push({
+            node: stmt,
+            // a class may not have a name if it's the default export
+            name: stmt.name?.getText(),
+            decorators: this.getDecorators(stmt),
+            methods: staticMethods,
+          });
         }
-      });
+      }
     }
-    return classInfos;
+    return classes;
   }
 
-  getClassInfo(node: ts.ClassDeclaration): ClassInfo {
-    const symbol = node.name ? this.#checker.getSymbolAtLocation(node.name) : undefined;
+  getMethod(node: ts.MethodDeclaration): MethodInfo {
+    const name = node.name.getText();
     const decorators = this.getDecorators(node);
-    const methods = node.members
-      .filter(m => ts.isMethodDeclaration(m))
-      .map(m => this.getMethodInfo(m as ts.MethodDeclaration));
-    return { node, symbol, decorators, methods };
-  }
+    const parameters = node.parameters.map(p => this.getParameter(p));
 
-  getMethodInfo(node: ts.MethodDeclaration): MethodInfo {
-    const symbol = this.#checker.getSymbolAtLocation(node.name);
-    const decorators = this.getDecorators(node);
-    const parameters = node.parameters
-      .map(p => this.getParameterInfo(p))
-      .filter(p => p !== undefined) as ParameterInfo[];
     const signature = this.#checker.getSignatureFromDeclaration(node);
     const returnType = signature ? this.#checker.getReturnTypeOfSignature(signature) : undefined;
-    return { node, symbol, decorators, parameters, returnType };
+    return { node, name, decorators, parameters, returnType };
   }
 
-  getParameterInfo(node: ts.ParameterDeclaration): ParameterInfo {
+  getParameter(node: ts.ParameterDeclaration): ParameterInfo {
     const decorators = this.getDecorators(node);
-    const symbol = this.#checker.getSymbolAtLocation(node.name);
-
-    const type = node.type
-      ? this.#checker.getTypeFromTypeNode(node.type)
-      : symbol ? this.#checker.getTypeOfSymbol(symbol) : undefined;
-
-    return { node, symbol, decorators, type };
+    const name = node.name.getText();
+    const type = node.type ? this.#checker.getTypeFromTypeNode(node.type) : undefined;
+    return { node, name, decorators, type };
   }
 
-  getDecorators(node: ts.HasDecorators): readonly DecoratorInfo[] {
-    return ts.getDecorators(node)?.map(d => this.getDecorator(d)) ?? [];
-  }
+  getDecorators(node: ts.HasDecorators): DecoratorInfo[] {
 
-  getDecorator(node: ts.Decorator): DecoratorInfo {
-    if (ts.isCallExpression(node.expression)) {
-      if (ts.isIdentifier(node.expression.expression)) {
-        const { identifier, module } = this.getImportName(node.expression.expression);
-        return { node, identifier, module, args: node.expression.arguments };
-      }
-      throw new Error(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`)
-    }
+    return (ts.getDecorators(node) ?? [])
+      .map(node => {
+        const { identifier, args, } = getDecoratorIdentifier(node);
+        const { name, module } = getImportSpecifier(identifier, this.#checker) ?? {};
+        return { node, identifier, name, module, args };
+      });
 
-    if (ts.isIdentifier(node.expression)) {
-      const { identifier, module } = this.getImportName(node.expression);
-      return { node, identifier, module, args: [] };
-    }
-
-    throw new Error(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`)
-  }
-
-  getImportName(node: ts.Identifier): { identifier: ts.Identifier; module: string; } {
-    const symbol = this.#checker.getSymbolAtLocation(node);
-    const decls = symbol?.getDeclarations() ?? [];
-
-    for (const decl of decls) {
-      if (ts.isImportSpecifier(decl)) {
-        // propertyName is the name as specified in the defining module
-        // name is the (potentially different) name used in the local module
-        // propertyName is undefined if the name isn't overridden
-        const identifier = (decl.propertyName ?? decl.name);
-        const module = decl.parent.parent.parent.moduleSpecifier;
-        if (ts.isStringLiteral(module)) {
-          return { identifier, module: module.text };
+    function getDecoratorIdentifier(node: ts.Decorator): { identifier: ts.Identifier; args: readonly ts.Expression[]; } {
+      if (ts.isCallExpression(node.expression)) {
+        if (ts.isIdentifier(node.expression.expression)) {
+          return { identifier: node.expression.expression, args: node.expression.arguments };
         }
-
-        throw new Error(`Unexpected module specifier type: ${ts.SyntaxKind[module.kind]}`)
+        throw new Error(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`);
       }
-      throw new Error(`Unexpected decorator declaration type: ${ts.SyntaxKind[decl.kind]}`)
+
+      if (ts.isIdentifier(node.expression)) {
+        return { identifier: node.expression, args: [] };
+      }
+      throw new Error(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`);
     }
-    throw new Error(`Could not find import specifier for ${node.getText()}`);
+
+    function getImportSpecifier(node: ts.Node, checker: ts.TypeChecker): { name: string; module: string; } | undefined {
+      const symbol = checker.getSymbolAtLocation(node);
+      const decls = symbol?.getDeclarations() ?? [];
+      for (const decl of decls) {
+        if (ts.isImportSpecifier(decl)) {
+          // decl.name is the name for this type used in the local module.
+          // If the type name was overridden in the local module, the original type name is stored in decl.propertyName.
+          // Otherwise, decl.propertyName is undefined.
+          const name = (decl.propertyName ?? decl.name).getText();
+
+          // comment in TS AST declaration indicates moduleSpecifier *must* be a string literal
+          //    "If [ImportDeclaration.moduleSpecifier] is not a StringLiteral it will be a grammar error."
+          const module = decl.parent.parent.parent.moduleSpecifier as ts.StringLiteral;
+
+          return { name, module: module.text };
+        }
+      }
+      return undefined;
+    };
   }
 }
