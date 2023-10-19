@@ -20,7 +20,7 @@ describe("failures-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([FailureTestClass], config);
+    testRuntime = await createInternalTestRuntime([FailureTestClass, FailureRecovery], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;
@@ -129,31 +129,44 @@ describe("failures-tests", () => {
     await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrowError();
   });
 
+  class FailureRecovery {
+    static resolve1: () => void;
+    static promise1 = new Promise<void>((resolve) => {
+      FailureRecovery.resolve1 = resolve;
+    });
+
+    static cnt = 0;
+
+    @OperonWorkflow()
+    static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
+      if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
+        FailureRecovery.cnt += input;
+      }
+      await FailureRecovery.promise1;
+      return ctxt.authenticatedUser;
+    }
+  }
+
   test("failure-recovery", async () => {
     // Run a workflow until pending and start recovery.
     const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
-    const handle = await testRuntime.invoke(FailureTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+    const handle = await testRuntime.invoke(FailureRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverPromise = operon.recoverPendingWorkflows();
-    FailureTestClass.resolve1();
+    FailureRecovery.resolve1();
 
     await recoverPromise;
 
     await expect(handle.getResult()).resolves.toBe("test_recovery_user");
-    expect(FailureTestClass.cnt).toBe(10); // Should run twice.
+    expect(FailureRecovery.cnt).toBe(10); // Should run twice.
   });
 });
 
 class FailureTestClass {
   static cnt = 0;
   static success: string = "";
-
-  static resolve1: () => void;
-  static promise1 = new Promise<void>((resolve) => {
-    FailureTestClass.resolve1 = resolve;
-  });
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator({ retriesAllowed: false })
@@ -233,14 +246,5 @@ class FailureTestClass {
   @OperonWorkflow()
   static async testCommWorkflow(ctxt: WorkflowContext) {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
-  }
-
-  @OperonWorkflow()
-  static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-      FailureTestClass.cnt += input;
-    }
-    await FailureTestClass.promise1;
-    return ctxt.authenticatedUser;
   }
 }
