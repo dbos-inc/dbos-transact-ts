@@ -6,6 +6,7 @@ import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
 import { init } from "./init";
+import { login } from "./login";
 
 const program = new Command();
 
@@ -50,6 +51,14 @@ program
 ///////////////////////
 /* CLOUD DEPLOYMENT  */
 ///////////////////////
+
+program
+  .command('login')
+  .description('Log in Operon cloud')
+  .requiredOption('-u, --userName <string>', 'User name for login', )
+  .action((options: { userName: string }) => {
+    login(options.userName);
+  });
 
 program
   .command('deploy')
