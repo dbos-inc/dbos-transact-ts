@@ -57,6 +57,7 @@ export {
   OperonCommunicator,
   RequiredRole,
   OperonInitializer,
+  OperonDeploy,
 } from "./decorators";
 
 export {
