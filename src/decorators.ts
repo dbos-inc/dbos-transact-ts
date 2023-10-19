@@ -556,3 +556,18 @@ export function OperonInitializer() {
   }
   return decorator;
 }
+
+// For future use with Deploy
+export function OperonDeploy() {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.init = true;
+    return descriptor;
+  }
+  return decorator;
+}

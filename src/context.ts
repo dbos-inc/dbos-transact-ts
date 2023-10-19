@@ -88,11 +88,13 @@ export class InitContext {
 
   // All private Not exposed
   private userDatabase: UserDatabase;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
   constructor(readonly operon: Operon) {
     this.logger = operon.logger;
     this.userDatabase = operon.userDatabase;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.application = operon.config.application;
 
   }
@@ -105,7 +107,9 @@ export class InitContext {
     return this.userDatabase.dropSchema();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.userDatabase.query(sql, ...params);
   }
 
