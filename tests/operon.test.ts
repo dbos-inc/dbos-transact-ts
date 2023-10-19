@@ -207,6 +207,7 @@ class OperonTestClass {
   @OperonInitializer()
   static async init(_ctx: InitContext) { 
     OperonTestClass.initialized = true;
+    expect(_ctx.getConfig("counter")).toBe(3);
   }
 
   @OperonTransaction()
