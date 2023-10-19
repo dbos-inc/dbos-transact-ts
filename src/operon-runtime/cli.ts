@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import { operonConfigFilePath, parseConfigFile } from "./config";
-import { deploy } from "./deploy";
 import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
 import { init } from "./init";
-import { login } from "./login";
 
 const program = new Command();
 
@@ -46,31 +44,6 @@ program
   .option('-n, --appName <application-name>', 'Application name', 'operon-hello-app')
   .action(async (options: { appName: string }) => {
     await init(options.appName);
-  });
-
-///////////////////////
-/* CLOUD DEPLOYMENT  */
-///////////////////////
-
-program
-  .command('login')
-  .description('Log in Operon cloud')
-  .requiredOption('-u, --userName <string>', 'User name for login', )
-  .action((options: { userName: string }) => {
-    login(options.userName);
-  });
-
-program
-  .command('deploy')
-  .description('Deploy an application to the cloud')
-  .option('-n, --name <string>', 'Specify the app name')
-  .option('-h, --host <string>', 'Specify the host', 'localhost')
-  .action(async (options: { name: string, host: string }) => {
-    if (!options.name) {
-      console.error('Error: the --name option is required.');
-      return;
-    }
-    await deploy(options.name, options.host);
   });
 
 program.parse(process.argv);

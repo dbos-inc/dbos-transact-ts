@@ -8,7 +8,8 @@ package-lock.json
 # TypeScript build
 dist/
 
-# Operon build
+# Operon directories
+.operon/
 operon_deploy
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
