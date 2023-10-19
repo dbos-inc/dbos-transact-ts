@@ -21,9 +21,9 @@ describe("operon-tests", () => {
   });
 
   beforeEach(async () => {
+    // await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     testRuntime = await createInternalTestRuntime([OperonTestClass], config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     OperonTestClass.cnt = 0;
     OperonTestClass.wfCnt = 0;
   });
@@ -208,6 +208,8 @@ class OperonTestClass {
   static async init(_ctx: InitContext) { 
     OperonTestClass.initialized = true;
     expect(_ctx.getConfig("counter")).toBe(3);
+    await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   }
 
   @OperonTransaction()
