@@ -1,4 +1,4 @@
-import { TransactionContext, OperonTransaction, GetApi as $$GetApi } from '@dbos-inc/operon'
+import { TransactionContext, OperonTransaction, GetApi } from '@dbos-inc/operon'
 import { Knex } from 'knex';
 
 // The schema of the database table used in this example.
@@ -9,7 +9,7 @@ export interface operon_hello {
 
 export class Hello {
 
-  @$$GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
+  @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
   @OperonTransaction()  // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, user: string) {
     // Retrieve and increment the number of times this user has been greeted.
