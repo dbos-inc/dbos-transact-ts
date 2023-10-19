@@ -24,8 +24,8 @@ export async function deploy(appName: string, host: string) {
     const uuid = register.data as string;
     execSync(`mkdir -p operon_deploy`);
     execSync(`envsubst < operon-config.yaml > operon_deploy/operon-config.yaml`);
-    execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x operon_deploy/* operon-config.yaml`);
-    execSync(`zip -j operon_deploy/${uuid}.zip operon_deploy/operon-config.yaml`);
+    execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x operon_deploy/* operon-config.yaml > /dev/null`);
+    execSync(`zip -j operon_deploy/${uuid}.zip operon_deploy/operon-config.yaml > /dev/null`);
 
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`operon_deploy/${uuid}.zip`));
