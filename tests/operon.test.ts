@@ -194,26 +194,24 @@ describe("operon-tests", () => {
   });
 
   test("workflow-getevent-retrieve", async() => {
-    // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist.
-    // Then execute the set event workflow (w/ setUUID).
+    // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
     const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
-    const setUUID = uuidv1();
+    const setUUID = getUUID + "-2";
 
-    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull");
+    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
     expect(OperonTestClass.wfCnt).toBe(2);
-    await expect(testRuntime.invoke(OperonTestClass, setUUID).setEventWorkflow().then(x => x.getResult())).resolves.toBe(0);
     await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
 
     // Run without UUID, should get the new result.
-    await expect(testRuntime.invoke(OperonTestClass).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-PENDING");
+    await expect(testRuntime.invoke(OperonTestClass).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-PENDING-0");
 
     // Test OAOO for getEvent and getWorkflowStatus.
-    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull");
+    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
     expect(OperonTestClass.wfCnt).toBe(6);  // Should re-execute the workflow because we're not flushing the result buffer.
   });
 });
@@ -349,6 +347,10 @@ class OperonTestClass {
     } else {
       res += "-" + status.status;
     }
+
+    // Note: the targetUUID must match the child workflow UUID.
+    const value = await ctxt.childWorkflow(OperonTestClass.setEventWorkflow).then(x => x.getResult());
+    res += "-" + value;
     return res;
   }
 

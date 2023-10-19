@@ -485,14 +485,15 @@ export interface WorkflowHandle<R> {
  * The handle returned when invoking a workflow with Operon.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string,
+    readonly callerUUID?: string, readonly callerFunctionID?: number) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.callerFunctionID);
   }
 
   async getResult(): Promise<R> {
@@ -504,14 +505,14 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
  * The handle returned when retrieving a workflow with Operon.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly functionID?: number) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.functionID);
+    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.callerFunctionID);
   }
 
   async getResult(): Promise<R> {
