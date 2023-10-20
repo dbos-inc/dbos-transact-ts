@@ -13,6 +13,7 @@ const config: Knex.Config = {
     user: operonConfig.poolConfig.user,
     password: operonConfig.poolConfig.password,
     database: operonConfig.poolConfig.database,
+    ssl: operonConfig.poolConfig.ssl,
   },
   migrations: {
     directory: './migrations'

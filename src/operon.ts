@@ -163,6 +163,7 @@ export class Operon {
           user: this.config.poolConfig.user,
           password: this.config.poolConfig.password,
           database: this.config.poolConfig.database,
+          ssl: this.config.poolConfig.ssl,
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
@@ -280,6 +281,11 @@ export class Operon {
   }
 
   async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+    return this.internalWorkflow(wf, params, undefined, undefined, ...args);
+  }
+
+  // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
+  async internalWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const wInfo = this.workflowInfoMap.get(wf.name);
@@ -332,7 +338,7 @@ export class Operon {
       return result!;
     };
     const workflowPromise: Promise<R> = runWorkflow();
-    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name);
+    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
   async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {

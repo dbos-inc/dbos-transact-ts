@@ -22,18 +22,18 @@ export interface SystemDatabase {
   getPendingWorkflows(): Promise<Array<string>>;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
-  checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
-  recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
-  recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
+  checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
+  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
+  recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -149,7 +149,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return JSON.parse(rows[0].inputs) as T;
   }
 
-  async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
+  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
     const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length === 0) {
       return operonNull;
@@ -160,7 +160,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
+  async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
     try {
       await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialOutput]);
@@ -175,7 +175,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
+  async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     try {
       await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialErr]);
@@ -315,7 +315,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+    // Check if the operation has been done before for OAOO (only do this inside a workflow).
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
+      if (rows.length > 0) {
+        return JSON.parse(rows[0].output) as T;
+      }
+    }
+
     // Register the key with the global notifications listener.
     let resolveNotification: () => void;
     const valuePromise = new Promise<void>((resolve) => {
@@ -331,28 +339,58 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key, value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
     let value: T | null = null;
-    if (finalRecvRows.length > 0) {
-      value = JSON.parse(finalRecvRows[0].value) as T;
+    if (initRecvRows.length > 0) {
+      value = JSON.parse(initRecvRows[0].value) as T;
+    } else {
+      // Read it again from the database.
+      const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+      if (finalRecvRows.length > 0) {
+        value = JSON.parse(finalRecvRows[0].value) as T;
+      }
+    }
+
+    // Record the output if it is inside a workflow.
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
-    if (rows.length === 0) {
-      return null;
+  async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
+    // Check if the operation has been done before for OAOO (only do this inside a workflow).
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
+      if (rows.length > 0) {
+        return JSON.parse(rows[0].output) as WorkflowStatus;
+      }
     }
-    return { status: rows[0].status, workflowName: rows[0].name, authenticatedUser: rows[0].authenticated_user, assumedRole: rows[0].assumed_role, authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
-    request: JSON.parse(rows[0].request) as HTTPRequest };
+
+    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    let value = null;
+    if (rows.length > 0) {
+      value = {
+        status: rows[0].status,
+        workflowName: rows[0].name,
+        authenticatedUser: rows[0].authenticated_user,
+        assumedRole: rows[0].assumed_role,
+        authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
+        request: JSON.parse(rows[0].request) as HTTPRequest,
+      };
+    }
+
+    // Record the output if it is inside a workflow.
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
+    }
+    return value;
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
