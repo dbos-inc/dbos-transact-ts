@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator, OperonInitializer, InitContext } from "../src/";
 import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
@@ -22,8 +22,8 @@ describe("operon-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime([OperonTestClass, ReadRecording, RetrieveWorkflowStatus], config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    // await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     OperonTestClass.cnt = 0;
   });
 
@@ -202,7 +202,18 @@ describe("operon-tests", () => {
 });
 
 class OperonTestClass {
+
+  static initialized = false;
   static cnt: number = 0;
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  @OperonInitializer()
+  static async init(_ctx: InitContext) { 
+    OperonTestClass.initialized = true;
+    expect(_ctx.getConfig("counter")).toBe(3);
+    await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+  }
 
   @OperonTransaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
@@ -213,6 +224,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     expect(ctxt.getConfig<number>("counter")).toBe(3);
     const funcResult = await ctxt.invoke(OperonTestClass).testFunction(name);
     return funcResult;
@@ -257,6 +269,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
+    expect(OperonTestClass.initialized).toBe(true);
     const funcResult: number = await workflowCtxt.invoke(OperonTestClass).testFailFunction(name);
     const checkResult: number = await workflowCtxt.invoke(OperonTestClass).testKvFunctionRead(funcResult);
     return checkResult;
@@ -271,6 +284,7 @@ class OperonTestClass {
 
   @OperonWorkflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
+    expect(OperonTestClass.initialized).toBe(true);
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
     const fail = await ctxt.recv("fail", 0);
@@ -290,4 +304,5 @@ class OperonTestClass {
     await ctxt.setEvent("key2", "value2");
     return 0;
   }
+
 }

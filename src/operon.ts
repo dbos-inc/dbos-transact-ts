@@ -35,10 +35,10 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration } from './decorators';
+import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration, OperonMethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { OperonContextImpl } from './context';
+import { OperonContextImpl, InitContext } from './context';
 import { OperonHandlerRegistration } from './httpServer/handler';
 
 export interface OperonNull { }
@@ -232,6 +232,16 @@ export class Operon {
     }
     void this.recoverPendingWorkflows();
     this.initialized = true;
+
+    for ( const v of this.registeredOperations) {
+      const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
+      if (m.init === true) {
+        this.logger.debug("Executing init method: " + m.name);
+        await m.origFunction(new InitContext(this));
+      }
+
+    } 
+
     this.logger.info("Operon initialized");
   }
 

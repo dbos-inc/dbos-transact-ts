@@ -5,6 +5,7 @@ export {
 
 export {
   OperonContext,
+  InitContext,
 } from './context';
 
 export {
@@ -55,6 +56,8 @@ export {
   OperonWorkflow,
   OperonCommunicator,
   RequiredRole,
+  OperonInitializer,
+  OperonDeploy,
 } from "./decorators";
 
 export {
