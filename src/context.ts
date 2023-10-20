@@ -107,8 +107,7 @@ export class InitContext {
     return this.userDatabase.dropSchema();
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
+  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.userDatabase.query(sql, ...params);
   }
