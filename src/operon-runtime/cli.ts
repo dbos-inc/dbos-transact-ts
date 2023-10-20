@@ -7,6 +7,7 @@ import { OperonConfig } from "../operon";
 import { init } from "./init";
 import * as ts from 'typescript';
 import { generateOpenApi } from "./openApi";
+import YAML from 'yaml';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -30,9 +31,9 @@ program
     const program = ts.createProgram([entrypoint], {});
     const openapi = generateOpenApi(program);
 
-    const filename = path.join(path.dirname(entrypoint), "swagger.json");
-    const json = JSON.stringify(openapi, undefined, 4);
-    await fs.writeFile(filename, json, { encoding: 'utf-8' });
+    const filename = path.join(path.dirname(entrypoint), "swagger.yaml");
+    const yaml = YAML.stringify(openapi);
+    await fs.writeFile(filename, yaml, { encoding: 'utf-8' });
   });
 
 program
