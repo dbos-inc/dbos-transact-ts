@@ -21,9 +21,9 @@ describe("operon-tests", () => {
   });
 
   beforeEach(async () => {
+    testRuntime = await createInternalTestRuntime([OperonTestClass, ReadRecording, RetrieveWorkflowStatus], config);
     // await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    testRuntime = await createInternalTestRuntime([OperonTestClass], config);
     OperonTestClass.cnt = 0;
   });
 
