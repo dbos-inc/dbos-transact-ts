@@ -30,7 +30,7 @@ export interface Spec2 extends Spec {
 }
 
 export interface Spec3 extends Spec {
-  openapi: '3.0.0';
+  openapi: '3.0.3';
   servers: Server[];
   components: Components;
   paths: { [name: string]: Path3 };

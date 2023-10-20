@@ -115,18 +115,17 @@ export function generateOpenApi(program: ts.Program, logger?: WinstonLogger) {
   }).filter(isValid);
 
   const spec: Spec3 = {
-    openapi: "3.0.0",
+    // TODO: OpenAPI 3.1 support
+    openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
     info: {
+      // TODO: Where to get this info from? package.json?
       title: "Operon API",
       version: "1.0.0",
     },
-    paths: Object.fromEntries(handlers.map(generatePath)),
+    // When we are cloud hosting, we will have useful info to put here.
+    servers: [],
     components: {},
-    servers: [
-      {
-        url: "/"
-      }
-    ],
+    paths: Object.fromEntries(handlers.map(generatePath)),
   }
 
   return spec;
