@@ -1,5 +1,6 @@
-// These type definitions are taken from the TSOA project: https://github.com/lukeautry/tsoa/blob/v5.1.1/packages/runtime/src/swagger/swagger.ts
+// These type definitions were originally taken from the TSOA project: https://github.com/lukeautry/tsoa/blob/v5.1.1/packages/runtime/src/swagger/swagger.ts
 
+// CHANGE: removed namespace
 export type DataType = 'integer' | 'number' | 'boolean' | 'string' | 'array' | 'object' | 'file' | 'undefined';
 
 export type DataFormat = 'int32' | 'int64' | 'float' | 'double' | 'byte' | 'binary' | 'date' | 'date-time' | 'password';
@@ -30,7 +31,7 @@ export interface Spec2 extends Spec {
 }
 
 export interface Spec3 extends Spec {
-  openapi: '3.0.3';
+  openapi: '3.0.3'; // CHANGE: updated openapi version to 3.0.3
   servers: Server[];
   components: Components;
   paths: { [name: string]: Path3 };
@@ -97,7 +98,9 @@ export interface BaseParameter extends BaseSchema {
   example?: unknown;
   examples?: { [name: string]: Example3 | string };
   schema: Schema;
-  type: DataType;
+  // CHANGE: There does not appear to be a type property on the Parameter Object
+  // https://spec.openapis.org/oas/v3.0.3#parameter-object
+  // type: DataType;
   format?: DataFormat;
   deprecated?: boolean;
 }
