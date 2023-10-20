@@ -44,7 +44,7 @@ export async function deploy(appName: string, host: string) {
     if (axios.isAxiosError(e)) {
       console.error(`failed to deploy application ${appName}: ${e.response?.data}`);
     } else {
-      console.error(`failed to deploy application ${appName}`);
+      console.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
     }
   }
 }
