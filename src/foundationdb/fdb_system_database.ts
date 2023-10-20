@@ -159,7 +159,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return await this.workflowInputsDB.get(workflowUUID) as T ?? null;
   }
 
-  async checkCommunicatorOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
+  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<R> | undefined;
     if (output === undefined) {
       return operonNull;
@@ -170,7 +170,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordCommunicatorOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
+  async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
@@ -184,7 +184,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async recordCommunicatorError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
+  async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
@@ -199,12 +199,33 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getWorkflowStatus(workflowUUID: string): Promise<WorkflowStatus | null> {
-    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
-    if (output === undefined) {
-      return null;
+  async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
+    // Check if the operation has been done before for OAOO (only do this inside a workflow).
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const prev = (await this.operationOutputsDB.get([callerUUID, functionID])) as OperationOutput<WorkflowStatus | null> | undefined;
+      if (prev !== undefined) {
+        return prev.output;
+      }
     }
-    return { status: output.status, workflowName: output.name, authenticatedUser: output.authenticatedUser, authenticatedRoles: output.authenticatedRoles, assumedRole: output.assumedRole, request: output.request };
+
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
+    let value = null;
+    if (output !== undefined) {
+      value = {
+        status: output.status,
+        workflowName: output.name,
+        authenticatedUser: output.authenticatedUser,
+        authenticatedRoles: output.authenticatedRoles,
+        assumedRole: output.assumedRole,
+        request: output.request,
+      };
+    }
+
+    // Record the output if it is inside a workflow.
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
+    }
+    return value;
   }
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
@@ -313,7 +334,15 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+    // Check if the operation has been done before for OAOO (only do this inside a workflow).
+    if (callerUUID !== undefined && functionID !== undefined) {
+      const output = (await this.operationOutputsDB.get([callerUUID, functionID])) as OperationOutput<T | null> | undefined;
+      if (output !== undefined) {
+        return output.output;
+      }
+    }
+
     // Check if the value is present, otherwise wait for it to arrive.
     const watch = await this.workflowEventsDB.getAndWatch([workflowUUID, key]);
     if (watch.value === undefined) {
@@ -326,6 +355,17 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       watch.cancel();
     }
     // Return the value, or null if none exists.
-    return (await this.workflowEventsDB.get([workflowUUID, key])) as T ?? null;
+    let value: T | null = null;
+    if (watch.value !== undefined) {
+      value = watch.value as T;
+    } else {
+      value = ((await this.workflowEventsDB.get([workflowUUID, key])) as T) ?? null;
+    }
+
+    // Record the output if it is inside a workflow.
+    if (callerUUID !== undefined && functionID !== undefined) {
+      await this.recordOperationOutput(callerUUID, functionID, value);
+    }
+    return value;
   }
 }

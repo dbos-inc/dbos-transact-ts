@@ -62,6 +62,9 @@ export interface WorkflowContext extends OperonContext {
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
+
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 }
 
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
@@ -318,7 +321,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | OperonNull = await this.#operon.systemDatabase.checkCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID);
+    const check: R | OperonNull = await this.#operon.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== operonNull) {
       ctxt.span.setAttribute("cached", true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
@@ -360,13 +363,13 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     if (result === operonNull) {
       // Record the error, then throw it.
       err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
-      await this.#operon.systemDatabase.recordCommunicatorError(this.workflowUUID, ctxt.functionID, err as Error);
+      await this.#operon.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.#operon.tracer.endSpan(ctxt.span);
       throw err;
     } else {
       // Record the execution and return.
-      await this.#operon.systemDatabase.recordCommunicatorOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
+      await this.#operon.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.#operon.tracer.endSpan(ctxt.span);
       return result as R;
@@ -443,17 +446,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
-    // FIXME: make this deterministic and expose in the public interface.
-    return this.#operon.getEvent(workflowUUID, key, timeoutSeconds);
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+    const functionID: number = this.functionIDGetIncrement();
+    return this.#operon.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
 
   /**
    * Retrieve a handle for a workflow UUID.
    */
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    // FIXME: make this deterministic and expose in the public interface.
-    return this.#operon.retrieveWorkflow(workflowUUID);
+  retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
+    const functionID: number = this.functionIDGetIncrement();
+    return new RetrievedHandle(this.#operon.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
 }
@@ -482,14 +485,15 @@ export interface WorkflowHandle<R> {
  * The handle returned when invoking a workflow with Operon.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string,
+    readonly callerUUID?: string, readonly callerFunctionID?: number) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.callerFunctionID);
   }
 
   async getResult(): Promise<R> {
@@ -501,14 +505,14 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
  * The handle returned when retrieving a workflow with Operon.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) {}
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID, this.callerFunctionID);
   }
 
   async getResult(): Promise<R> {

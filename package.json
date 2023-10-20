@@ -20,7 +20,8 @@
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
   "bin": {
-    "operon": "./dist/src/operon-runtime/cli.js"
+    "operon": "./dist/src/operon-runtime/cli.js",
+    "operon-cloud": "./dist/src/cloud-cli/cli.js"
   },
   "devDependencies": {
     "@prisma/client": "^5.3.1",
@@ -57,6 +58,7 @@
     "commander": "^11.0.0",
     "fast-glob": "^3.3.1",
     "form-data": "^4.0.0",
+    "jwt-simple": "^0.5.6",
     "knex": "^2.5.1",
     "koa": "^2.14.2",
     "koa-logger": "^3.2.1",
