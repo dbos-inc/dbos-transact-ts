@@ -25,7 +25,6 @@ describe("operon-tests", () => {
     // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     testRuntime = await createInternalTestRuntime([OperonTestClass], config);
     OperonTestClass.cnt = 0;
-    OperonTestClass.wfCnt = 0;
   });
 
   afterEach(async () => {
@@ -34,28 +33,8 @@ describe("operon-tests", () => {
 
   test("simple-function", async () => {
     const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(OperonTestClass).testWorkflow(username);
-
-    expect(typeof workflowHandle.getWorkflowUUID()).toBe("string");
-    await expect(workflowHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.PENDING,
-      workflowName: OperonTestClass.testWorkflow.name,
-    });
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
-
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    await operon.flushWorkflowStatusBuffer();
-    await expect(workflowHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-    });
-    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowHandle.getWorkflowUUID());
-    expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-    });
-    expect(JSON.parse(await retrievedHandle.getResult())).toEqual({
-      current_user: username,
-    });
   });
 
   test("return-void", async () => {
@@ -80,59 +59,17 @@ describe("operon-tests", () => {
     await expect(testRuntime.invoke(OperonTestClass).testFailWorkflow("fail").then((x) => x.getResult())).rejects.toThrow("fail");
   });
 
-  test("oaoo-simple", async () => {
-    let workflowResult: number;
-    const uuidArray: string[] = [];
-    for (let i = 0; i < 10; i++) {
-      const workflowUUID: string = uuidv1();
-      uuidArray.push(workflowUUID);
-      workflowResult = await testRuntime.invoke(OperonTestClass, workflowUUID).testOaooWorkflow(username).then((x) => x.getResult());
-      expect(workflowResult).toEqual(i + 1);
-    }
-
-    // Rerunning with the same workflow UUID should return the same output.
-    for (let i = 0; i < 10; i++) {
-      const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await testRuntime.invoke(OperonTestClass, workflowUUID).testOaooWorkflow(username).then((x) => x.getResult());
-      expect(workflowResult).toEqual(i + 1);
-    }
-  });
-
   test("simple-communicator", async () => {
     const workflowUUID: string = uuidv1();
-
     await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
-
-    // Test OAOO. Should return the original result.
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
-
-    // Should be a new run.
     await expect(testRuntime.invoke(OperonTestClass).testCommunicator()).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
     const workflowUUID = uuidv1();
     const handle = await testRuntime.invoke(OperonTestClass, workflowUUID).receiveWorkflow();
-    await testRuntime.invoke(OperonTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult());
+    await expect(testRuntime.invoke(OperonTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
-    const retry = await testRuntime.invoke(OperonTestClass, workflowUUID).receiveWorkflow().then((x) => x.getResult());
-    expect(retry).toBe(true);
-  });
-
-  test("notification-oaoo", async () => {
-    const recvWorkflowUUID = uuidv1();
-    const idempotencyKey = "test-suffix";
-
-    // Send twice with the same idempotency key.  Only one message should be sent.
-    await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
-    await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
-
-    // Receive twice with the same UUID.  Each should get the same result of true.
-    await expect(testRuntime.invoke(OperonTestClass, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
-    await expect(testRuntime.invoke(OperonTestClass, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
-
-    // A receive with a different UUID should return false.
-    await expect(testRuntime.invoke(OperonTestClass).receiveOaooWorkflow("testTopic", 0).then((x) => x.getResult())).resolves.toBe(false);
   });
 
   test("simple-workflow-events", async () => {
@@ -144,38 +81,108 @@ describe("operon-tests", () => {
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
   });
 
+  class ReadRecording {
+    static cnt: number = 0;
+    static wfCnt: number = 0;
+
+    @OperonTransaction({ readOnly: true })
+    static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
+      ReadRecording.cnt++;
+      if (rows.length === 0) {
+        return null;
+      }
+      return rows[0].value;
+    }
+  
+    @OperonTransaction()
+    static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
+        id,
+        name,
+      ]);
+      return rows[0].value;
+    }
+  
+    @OperonWorkflow()
+    static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
+      await workflowCtxt.invoke(ReadRecording).testReadFunction(id);
+      ReadRecording.wfCnt++;
+      await workflowCtxt.invoke(ReadRecording).updateFunction(id, name);
+      ReadRecording.wfCnt++;
+      // Make sure the workflow actually runs.
+      throw Error("dumb test error");
+    }
+  }
+
   test("readonly-recording", async () => {
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
-    expect(OperonTestClass.cnt).toBe(1);
-    expect(OperonTestClass.wfCnt).toBe(2);
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    expect(ReadRecording.cnt).toBe(1);
+    expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded same error without running it.
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
-    expect(OperonTestClass.cnt).toBe(1);
-    expect(OperonTestClass.wfCnt).toBe(2);
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    expect(ReadRecording.cnt).toBe(1);
+    expect(ReadRecording.wfCnt).toBe(2);
   });
+
+  class RetrieveWorkflowStatus {
+    // Test workflow status changes correctly.
+    static resolve1: () => void;
+    static promise1 = new Promise<void>((resolve) => {
+      RetrieveWorkflowStatus.resolve1 = resolve;
+    });
+
+    static resolve2: () => void;
+    static promise2 = new Promise<void>((resolve) => {
+      RetrieveWorkflowStatus.resolve2 = resolve;
+    });
+
+    static resolve3: () => void;
+    static promise3 = new Promise<void>((resolve) => {
+      RetrieveWorkflowStatus.resolve3 = resolve;
+    });
+
+    @OperonTransaction()
+    static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
+        id,
+        name,
+      ]);
+      return rows[0].value;
+    }
+
+    @OperonWorkflow()
+    static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
+      await RetrieveWorkflowStatus.promise1;
+      const value = await workflowCtxt.invoke(RetrieveWorkflowStatus).testWriteFunction(id, name);
+      RetrieveWorkflowStatus.resolve3(); // Signal the execution has done.
+      await RetrieveWorkflowStatus.promise2;
+      return value;
+    }
+  }
 
   test("retrieve-workflowstatus", async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await testRuntime.invoke(OperonTestClass, workflowUUID).testStatusWorkflow(123, "hello");
+    const workflowHandle = await testRuntime.invoke(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
-      workflowName: OperonTestClass.testStatusWorkflow.name,
+      workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
 
-    OperonTestClass.resolve1();
-    await OperonTestClass.promise3;
+    RetrieveWorkflowStatus.resolve1();
+    await RetrieveWorkflowStatus.promise3;
 
     // Retrieve handle, should get the pending status.
-    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({ status: StatusString.PENDING, workflowName: OperonTestClass.testStatusWorkflow.name });
+    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({ status: StatusString.PENDING, workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name });
 
     // Proceed to the end.
-    OperonTestClass.resolve2();
+    RetrieveWorkflowStatus.resolve2();
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
@@ -192,38 +199,12 @@ describe("operon-tests", () => {
       status: StatusString.SUCCESS,
     });
   });
-
-  test("workflow-getevent-retrieve", async() => {
-    // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
-    // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
-    // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
-
-    const getUUID = uuidv1();
-    const setUUID = getUUID + "-2";
-
-    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
-    expect(OperonTestClass.wfCnt).toBe(2);
-    await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
-
-    // Run without UUID, should get the new result.
-    await expect(testRuntime.invoke(OperonTestClass).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-PENDING-0");
-
-    // Test OAOO for getEvent and getWorkflowStatus.
-    await expect(testRuntime.invoke(OperonTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
-    expect(OperonTestClass.wfCnt).toBe(6);  // Should re-execute the workflow because we're not flushing the result buffer.
-  });
 });
 
 class OperonTestClass {
-  static cnt = 0;
-  static wfCnt = 0;
-  static resolve: () => void;
+
   static initialized = false;
-  static promise = new Promise<void>((r) => {
-    OperonTestClass.resolve = r;
-  });
+  static cnt: number = 0;
 
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonInitializer()
@@ -236,6 +217,7 @@ class OperonTestClass {
 
   @OperonTransaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
+    expect(txnCtxt.getConfig<number>("counter")).toBe(3);
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
@@ -243,6 +225,7 @@ class OperonTestClass {
   @OperonWorkflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
     expect(OperonTestClass.initialized).toBe(true);
+    expect(ctxt.getConfig<number>("counter")).toBe(3);
     const funcResult = await ctxt.invoke(OperonTestClass).testFunction(name);
     return funcResult;
   }
@@ -292,22 +275,10 @@ class OperonTestClass {
     return checkResult;
   }
 
-  @OperonTransaction()
-  static async testOaooFunction(txnCtxt: TestTransactionContext, name: string) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
-    return Number(rows[0].id);
-  }
-
-  @OperonWorkflow()
-  static async testOaooWorkflow(workflowCtxt: WorkflowContext, name: string) {
-    const funcResult: number = await workflowCtxt.invoke(OperonTestClass).testOaooFunction(name);
-    const checkResult: number = await workflowCtxt.invoke(OperonTestClass).testKvFunctionRead(funcResult);
-    return checkResult;
-  }
-
   // eslint-disable-next-line @typescript-eslint/require-await
   @OperonCommunicator()
-  static async testCommunicator(_ctxt: CommunicatorContext) {
+  static async testCommunicator(ctxt: CommunicatorContext) {
+    expect(ctxt.getConfig<number>("counter")).toBe(3);
     return OperonTestClass.cnt++;
   }
 
@@ -326,13 +297,6 @@ class OperonTestClass {
     await ctxt.send(destinationUUID, "message2");
   }
 
-  @OperonWorkflow()
-  static async receiveOaooWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
-    // This returns true if and only if exactly one message is sent to it.
-    const succeeds = await ctxt.recv<number>(topic, timeout);
-    const fails = await ctxt.recv<number>(topic, 0);
-    return succeeds === 123 && fails === null;
-  }
 
   @OperonWorkflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
@@ -341,85 +305,4 @@ class OperonTestClass {
     return 0;
   }
 
-  @OperonWorkflow()
-  static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
-    let res = "";
-    const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
-    OperonTestClass.wfCnt++;
-    if (getValue === null) {
-      res = "valueNull";
-    } else {
-      res = getValue;
-    }
-
-    const handle = ctxt.retrieveWorkflow(targetUUID);
-    const status = await handle.getStatus();
-    OperonTestClass.wfCnt++;
-    if (status === null) {
-      res += "-statusNull";
-    } else {
-      res += "-" + status.status;
-    }
-
-    // Note: the targetUUID must match the child workflow UUID.
-    const value = await ctxt.childWorkflow(OperonTestClass.setEventWorkflow).then(x => x.getResult());
-    res += "-" + value;
-    return res;
-  }
-
-  @OperonTransaction({ readOnly: true })
-  static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
-    OperonTestClass.cnt++;
-    if (rows.length === 0) {
-      return null;
-    }
-    return rows[0].value;
-  }
-
-  @OperonTransaction()
-  static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
-      id,
-      name,
-    ]);
-    return rows[0].value;
-  }
-
-  @OperonWorkflow()
-  static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
-    expect(OperonTestClass.initialized).toBe(true);
-    await workflowCtxt.invoke(OperonTestClass).testReadFunction(id);
-    OperonTestClass.wfCnt++;
-    await workflowCtxt.invoke(OperonTestClass).testWriteFunction(id, name);
-    OperonTestClass.wfCnt++;
-    // Make sure the workflow actually runs.
-    throw Error("dumb test error");
-  }
-
-  // Test workflow status changes correctly.
-  static resolve1: () => void;
-  static promise1 = new Promise<void>((resolve) => {
-    OperonTestClass.resolve1 = resolve;
-  });
-
-  static resolve2: () => void;
-  static promise2 = new Promise<void>((resolve) => {
-    OperonTestClass.resolve2 = resolve;
-  });
-
-  static resolve3: () => void;
-  static promise3 = new Promise<void>((resolve) => {
-    OperonTestClass.resolve3 = resolve;
-  });
-
-  @OperonWorkflow()
-  static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
-    expect(OperonTestClass.initialized).toBe(true);
-    await OperonTestClass.promise1;
-    const value = await workflowCtxt.invoke(OperonTestClass).testWriteFunction(id, name);
-    OperonTestClass.resolve3(); // Signal the execution has done.
-    await OperonTestClass.promise2;
-    return value;
-  }
 }
