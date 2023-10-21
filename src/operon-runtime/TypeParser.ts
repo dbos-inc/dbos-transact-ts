@@ -20,6 +20,7 @@ export interface ParameterInfo {
   readonly node: ts.ParameterDeclaration;
   readonly name: string;
   readonly decorators: readonly DecoratorInfo[];
+  readonly required: boolean;
   readonly type?: ts.Type;
 }
 
@@ -82,8 +83,9 @@ export class TypeParser {
   getParameter(node: ts.ParameterDeclaration): ParameterInfo {
     const decorators = this.getDecorators(node);
     const name = node.name.getText();
+    const required = !node.questionToken && !node.initializer;
     const type = node.type ? this.#checker.getTypeFromTypeNode(node.type) : undefined;
-    return { node, name, decorators, type };
+    return { node, name, decorators, required, type };
   }
 
   getDecorators(node: ts.HasDecorators): DecoratorInfo[] {

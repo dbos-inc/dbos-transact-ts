@@ -3,6 +3,7 @@ import { WinstonLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
 import { BaseParameter, BodyParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Spec3 } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
+import { RetrievedHandle } from '../workflow';
 
 function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, names: string | readonly string[]) {
   const filtered = decorated.decorators.filter(decoratorFilter(names));
@@ -72,7 +73,7 @@ function getParamName(parameter: ParameterInfo) {
   throw new Error(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`);
 }
 
-function generateParameter(parameter: ParameterInfo, verb: APITypes): Parameter3 {
+function generateParameter([parameter, argSource]: [ParameterInfo, ArgSources]): Parameter3 {
 
   // temporarily store basic type info in param description
   const type = parameter.type?.getSymbol()?.getName()
@@ -81,32 +82,52 @@ function generateParameter(parameter: ParameterInfo, verb: APITypes): Parameter3
       ? (parameter.type as any)['intrinsicName']
       : 'unknown';
 
-  const argSource = getParamSource(parameter, verb);
-  const required = !parameter.node.questionToken && !parameter.node.initializer;
-
-  if (argSource == ArgSources.URL && !required) throw new Error(`URL parameters must be required: ${parameter.name}`);
+  if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
 
   const param: Omit<BaseParameter, 'in'> = {
     name: getParamName(parameter),
-    required,
+    required: parameter.required,
     description: `Type: ${type}`,
     schema: {}
   };
 
   switch (argSource) {
-    case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
+    // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
     case ArgSources.QUERY: return <QueryParameter>{ in: 'query', ...param };
     case ArgSources.URL: return <PathParameter>{ in: 'path', ...param };
     default: throw new Error(`Unexpected ArgSource: ${argSource}`);
   }
 }
 
+function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | undefined {
+  if (parameters.length === 0) return undefined;
+
+  // TODO: param type info
+  const properties = Object.fromEntries(parameters.map(p => [getParamName(p), {}] as [string, {}]));
+  const required = parameters.filter(p => p.required).map(p => getParamName(p));
+
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema: {
+          type: 'object',
+          properties,
+          required
+        }
+      }
+    }
+  }
+}
+
 function generatePath([method, $class, { verb, path: name }]: [MethodInfo, ClassInfo, HttpEndpointInfo]): [string, Path3] {
 
   // Note: slice the first parameter off here because the first parameter of a handle method must be an OperonContext, which is not exposed via the API
-  const parameters = method.parameters.slice(1).map(p => generateParameter(p, verb));
+  const sourcedParams = method.parameters.slice(1).map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
-  const requestBody: RequestBody | undefined = undefined;
+  const parameters = sourcedParams.filter(([_, source]) => source !== ArgSources.BODY).map(generateParameter);
+  const requestBody = getRequestBody(sourcedParams.filter(([_, source]) => source === ArgSources.BODY).map(([p, _]) => p));
+
   const operation: Operation3 = {
     operationId: method.name,
     responses: {
@@ -115,7 +136,6 @@ function generatePath([method, $class, { verb, path: name }]: [MethodInfo, Class
       }
     },
     security: [],
-    // TODO: body parameters need to be put into the requestBody  instead of the parameters collection
     parameters,
     requestBody
   }
