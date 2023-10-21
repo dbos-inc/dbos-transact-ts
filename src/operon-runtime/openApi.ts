@@ -1,7 +1,7 @@
 import * as ts from 'typescript';
 import { WinstonLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
-import { BaseParameter, BodyParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Spec3 } from './swagger';
+import { BaseParameter, BodyParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Schema3, Spec3 } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
 import { RetrievedHandle } from '../workflow';
 
@@ -73,21 +73,23 @@ function getParamName(parameter: ParameterInfo) {
   throw new Error(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`);
 }
 
-function generateParameter([parameter, argSource]: [ParameterInfo, ArgSources]): Parameter3 {
-
-  // temporarily store basic type info in param description
-  const type = parameter.type?.getSymbol()?.getName()
-    ?? parameter.type?.aliasSymbol?.getName()
-    ?? (parameter.type && 'intrinsicName' in parameter.type)
-      ? (parameter.type as any)['intrinsicName']
+function getType(type: ts.Type | undefined): string {
+  // temporarily stub out type generation
+  return type?.getSymbol()?.getName()
+    ?? type?.aliasSymbol?.getName()
+    ?? (type && 'intrinsicName' in type)
+      ? (type as any)['intrinsicName']
       : 'unknown';
+}
 
+function generateParameter([parameter, argSource]: [ParameterInfo, ArgSources]): Parameter3 {
   if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
 
   const param: Omit<BaseParameter, 'in'> = {
     name: getParamName(parameter),
     required: parameter.required,
-    description: `Type: ${type}`,
+    // temporarily store basic type info in param description
+    description: `Type: ${getType(parameter.type)}`,
     schema: {}
   };
 
@@ -102,9 +104,10 @@ function generateParameter([parameter, argSource]: [ParameterInfo, ArgSources]):
 function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | undefined {
   if (parameters.length === 0) return undefined;
 
+  const namedParams = parameters.map(p => [getParamName(p), p] as [string, ParameterInfo]);
   // TODO: param type info
-  const properties = Object.fromEntries(parameters.map(p => [getParamName(p), {}] as [string, {}]));
-  const required = parameters.filter(p => p.required).map(p => getParamName(p));
+  const properties = namedParams.map(([name, param]) => [name, { description: `Type: ${getType(param.type)}`}] as [string, Schema3]);
+  const required = namedParams.filter(([_, param]) => param.required).map(([name, _]) => name);
 
   return {
     required: true,
@@ -112,7 +115,7 @@ function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | und
       "application/json": {
         schema: {
           type: 'object',
-          properties,
+          properties: Object.fromEntries(properties),
           required
         }
       }
