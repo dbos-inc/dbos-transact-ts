@@ -6,6 +6,11 @@ import fs from "fs";
 export const operonEnvPath = ".operon";
 const secretKey = "SOME SECRET";
 
+export interface OperonCloudCredentials {
+	token: string;
+	userName: string;
+}
+
 interface Session {
   id: number;
   dateCreated: number;
@@ -13,7 +18,6 @@ interface Session {
   issued: number;
   expires: number;
 }
-
 
 export function login (userName: string) {
   const logger = createGlobalLogger();
@@ -35,8 +39,13 @@ export function login (userName: string) {
 
   const token = encode(session, secretKey, algorithm);
 
+  const credentials: OperonCloudCredentials = {
+    token,
+    userName,
+  }
+
   execSync(`mkdir -p ${operonEnvPath}`);
-  fs.writeFileSync(`${operonEnvPath}/credentials`, token, "utf-8");
+  fs.writeFileSync(`${operonEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
 
   logger.info(`Successfully logged in as user: ${userName}`);
   logger.info(`You can view your credentials in: ./${operonEnvPath}/credentials`);
