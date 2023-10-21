@@ -2,9 +2,12 @@ import axios from "axios";
 import { execSync } from "child_process";
 import fs from "fs";
 import FormData from "form-data";
+import { createGlobalLogger } from "../telemetry/logs";
 import { OperonCloudCredentials, operonEnvPath } from "./login";
 
 export async function deploy(appName: string, host: string) {
+  const logger = createGlobalLogger();
+
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const userCredentials = JSON.parse(fs.readFileSync(`./${operonEnvPath}/credentials`).toString("utf-8")) as OperonCloudCredentials;
   const userName = userCredentials.userName;
@@ -38,13 +41,13 @@ export async function deploy(appName: string, host: string) {
         Authorization: bearerToken,
       },
     });
-    console.log(`Successfully deployed: ${appName}`);
-    console.log(`${appName} ID: ${uuid}`);
+    logger.info(`Successfully deployed: ${appName}`);
+    logger.info(`${appName} ID: ${uuid}`);
   } catch (e) {
     if (axios.isAxiosError(e)) {
-      console.error(`failed to deploy application ${appName}: ${e.response?.data}`);
+      logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
     } else {
-      console.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
+      logger.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
     }
   }
 }
