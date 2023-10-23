@@ -5,7 +5,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { OperonContext, OperonContextImpl } from "./context";
+import { OperonContext, OperonContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { OperonNotAuthorizedError } from "./error";
 import { validateOperonMethodArgs } from "./data_validation";
@@ -177,6 +177,7 @@ implements OperonMethodRegistrationBase
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  init: boolean = false;
 
   invoke(pthis:This, args: Args) : Promise<Return> {
     return this.registeredFunction!.call(pthis, ...args);
@@ -542,4 +543,31 @@ export function OrmEntities(entities: Function[]) {
   return clsdec;
 }
 
+export function OperonInitializer() {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.init = true;
+    return descriptor;
+  }
+  return decorator;
+}
 
+// For future use with Deploy
+export function OperonDeploy() {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.init = true;
+    return descriptor;
+  }
+  return decorator;
+}
