@@ -4,52 +4,36 @@ import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from 
 import { BaseParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Schema3, Spec3 } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
 
-function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, names: string | readonly string[]) {
-  const filtered = decorated.decorators.filter(decoratorFilter(names));
+interface HttpEndpointInfo { verb: APITypes; path: string; }
+
+function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, name: string ): DecoratorInfo | undefined {
+  const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/operon' && d.name === name);
   if (filtered.length === 0) return undefined;
-  if (filtered.length > 1) throw new Error(`Multiple ${JSON.stringify(names)} decorators found on ${decorated.name ?? "<unknown>"}`);
+  if (filtered.length > 1) throw new Error(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`);
   return filtered[0];
-
-  function decoratorFilter(name: string | readonly string[]) {
-    return (decorator: DecoratorInfo) => {
-      if (decorator.module !== '@dbos-inc/operon') return false;
-
-      return typeof name === 'string'
-        ? decorator.name === name
-        : name.some(n => decorator.name === n);
-    }
-  }
 }
-
-export interface HttpEndpointInfo { verb: APITypes; path: string; }
 
 function getHttpInfo(method: MethodInfo): HttpEndpointInfo | undefined {
-  const decorator = getOperonDecorator(method, ['GetApi', 'PostApi']);
-  if (!decorator) return undefined;
-  const [path] = decorator.args;
-  if (ts.isStringLiteral(path)) {
-    return { verb: getHttpVerb(decorator), path: path.text };
-  } else {
-    throw new Error(`Unexpected path type: ${ts.SyntaxKind[path.kind]}`);
-  }
+  const getApiDecorator = getOperonDecorator(method, 'GetApi');
+  const postApiDecorator = getOperonDecorator(method, 'PostApi');
+  if (getApiDecorator && postApiDecorator) throw new Error(`Method ${method.name} has both GetApi and PostApi decorators`);
+  if (!getApiDecorator && !postApiDecorator) return undefined;
 
-  function getHttpVerb(decorator: DecoratorInfo): APITypes {
-    if (decorator.name === 'GetApi') return APITypes.GET;
-    if (decorator.name === 'PostApi') return APITypes.POST;
-    throw new Error(`Unexpected HTTP decorator: ${decorator.name}`);
-  }
+  const verb = getApiDecorator ? APITypes.GET : APITypes.POST;
+  const arg = getApiDecorator ? getApiDecorator.args[0] : postApiDecorator?.args[0];
+  if (!arg) throw new Error(`Missing path argument for ${verb}Api decorator`);
+  if (!ts.isStringLiteral(arg)) throw new Error(`Unexpected path argument type: ${ts.SyntaxKind[arg.kind]}`);
+  return { verb, path: arg.text };
 }
 
-function getDefaultArgSource(verb: APITypes) {
+function getDefaultArgSource(verb: APITypes): ArgSources.BODY | ArgSources.QUERY {
   switch (verb) {
     case APITypes.GET: return ArgSources.QUERY;
     case APITypes.POST: return ArgSources.BODY;
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-    default: throw new Error(`Unexpected HTTP verb: ${verb}`);
   }
 }
 
-function getParamSource(parameter: ParameterInfo, verb: APITypes) {
+function getParamSource(parameter: ParameterInfo, verb: APITypes): ArgSources.BODY | ArgSources.QUERY | ArgSources.URL {
   const argSource = getOperonDecorator(parameter, 'ArgSource');
   if (!argSource) return getDefaultArgSource(verb);
 
@@ -63,7 +47,7 @@ function getParamSource(parameter: ParameterInfo, verb: APITypes) {
   }
 }
 
-function getParamName(parameter: ParameterInfo) {
+function getParamName(parameter: ParameterInfo): string {
   const argName = getOperonDecorator(parameter, 'ArgName');
   if (!argName) return parameter.name;
 
@@ -128,10 +112,13 @@ function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | und
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function generatePath([method, $class, { verb, path: name }]: [MethodInfo, ClassInfo, HttpEndpointInfo]): [string, Path3] {
 
-  // Note: slice the first parameter off here because the first parameter of a handle method must be an OperonContext, which is not exposed via the API
-  const sourcedParams = method.parameters.slice(1).map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
+  // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
+  const sourcedParams = method.parameters.slice(1)
+    .map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
+  // QUERY and URL parameters are specified in the Operation.parameters field
   const parameters = sourcedParams.filter(([_, source]) => source !== ArgSources.BODY).map(generateParameter);
+  // BODY parameters are specified in the Operation.requestBody field
   const requestBody = getRequestBody(sourcedParams.filter(([_, source]) => source === ArgSources.BODY).map(([p, _]) => p));
 
   const operation: Operation3 = {
@@ -149,8 +136,6 @@ function generatePath([method, $class, { verb, path: name }]: [MethodInfo, Class
   switch (verb) {
     case APITypes.GET: return [name, { get: operation }];
     case APITypes.POST: return [name, { post: operation }];
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-    default: throw new Error(`Unexpected HTTP verb: ${verb}`);
   }
 }
 
@@ -158,7 +143,6 @@ export function generateOpenApi(program: ts.Program, logger?: WinstonLogger) {
   const parser = new TypeParser(program, logger);
   const classes = parser.parse();
 
-  //
   const methods = classes.flatMap(c => c.methods.map(method => [method, c] as [MethodInfo, ClassInfo]));
   const handlers = methods.map(([method, $class]) => {
     const http = getHttpInfo(method);
