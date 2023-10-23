@@ -84,7 +84,7 @@ describe("typeorm-tests", () => {
   test("simple-typeorm", async () => {
     const workUUID = uuidv1();
     await expect(testRuntime.invoke(KVController, workUUID).testTxn("test", "value")).resolves.toBe("test");
-    await expect(testRuntime.invoke(KVController, workUUID).testTxn("test", "value")).resolves.toBe("test");    
+    await expect(testRuntime.invoke(KVController, workUUID).testTxn("test", "value")).resolves.toBe("test");
   });
 
   test("typeorm-duplicate-transaction", async () => {
