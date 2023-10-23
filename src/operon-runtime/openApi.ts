@@ -1,7 +1,7 @@
 import * as ts from 'typescript';
-import { WinstonLogger } from "../telemetry/logs";
+import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
-import { OpenAPI, Operation, Parameter, Path, RequestBody, Schema } from './swagger';
+import { OpenAPI, Operation, Parameter, Path, RequestBody, Response, Schema } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
@@ -28,13 +28,6 @@ function getHttpInfo(method: MethodInfo): HttpEndpointInfo | undefined {
   return { verb, path: arg.text };
 }
 
-function getDefaultArgSource(verb: APITypes): ArgSources.BODY | ArgSources.QUERY {
-  switch (verb) {
-    case APITypes.GET: return ArgSources.QUERY;
-    case APITypes.POST: return ArgSources.BODY;
-  }
-}
-
 function getParamSource(parameter: ParameterInfo, verb: APITypes): ArgSources.BODY | ArgSources.QUERY | ArgSources.URL {
   const argSource = getOperonDecorator(parameter, 'ArgSource');
   if (!argSource) return getDefaultArgSource(verb);
@@ -46,6 +39,13 @@ function getParamSource(parameter: ParameterInfo, verb: APITypes): ArgSources.BO
     case "URL": return ArgSources.URL;
     case "DEFAULT": return getDefaultArgSource(verb);
     default: throw new Error(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`);
+  }
+
+  function getDefaultArgSource(verb: APITypes): ArgSources.BODY | ArgSources.QUERY {
+    switch (verb) {
+      case APITypes.GET: return ArgSources.QUERY;
+      case APITypes.POST: return ArgSources.BODY;
+    }
   }
 }
 
@@ -59,120 +59,126 @@ function getParamName(parameter: ParameterInfo): string {
   throw new Error(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`);
 }
 
-function getType(type: ts.Type | undefined): string {
-  // temporarily stub out type generation
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return type?.getSymbol()?.getName()
-    ?? type?.aliasSymbol?.getName()
-    ?? (type && 'intrinsicName' in type)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    ? (type as any)['intrinsicName']
-    : 'unknown';
-}
+class OpenApiGenerator {
+  constructor(readonly checker: ts.TypeChecker, readonly log: WinstonLogger) { }
 
-function generateParameters(sourcedParams: readonly [ParameterInfo, ArgSources][]): Parameter[] {
-  return sourcedParams
-    // QUERY and URL parameters are specified in the Operation.parameters field
-    .filter(([_, source]) => source === ArgSources.QUERY || source === ArgSources.URL)
-    .map(([parameter, argSource]) => {
-      if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
+  generate(classes: readonly ClassInfo[]): OpenAPI {
+    const methods = classes.flatMap(c => c.methods.map(method => [method, c] as [MethodInfo, ClassInfo]));
+    const handlers = methods.map(([method, _]) => {
+      const http = getHttpInfo(method);
+      return http ? [method, http] as [MethodInfo, HttpEndpointInfo] : undefined;
+    }).filter(isValid);
+    const paths = handlers.map(h => this.generatePath(h));
 
-      return {
-        name: getParamName(parameter),
-        in: getLocation(argSource),
-        required: parameter.required,
-        // temporarily store basic type info in param description
-        description: `Type: ${getType(parameter.type)}`,
-      };
-    });
-
-  function getLocation(argSource: ArgSources): "query" | "path" {
-    switch (argSource) {
-      // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
-      case ArgSources.QUERY: return 'query';
-      case ArgSources.URL: return 'path';
-      default: throw new Error(`Unsupported Parameter ArgSource: ${argSource}`);
+    return {
+      // TODO: OpenAPI 3.1 support
+      openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
+      info: {
+        // TODO: Where to get this info from? package.json?
+        title: "Operon API",
+        version: "1.0.0",
+      },
+      // When we are cloud hosting, we will have useful info to put here.
+      servers: [],
+      components: {},
+      paths: Object.fromEntries(paths),
     }
   }
-}
 
-function generateRequestBody(sourcedParams: readonly [ParameterInfo, ArgSources][]): RequestBody | undefined {
-  // BODY parameters are specified in the Operation.requestBody field
-  const parameters = sourcedParams
-    .filter(([_, source]) => source === ArgSources.BODY)
-    .map(([parameter, _]) => [getParamName(parameter), parameter] as [name: string, ParameterInfo]);
+  generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, Path] {
+    // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
+    const sourcedParams = method.parameters.slice(1).map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
-  if (parameters.length === 0) return undefined;
+    const operation: Operation = {
+      operationId: method.name,
+      responses: {
+        "200": this.generateResponse(method),
+      },
+      parameters: this.generateParameters(sourcedParams),
+      requestBody: this.generateRequestBody(sourcedParams),
+    }
 
-  const properties = parameters.map(([name, parameter]) => {
-    return [name, {
-      // temporarily store basic type info in param description
-      description: `Type: ${getType(parameter.type)}`
-    }] as [string, Schema];
-  });
-  const required = parameters.filter(([_, parameter]) => parameter.required).map(([name, _]) => name);
+    switch (verb) {
+      case APITypes.GET: return [path, { get: operation }];
+      case APITypes.POST: return [path, { post: operation }];
+    }
+  }
 
-  return {
-    required: true,
-    content: {
-      "application/json": {
-        schema: {
-          type: 'object',
-          properties: Object.fromEntries(properties),
-          required
+  generateRequestBody(sourcedParams: [ParameterInfo, ArgSources][]): import("./swagger").Reference | RequestBody | undefined {
+    // BODY parameters are specified in the Operation.requestBody field
+    const parameters = sourcedParams
+      .filter(([_, source]) => source === ArgSources.BODY)
+      .map(([parameter, _]) => [getParamName(parameter), parameter] as [name: string, ParameterInfo]);
+
+    if (parameters.length === 0) return undefined;
+
+    const properties = Object.fromEntries(parameters.map(([name, parameter]) => [name, this.generateSchema(parameter.type)]));
+    const required = parameters.filter(([_, parameter]) => parameter.required).map(([name, _]) => name);
+
+    return {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: 'object',
+            properties,
+            required
+          }
         }
       }
     }
   }
-}
 
-function generatePath([method, { verb, path: name }]: [MethodInfo, HttpEndpointInfo]): [string, Path] {
+  generateParameters(sourcedParams: [ParameterInfo, ArgSources][]): Parameter[] {
+    return sourcedParams
+      // QUERY and URL parameters are specified in the Operation.parameters field
+      .filter(([_, source]) => source === ArgSources.QUERY || source === ArgSources.URL)
+      .map(([parameter, argSource]) => {
+        if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
 
-  // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
-  const sourcedParams = method.parameters.slice(1).map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
+        return {
+          name: getParamName(parameter),
+          in: getLocation(argSource),
+          required: parameter.required,
+          schema: this.generateSchema(parameter.type),
+        };
+      });
 
-  const operation: Operation = {
-    operationId: method.name,
-    responses: {
-      "200": {
-        "description": "Ok",
+    function getLocation(argSource: ArgSources): "query" | "path" {
+      switch (argSource) {
+        // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
+        case ArgSources.QUERY: return 'query';
+        case ArgSources.URL: return 'path';
+        default: throw new Error(`Unsupported Parameter ArgSource: ${argSource}`);
       }
-    },
-    security: [],
-    parameters: generateParameters(sourcedParams),
-    requestBody: generateRequestBody(sourcedParams),
+    }
   }
 
-  switch (verb) {
-    case APITypes.GET: return [name, { get: operation }];
-    case APITypes.POST: return [name, { post: operation }];
+  generateResponse(method: MethodInfo): Response {
+    return {
+      description: "Ok",
+      content: {
+        "application/json": {
+          schema: this.generateSchema(method.returnType)
+        }
+      }
+    }
+  }
+
+  generateSchema(type: ts.Type | undefined): Schema {
+    if (!type) return { description: "not specified" };
+    return { description: this.checker.typeToString(type) };
   }
 }
+
 
 export function generateOpenApi(program: ts.Program, logger?: WinstonLogger): OpenAPI {
+  logger ??= createGlobalLogger();
+  const checker = program.getTypeChecker();
+
   const parser = new TypeParser(program, logger);
   const classes = parser.parse();
 
-  const methods = classes.flatMap(c => c.methods.map(method => [method, c] as [MethodInfo, ClassInfo]));
-  const handlers = methods.map(([method, _]) => {
-    const http = getHttpInfo(method);
-    return http ? [method, http] as [MethodInfo, HttpEndpointInfo] : undefined;
-  }).filter(isValid);
-
-  const spec: OpenAPI = {
-    // TODO: OpenAPI 3.1 support
-    openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
-    info: {
-      // TODO: Where to get this info from? package.json?
-      title: "Operon API",
-      version: "1.0.0",
-    },
-    // When we are cloud hosting, we will have useful info to put here.
-    servers: [],
-    //
-    components: {},
-    paths: Object.fromEntries(handlers.map(generatePath)),
-  }
-
-  return spec;
+  const generator = new OpenApiGenerator(checker, logger);
+  return generator.generate(classes);
 }

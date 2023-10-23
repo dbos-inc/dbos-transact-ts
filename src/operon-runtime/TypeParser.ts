@@ -1,5 +1,5 @@
 import * as ts from 'typescript';
-import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
+import { WinstonLogger } from "../telemetry/logs";
 
 export interface ClassInfo {
   readonly node: ts.ClassDeclaration;
@@ -38,9 +38,7 @@ function isStaticMethod(node: ts.MethodDeclaration): boolean {
 
 export class TypeParser {
   readonly #checker: ts.TypeChecker;
-  readonly log: WinstonLogger;
-  constructor(readonly program: ts.Program, logger?: WinstonLogger) {
-    this.log = logger ?? createGlobalLogger();
+  constructor(readonly program: ts.Program, readonly log: WinstonLogger) {
     this.#checker = program.getTypeChecker();
   }
 
