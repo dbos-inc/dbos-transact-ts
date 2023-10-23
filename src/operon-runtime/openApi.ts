@@ -1,9 +1,8 @@
 import * as ts from 'typescript';
 import { WinstonLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
-import { BaseParameter, BodyParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Schema3, Spec3 } from './swagger';
+import { BaseParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Schema3, Spec3 } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
-import { RetrievedHandle } from '../workflow';
 
 function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, names: string | readonly string[]) {
   const filtered = decorated.decorators.filter(decoratorFilter(names));
@@ -22,7 +21,7 @@ function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, n
   }
 }
 
-export interface HttpEndpointInfo { verb: APITypes; path: string; };
+export interface HttpEndpointInfo { verb: APITypes; path: string; }
 
 function getHttpInfo(method: MethodInfo): HttpEndpointInfo | undefined {
   const decorator = getOperonDecorator(method, ['GetApi', 'PostApi']);
@@ -45,6 +44,7 @@ function getDefaultArgSource(verb: APITypes) {
   switch (verb) {
     case APITypes.GET: return ArgSources.QUERY;
     case APITypes.POST: return ArgSources.BODY;
+    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     default: throw new Error(`Unexpected HTTP verb: ${verb}`);
   }
 }
@@ -75,9 +75,11 @@ function getParamName(parameter: ParameterInfo) {
 
 function getType(type: ts.Type | undefined): string {
   // temporarily stub out type generation
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return type?.getSymbol()?.getName()
     ?? type?.aliasSymbol?.getName()
     ?? (type && 'intrinsicName' in type)
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       ? (type as any)['intrinsicName']
       : 'unknown';
 }
@@ -123,6 +125,7 @@ function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | und
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function generatePath([method, $class, { verb, path: name }]: [MethodInfo, ClassInfo, HttpEndpointInfo]): [string, Path3] {
 
   // Note: slice the first parameter off here because the first parameter of a handle method must be an OperonContext, which is not exposed via the API
@@ -146,6 +149,7 @@ function generatePath([method, $class, { verb, path: name }]: [MethodInfo, Class
   switch (verb) {
     case APITypes.GET: return [name, { get: operation }];
     case APITypes.POST: return [name, { post: operation }];
+    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     default: throw new Error(`Unexpected HTTP verb: ${verb}`);
   }
 }

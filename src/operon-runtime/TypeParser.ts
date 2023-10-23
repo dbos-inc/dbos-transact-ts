@@ -129,6 +129,6 @@ export class TypeParser {
         }
       }
       return undefined;
-    };
+    }
   }
 }

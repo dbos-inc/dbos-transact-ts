@@ -231,6 +231,7 @@ export interface BaseSchema {
   $ref?: string;
   title?: string;
   description?: string;
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
   default?: string | boolean | number | unknown;
   multipleOf?: number;
   maximum?: number;
@@ -285,6 +286,7 @@ export interface Header {
   format?: string;
   items?: BaseSchema;
   collectionFormat?: 'csv' | 'ssv' | 'tsv' | 'pipes' | 'multi';
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
   default?: string | boolean | number | unknown;
   maximum?: number;
   exclusiveMaximum?: boolean;
