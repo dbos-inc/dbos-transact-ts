@@ -1,12 +1,14 @@
 import * as ts from 'typescript';
 import { WinstonLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
-import { BaseParameter, Operation3, Parameter3, Path3, PathParameter, QueryParameter, RequestBody, Schema3, Spec3 } from './swagger';
+import { OpenAPI, Operation, Parameter, Path, RequestBody, Schema } from './swagger';
 import { APITypes, ArgSources } from '../httpServer/handler';
+
+function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 
 interface HttpEndpointInfo { verb: APITypes; path: string; }
 
-function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, name: string ): DecoratorInfo | undefined {
+function getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, name: string): DecoratorInfo | undefined {
   const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/operon' && d.name === name);
   if (filtered.length === 0) return undefined;
   if (filtered.length > 1) throw new Error(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`);
@@ -63,37 +65,52 @@ function getType(type: ts.Type | undefined): string {
   return type?.getSymbol()?.getName()
     ?? type?.aliasSymbol?.getName()
     ?? (type && 'intrinsicName' in type)
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      ? (type as any)['intrinsicName']
-      : 'unknown';
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    ? (type as any)['intrinsicName']
+    : 'unknown';
 }
 
-function generateParameter([parameter, argSource]: [ParameterInfo, ArgSources]): Parameter3 {
-  if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
+function generateParameters(sourcedParams: readonly [ParameterInfo, ArgSources][]): Parameter[] {
+  return sourcedParams
+    // QUERY and URL parameters are specified in the Operation.parameters field
+    .filter(([_, source]) => source === ArgSources.QUERY || source === ArgSources.URL)
+    .map(([parameter, argSource]) => {
+      if (argSource == ArgSources.URL && !parameter.required) throw new Error(`URL parameters must be required: ${parameter.name}`);
 
-  const param: Omit<BaseParameter, 'in'> = {
-    name: getParamName(parameter),
-    required: parameter.required,
-    // temporarily store basic type info in param description
-    description: `Type: ${getType(parameter.type)}`,
-    schema: {}
-  };
+      return {
+        name: getParamName(parameter),
+        in: getLocation(argSource),
+        required: parameter.required,
+        // temporarily store basic type info in param description
+        description: `Type: ${getType(parameter.type)}`,
+      };
+    });
 
-  switch (argSource) {
-    // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
-    case ArgSources.QUERY: return <QueryParameter>{ in: 'query', ...param };
-    case ArgSources.URL: return <PathParameter>{ in: 'path', ...param };
-    default: throw new Error(`Unexpected ArgSource: ${argSource}`);
+  function getLocation(argSource: ArgSources): "query" | "path" {
+    switch (argSource) {
+      // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
+      case ArgSources.QUERY: return 'query';
+      case ArgSources.URL: return 'path';
+      default: throw new Error(`Unsupported Parameter ArgSource: ${argSource}`);
+    }
   }
 }
 
-function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | undefined {
+function generateRequestBody(sourcedParams: readonly [ParameterInfo, ArgSources][]): RequestBody | undefined {
+  // BODY parameters are specified in the Operation.requestBody field
+  const parameters = sourcedParams
+    .filter(([_, source]) => source === ArgSources.BODY)
+    .map(([parameter, _]) => [getParamName(parameter), parameter] as [name: string, ParameterInfo]);
+
   if (parameters.length === 0) return undefined;
 
-  const namedParams = parameters.map(p => [getParamName(p), p] as [string, ParameterInfo]);
-  // TODO: param type info
-  const properties = namedParams.map(([name, param]) => [name, { description: `Type: ${getType(param.type)}`}] as [string, Schema3]);
-  const required = namedParams.filter(([_, param]) => param.required).map(([name, _]) => name);
+  const properties = parameters.map(([name, parameter]) => {
+    return [name, {
+      // temporarily store basic type info in param description
+      description: `Type: ${getType(parameter.type)}`
+    }] as [string, Schema];
+  });
+  const required = parameters.filter(([_, parameter]) => parameter.required).map(([name, _]) => name);
 
   return {
     required: true,
@@ -109,19 +126,12 @@ function getRequestBody(parameters: readonly ParameterInfo[]): RequestBody | und
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function generatePath([method, $class, { verb, path: name }]: [MethodInfo, ClassInfo, HttpEndpointInfo]): [string, Path3] {
+function generatePath([method, { verb, path: name }]: [MethodInfo, HttpEndpointInfo]): [string, Path] {
 
   // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
-  const sourcedParams = method.parameters.slice(1)
-    .map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
+  const sourcedParams = method.parameters.slice(1).map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
-  // QUERY and URL parameters are specified in the Operation.parameters field
-  const parameters = sourcedParams.filter(([_, source]) => source !== ArgSources.BODY).map(generateParameter);
-  // BODY parameters are specified in the Operation.requestBody field
-  const requestBody = getRequestBody(sourcedParams.filter(([_, source]) => source === ArgSources.BODY).map(([p, _]) => p));
-
-  const operation: Operation3 = {
+  const operation: Operation = {
     operationId: method.name,
     responses: {
       "200": {
@@ -129,8 +139,8 @@ function generatePath([method, $class, { verb, path: name }]: [MethodInfo, Class
       }
     },
     security: [],
-    parameters,
-    requestBody
+    parameters: generateParameters(sourcedParams),
+    requestBody: generateRequestBody(sourcedParams),
   }
 
   switch (verb) {
@@ -139,17 +149,17 @@ function generatePath([method, $class, { verb, path: name }]: [MethodInfo, Class
   }
 }
 
-export function generateOpenApi(program: ts.Program, logger?: WinstonLogger) {
+export function generateOpenApi(program: ts.Program, logger?: WinstonLogger): OpenAPI {
   const parser = new TypeParser(program, logger);
   const classes = parser.parse();
 
   const methods = classes.flatMap(c => c.methods.map(method => [method, c] as [MethodInfo, ClassInfo]));
-  const handlers = methods.map(([method, $class]) => {
+  const handlers = methods.map(([method, _]) => {
     const http = getHttpInfo(method);
-    return http ? [method, $class, http] as [MethodInfo, ClassInfo, HttpEndpointInfo] : undefined;
+    return http ? [method, http] as [MethodInfo, HttpEndpointInfo] : undefined;
   }).filter(isValid);
 
-  const spec: Spec3 = {
+  const spec: OpenAPI = {
     // TODO: OpenAPI 3.1 support
     openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
     info: {
@@ -165,6 +175,4 @@ export function generateOpenApi(program: ts.Program, logger?: WinstonLogger) {
   }
 
   return spec;
-
-  function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 }
