@@ -26,7 +26,7 @@ export interface MiddlewareContext {
 
   getConfig<T>(key: string, deflt: T | undefined) : T | undefined;
 
-  query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, args: T) => Promise<R>, args: T): Promise<R>;
+  query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, ...args: T) => Promise<R>, ...args: T): Promise<R>;
 }
 
 /**
