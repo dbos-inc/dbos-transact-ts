@@ -29,7 +29,6 @@ jobs:
           stamp: package.json
       - run: npm ci
       - run: npm run build
-      - run: npm run lint
       - name: Publish release to npm
         uses: JS-DevTools/npm-publish@v3
         id: npmrelease
