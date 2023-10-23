@@ -82,7 +82,7 @@ export interface Operation {
   operationId?: string;
   parameters?: (Parameter | Reference)[];
   requestBody?: RequestBody | Reference;
-  responses: Responses;
+  responses: { [name: string]: Response | Reference };
   callbacks?: { [name: string]: Callback | Reference };
   deprecated?: boolean;
   security?: SecurityRequirement[];
@@ -130,10 +130,6 @@ export interface Encoding {
   style?: string;
   explode?: boolean;
   allowReserved?: boolean;
-}
-
-export interface Responses {
-  [name: string]: Response | Reference;
 }
 
 export interface Response {
