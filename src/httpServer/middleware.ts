@@ -2,6 +2,8 @@ import Koa from "koa";
 import { OperonClassRegistration, OperonRegistrationDefaults, getOrCreateOperonClassRegistration } from "../decorators";
 import { OperonUndefinedDecoratorInputError } from "../error";
 
+import { UserDatabaseClient } from "../user_database";
+
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as OperonLogger } from "../telemetry/logs";
 
@@ -23,6 +25,8 @@ export interface MiddlewareContext {
   readonly span: Span;
 
   getConfig<T>(key: string, deflt: T | undefined) : T | undefined;
+
+  query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, args: T) => Promise<R>, args: T): Promise<R>;
 }
 
 /**

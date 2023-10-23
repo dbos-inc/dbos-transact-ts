@@ -12,6 +12,8 @@ export interface UserDatabase {
 
   // Run transactionFunction as a database transaction with a given config and arguments.
   transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R>;
+  // Execute a query function
+  queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(queryFunction: UserDatabaseQuery<C, R, T>, ...params: T): Promise<R>;
   // Execute a raw SQL query.
   query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]>;
   // Execute a raw SQL query in the session/transaction of a particular client.
@@ -29,6 +31,7 @@ export interface UserDatabase {
   dropSchema(): Promise<void>;
 }
 
+type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
@@ -82,6 +85,11 @@ export class PGNodeUserDatabase implements UserDatabase {
     } finally {
       client.release();
     }
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    const client: PoolClient = await this.pool.connect();
+    return func(client as C, ...args);
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
@@ -188,6 +196,14 @@ export class PrismaUserDatabase implements UserDatabase {
     return result;
   }
 
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    return this.prisma.$transaction<R>(
+      async (q) => {
+        return await func(q as C, ...args);
+      }
+    );
+  }
+
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.prisma.$queryRawUnsafe<R, T>(sql, ...params);
@@ -284,6 +300,10 @@ export class TypeORMDatabase implements UserDatabase {
     );
   }
 
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    return func(this.dataSource.manager as C, ...args);
+  }
+
   async query<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     return this.dataSource.manager.query(sql, params).then((value) => {
       return value as R[];
@@ -363,6 +383,10 @@ export class KnexUserDatabase implements UserDatabase {
       { isolationLevel: isolationLevel }
     );
     return result;
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    return func(this.knex as C, ...args);
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
