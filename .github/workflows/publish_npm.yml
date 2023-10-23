@@ -2,6 +2,11 @@ name: Publish current branch to npm with a preview tag
 
 on:
   workflow_dispatch:
+  pull_request:  ## For tests. Delete this before merging to main!
+    branches:
+      - main
+    types:
+      - synchronize
 
 jobs:
   publish:
