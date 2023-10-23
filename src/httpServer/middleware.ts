@@ -2,13 +2,27 @@ import Koa from "koa";
 import { OperonClassRegistration, OperonRegistrationDefaults, getOrCreateOperonClassRegistration } from "../decorators";
 import { OperonUndefinedDecoratorInputError } from "../error";
 
-// Middleware context does not extend Operon context because it runs before actual Operon operations.
-export class MiddlewareContext {
+import { Span } from "@opentelemetry/sdk-trace-base";
+import { Logger as OperonLogger } from "../telemetry/logs";
+
+export class MiddlewareCtx {
   constructor(
     readonly koaContext: Koa.Context,
     readonly name: string, // Method (handler, transaction, workflow) name
     readonly requiredRole: string[], // Roles required for the invoked Operon operation, if empty perhaps auth is not required
   ) { }
+}
+
+// Middleware context does not extend Operon context because it runs before actual Operon operations.
+export interface MiddlewareContext {
+  readonly koaContext: Koa.Context;
+  readonly name: string; // Method (handler, transaction, workflow) name
+  readonly requiredRole: string[]; // Roles required for the invoked Operon operation, if empty perhaps auth is not required
+
+  readonly logger: OperonLogger;
+  readonly span: Span;
+
+  getConfig<T>(key: string, deflt: T | undefined) : T | undefined;
 }
 
 /**

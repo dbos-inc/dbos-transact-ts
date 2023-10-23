@@ -11,11 +11,11 @@ export interface UserDatabase {
   getName(): UserDatabaseName;
 
   // Run transactionFunction as a database transaction with a given config and arguments.
-  transaction<T extends any[], R>(transactionFunction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R>;
+  transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R>;
   // Execute a raw SQL query.
-  query<R>(sql: string, ...params: any[]): Promise<R[]>;
+  query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]>;
   // Execute a raw SQL query in the session/transaction of a particular client.
-  queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]>;
+  queryWithClient<R, T extends unknown[] = unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]>;
 
   // Is a database error retriable?  Currently only serialization errors are retriable.
   isRetriableTransactionError(error: unknown): boolean;
@@ -29,7 +29,7 @@ export interface UserDatabase {
   dropSchema(): Promise<void>;
 }
 
-type UserDatabaseTransaction<T extends any[], R> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
+type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
 
@@ -64,7 +64,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     return UserDatabaseName.PGNODE;
   }
 
-  async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -84,13 +84,13 @@ export class PGNodeUserDatabase implements UserDatabase {
     }
   }
 
-  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
     return this.pool.query(sql, params).then((value) => {
       return value.rows as R[];
     });
   }
 
-  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
+  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const pgClient: PoolClient = client as PoolClient;
     return pgClient.query(sql, params).then((value) => {
       return value.rows as R[];
@@ -131,8 +131,8 @@ export class PGNodeUserDatabase implements UserDatabase {
  * Prisma user data access interface
  */
 export interface PrismaClient {
-  $queryRawUnsafe<R>(query: string, ...params: any[]): Promise<R[]>;
-  $transaction<R>(fn: (prisma: any) => Promise<R>, options?: { maxWait?: number; timeout?: number; isolationLevel?: any }): Promise<R>;
+  $queryRawUnsafe<R, T extends unknown[]>(query: string, ...params: T): Promise<R[]>;
+  $transaction<R>(fn: (prisma: unknown) => Promise<R>, options?: { maxWait?: number; timeout?: number; isolationLevel?: unknown }): Promise<R>;
   $disconnect(): Promise<void>;
 }
 
@@ -167,7 +167,7 @@ export class PrismaUserDatabase implements UserDatabase {
     return UserDatabaseName.PRISMA;
   }
 
-  async transaction<T extends any[], R>(transaction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(transaction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let isolationLevel: string;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
@@ -188,15 +188,15 @@ export class PrismaUserDatabase implements UserDatabase {
     return result;
   }
 
-  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.prisma.$queryRawUnsafe<R>(sql, ...params);
+    return this.prisma.$queryRawUnsafe<R, T>(sql, ...params);
   }
 
-  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
+  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const prismaClient = client as PrismaClient;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return prismaClient.$queryRawUnsafe<R>(sql, ...params);
+    return prismaClient.$queryRawUnsafe<R, T>(sql, ...params);
   }
 
   getPostgresErrorCode(error: unknown): string | null {
@@ -228,7 +228,7 @@ export interface TypeORMDataSource {
   readonly isInitialized: boolean;
   readonly manager: TypeORMEntityManager;
   initialize(): Promise<this>;
-  query<T = any>(query: string): Promise<T>;
+  query<R = unknown>(query: string): Promise<R>;
   destroy(): Promise<void>;
 
   synchronize(): Promise<void>;
@@ -236,8 +236,8 @@ export interface TypeORMDataSource {
 }
 
 export interface TypeORMEntityManager {
-  query<T = any>(query: string, parameters?: any[]): Promise<T>
-  transaction<T>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<T>): Promise<T>
+  query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>
+  transaction<R>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>): Promise<R>
 }
 
 export interface QueryFailedError<T> {
@@ -273,7 +273,7 @@ export class TypeORMDatabase implements UserDatabase {
     return UserDatabaseName.TYPEORM;
   }
 
-  async transaction<T extends any[], R>(txn: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
     const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
 
     return this.dataSource.manager.transaction(isolationLevel,
@@ -284,13 +284,13 @@ export class TypeORMDatabase implements UserDatabase {
     );
   }
 
-  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+  async query<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     return this.dataSource.manager.query(sql, params).then((value) => {
       return value as R[];
     });
   }
 
-  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...params: any[]): Promise<R[]> {
+  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const tClient = client as TypeORMEntityManager;
     return tClient.query(sql, params).then((value) => {
       return value as R[];
@@ -344,7 +344,7 @@ export class KnexUserDatabase implements UserDatabase {
     return UserDatabaseName.KNEX;
   }
 
-  async transaction<T extends any[], R>(transactionFunction: UserDatabaseTransaction<T, R>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let isolationLevel: Knex.IsolationLevels;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
@@ -365,13 +365,14 @@ export class KnexUserDatabase implements UserDatabase {
     return result;
   }
 
-  async query<R>(sql: string, ...params: any[]): Promise<R[]> {
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.queryWithClient(this.knex, sql, ...params);
   }
 
-  async queryWithClient<R>(client: Knex, sql: string, ...params: any[]): Promise<R[]> {
+  async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...uparams: T): Promise<R[]> {
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
+    let params = uparams as any[];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     params = params.map(i => i === undefined ? null : i); // Set undefined parameters to null.
     const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
