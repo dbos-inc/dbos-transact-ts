@@ -97,7 +97,7 @@ export class OperonHttpServer {
                 name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt,
                 logger: oc.logger, span: oc.span,
                 getConfig: (key:string, def)=>{return oc.getConfig(key, def);},
-                query: (qry, ...args) => {return operon.userDatabase.queryFunction(qry, ...args);}
+                query: (query, ...args) => {return operon.userDatabase.queryFunction(query, ...args);}
               });
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;

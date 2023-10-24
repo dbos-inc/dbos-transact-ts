@@ -89,7 +89,14 @@ export class PGNodeUserDatabase implements UserDatabase {
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
-    return func(client as C, ...args);
+    try
+    {
+       return func(client as C, ...args);
+    }
+    finally
+    {
+      client.release();
+    }
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
@@ -197,11 +204,7 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
-    return this.prisma.$transaction<R>(
-      async (q) => {
-        return await func(q as C, ...args);
-      }
-    );
+    return func(this.prisma as C, ...args);
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
