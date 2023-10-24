@@ -35,11 +35,13 @@ program
 
 program
   .command('register')
-  .description('Register a user in Operon cloud and log in')
+  .description('Register a user and log in Operon cloud')
   .requiredOption('-u, --userName <string>', 'User name', )
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { userName: string, host: string }) => {
     await registerUser(options.userName, options.host);
+    // Then, log in as the user.
+    login(options.userName);
   });
 
 program.parse(process.argv);

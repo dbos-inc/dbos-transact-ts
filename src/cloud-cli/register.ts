@@ -20,9 +20,6 @@ export async function registerUser(userName: string, host: string) {
     );
     const userUUID = register.data as string;
     logger.info(`Registered user ${userName}, UUID: ${userUUID}`);
-
-    // Then, log in as the user.
-    login(userName);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to register user ${userName}: ${e.response.data}`);
