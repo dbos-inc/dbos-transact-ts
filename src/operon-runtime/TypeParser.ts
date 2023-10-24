@@ -13,7 +13,6 @@ export interface MethodInfo {
   readonly name: string;
   readonly decorators: readonly DecoratorInfo[];
   readonly parameters: readonly ParameterInfo[];
-  readonly returnType?: ts.Type;
 }
 
 export interface ParameterInfo {
@@ -21,7 +20,6 @@ export interface ParameterInfo {
   readonly name: string;
   readonly decorators: readonly DecoratorInfo[];
   readonly required: boolean;
-  readonly type?: ts.Type;
 }
 
 export interface DecoratorInfo {
@@ -37,14 +35,21 @@ function isStaticMethod(node: ts.MethodDeclaration): boolean {
 }
 
 export class TypeParser {
+  readonly #program: ts.Program;
   readonly #checker: ts.TypeChecker;
-  constructor(readonly program: ts.Program, readonly log: WinstonLogger) {
+  constructor(program: ts.Program, readonly log: WinstonLogger) {
+    this.#program = program;
     this.#checker = program.getTypeChecker();
   }
 
-  parse(): readonly ClassInfo[] {
+  static parse(program: ts.Program, log: WinstonLogger): readonly ClassInfo[] {
+    const parser = new TypeParser(program, log);
+    return parser.#parse();
+  }
+
+  #parse(): readonly ClassInfo[] {
     const classes = new Array<ClassInfo>();
-    for (const file of this.program.getSourceFiles()) {
+    for (const file of this.#program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;
       for (const stmt of file.statements) {
         if (ts.isClassDeclaration(stmt)) {
@@ -53,13 +58,13 @@ export class TypeParser {
             .filter(ts.isMethodDeclaration)
             // Operon only supports static methods, so filter out instance methods by default
             .filter(isStaticMethod)
-            .map(m => this.getMethod(m));
+            .map(m => this.#getMethod(m));
 
           classes.push({
             node: stmt,
             // a class may not have a name if it's the default export
             name: stmt.name?.getText(),
-            decorators: this.getDecorators(stmt),
+            decorators: this.#getDecorators(stmt),
             methods: staticMethods,
           });
         }
@@ -68,25 +73,21 @@ export class TypeParser {
     return classes;
   }
 
-  getMethod(node: ts.MethodDeclaration): MethodInfo {
+  #getMethod(node: ts.MethodDeclaration): MethodInfo {
     const name = node.name.getText();
-    const decorators = this.getDecorators(node);
-    const parameters = node.parameters.map(p => this.getParameter(p));
-
-    const signature = this.#checker.getSignatureFromDeclaration(node);
-    const returnType = signature ? this.#checker.getReturnTypeOfSignature(signature) : undefined;
-    return { node, name, decorators, parameters, returnType };
+    const decorators = this.#getDecorators(node);
+    const parameters = node.parameters.map(p => this.#getParameter(p));
+    return { node, name, decorators, parameters };
   }
 
-  getParameter(node: ts.ParameterDeclaration): ParameterInfo {
-    const decorators = this.getDecorators(node);
+  #getParameter(node: ts.ParameterDeclaration): ParameterInfo {
+    const decorators = this.#getDecorators(node);
     const name = node.name.getText();
     const required = !node.questionToken && !node.initializer;
-    const type = node.type ? this.#checker.getTypeFromTypeNode(node.type) : undefined;
-    return { node, name, decorators, required, type };
+    return { node, name, decorators, required };
   }
 
-  getDecorators(node: ts.HasDecorators): DecoratorInfo[] {
+  #getDecorators(node: ts.HasDecorators): DecoratorInfo[] {
 
     return (ts.getDecorators(node) ?? [])
       .map(node => {
