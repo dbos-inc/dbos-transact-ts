@@ -43,7 +43,7 @@ export async function deploy(appName: string, host: string) {
     logger.info(`Successfully deployed: ${appName}`);
     logger.info(`${appName} ID: ${uuid}`);
   } catch (e) {
-    if (axios.isAxiosError(e)) {
+    if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
     } else {
       logger.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
