@@ -4,6 +4,7 @@ import { deploy } from "./deploy";
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
+import { deleteApp } from "./delete";
 
 const program = new Command();
 
@@ -45,6 +46,16 @@ program
       login(options.userName);
     }
   });
+
+program
+  .command('delete')
+  .description('Delete a previously deployed application')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .action(async (options: { name: string, host: string }) => {
+    await deleteApp(options.name, options.host);
+  });
+
 
 program.parse(process.argv);
 
