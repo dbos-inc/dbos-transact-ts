@@ -39,9 +39,9 @@ program
   .requiredOption('-u, --userName <string>', 'User name', )
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { userName: string, host: string }) => {
-    const succes = await registerUser(options.userName, options.host);
+    const success = await registerUser(options.userName, options.host);
     // Then, log in as the user.
-    if (succes) {
+    if (success) {
       login(options.userName);
     }
   });

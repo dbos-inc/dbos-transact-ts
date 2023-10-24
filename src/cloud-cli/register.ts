@@ -24,6 +24,7 @@ export async function registerUser(userName: string, host: string) {
     } else {
       logger.error(`failed to register user ${userName}: ${(e as Error).message}`);
     }
+    return false;
   }
   return true;
 }
