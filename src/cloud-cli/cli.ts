@@ -39,9 +39,11 @@ program
   .requiredOption('-u, --userName <string>', 'User name', )
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { userName: string, host: string }) => {
-    await registerUser(options.userName, options.host);
+    const succes = await registerUser(options.userName, options.host);
     // Then, log in as the user.
-    login(options.userName);
+    if (succes) {
+      login(options.userName);
+    }
   });
 
 program.parse(process.argv);

@@ -1,10 +1,8 @@
 import axios from "axios";
 import { createGlobalLogger } from "../telemetry/logs";
-import { login } from "./login";
 
 export async function registerUser(userName: string, host: string) {
   const logger = createGlobalLogger();
-
   try {
     // First, register the user.
     const register = await axios.put(
@@ -27,4 +25,5 @@ export async function registerUser(userName: string, host: string) {
       logger.error(`failed to register user ${userName}: ${(e as Error).message}`);
     }
   }
+  return true;
 }
