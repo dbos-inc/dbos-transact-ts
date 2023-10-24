@@ -61,21 +61,21 @@ function getParamName(parameter: ParameterInfo): string {
   throw new Error(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`);
 }
 
-// ts-json-schema-generator does not support BigInt, so OpenApiGenerator needs a custom parser for it
-
+// ts-json-schema-generator does not support BigInt, so OpenApiGenerator needs a custom type, formatter and parser for it
 class BigIntType extends PrimitiveType {
   getId(): string { return "integer"; }
 }
 
 class BigIntTypeFormatter implements SubTypeFormatter {
   public supportsType(type: BigIntType): boolean {
-      return type instanceof BigIntType;
+    return type instanceof BigIntType;
   }
   public getDefinition(type: BigIntType): Definition {
-      return { type: "integer", description: "bigint" };
+    // Note, JSON Schema integer type is not constrained to a specific size, so it is a valid type for BigInt
+    return { type: "integer", description: "bigint" };
   }
   public getChildren(type: BigIntType): BaseType[] {
-      return [];
+    return [];
   }
 }
 

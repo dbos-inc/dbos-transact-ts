@@ -31,7 +31,7 @@ program
     const program = ts.createProgram([entrypoint], {});
     const openapi = generateOpenApi(program);
 
-    const filename = path.join(path.dirname(entrypoint), "swagger.yaml");
+    const filename = path.join(path.dirname(entrypoint), "openapi.yaml");
     const yaml = YAML.stringify(openapi);
     await fs.writeFile(filename, yaml, { encoding: 'utf-8' });
   });
