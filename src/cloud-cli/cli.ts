@@ -3,6 +3,7 @@
 import { deploy } from "./deploy";
 import { Command } from 'commander';
 import { login } from "./login";
+import { registerUser } from "./register";
 
 const program = new Command();
 
@@ -26,14 +27,19 @@ program
 program
   .command('deploy')
   .description('Deploy an application to the cloud')
-  .option('-n, --name <string>', 'Specify the app name')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { name: string, host: string }) => {
-    if (!options.name) {
-      console.error('Error: the --name option is required.');
-      return;
-    }
     await deploy(options.name, options.host);
+  });
+
+program
+  .command('register')
+  .description('Register a user in Operon cloud and log in')
+  .requiredOption('-u, --userName <string>', 'User name', )
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .action(async (options: { userName: string, host: string }) => {
+    await registerUser(options.userName, options.host);
   });
 
 program.parse(process.argv);
