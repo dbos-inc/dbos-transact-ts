@@ -40,8 +40,7 @@
     "prisma": "^5.1.1",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1",
-    "typeorm": "^0.3.17",
-    "typescript": "^5.2.2"
+    "typeorm": "^0.3.17"
   },
   "dependencies": {
     "@koa/bodyparser": "^5.0.0",
@@ -63,9 +62,12 @@
     "koa": "^2.14.2",
     "koa-logger": "^3.2.1",
     "lodash": "^4.17.21",
+    "openapi-types": "^12.1.3",
     "pg": "^8.11.1",
     "reflect-metadata": "^0.1.13",
     "serialize-error": "8.1.0",
+    "ts-json-schema-generator": "^1.4.0",
+    "typescript": "^5.2.2",
     "uuid": "^9.0.0",
     "winston": "^3.10.0",
     "yaml": "^2.3.1"
