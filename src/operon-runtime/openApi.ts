@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import * as ts from 'typescript';
 import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
 import { APITypes, ArgSources } from '../httpServer/handler';
-import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config, TypeFormatter, DefinitionType, uniqueArray } from 'ts-json-schema-generator';
+import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config } from 'ts-json-schema-generator';
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
@@ -71,8 +70,7 @@ class BigIntKeywordParser implements SubNodeParser {
   supportsNode(node: ts.Node): boolean {
     return node.kind === ts.SyntaxKind.BigIntKeyword;
   }
-  createType(node: ts.Node, context: Context, reference?: ReferenceType | undefined): BaseType {
-    // return new AnnotatedType(new NumberType(), { format: "bigint" }, false);
+  createType(_node: ts.Node, _context: Context, _reference?: ReferenceType | undefined): BaseType {
     return new BigIntType();
   }
 }
@@ -81,61 +79,14 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   public supportsType(type: BigIntType): boolean {
     return type instanceof BigIntType;
   }
-  public getDefinition(type: BigIntType): Definition {
+  public getDefinition(_type: BigIntType): Definition {
     // Note, JSON Schema integer type is not constrained to a specific size, so it is a valid type for BigInt
     return { type: "integer", description: "bigint" };
   }
-  public getChildren(type: BigIntType): BaseType[] {
+  public getChildren(_type: BigIntType): BaseType[] {
     return [];
   }
 }
-
-// export class OpenApiReferenceTypeFormatter implements SubTypeFormatter {
-//   public constructor(
-//     protected childTypeFormatter: TypeFormatter,
-//     protected encodeRefs: boolean
-//   ) { }
-
-//   public supportsType(type: ReferenceType): boolean {
-//     return type instanceof ReferenceType;
-//   }
-//   public getDefinition(type: ReferenceType): Definition {
-//     const ref = type.getName();
-//     return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
-//   }
-//   public getChildren(type: ReferenceType): BaseType[] {
-//     const referredType = type.getType();
-//     if (referredType instanceof DefinitionType) {
-//       // We probably already have the definitions for the children created so we could return `[]`.
-//       // There are cases where we may not have (in particular intersections of unions with recursion).
-//       // To make sure we create the necessary definitions, we return the children of the referred type here.
-//       // Because we cache definitions, this should not incur any performance impact.
-//       return this.childTypeFormatter.getChildren(referredType);
-//     }
-
-//     // this means that the referred interface is protected
-//     // so we have to expose it in the schema definitions
-//     return this.childTypeFormatter.getChildren(new DefinitionType(type.getName(), type.getType()));
-//   }
-// }
-
-// export class OpenApiDefinitionTypeFormatter implements SubTypeFormatter {
-//   public constructor(
-//     protected childTypeFormatter: TypeFormatter,
-//     protected encodeRefs: boolean
-//   ) { }
-
-//   public supportsType(type: DefinitionType): boolean {
-//     return type instanceof DefinitionType;
-//   }
-//   public getDefinition(type: DefinitionType): Definition {
-//     const ref = type.getName();
-//     return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
-//   }
-//   public getChildren(type: DefinitionType): BaseType[] {
-//     return uniqueArray([type, ...this.childTypeFormatter.getChildren(type.getType())]);
-//   }
-// }
 
 class OpenApiGenerator {
   readonly checker: ts.TypeChecker;
@@ -149,11 +100,7 @@ class OpenApiGenerator {
       encodeRefs: false
     };
     const parser = createParser(program, config, aug => aug.addNodeParser(new BigIntKeywordParser()));
-    const formatter = createFormatter(config, (fmt, circRefFmt) => {
-      // fmt.addTypeFormatter(new OpenApiReferenceTypeFormatter(circRefFmt, config.encodeRefs!));
-      // fmt.addTypeFormatter(new OpenApiDefinitionTypeFormatter(circRefFmt, config.encodeRefs!));
-      return fmt.addTypeFormatter(new BigIntTypeFormatter());
-    });
+    const formatter = createFormatter(config, (fmt) => fmt.addTypeFormatter(new BigIntTypeFormatter()));
     this.schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
   }
 
@@ -291,9 +238,7 @@ class OpenApiGenerator {
   generateSchema(node?: ts.Node): OpenApi3.SchemaObject | OpenApi3.ReferenceObject {
     if (!node) return { description: "Undefined Node" };
 
-    const text = printNode(node);
     const schema = this.schemaGenerator.createSchemaFromNodes([node]);
-
     if (!schema.$ref) return { description: "No $ref" };
 
     const slashIndex = schema.$ref.lastIndexOf('/');
@@ -389,12 +334,6 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
   function isSchemaEntry(entry: [string, Schema | boolean]): entry is [string, Schema] {
     return isSchema(entry[1]);
   }
-}
-
-const printer = ts.createPrinter();
-function printNode(node: ts.Node, hint?: ts.EmitHint, sourceFile?: ts.SourceFile): string {
-  sourceFile ??= ts.createSourceFile("temp.ts", "", ts.ScriptTarget.Latest);
-  return printer.printNode(hint ?? ts.EmitHint.Unspecified, node, sourceFile);
 }
 
 export function generateOpenApi(program: ts.Program, logger?: WinstonLogger): OpenApi3.Document {
