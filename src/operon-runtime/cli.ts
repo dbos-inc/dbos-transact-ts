@@ -25,9 +25,9 @@ export interface OperonCLIStartOptions {
 }
 
 program
-  .command("generate")
-  .requiredOption('-e, --entrypoint <string>', 'Specify the entrypoint file path')
-  .action(async ({ entrypoint }: { entrypoint: string }) => {
+  .command("openapi")
+  .argument('<entrypoint>', 'Specify the entrypoint file path')
+  .action(async (entrypoint: string) => {
     const program = ts.createProgram([entrypoint], {});
     const openapi = generateOpenApi(program);
 

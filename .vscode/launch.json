@@ -14,7 +14,7 @@
             "envFile": "${workspaceFolder}/examples/hello/.env"
         },
         {
-            "command": "npx operon generate -e ${workspaceFolder}/examples/hello/src/operations.ts",
+            "command": "npx operon openapi ${workspaceFolder}/examples/hello/src/operations.ts",
             "name": "Generate Example",
             "preLaunchTask": "build example",
             "request": "launch",
