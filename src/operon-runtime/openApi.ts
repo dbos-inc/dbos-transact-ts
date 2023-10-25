@@ -153,8 +153,21 @@ class OpenApiGenerator {
       requestBody,
     }
 
+    // validate all path parameters have matching parameters with URL ArgSource
+    const pathParams = path.split('/')
+      .filter(p => p.startsWith(':'))
+      .map(p => p.substring(1));
+
+    for (const pathParam of pathParams) {
+      const param = sourcedParams.find(([parameter, _]) => parameter.name === pathParam);
+      if (!param) throw new Error(`Missing path parameter ${pathParam} for ${method.name}`);
+      if (param[1] !== ArgSources.URL) throw new Error(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`);
+    }
+
     // OpenAPI indicates path parameters with curly braces, but Operon uses colons
-    path = path.split('/').map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p).join('/');
+    path = path.split('/')
+      .map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p)
+      .join('/');
     switch (verb) {
       case APITypes.GET: return [path, { get: operation }];
       case APITypes.POST: return [path, { post: operation }];
