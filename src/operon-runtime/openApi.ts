@@ -89,19 +89,19 @@ class BigIntTypeFormatter implements SubTypeFormatter {
 }
 
 class OpenApiGenerator {
-  readonly checker: ts.TypeChecker;
-  readonly schemaGenerator: SchemaGenerator;
-  readonly schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
+  readonly #checker: ts.TypeChecker;
+  readonly #schemaGenerator: SchemaGenerator;
+  readonly #schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
 
   constructor(readonly program: ts.Program, readonly log: WinstonLogger) {
-    this.checker = program.getTypeChecker();
+    this.#checker = program.getTypeChecker();
     const config: Config = {
       discriminatorType: 'open-api',
       encodeRefs: false
     };
     const parser = createParser(program, config, aug => aug.addNodeParser(new BigIntKeywordParser()));
     const formatter = createFormatter(config, (fmt) => fmt.addTypeFormatter(new BigIntTypeFormatter()));
-    this.schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
+    this.#schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
   }
 
   generate(classes: readonly ClassInfo[]): OpenApi3.Document {
@@ -125,7 +125,7 @@ class OpenApiGenerator {
       },
       paths: Object.fromEntries(paths),
       components: {
-        schemas: Object.fromEntries(this.schemaMap)
+        schemas: Object.fromEntries(this.#schemaMap)
       }
     }
     return openApi;
@@ -138,8 +138,8 @@ class OpenApiGenerator {
   }
 
   generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, OpenApi3.PathItemObject] {
-    // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
     const sourcedParams = method.parameters
+      // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
       .slice(1)
       .map(p => [p, getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
@@ -168,6 +168,7 @@ class OpenApiGenerator {
     path = path.split('/')
       .map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p)
       .join('/');
+
     switch (verb) {
       case APITypes.GET: return [path, { get: operation }];
       case APITypes.POST: return [path, { post: operation }];
@@ -175,7 +176,7 @@ class OpenApiGenerator {
   }
 
   generateResponse(method: MethodInfo): [string, OpenApi3.ResponseObject] {
-    const signature = this.checker.getSignatureFromDeclaration(method.node);
+    const signature = this.#checker.getSignatureFromDeclaration(method.node);
     const returnType = signature?.getReturnType();
     if (!returnType) throw new Error(`Method ${method.name} has no return type`);
 
@@ -186,7 +187,7 @@ class OpenApiGenerator {
     // if the type argument is void, return a 204 status code with no content
     if (typeArg.flags & ts.TypeFlags.Void) return ["204", { description: "No Content" }];
 
-    const decl = signature ? this.checker.signatureToSignatureDeclaration(signature, method.node.kind, undefined, undefined) : undefined;
+    const decl = signature ? this.#checker.signatureToSignatureDeclaration(signature, method.node.kind, undefined, undefined) : undefined;
     const schema = this.generateSchema(decl?.type);
 
     return ["200", {
@@ -253,7 +254,7 @@ class OpenApiGenerator {
   generateSchema(node?: ts.Node): OpenApi3.SchemaObject | OpenApi3.ReferenceObject {
     if (!node) return { description: "Undefined Node" };
 
-    const schema = this.schemaGenerator.createSchemaFromNodes([node]);
+    const schema = this.#schemaGenerator.createSchemaFromNodes([node]);
     if (!schema.$ref) return { description: "No $ref" };
 
     const slashIndex = schema.$ref.lastIndexOf('/');
@@ -271,7 +272,7 @@ class OpenApiGenerator {
       defs.delete(name);
       for (const [$name, $def] of defs) {
         if (typeof $def === 'boolean') continue;
-        this.schemaMap.set($name, mapSchema($def));
+        this.#schemaMap.set($name, mapSchema($def));
       }
     }
 
@@ -288,11 +289,16 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
     return <OpenApi3.ReferenceObject>{ $ref }
   }
 
+  const [maximum, exclusiveMaximum] = getMaxes();
+  const [minimum, exclusiveMinimum] = getMins();
+
   const base: OpenApi3.BaseSchemaObject = {
     title: schema.title,
     multipleOf: schema.multipleOf,
-    maximum: schema.maximum,
-    minimum: schema.minimum,
+    maximum,
+    exclusiveMaximum,
+    minimum,
+    exclusiveMinimum,
     maxLength: schema.maxLength,
     minLength: schema.minLength,
     pattern: schema.pattern,
@@ -305,9 +311,7 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
     enum: schema.enum,
     description: schema.description,
     format: schema.format,
-    // exclusiveMaximum: schema.exclusiveMaximum,
-    // exclusiveMinimum: schema.exclusiveMinimum,
-    // default: schema.default,
+    default: schema.default,
 
     // OpenApi 3.0.x doesn't support boolean schema types, so filter those out when mapping these fields
     allOf: schema.allOf?.filter(isSchema).map(mapSchema),
@@ -319,7 +323,7 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
     properties: schema.properties
       ? Object.fromEntries(
         Object.entries(schema.properties)
-          .filter(isSchemaEntry)
+          .filter((entry): entry is [string, Schema] => isSchema(entry[1]) )
           .map(([name, prop]) => [name, mapSchema(prop)]))
       : undefined,
     additionalProperties: typeof schema.additionalProperties === 'object'
@@ -350,8 +354,37 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
     return typeof schema === "object";
   }
 
-  function isSchemaEntry(entry: [string, Schema | boolean]): entry is [string, Schema] {
-    return isSchema(entry[1]);
+  // Convert JSON Schema Draft 7 (used by ts-json-schema-generator) max/min and exclusive max/min values to JSON Schema Draft 5 (used by OpenAPI).
+  // In Draft 5, exclusive max/min values are booleans
+  // In Draft 7, exclusive max/min values are numbers
+
+  function getMaxes(): [maximum: number | undefined, exclusiveMaximum: boolean | undefined] {
+    const { maximum: max, exclusiveMaximum: xMax} = schema;
+
+    if (max) {
+      if (xMax) {
+        return (xMax < max) ? [xMax, true] : [max, false];
+      } else {
+        return [max, false];
+      }
+    } else {
+      return xMax ? [xMax, true] : [undefined, undefined];
+    }
+  }
+
+  function getMins(): [minimum: number | undefined, exclusiveMinimum: boolean | undefined] {
+    const { minimum: min, exclusiveMinimum: xMin} = schema;
+
+    if (min) {
+      if (xMin) {
+        return (xMin > min) ? [xMin, true] : [min, false];
+      } else {
+        return [min, false];
+      }
+
+    } else {
+      return xMin ? [xMin, true] : [undefined, undefined];
+    }
   }
 }
 
