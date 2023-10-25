@@ -153,6 +153,8 @@ class OpenApiGenerator {
       requestBody,
     }
 
+    // OpenAPI indicates path parameters with curly braces, but Operon uses colons
+    path = path.split('/').map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p).join('/');
     switch (verb) {
       case APITypes.GET: return [path, { get: operation }];
       case APITypes.POST: return [path, { post: operation }];
