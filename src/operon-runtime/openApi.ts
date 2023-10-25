@@ -3,7 +3,7 @@ import * as ts from 'typescript';
 import { WinstonLogger, createGlobalLogger } from "../telemetry/logs";
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
 import { APITypes, ArgSources } from '../httpServer/handler';
-import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, NumberType, AnnotatedType, PrimitiveType, SubTypeFormatter, Definition } from 'ts-json-schema-generator';
+import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config, TypeFormatter, DefinitionType, uniqueArray } from 'ts-json-schema-generator';
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
@@ -66,6 +66,17 @@ class BigIntType extends PrimitiveType {
   getId(): string { return "integer"; }
 }
 
+
+class BigIntKeywordParser implements SubNodeParser {
+  supportsNode(node: ts.Node): boolean {
+    return node.kind === ts.SyntaxKind.BigIntKeyword;
+  }
+  createType(node: ts.Node, context: Context, reference?: ReferenceType | undefined): BaseType {
+    // return new AnnotatedType(new NumberType(), { format: "bigint" }, false);
+    return new BigIntType();
+  }
+}
+
 class BigIntTypeFormatter implements SubTypeFormatter {
   public supportsType(type: BigIntType): boolean {
     return type instanceof BigIntType;
@@ -79,24 +90,70 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
-class BigIntKeywordParser implements SubNodeParser {
-  supportsNode(node: ts.Node): boolean {
-    return node.kind === ts.SyntaxKind.BigIntKeyword;
+export class OpenApiReferenceTypeFormatter implements SubTypeFormatter {
+  public constructor(
+    protected childTypeFormatter: TypeFormatter,
+    protected encodeRefs: boolean
+  ) { }
+
+  public supportsType(type: ReferenceType): boolean {
+    return type instanceof ReferenceType;
   }
-  createType(node: ts.Node, context: Context, reference?: ReferenceType | undefined): BaseType {
-    // return new AnnotatedType(new NumberType(), { format: "bigint" }, false);
-    return new BigIntType();
+  public getDefinition(type: ReferenceType): Definition {
+    const ref = type.getName();
+    return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
+  }
+  public getChildren(type: ReferenceType): BaseType[] {
+    const referredType = type.getType();
+    if (referredType instanceof DefinitionType) {
+      // We probably already have the definitions for the children created so we could return `[]`.
+      // There are cases where we may not have (in particular intersections of unions with recursion).
+      // To make sure we create the necessary definitions, we return the children of the referred type here.
+      // Because we cache definitions, this should not incur any performance impact.
+      return this.childTypeFormatter.getChildren(referredType);
+    }
+
+    // this means that the referred interface is protected
+    // so we have to expose it in the schema definitions
+    return this.childTypeFormatter.getChildren(new DefinitionType(type.getName(), type.getType()));
+  }
+}
+
+export class OpenApiDefinitionTypeFormatter implements SubTypeFormatter {
+  public constructor(
+    protected childTypeFormatter: TypeFormatter,
+    protected encodeRefs: boolean
+  ) { }
+
+  public supportsType(type: DefinitionType): boolean {
+    return type instanceof DefinitionType;
+  }
+  public getDefinition(type: DefinitionType): Definition {
+    const ref = type.getName();
+    return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
+  }
+  public getChildren(type: DefinitionType): BaseType[] {
+    return uniqueArray([type, ...this.childTypeFormatter.getChildren(type.getType())]);
   }
 }
 
 class OpenApiGenerator {
   readonly checker: ts.TypeChecker;
   readonly schemaGenerator: SchemaGenerator;
+  readonly schemaMap: Map<string, OpenApi3.SchemaObject> = new Map();
 
   constructor(readonly program: ts.Program, readonly log: WinstonLogger) {
     this.checker = program.getTypeChecker();
-    const parser = createParser(program, {}, aug => aug.addNodeParser(new BigIntKeywordParser()));
-    const formatter = createFormatter({}, fmt => fmt.addTypeFormatter(new BigIntTypeFormatter()));
+    const config: Config = {
+      discriminatorType: 'open-api',
+      encodeRefs: false
+    };
+    const parser = createParser(program, config, aug => aug.addNodeParser(new BigIntKeywordParser()));
+    const formatter = createFormatter(config, (fmt, circRefFmt) => {
+      // fmt.addTypeFormatter(new OpenApiReferenceTypeFormatter(circRefFmt, config.encodeRefs!));
+      // fmt.addTypeFormatter(new OpenApiDefinitionTypeFormatter(circRefFmt, config.encodeRefs!));
+      return fmt.addTypeFormatter(new BigIntTypeFormatter());
+    });
     this.schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
   }
 
@@ -112,7 +169,7 @@ class OpenApiGenerator {
     const paths = handlers
       .map(h => this.generatePath(h));
 
-    return {
+    const openApi: OpenApi3.Document = {
       openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
       info: {
         // TODO: Where to get this info from? package.json?
@@ -120,7 +177,16 @@ class OpenApiGenerator {
         version: "1.0.0",
       },
       paths: Object.fromEntries(paths),
+      components: {
+        schemas: Object.fromEntries(this.schemaMap)
+      }
     }
+
+    // ts-json-schema-generator emits all definitions in the definitions field, but OpenApi expects them in the components.schemas field
+    // I'm going to open an issue w/ ts-json-schema-generator to make this configurable.
+    const text = JSON.stringify(openApi, null, 4);
+    const newText = text.replaceAll("#/definitions/", "#/components/schemas/");
+    return JSON.parse(newText) as OpenApi3.Document;
   }
 
   generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, OpenApi3.PathItemObject] {
@@ -190,7 +256,6 @@ class OpenApiGenerator {
 
     function getLocation(argSource: ArgSources): "query" | "path" {
       switch (argSource) {
-        // case ArgSources.BODY: return <BodyParameter>{ in: 'body', ...param };
         case ArgSources.QUERY: return 'query';
         case ArgSources.URL: return 'path';
         default: throw new Error(`Unsupported Parameter ArgSource: ${argSource}`);
@@ -229,10 +294,9 @@ class OpenApiGenerator {
 
     if (!schema.$ref) return { description: "No $ref" };
 
-    const $ref = decodeURI(schema.$ref);
-    const slashIndex = $ref.lastIndexOf('/');
-    if (slashIndex === -1) return { description: `Invalid $ref ${$ref}` };
-    const name = $ref.substring(slashIndex + 1);
+    const slashIndex = schema.$ref.lastIndexOf('/');
+    if (slashIndex === -1) return { description: `Invalid $ref ${schema.$ref}` };
+    const name = schema.$ref.substring(slashIndex + 1);
 
     const defs = new Map<string, Schema | boolean>(Object.entries(schema.definitions ?? {}));
     if (defs.size === 0) return { description: "No definitions" };
@@ -241,14 +305,43 @@ class OpenApiGenerator {
     if (!def) return { description: `No definition ${name}` };
     if (typeof def === 'boolean') return { description: `Definition ${name} is a boolean` };
 
+    if (defs.size > 1) {
+      defs.delete(name);
+      for (const [$name, $def] of defs) {
+        if (typeof $def === 'boolean') continue;
+        this.schemaMap.set($name, $def as OpenApi3.SchemaObject);
+      }
+    }
+
     return def as OpenApi3.SchemaObject;
   }
 }
 
-// function convertSchema(j7: Schema): Schema {
-
-
+// function mapReferences(schema: Schema): Schema {
+//   if (schema.$ref) {
+//     const slashIndex = schema.$ref.lastIndexOf('/');
+//     if (slashIndex === -1) throw new Error(`Invalid $ref ${schema.$ref}`);
+//     const name = schema.$ref.substring(slashIndex + 1);
+//     return {
+//       $ref: `#/components/schemas/${name}`
+//     };
+//   }
+//   if (schema.type === 'object') {
+//     const properties = Object.fromEntries(Object.entries(schema.properties ?? {}).map(([name, prop]) => [name, mapReferences(prop as Schema)]));
+//     return { ...schema, properties };
+//   }
+//   if (schema.type === 'array') {
+//     const items = mapReferences(schema.items as Schema);
+//     return { ...schema, items };
+//   }
+//   if (schema.anyOf) {
+//     const anyOf = schema.anyOf.map(s => mapReferences(s as Schema));
+//     return { ...schema, anyOf };
+//   }
+//   return schema;
 // }
+
+
 
 const printer = ts.createPrinter();
 function printNode(node: ts.Node, hint?: ts.EmitHint, sourceFile?: ts.SourceFile): string {
