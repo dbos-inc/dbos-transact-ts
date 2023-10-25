@@ -313,9 +313,13 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
   }
 
   if (schema.type === 'array') {
+    if (schema.items === undefined) throw new Error(`Array schema has no items`);
+    if (Array.isArray(schema.items)) throw new Error(`OpenApi 3.0.x doesn't support array items arrays: ${JSON.stringify(schema.items)}`);
+    if (typeof schema.items === 'boolean') throw new Error(`OpenApi 3.0.x doesn't support array items booleans: ${JSON.stringify(schema.items)}`);
+
     return <OpenApi3.ArraySchemaObject>{
       type: schema.type,
-      items: schema.anyOf?.filter(isSchema).map(mapSchema),
+      items: mapSchema(schema.items),
       ...base,
     }
   }
