@@ -90,57 +90,57 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
-export class OpenApiReferenceTypeFormatter implements SubTypeFormatter {
-  public constructor(
-    protected childTypeFormatter: TypeFormatter,
-    protected encodeRefs: boolean
-  ) { }
+// export class OpenApiReferenceTypeFormatter implements SubTypeFormatter {
+//   public constructor(
+//     protected childTypeFormatter: TypeFormatter,
+//     protected encodeRefs: boolean
+//   ) { }
 
-  public supportsType(type: ReferenceType): boolean {
-    return type instanceof ReferenceType;
-  }
-  public getDefinition(type: ReferenceType): Definition {
-    const ref = type.getName();
-    return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
-  }
-  public getChildren(type: ReferenceType): BaseType[] {
-    const referredType = type.getType();
-    if (referredType instanceof DefinitionType) {
-      // We probably already have the definitions for the children created so we could return `[]`.
-      // There are cases where we may not have (in particular intersections of unions with recursion).
-      // To make sure we create the necessary definitions, we return the children of the referred type here.
-      // Because we cache definitions, this should not incur any performance impact.
-      return this.childTypeFormatter.getChildren(referredType);
-    }
+//   public supportsType(type: ReferenceType): boolean {
+//     return type instanceof ReferenceType;
+//   }
+//   public getDefinition(type: ReferenceType): Definition {
+//     const ref = type.getName();
+//     return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
+//   }
+//   public getChildren(type: ReferenceType): BaseType[] {
+//     const referredType = type.getType();
+//     if (referredType instanceof DefinitionType) {
+//       // We probably already have the definitions for the children created so we could return `[]`.
+//       // There are cases where we may not have (in particular intersections of unions with recursion).
+//       // To make sure we create the necessary definitions, we return the children of the referred type here.
+//       // Because we cache definitions, this should not incur any performance impact.
+//       return this.childTypeFormatter.getChildren(referredType);
+//     }
 
-    // this means that the referred interface is protected
-    // so we have to expose it in the schema definitions
-    return this.childTypeFormatter.getChildren(new DefinitionType(type.getName(), type.getType()));
-  }
-}
+//     // this means that the referred interface is protected
+//     // so we have to expose it in the schema definitions
+//     return this.childTypeFormatter.getChildren(new DefinitionType(type.getName(), type.getType()));
+//   }
+// }
 
-export class OpenApiDefinitionTypeFormatter implements SubTypeFormatter {
-  public constructor(
-    protected childTypeFormatter: TypeFormatter,
-    protected encodeRefs: boolean
-  ) { }
+// export class OpenApiDefinitionTypeFormatter implements SubTypeFormatter {
+//   public constructor(
+//     protected childTypeFormatter: TypeFormatter,
+//     protected encodeRefs: boolean
+//   ) { }
 
-  public supportsType(type: DefinitionType): boolean {
-    return type instanceof DefinitionType;
-  }
-  public getDefinition(type: DefinitionType): Definition {
-    const ref = type.getName();
-    return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
-  }
-  public getChildren(type: DefinitionType): BaseType[] {
-    return uniqueArray([type, ...this.childTypeFormatter.getChildren(type.getType())]);
-  }
-}
+//   public supportsType(type: DefinitionType): boolean {
+//     return type instanceof DefinitionType;
+//   }
+//   public getDefinition(type: DefinitionType): Definition {
+//     const ref = type.getName();
+//     return { $ref: `#/components/schemas/${this.encodeRefs ? encodeURIComponent(ref) : ref}` };
+//   }
+//   public getChildren(type: DefinitionType): BaseType[] {
+//     return uniqueArray([type, ...this.childTypeFormatter.getChildren(type.getType())]);
+//   }
+// }
 
 class OpenApiGenerator {
   readonly checker: ts.TypeChecker;
   readonly schemaGenerator: SchemaGenerator;
-  readonly schemaMap: Map<string, OpenApi3.SchemaObject> = new Map();
+  readonly schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
 
   constructor(readonly program: ts.Program, readonly log: WinstonLogger) {
     this.checker = program.getTypeChecker();
@@ -181,12 +181,13 @@ class OpenApiGenerator {
         schemas: Object.fromEntries(this.schemaMap)
       }
     }
+    return openApi;
 
     // ts-json-schema-generator emits all definitions in the definitions field, but OpenApi expects them in the components.schemas field
     // I'm going to open an issue w/ ts-json-schema-generator to make this configurable.
-    const text = JSON.stringify(openApi, null, 4);
-    const newText = text.replaceAll("#/definitions/", "#/components/schemas/");
-    return JSON.parse(newText) as OpenApi3.Document;
+    // const text = JSON.stringify(openApi, null, 4);
+    // const newText = text.replaceAll("#/definitions/", "#/components/schemas/");
+    // return JSON.parse(newText) as OpenApi3.Document;
   }
 
   generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, OpenApi3.PathItemObject] {
@@ -234,7 +235,8 @@ class OpenApiGenerator {
     }];
   }
 
-  generateParameters(sourcedParams: [ParameterInfo, ArgSources][]): OpenApi3.ParameterObject[] {
+  generateParameters(sourcedParams: [ParameterInfo, ArgSources][]): OpenApi3.ParameterObject[] | undefined {
+    if (sourcedParams.length === 0) return undefined;
     return sourcedParams
       // QUERY and URL parameters are specified in the Operation.parameters field
       .filter(([_, source]) => source === ArgSources.QUERY || source === ArgSources.URL)
@@ -286,7 +288,7 @@ class OpenApiGenerator {
     }
   }
 
-  generateSchema(node?: ts.Node): OpenApi3.SchemaObject {
+  generateSchema(node?: ts.Node): OpenApi3.SchemaObject | OpenApi3.ReferenceObject {
     if (!node) return { description: "Undefined Node" };
 
     const text = printNode(node);
@@ -309,39 +311,85 @@ class OpenApiGenerator {
       defs.delete(name);
       for (const [$name, $def] of defs) {
         if (typeof $def === 'boolean') continue;
-        this.schemaMap.set($name, $def as OpenApi3.SchemaObject);
+        this.schemaMap.set($name, mapSchema($def));
       }
     }
 
-    return def as OpenApi3.SchemaObject;
+    return mapSchema(def);
   }
 }
 
-// function mapReferences(schema: Schema): Schema {
-//   if (schema.$ref) {
-//     const slashIndex = schema.$ref.lastIndexOf('/');
-//     if (slashIndex === -1) throw new Error(`Invalid $ref ${schema.$ref}`);
-//     const name = schema.$ref.substring(slashIndex + 1);
-//     return {
-//       $ref: `#/components/schemas/${name}`
-//     };
-//   }
-//   if (schema.type === 'object') {
-//     const properties = Object.fromEntries(Object.entries(schema.properties ?? {}).map(([name, prop]) => [name, mapReferences(prop as Schema)]));
-//     return { ...schema, properties };
-//   }
-//   if (schema.type === 'array') {
-//     const items = mapReferences(schema.items as Schema);
-//     return { ...schema, items };
-//   }
-//   if (schema.anyOf) {
-//     const anyOf = schema.anyOf.map(s => mapReferences(s as Schema));
-//     return { ...schema, anyOf };
-//   }
-//   return schema;
-// }
+function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceObject {
 
+  if (Array.isArray(schema.type)) throw new Error(`OpenApi 3.0.x doesn't support type arrays: ${JSON.stringify(schema.type)}`);
 
+  if (schema.$ref) {
+    const $ref = schema.$ref.replace("#/definitions/", "#/components/schemas/");
+    return <OpenApi3.ReferenceObject>{ $ref }
+  }
+
+  const base: OpenApi3.BaseSchemaObject = {
+    title: schema.title,
+    multipleOf: schema.multipleOf,
+    maximum: schema.maximum,
+    minimum: schema.minimum,
+    maxLength: schema.maxLength,
+    minLength: schema.minLength,
+    pattern: schema.pattern,
+    maxItems: schema.maxItems,
+    minItems: schema.minItems,
+    uniqueItems: schema.uniqueItems,
+    maxProperties: schema.maxProperties,
+    minProperties: schema.minProperties,
+    required: schema.required,
+    enum: schema.enum,
+    description: schema.description,
+    format: schema.format,
+    // exclusiveMaximum: schema.exclusiveMaximum,
+    // exclusiveMinimum: schema.exclusiveMinimum,
+    // default: schema.default,
+
+    // OpenApi 3.0.x doesn't support boolean schema types, so filter those out when mapping these fields
+    allOf: schema.allOf?.filter(isSchema).map(mapSchema),
+    oneOf: schema.oneOf?.filter(isSchema).map(mapSchema),
+    anyOf: schema.anyOf?.filter(isSchema).map(mapSchema),
+    not: schema.not
+      ? isSchema(schema.not) ? mapSchema(schema.not) : undefined
+      : undefined,
+    properties: schema.properties
+      ? Object.fromEntries(
+        Object.entries(schema.properties)
+          .filter(isSchemaEntry)
+          .map(([name, prop]) => [name, mapSchema(prop)]))
+      : undefined,
+    additionalProperties: typeof schema.additionalProperties === 'object'
+      ? mapSchema(schema.additionalProperties)
+      : schema.additionalProperties,
+  }
+
+  if (schema.type === 'array') {
+    return <OpenApi3.ArraySchemaObject>{
+      type: schema.type,
+      items: schema.anyOf?.filter(isSchema).map(mapSchema),
+      ...base,
+    }
+  }
+
+  return <OpenApi3.NonArraySchemaObject>{
+    // OpenApi 3.0.x doesn't support null type value, so map null type to undefined and add nullable: true property
+    type: schema.type === 'null' ? undefined : schema.type,
+    ...base,
+    nullable: schema.type === 'null' ? true : undefined,
+  }
+
+  function isSchema(schema: Schema | boolean): schema is Schema {
+    return typeof schema === "object";
+  }
+
+  function isSchemaEntry(entry: [string, Schema | boolean]): entry is [string, Schema] {
+    return isSchema(entry[1]);
+  }
+}
 
 const printer = ts.createPrinter();
 function printNode(node: ts.Node, hint?: ts.EmitHint, sourceFile?: ts.SourceFile): string {
