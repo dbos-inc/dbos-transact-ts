@@ -389,7 +389,13 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
-    return func(this.knex as C, ...args);
+    const result = await this.knex.transaction<R>(
+      async (transactionClient: Knex.Transaction) => {
+        return await func(transactionClient as unknown as C, ...args);
+      },
+      { isolationLevel: "read committed", readOnly : true }
+    );
+    return result;
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
