@@ -1,12 +1,26 @@
-// import { PrismaClient, testkv } from "@prisma/client";
-import { EntityManager } from "typeorm";
+import request from "supertest";
+
+import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
+import { EntityManager, Unique } from "typeorm";
+
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTestingRuntime, OperonTransaction, OrmEntities, TransactionContext } from "../src";
+import {
+   OperonTestingRuntime,
+   OperonTransaction,
+   OrmEntities,
+   TransactionContext,
+   Authentication,
+   MiddlewareContext,
+   GetApi,
+   HandlerContext,
+   RequiredRole,
+   PostApi,
+} from "../src";
 import { OperonConfig } from "../src/operon";
 import { v1 as uuidv1 } from "uuid";
 import { UserDatabaseName } from "../src/user_database";
-import { Entity, Column, PrimaryColumn } from "typeorm";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { OperonNotAuthorizedError } from "../src/error";
 
 /**
  * Funtions used in tests.
@@ -94,5 +108,100 @@ describe("typeorm-tests", () => {
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaoovalue");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaoovalue");
     expect(globalCnt).toBeGreaterThanOrEqual(1);
+  });
+});
+
+@Entity()
+@Unique("onlyone", ["username"])
+export class User {
+  @PrimaryGeneratedColumn('uuid')
+  id: string | undefined = undefined;
+
+  @Column()
+  username: string = "user";
+}
+
+@OrmEntities([User])
+@Authentication(UserManager.authMiddlware)
+class UserManager {
+  @OperonTransaction()
+  @PostApi('/register')
+  static async createUser(txnCtxt: TestTransactionContext, uname: string) {
+    const u: User = new User();
+    u.username = uname;
+    const res = await txnCtxt.client.save(u);
+    return res;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  @GetApi('/hello')
+  @RequiredRole(['user'])
+  static async hello(hCtxt: HandlerContext) {
+    return {messge: "hello "+hCtxt.authenticatedUser};
+  }
+
+  static async authMiddlware(ctx: MiddlewareContext) {
+    const cfg = ctx.getConfig<string>("shouldExist", "does not exist");
+    if (cfg !== "exists") {
+      throw Error("Auth is misconfigured.");
+    }
+    if (!ctx.requiredRole || !ctx.requiredRole.length) {
+      return;
+    }
+    const {user} = ctx.koaContext.query;
+    if (!user) {
+      throw new OperonNotAuthorizedError("User not provided", 401);
+    }
+    const u = await ctx.query(
+      (dbClient: EntityManager, uname: string) => {
+        return dbClient.findOneBy(User, {username: uname});
+      }, user as string
+      );
+
+    if (!u) {
+      throw new OperonNotAuthorizedError("User does not exist", 403);
+    }
+    ctx.logger.info(`Allowed in user: ${u.username}`);
+    return {
+      authenticatedUser: u.username,
+      authenticatedRoles: ["user"],
+    };
+  }
+}
+
+describe("typeorm-auth-tests", () => {
+  let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
+
+  beforeAll(async () => {
+    config = generateOperonTestConfig(UserDatabaseName.TYPEORM);
+    await setupOperonTestDb(config);
+  });
+
+  beforeEach(async () => {
+    globalCnt = 0;
+    testRuntime = await createInternalTestRuntime([UserManager], config);
+    await testRuntime.dropUserSchema();
+    await testRuntime.createUserSchema();
+  });
+
+  afterEach(async () => {
+    await testRuntime.destroy();
+  });
+
+  test("auth-typeorm", async () => {
+    // No user name
+    const response1 = await request(testRuntime.getHandlersCallback()).get("/hello");
+    expect(response1.statusCode).toBe(401);
+
+    // User name doesn't exist
+    const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    expect(response2.statusCode).toBe(403);
+
+    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    expect(response3.statusCode).toBe(200);
+
+    const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    expect(response4.statusCode).toBe(200);
   });
 });

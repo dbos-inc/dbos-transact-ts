@@ -2,13 +2,23 @@ import Koa from "koa";
 import { OperonClassRegistration, OperonRegistrationDefaults, getOrCreateOperonClassRegistration } from "../decorators";
 import { OperonUndefinedDecoratorInputError } from "../error";
 
+import { UserDatabaseClient } from "../user_database";
+
+import { Span } from "@opentelemetry/sdk-trace-base";
+import { Logger as OperonLogger } from "../telemetry/logs";
+
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
-export class MiddlewareContext {
-  constructor(
-    readonly koaContext: Koa.Context,
-    readonly name: string, // Method (handler, transaction, workflow) name
-    readonly requiredRole: string[], // Roles required for the invoked Operon operation, if empty perhaps auth is not required
-  ) { }
+export interface MiddlewareContext {
+  readonly koaContext: Koa.Context;
+  readonly name: string; // Method (handler, transaction, workflow) name
+  readonly requiredRole: string[]; // Roles required for the invoked Operon operation, if empty perhaps auth is not required
+
+  readonly logger: OperonLogger; // Logger, for logging from middleware
+  readonly span: Span; // Existing span
+
+  getConfig<T>(key: string, deflt: T | undefined) : T | undefined; // Access to configuration information
+
+  query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, ...args: T) => Promise<R>, ...args: T): Promise<R>;
 }
 
 /**

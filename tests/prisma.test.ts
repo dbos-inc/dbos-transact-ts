@@ -1,6 +1,20 @@
+import request from "supertest";
+
 import { PrismaClient, testkv } from "@prisma/client";
 import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTestingRuntime, OperonTransaction, TransactionContext } from "../src";
+import {
+  OperonTestingRuntime, OperonTransaction, TransactionContext,
+  Authentication,
+  MiddlewareContext,
+  GetApi,
+  HandlerContext,
+  RequiredRole,
+  PostApi,
+} from "../src";
+import {
+  OperonNotAuthorizedError,
+} from "../src/error";
+
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
@@ -38,7 +52,7 @@ class PrismaTestClass {
   }
 
   @OperonTransaction({ readOnly: true })
-  static async readTxn(txnCtxt: TestTransactionContext, id: string) {
+  static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
     await sleep(1);
     globalCnt += 1;
     return id;
@@ -113,5 +127,98 @@ describe("prisma-tests", () => {
     const errorResult = results.find((result) => result.status === "rejected");
     const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult).reason as PrismaClientKnownRequestError;
     expect((err as unknown as PrismaPGError).meta.code).toBe("23505");
+  });
+});
+
+const userTableName = 'operon_test_user';
+
+@Authentication(PUserManager.authMiddlware)
+class PUserManager {
+  @OperonTransaction()
+  @PostApi('/register')
+  static async createUser(txnCtxt: TestTransactionContext, uname: string) {
+    const res = await txnCtxt.client.operon_test_user.create({
+      data: {
+        id: 1234,
+        username: uname,
+      },
+    });
+    return res;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  @GetApi('/hello')
+  @RequiredRole(['user'])
+  static async hello(hCtxt: HandlerContext) {
+    return {messge: "hello "+hCtxt.authenticatedUser};
+  }
+
+  static async authMiddlware(ctx: MiddlewareContext) {
+    const cfg = ctx.getConfig<string>("shouldExist", "does not exist");
+    if (cfg !== "exists") {
+      throw Error("Auth is misconfigured.");
+    }
+    if (!ctx.requiredRole || !ctx.requiredRole.length) {
+      return;
+    }
+    const {user} = ctx.koaContext.query;
+    if (!user) {
+      throw new OperonNotAuthorizedError("User not provided", 401);
+    }
+    const u = await ctx.query(
+      (dbClient: PrismaClient, uname: string) => {
+        return dbClient.operon_test_user.findFirst({
+          where: {
+            username: uname,
+          },
+        });
+      }, user as string
+      );
+
+    if (!u) {
+      throw new OperonNotAuthorizedError("User does not exist", 403);
+    }
+    ctx.logger.info(`Allowed in user: ${u.username}`);
+    return {
+      authenticatedUser: u.username,
+      authenticatedRoles: ["user"],
+    };
+  }
+}
+
+describe("prisma-auth-tests", () => {
+  let config: OperonConfig;
+  let testRuntime: OperonTestingRuntime;
+
+  beforeAll(async () => {
+    config = generateOperonTestConfig(UserDatabaseName.PRISMA);
+    await setupOperonTestDb(config);
+  });
+
+  beforeEach(async () => {
+    testRuntime = await createInternalTestRuntime([PUserManager], config);
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
+  });
+
+  afterEach(async () => {
+    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await testRuntime.destroy();
+  });
+
+  test("auth-prisma", async () => {
+    // No user name
+    const response1 = await request(testRuntime.getHandlersCallback()).get("/hello");
+    expect(response1.statusCode).toBe(401);
+
+    // User name doesn't exist
+    const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    expect(response2.statusCode).toBe(403);
+
+    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    expect(response3.statusCode).toBe(200);
+
+    const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    expect(response4.statusCode).toBe(200);
   });
 });
