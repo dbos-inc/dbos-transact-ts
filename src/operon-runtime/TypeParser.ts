@@ -39,6 +39,7 @@ export class TypeParser {
   readonly #program: ts.Program;
   readonly #checker: ts.TypeChecker;
   readonly #diags = new Array<ts.Diagnostic>();
+  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
 
   constructor(program: ts.Program) {
     this.#program = program;
@@ -51,10 +52,10 @@ export class TypeParser {
 
   static parse(program: ts.Program): readonly ClassInfo[] | undefined {
     const parser = new TypeParser(program);
-    return parser.#parse();
+    return parser.parse();
   }
 
-  #parse(): readonly ClassInfo[] | undefined {
+  parse(): readonly ClassInfo[] | undefined {
     const classes = new Array<ClassInfo>();
     for (const file of this.#program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;

@@ -38,11 +38,12 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
-class OpenApiGenerator {
+export class OpenApiGenerator {
   readonly #checker: ts.TypeChecker;
   readonly #schemaGenerator: SchemaGenerator;
   readonly #schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
   readonly #diags = new Array<ts.Diagnostic>();
+  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
 
   constructor(readonly program: ts.Program) {
     this.#checker = program.getTypeChecker();
