@@ -163,6 +163,7 @@ class UserManager {
     if (!u) {
       throw new OperonNotAuthorizedError("User does not exist", 403);
     }
+    ctx.logger.info(`Allowed in user: ${u.username}`);
     return {
       authenticatedUser: u.username,
       authenticatedRoles: ["user"],
