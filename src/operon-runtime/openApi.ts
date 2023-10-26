@@ -395,8 +395,16 @@ async function findPackageInfo(entrypoint: string): Promise<{ name: string, vers
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const name = packageJson.name as string ?? "unknown";
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const version = packageJson.version as string ?? "unknown";
-      return { name, version };
+      const version = packageJson.version as string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const isPrivate = packageJson.private as boolean | undefined ?? false;
+
+      return {
+        name,
+        version: version
+          ? version
+          : isPrivate ? "private" : "unknown"
+      };
     } catch (error) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       if ((error as any).code !== 'ENOENT') throw error;
