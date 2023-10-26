@@ -4,6 +4,8 @@ import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from 
 import { APITypes, ArgSources } from '../httpServer/handler';
 import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config } from 'ts-json-schema-generator';
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 
@@ -104,7 +106,7 @@ class OpenApiGenerator {
     this.#schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
   }
 
-  generate(classes: readonly ClassInfo[]): OpenApi3.Document {
+  generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document {
     const handlers = classes
       .flatMap(c => c.methods)
       .map(method => {
@@ -118,11 +120,7 @@ class OpenApiGenerator {
 
     const openApi: OpenApi3.Document = {
       openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
-      info: {
-        // TODO: Where to get this info from? package.json?
-        title: "Operon API",
-        version: "1.0.0",
-      },
+      info: { title, version },
       paths: Object.fromEntries(paths),
       components: {
         schemas: Object.fromEntries(this.#schemaMap)
@@ -388,10 +386,32 @@ function mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceOb
   }
 }
 
-export function generateOpenApi(program: ts.Program, logger?: WinstonLogger): OpenApi3.Document {
+async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string}> {
+  let dirname = path.dirname(entrypoint);
+  while (dirname !== '/') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const packageJson = JSON.parse(await fs.readFile(path.join(dirname, 'package.json'), { encoding: 'utf-8' }));
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const name = packageJson.name as string ?? "unknown";
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const version = packageJson.version as string ?? "unknown";
+      return { name, version };
+    } catch (error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      if ((error as any).code !== 'ENOENT') throw error;
+    }
+    dirname = path.dirname(dirname);
+  }
+  return { name: "unknown", version: "unknown" };
+}
+
+export async function generateOpenApi(entrypoint: string, logger?: WinstonLogger): Promise<OpenApi3.Document | undefined> {
   logger ??= createGlobalLogger();
 
+  const { name, version } = await findPackageInfo(entrypoint);
+  const program = ts.createProgram([entrypoint], {});
   const classes = TypeParser.parse(program, logger);
   const generator = new OpenApiGenerator(program, logger);
-  return generator.generate(classes);
+  return generator.generate(classes, name, version);
 }
