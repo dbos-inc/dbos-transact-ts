@@ -8,7 +8,6 @@ import { OperonCloudCredentials, operonEnvPath } from "./login";
 export async function deploy(appName: string, host: string) {
   const logger = createGlobalLogger();
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const userCredentials = JSON.parse(fs.readFileSync(`./${operonEnvPath}/credentials`).toString("utf-8")) as OperonCloudCredentials;
   const userName = userCredentials.userName;
   const userToken = userCredentials.token.replace(/\r|\n/g, ''); // Trim the trailing /r /n.
@@ -44,7 +43,7 @@ export async function deploy(appName: string, host: string) {
     logger.info(`Successfully deployed: ${appName}`);
     logger.info(`${appName} ID: ${uuid}`);
   } catch (e) {
-    if (axios.isAxiosError(e)) {
+    if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
     } else {
       logger.error(`failed to deploy application ${appName}: ${(e as Error).message}`);

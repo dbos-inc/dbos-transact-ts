@@ -3,6 +3,8 @@
 import { deploy } from "./deploy";
 import { Command } from 'commander';
 import { login } from "./login";
+import { registerUser } from "./register";
+import { deleteApp } from "./delete";
 
 const program = new Command();
 
@@ -26,15 +28,34 @@ program
 program
   .command('deploy')
   .description('Deploy an application to the cloud')
-  .option('-n, --name <string>', 'Specify the app name')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { name: string, host: string }) => {
-    if (!options.name) {
-      console.error('Error: the --name option is required.');
-      return;
-    }
     await deploy(options.name, options.host);
   });
+
+program
+  .command('register')
+  .description('Register a user and log in Operon cloud')
+  .requiredOption('-u, --userName <string>', 'User name', )
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .action(async (options: { userName: string, host: string }) => {
+    const success = await registerUser(options.userName, options.host);
+    // Then, log in as the user.
+    if (success) {
+      login(options.userName);
+    }
+  });
+
+program
+  .command('delete')
+  .description('Delete a previously deployed application')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .action(async (options: { name: string, host: string }) => {
+    await deleteApp(options.name, options.host);
+  });
+
 
 program.parse(process.argv);
 
