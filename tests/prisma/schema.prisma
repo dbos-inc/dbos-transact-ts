@@ -14,3 +14,8 @@ model testkv {
   id           String @id
   value        String
 }
+
+model operon_test_user {
+  id           Int @id
+  username     String
+}

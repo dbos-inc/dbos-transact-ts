@@ -1,5 +1,3 @@
-// import { PrismaClient, testkv } from "@prisma/client";
-
 import request from "supertest";
 
 import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
@@ -191,7 +189,7 @@ describe("typeorm-auth-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("simple-typeorm", async () => {
+  test("auth-typeorm", async () => {
     // No user name
     const response1 = await request(testRuntime.getHandlersCallback()).get("/hello");
     expect(response1.statusCode).toBe(401);
