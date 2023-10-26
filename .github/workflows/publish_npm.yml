@@ -1,0 +1,49 @@
+name: Publish current branch to npm
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.1.0
+        with:
+          fetch-depth: 0 # fetch-depth 0 needed for NBGV
+      - name: Use Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Nerdbank.GitVersioning
+        id: nbgv
+        uses: dotnet/nbgv@v0.4.1
+        with:
+          stamp: package.json
+      - run: npm ci
+      - run: npm run build
+      - name: Publish release to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmrelease
+        # boolean properties from NBGV step appears to be converted into *capitalized* strings
+        # so explicitly string compare PublicRelease output value
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
+        with:
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: ${{ endsWith(steps.nbgv.outputs.NpmPackageVersion, steps.nbgv.outputs.PrereleaseVersion) && 'preview' || 'latest' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
+      - name: Publish test package to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmtest
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'False'}}
+        with:
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: 'test'
+      - if: ${{ steps.npmrelease.outputs.type }}
+        run: echo "Published a new release package!"
+      - if: ${{ steps.npmtest.outputs.type }}
+        run: echo "Published a new test package!"
+  
