@@ -22,6 +22,7 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
     },
     application: {
       counter: 3,
+      shouldExist: 'exists',
     },
     telemetry: {
       logs: {
