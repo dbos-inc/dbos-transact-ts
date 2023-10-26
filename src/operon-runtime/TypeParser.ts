@@ -1,5 +1,5 @@
 import * as ts from 'typescript';
-import { WinstonLogger } from "../telemetry/logs";
+import { createDiagnostic, diagResult } from './tsDiagUtil';
 
 export interface ClassInfo {
   readonly node: ts.ClassDeclaration;
@@ -29,6 +29,7 @@ export interface DecoratorInfo {
   name?: string;
   module?: string;
 }
+
 function isStaticMethod(node: ts.MethodDeclaration): boolean {
   const mods = node.modifiers ?? [];
   return mods.some(m => m.kind === ts.SyntaxKind.StaticKeyword);
@@ -37,17 +38,23 @@ function isStaticMethod(node: ts.MethodDeclaration): boolean {
 export class TypeParser {
   readonly #program: ts.Program;
   readonly #checker: ts.TypeChecker;
-  constructor(program: ts.Program, readonly log: WinstonLogger) {
+  readonly #diags = new Array<ts.Diagnostic>();
+
+  constructor(program: ts.Program) {
     this.#program = program;
     this.#checker = program.getTypeChecker();
   }
 
-  static parse(program: ts.Program, log: WinstonLogger): readonly ClassInfo[] {
-    const parser = new TypeParser(program, log);
+  #raise(message: string, node?: ts.Node): void {
+    this.#diags.push(createDiagnostic(message, { node }));
+  }
+
+  static parse(program: ts.Program): readonly ClassInfo[] | undefined {
+    const parser = new TypeParser(program);
     return parser.#parse();
   }
 
-  #parse(): readonly ClassInfo[] {
+  #parse(): readonly ClassInfo[] | undefined {
     const classes = new Array<ClassInfo>();
     for (const file of this.#program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;
@@ -70,7 +77,12 @@ export class TypeParser {
         }
       }
     }
-    return classes;
+
+    if (classes.length === 0) {
+      this.#diags.push(createDiagnostic(`no classes found in ${JSON.stringify(this.#program.getRootFileNames())}`, { category: ts.DiagnosticCategory.Warning }));
+    }
+
+    return diagResult(classes, this.#diags);
   }
 
   #getMethod(node: ts.MethodDeclaration): MethodInfo {
@@ -87,28 +99,31 @@ export class TypeParser {
     return { node, name, decorators, required };
   }
 
+  #getDecoratorIdentifier(node: ts.Decorator): { identifier: ts.Identifier; args: readonly ts.Expression[]; } | undefined {
+    if (ts.isCallExpression(node.expression)) {
+      if (ts.isIdentifier(node.expression.expression)) {
+        return { identifier: node.expression.expression, args: node.expression.arguments };
+      }
+      this.#raise(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`, node);
+    }
+
+    if (ts.isIdentifier(node.expression)) {
+      return { identifier: node.expression, args: [] };
+    }
+    this.#raise(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`, node);
+  }
+
   #getDecorators(node: ts.HasDecorators): DecoratorInfo[] {
 
     return (ts.getDecorators(node) ?? [])
       .map(node => {
-        const { identifier, args, } = getDecoratorIdentifier(node);
+        const decoratorIdentifier = this.#getDecoratorIdentifier(node);
+        if (!decoratorIdentifier) return undefined;
+        const { identifier, args } = decoratorIdentifier;
         const { name, module } = getImportSpecifier(identifier, this.#checker) ?? {};
-        return { node, identifier, name, module, args };
-      });
-
-    function getDecoratorIdentifier(node: ts.Decorator): { identifier: ts.Identifier; args: readonly ts.Expression[]; } {
-      if (ts.isCallExpression(node.expression)) {
-        if (ts.isIdentifier(node.expression.expression)) {
-          return { identifier: node.expression.expression, args: node.expression.arguments };
-        }
-        throw new Error(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`);
-      }
-
-      if (ts.isIdentifier(node.expression)) {
-        return { identifier: node.expression, args: [] };
-      }
-      throw new Error(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`);
-    }
+        return { node, identifier, name, module, args } as DecoratorInfo;
+      })
+      .filter((d): d is DecoratorInfo => !!d);
 
     function getImportSpecifier(node: ts.Node, checker: ts.TypeChecker): { name: string; module: string; } | undefined {
       const symbol = checker.getSymbolAtLocation(node);
