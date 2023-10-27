@@ -12,6 +12,15 @@
             "type": "node-terminal",
             "cwd": "${workspaceFolder}/examples/hello",
             "envFile": "${workspaceFolder}/examples/hello/.env"
-        }
+        },
+        {
+            "command": "npx operon openapi ${workspaceFolder}/examples/hello/src/operations.ts",
+            "name": "Generate Example",
+            "preLaunchTask": "build example",
+            "request": "launch",
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}/examples/hello",
+        },
+        
     ]
 }
