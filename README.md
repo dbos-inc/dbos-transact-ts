@@ -22,7 +22,7 @@ Our documentation has the following sections:
 
 - [Getting Started](https://docs.dbos.dev/category/getting-started)
 - [Tutorials](https://docs.dbos.dev/category/tutorials)
-- [API Reference](https://docs.dbos.dev/category/api-reference)
+- [API Reference](https://docs.dbos.dev/category/reference)
 - [Concepts and Explanations](https://docs.dbos.dev/category/concepts-and-explanations)
 
 ## Community
