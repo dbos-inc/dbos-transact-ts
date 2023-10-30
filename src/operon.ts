@@ -444,8 +444,9 @@ export class Operon {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
-        if (ro.requiredRole && ro.requiredRole.length > 0) {
-          this.logger.info("        Roles: " + JSON.stringify(ro.requiredRole));
+        const roles = ro.getRequiredRoles();
+        if (roles.length > 0) {
+          this.logger.info("        Roles: " + JSON.stringify(roles));
         }
       }
     });
