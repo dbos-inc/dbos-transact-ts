@@ -240,7 +240,7 @@ export class Operon {
         await m.origFunction(new InitContext(this));
       }
 
-    } 
+    }
 
     this.logger.info("Operon initialized");
   }
@@ -443,7 +443,10 @@ export class Operon {
     this.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        this.logger.info("    " + ro.apiType + "  :  " + ro.apiURL);
+        this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
+        if (ro.requiredRole && ro.requiredRole.length > 0) {
+          this.logger.info("        Roles: " + JSON.stringify(ro.requiredRole));
+        }
       }
     });
   }
