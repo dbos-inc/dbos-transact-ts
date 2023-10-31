@@ -176,11 +176,12 @@ export class OperonHttpServer {
                 st = 400;  // Set to 400: client-side error.
               }
               koaCtxt.status = st;
+              koaCtxt.message = e.message;
               koaCtxt.body = {
                 status: st,
                 message: e.message,
                 details: e,
-              }
+              };
             } else {
               // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
               // using stringify() will not produce a pretty output, because our format function uses stringify() too.
