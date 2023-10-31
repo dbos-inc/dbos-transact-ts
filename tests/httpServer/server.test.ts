@@ -22,6 +22,7 @@ import { OperonConfig } from "../../src/operon";
 import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
 import { PoolClient } from "pg";
 import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { IncomingMessage } from "http";
 
 describe("httpserver-tests", () => {
   const testTableName = "operon_test_kv";
@@ -98,10 +99,18 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
+  // This feels unclean, but supertest doesn't expose the error message the people we want. See:
+  //   https://github.com/ladjs/supertest/issues/95
+  interface Res {
+    res: IncomingMessage;
+  }
+
   test("response-error", async () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
+    expect((response as any as Res).res.statusMessage).toBe("customize error");
     expect(response.body.message).toBe("customize error");
+    console.log(response);
   });
 
   test("datavalidation-error", async () => {
