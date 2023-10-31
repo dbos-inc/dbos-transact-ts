@@ -108,7 +108,7 @@ describe("httpserver-tests", () => {
   test("response-error", async () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
     expect(response.statusCode).toBe(503);
-    expect((response as any as Res).res.statusMessage).toBe("customize error");
+    expect((response as unknown as Res).res.statusMessage).toBe("customize error");
     expect(response.body.message).toBe("customize error");
     console.log(response);
   });
