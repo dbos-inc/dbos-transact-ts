@@ -1,18 +1,14 @@
 import axios from "axios";
-import fs from "fs";
 import { createGlobalLogger } from "../telemetry/logs";
-import { OperonCloudCredentials, operonEnvPath } from "./login";
+import { getCloudCredentials } from "./utils";
 
 export async function deleteApp(appName: string, host: string) {
   const logger = createGlobalLogger();
-
-  const userCredentials = JSON.parse(fs.readFileSync(`./${operonEnvPath}/credentials`).toString("utf-8")) as OperonCloudCredentials;
-  const userName = userCredentials.userName;
-  const userToken = userCredentials.token.replace(/\r|\n/g, ""); // Trim the trailing /r /n.
-  const bearerToken = "Bearer " + userToken;
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`http://${host}:8080/${userName}/application/${appName}`, {
+    await axios.delete(`http://${host}:8080/${userCredentials.userName}/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,

@@ -3,18 +3,16 @@ import { execSync } from "child_process";
 import fs from "fs";
 import FormData from "form-data";
 import { createGlobalLogger } from "../telemetry/logs";
-import { OperonCloudCredentials, operonEnvPath } from "./login";
+import { getCloudCredentials } from "./utils";
 
 export async function deploy(appName: string, host: string) {
   const logger = createGlobalLogger();
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
 
-  const userCredentials = JSON.parse(fs.readFileSync(`./${operonEnvPath}/credentials`).toString("utf-8")) as OperonCloudCredentials;
-  const userName = userCredentials.userName;
-  const userToken = userCredentials.token.replace(/\r|\n/g, ''); // Trim the trailing /r /n.
-  const bearerToken = "Bearer " + userToken;
   try {
     const register = await axios.put(
-      `http://${host}:8080/${userName}/application`,
+      `http://${host}:8080/${userCredentials.userName}/application`,
       {
         name: appName,
       },
@@ -34,7 +32,7 @@ export async function deploy(appName: string, host: string) {
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`operon_deploy/${uuid}.zip`));
 
-    await axios.post(`http://${host}:8080/${userName}/application/${appName}`, formData, {
+    await axios.post(`http://${host}:8080/${userCredentials.userName}/application/${appName}`, formData, {
       headers: {
         ...formData.getHeaders(),
         Authorization: bearerToken,
