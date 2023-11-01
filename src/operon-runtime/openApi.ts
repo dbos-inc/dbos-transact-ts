@@ -68,13 +68,19 @@ export class OpenApiGenerator {
       // if the security name is not specified, manufacture a name using the class index as the prefix
       // JS class identifiers cannot start with a digit but OpenApi security scheme names can
       const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
-      const securityScheme = this.parseSecurityScheme(this.getOperonDecorator(cls, 'Authentication')?.args);
-      if (securityScheme) { this.#securitySchemeMap.set(securitySchemeName, securityScheme); }
-
+      const authDecorator = this.getOperonDecorator(cls, 'Authentication');
+      if (authDecorator) {
+        const securityScheme = this.parseSecurityScheme(authDecorator?.args);
+        if (securityScheme) {
+          this.#securitySchemeMap.set(securitySchemeName, securityScheme);
+        } else {
+          this.#raise(`Missing security scheme information for ${cls.name}`, authDecorator.node);
+        }
+      }
       const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]);
       cls.methods.forEach(method => {
         const http = this.getHttpInfo(method);
-        const path = this.generatePath(method, http, defaultRoles, securityScheme ? securitySchemeName : undefined);
+        const path = this.generatePath(method, http, defaultRoles, securitySchemeName);
         if (path) paths.push(path);
       })
     })
@@ -91,7 +97,7 @@ export class OpenApiGenerator {
     return diagResult(openApi, this.#diags);
   }
 
-  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
+  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string): [string, OpenApi3.PathItemObject] | undefined {
     if (!endpoint) return undefined;
     const { verb, path } = endpoint;
 
@@ -106,17 +112,17 @@ export class OpenApiGenerator {
     if (!response) return;
 
     const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles ?? [];
-    // if the method has required roles and the security scheme is specified, emit a security requirement field
-    const security = roles.length > 0 && securityScheme
-      ? [<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] }]
-      : undefined;
+    const security = new Array<OpenApi3.SecurityRequirementObject>();
+    if (roles.length > 0) {
+      security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
+    }
 
     const operation: OpenApi3.OperationObject = {
       operationId: method.name,
       responses: Object.fromEntries([response]),
       parameters,
       requestBody,
-      security,
+      security: security.length > 0 ? security : undefined,
     }
 
     // validate all path parameters have matching parameters with URL ArgSource
@@ -459,7 +465,7 @@ export class OpenApiGenerator {
   parseStringLiteralArray(node: ts.Expression | undefined): string[] | undefined {
     if (!node) return undefined;
     if (!ts.isArrayLiteralExpression(node)) {
-      this.#raise(`Unexpected node type: ${ts.SyntaxKind[node.kind]}`, node);
+      this.#raise(`Expected Array Literal node, received: ${ts.SyntaxKind[node.kind]}`, node);
       return;
     }
 
@@ -468,7 +474,7 @@ export class OpenApiGenerator {
       if (ts.isStringLiteral(exp)) {
         values.push(exp.getText());
       } else {
-        this.#raise(`Unexpected node type: ${ts.SyntaxKind[exp.kind]}`, exp);
+        this.#raise(`Expected String Literal node, received: ${ts.SyntaxKind[exp.kind]}`, exp);
       }
     }
     return values;
@@ -476,9 +482,76 @@ export class OpenApiGenerator {
 
   parseSecurityScheme(args?: readonly ts.Expression[]): SecurityScheme | undefined {
     if (!args || args.length < 2) return undefined;
+    const arg = args[1];
+    if (!ts.isObjectLiteralExpression(arg)) {
+      this.#raise(`Expected Object Literal node, received: ${ts.SyntaxKind[arg.kind]}`, arg);
+      return undefined;
+    }
 
-    // TODO: handle this
-    this.#raise(`SecuritySchemeObject parsing not implemented`, args[1]);
+    const map = new Map<string, string>();
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop)) {
+        this.#raise(`Expected Property Assignment node, received: ${ts.SyntaxKind[prop.kind]}`, prop);
+        continue;
+      }
+
+      if (!ts.isStringLiteral(prop.initializer)) {
+        this.#raise(`Expected String Literal node, received: ${ts.SyntaxKind[prop.initializer.kind]}`, prop.initializer);
+        continue;
+      }
+
+      map.set(prop.name.getText(), prop.initializer.text);
+    }
+
+    const type = map.get("type");
+    const description = map.get("description");
+    if (!type) {
+      this.#raise(`missing type property`, arg);
+      return;
+    }
+
+    if (type === 'http') {
+      const scheme = map.get("scheme");
+      if (!scheme) {
+        this.#raise(`missing scheme property`, arg);
+        return;
+      }
+      const bearerFormat = map.get("bearerFormat");
+
+      return <OpenApi3.HttpSecurityScheme>{ type, scheme, bearerFormat, description };
+    }
+
+    if (type === 'apiKey') {
+      const name = map.get("name");
+      if (!name) {
+        this.#raise(`missing name property`, arg);
+        return;
+      }
+      const $in = map.get("id");
+      if (!$in) {
+        this.#raise(`missing in property`, arg);
+        return;
+      }
+
+      return <OpenApi3.ApiKeySecurityScheme>{ type, name, in: $in, description };
+    }
+
+    if (type === "openIdConnect") {
+      const openIdConnectUrl = map.get("openIdConnectUrl");
+      if (!openIdConnectUrl) {
+        this.#raise(`missing openIdConnectUrl property`, arg);
+        return;
+      }
+      return <OpenApi3.OpenIdSecurityScheme>{ type, openIdConnectUrl, description };
+    }
+
+
+    if (type === 'oauth2') {
+      this.#raise(`OAuth2 Security Scheme not supported`, arg);
+    } else {
+      this.#raise(`unrecognized Security Scheme type ${type}`, arg);
+    }
+    return;
   }
 }
 
