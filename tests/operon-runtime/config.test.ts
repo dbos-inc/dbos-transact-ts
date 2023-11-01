@@ -24,9 +24,9 @@ describe("operon-config", () => {
       application:
         payments_url: 'http://somedomain.com/payment'
         foo: \${FOO}
-        bar: \$BAR
+        bar: \${BAR}
         nested:
-            baz: \$BAZ
+            baz: \${BAZ}
             a:
               - 1
               - 2
