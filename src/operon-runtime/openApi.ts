@@ -42,7 +42,9 @@ export class OpenApiGenerator {
   readonly #checker: ts.TypeChecker;
   readonly #schemaGenerator: SchemaGenerator;
   readonly #schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
+  readonly #securitySchemeMap: Map<string, OpenApi3.SecuritySchemeObject | OpenApi3.ReferenceObject> = new Map();
   readonly #diags = new Array<ts.Diagnostic>();
+
   get diags() { return this.#diags as readonly ts.Diagnostic[]; }
 
   constructor(readonly program: ts.Program) {
@@ -61,28 +63,31 @@ export class OpenApiGenerator {
   }
 
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
-    const handlers = classes
-      .flatMap(c => c.methods)
-      .map(method => {
-        const http = this.getHttpInfo(method);
-        return http ? [method, http] as [MethodInfo, HttpEndpointInfo] : undefined;
-      })
-      .filter(isValid);
+    const paths = new Array<[string, OpenApi3.PathItemObject]>();
+    for (const cls of classes) {
+      const authDec = this.getOperonDecorator(cls, 'Authentication');
+      const defRoleDec = this.getOperonDecorator(cls, 'DefaultRequiredRole');
 
-    const paths = handlers.map(h => this.generatePath(h)).filter(isValid);
+      for (const method of cls.methods) {
+        const http = this.getHttpInfo(method);
+        const path = http ? this.generatePath(cls, method, http) : undefined;
+        if (path) paths.push(path);
+      }
+    }
 
     const openApi: OpenApi3.Document = {
       openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
       info: { title, version },
       paths: Object.fromEntries(paths),
       components: {
-        schemas: Object.fromEntries(this.#schemaMap)
+        schemas: Object.fromEntries(this.#schemaMap),
+        securitySchemes: Object.fromEntries(this.#securitySchemeMap)
       }
     }
     return diagResult(openApi, this.#diags);
   }
 
-  generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, OpenApi3.PathItemObject] | undefined {
+  generatePath(_cls: ClassInfo, method: MethodInfo, { verb, path }: HttpEndpointInfo): [string, OpenApi3.PathItemObject] | undefined {
     const sourcedParams = method.parameters
       // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
       .slice(1)

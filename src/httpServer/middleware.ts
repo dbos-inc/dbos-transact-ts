@@ -6,6 +6,7 @@ import { UserDatabaseClient } from "../user_database";
 
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as OperonLogger } from "../telemetry/logs";
+import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
 export interface MiddlewareContext {
@@ -16,7 +17,7 @@ export interface MiddlewareContext {
   readonly logger: OperonLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
 
-  getConfig<T>(key: string, deflt: T | undefined) : T | undefined; // Access to configuration information
+  getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
 
   query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, ...args: T) => Promise<R>, ...args: T): Promise<R>;
 }
@@ -42,6 +43,8 @@ export interface OperonMiddlewareDefaults extends OperonRegistrationDefaults {
   authMiddleware?: OperonHttpAuthMiddleware;
 }
 
+
+
 export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends OperonClassRegistration<CT> implements OperonMiddlewareDefaults {
   authMiddleware?: OperonHttpAuthMiddleware;
   koaMiddlewares?: Koa.Middleware[];
@@ -58,7 +61,9 @@ export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown
 /**
  * Define an authentication function for each endpoint in this class.
  */
-export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function Authentication(authMiddleware: OperonHttpAuthMiddleware, securityScheme?: OpenApi3.SecuritySchemeObject) {
   if (authMiddleware === undefined) {
     throw new OperonUndefinedDecoratorInputError("Authentication");
   }
