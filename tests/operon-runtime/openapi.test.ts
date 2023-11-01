@@ -69,39 +69,47 @@ describe("OpenApiGenerator", () => {
 const helloExampleExpected = {
   "openapi": "3.0.3",
   "info": {
-      "title": "operon-hello",
-      "version": "0.0.1"
+    "title": "operon-hello",
+    "version": "0.0.1"
   },
   "paths": {
-      "/greeting/{user}": {
-          "get": {
-              "operationId": "helloTransaction",
-              "responses": {
-                  "200": {
-                      "description": "Ok",
-                      "content": {
-                          "application/json": {
-                              "schema": {
-                                  "type": "string"
-                              }
-                          }
-                      }
-                  }
-              },
-              "parameters": [
-                  {
-                      "name": "user",
-                      "in": "path",
-                      "required": true,
-                      "schema": {
-                          "type": "string"
-                      }
-                  }
-              ]
+    "/greeting/{user}": {
+      "get": {
+        "operationId": "helloTransaction",
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
+        },
+        "parameters": [
+          {
+            "name": "user",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operon-workflowuuid",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
+    }
   },
   "components": {
-      "schemas": {}
+    "schemas": {}
   }
 };
