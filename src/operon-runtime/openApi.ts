@@ -107,6 +107,15 @@ export class OpenApiGenerator {
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
     const parameters = this.generateParameters(sourcedParams);
+
+    // add optional parameter for Operon workflow UUID header
+    parameters.push({
+      name: 'operon-workflowuuid',
+      in: 'header',
+      required: false,
+      schema: { type: 'string' },
+    });
+
     const requestBody = this.generateRequestBody(sourcedParams);
     const response = this.generateResponse(method);
     if (!response) return;
@@ -179,8 +188,8 @@ export class OpenApiGenerator {
     }];
   }
 
-  generateParameters(sourcedParams: [ParameterInfo, ArgSources][]): OpenApi3.ParameterObject[] | undefined {
-    if (sourcedParams.length === 0) return undefined;
+  generateParameters(sourcedParams: [ParameterInfo, ArgSources][]): OpenApi3.ParameterObject[] {
+    if (sourcedParams.length === 0) return [];
     return sourcedParams
       // QUERY and URL parameters are specified in the Operation.parameters field
       .filter(([_, source]) => source === ArgSources.QUERY || source === ArgSources.URL)

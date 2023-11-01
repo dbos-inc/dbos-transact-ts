@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { deleteApp } from "./delete";
+import { getAppLogs } from "./monitor";
 
 const program = new Command();
 
@@ -54,6 +55,15 @@ program
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .action(async (options: { name: string, host: string }) => {
     await deleteApp(options.name, options.host);
+  });
+
+program
+  .command('logs')
+  .description('Print the microVM logs of a deployed application')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .action(async (options: { name: string, host: string }) => {
+    await getAppLogs(options.name, options.host);
   });
 
 
