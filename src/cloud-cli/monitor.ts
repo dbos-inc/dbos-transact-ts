@@ -2,25 +2,26 @@ import axios from "axios";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 
-export async function deleteApp(appName: string, host: string) {
+export async function getAppLogs(appName: string, host: string) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`http://${host}:8080/${userCredentials.userName}/application/${appName}`, {
+    const res = await axios.get(`http://${host}:8080/${userCredentials.userName}/logs/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
       },
     });
 
-    logger.info(`Successfully deleted application: ${appName}`);
+    logger.info(`Successfully retrieved logs of application: ${appName}`);
+    logger.info(res.data)
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to delete application ${appName}: ${e.response?.data}`);
+      logger.error(`failed to retrieve logs of application ${appName}: ${e.response?.data}`);
     } else {
-      logger.error(`failed to delete application ${appName}: ${(e as Error).message}`);
+      logger.error(`failed to retrieve logs of application ${appName}: ${(e as Error).message}`);
     }
   }
 }
