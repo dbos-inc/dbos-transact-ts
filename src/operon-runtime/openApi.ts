@@ -38,6 +38,16 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
+const workflowUuidParamName = "operonWorkflowUUID";
+const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
+const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
+  name: 'operon-workflowuuid',
+  in: 'header',
+  required: false,
+  description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+  schema: { type: 'string' },
+}] as const;
+
 export class OpenApiGenerator {
   readonly #checker: ts.TypeChecker;
   readonly #schemaGenerator: SchemaGenerator;
@@ -76,7 +86,8 @@ export class OpenApiGenerator {
       info: { title, version },
       paths: Object.fromEntries(paths),
       components: {
-        schemas: Object.fromEntries(this.#schemaMap)
+        schemas: Object.fromEntries(this.#schemaMap),
+        parameters: Object.fromEntries([workflowUuidParam]),
       }
     }
     return diagResult(openApi, this.#diags);
@@ -88,15 +99,10 @@ export class OpenApiGenerator {
       .slice(1)
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
-    const parameters = this.generateParameters(sourcedParams);
+    const parameters: Array<OpenApi3.ReferenceObject | OpenApi3.ParameterObject> = this.generateParameters(sourcedParams);
 
     // add optional parameter for Operon workflow UUID header
-    parameters.push({
-      name: 'operon-workflowuuid',
-      in: 'header',
-      required: false,
-      schema: { type: 'string' },
-    });
+    parameters.push(workflowUuidRef);
 
     const requestBody = this.generateRequestBody(sourcedParams);
     const response = this.generateResponse(method);
