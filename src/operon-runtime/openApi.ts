@@ -64,16 +64,20 @@ export class OpenApiGenerator {
 
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
     const paths = new Array<[string, OpenApi3.PathItemObject]>();
-    for (const cls of classes) {
-      const authDec = this.getOperonDecorator(cls, 'Authentication');
-      const defRoleDec = this.getOperonDecorator(cls, 'DefaultRequiredRole');
+    classes.forEach((cls, index) => {
+      // if the security name is not specified, manufacture a name using the class index as the prefix
+      // JS class identifiers cannot start with a digit but OpenApi security scheme names can
+      const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
+      const securityScheme = this.parseSecurityScheme(this.getOperonDecorator(cls, 'Authentication')?.args);
+      if (securityScheme) { this.#securitySchemeMap.set(securitySchemeName, securityScheme); }
 
-      for (const method of cls.methods) {
+      const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]);
+      cls.methods.forEach(method => {
         const http = this.getHttpInfo(method);
-        const path = http ? this.generatePath(cls, method, http) : undefined;
+        const path = this.generatePath(method, http, defaultRoles, securityScheme ? securitySchemeName : undefined);
         if (path) paths.push(path);
-      }
-    }
+      })
+    })
 
     const openApi: OpenApi3.Document = {
       openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
@@ -87,7 +91,10 @@ export class OpenApiGenerator {
     return diagResult(openApi, this.#diags);
   }
 
-  generatePath(_cls: ClassInfo, method: MethodInfo, { verb, path }: HttpEndpointInfo): [string, OpenApi3.PathItemObject] | undefined {
+  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
+    if (!endpoint) return undefined;
+    const { verb, path } = endpoint;
+
     const sourcedParams = method.parameters
       // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
       .slice(1)
@@ -98,11 +105,18 @@ export class OpenApiGenerator {
     const response = this.generateResponse(method);
     if (!response) return;
 
+    const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles ?? [];
+    // if the method has required roles and the security scheme is specified, emit a security requirement field
+    const security = roles.length > 0 && securityScheme
+      ? [<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] }]
+      : undefined;
+
     const operation: OpenApi3.OperationObject = {
       operationId: method.name,
       responses: Object.fromEntries([response]),
       parameters,
       requestBody,
+      security,
     }
 
     // validate all path parameters have matching parameters with URL ArgSource
@@ -123,13 +137,13 @@ export class OpenApiGenerator {
     }
 
     // OpenAPI indicates path parameters with curly braces, but Operon uses colons
-    path = path.split('/')
+    const $path = path.split('/')
       .map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p)
       .join('/');
 
     switch (verb) {
-      case APITypes.GET: return [path, { get: operation }];
-      case APITypes.POST: return [path, { post: operation }];
+      case APITypes.GET: return [$path, { get: operation }];
+      case APITypes.POST: return [$path, { post: operation }];
     }
   }
 
@@ -442,8 +456,33 @@ export class OpenApiGenerator {
     }
   }
 
+  parseStringLiteralArray(node: ts.Expression | undefined): string[] | undefined {
+    if (!node) return undefined;
+    if (!ts.isArrayLiteralExpression(node)) {
+      this.#raise(`Unexpected node type: ${ts.SyntaxKind[node.kind]}`, node);
+      return;
+    }
+
+    const values = new Array<string>();
+    for (const exp of node.elements) {
+      if (ts.isStringLiteral(exp)) {
+        values.push(exp.getText());
+      } else {
+        this.#raise(`Unexpected node type: ${ts.SyntaxKind[exp.kind]}`, exp);
+      }
+    }
+    return values;
+  }
+
+  parseSecurityScheme(args?: readonly ts.Expression[]): SecurityScheme | undefined {
+    if (!args || args.length < 2) return undefined;
+
+    // TODO: handle this
+    this.#raise(`SecuritySchemeObject parsing not implemented`, args[1]);
+  }
 }
 
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
 
 async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string }> {
   let dirname = path.dirname(entrypoint);

@@ -58,12 +58,15 @@ export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown
 /* MIDDLEWARE CLASS DECORATORS */
 /////////////////////////////////
 
+// Note, OAuth2 is not supported yet.
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
+
 /**
  * Define an authentication function for each endpoint in this class.
+ * Optionally include security scheme information for OpenApi support
  */
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function Authentication(authMiddleware: OperonHttpAuthMiddleware, securityScheme?: OpenApi3.SecuritySchemeObject) {
+export function Authentication(authMiddleware: OperonHttpAuthMiddleware, securityScheme?: SecurityScheme) {
   if (authMiddleware === undefined) {
     throw new OperonUndefinedDecoratorInputError("Authentication");
   }
