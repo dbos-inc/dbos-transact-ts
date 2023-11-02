@@ -98,18 +98,23 @@ const helloExampleExpected = {
             }
           },
           {
-            "name": "operon-workflowuuid",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
+            "$ref": "#/components/parameters/operonWorkflowUUID"
           }
         ]
       }
     }
   },
   "components": {
-    "schemas": {}
+    "schemas": {},
+    "parameters": {
+      "operonWorkflowUUID": {
+        "name": "operon-workflowuuid",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    }
   }
 };
