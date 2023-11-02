@@ -7,6 +7,7 @@ import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as OperonLogger } from "../telemetry/logs";
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
+import { OperonContext } from "../context";
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
 export interface MiddlewareContext {
@@ -43,8 +44,6 @@ export interface OperonMiddlewareDefaults extends OperonRegistrationDefaults {
   authMiddleware?: OperonHttpAuthMiddleware;
 }
 
-
-
 export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends OperonClassRegistration<CT> implements OperonMiddlewareDefaults {
   authMiddleware?: OperonHttpAuthMiddleware;
   koaMiddlewares?: Koa.Middleware[];
@@ -58,15 +57,10 @@ export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown
 /* MIDDLEWARE CLASS DECORATORS */
 /////////////////////////////////
 
-// Note, OAuth2 is not supported yet.
-type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
-
 /**
  * Define an authentication function for each endpoint in this class.
- * Optionally include security scheme information for OpenApi support
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function Authentication(authMiddleware: OperonHttpAuthMiddleware, securityScheme?: SecurityScheme) {
+export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
     throw new OperonUndefinedDecoratorInputError("Authentication");
   }
@@ -92,3 +86,35 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   }
   return clsdec;
 }
+
+/////////////////////////////////
+/* OPEN API DECORATORS */
+/////////////////////////////////
+
+// Note, OAuth2 is not supported yet.
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
+
+/**
+ * Declare an OpenApi Security Scheme (https://spec.openapis.org/oas/v3.0.3#security-scheme-object
+ * for the methods of a class. Note, this decorator is only used in OpenApi generation and does not
+ * affect runtime behavior of the Operon app.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {
+  return function <T extends { new(...args: unknown[]): object }>(_ctor: T) { }
+}
+
+/**
+ * Declare that the decorated method should not declare a security requirement.
+ * By default, all methods in a class decorated with @OpenApiSecurityScheme specify
+ * the named security requirement associated with this class.
+ * This decorator overrides that behavior for the decorated method.
+ */
+
+export function OpenApiAnonymous() {
+  return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+  ) { }
+}
+

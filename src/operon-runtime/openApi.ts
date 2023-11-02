@@ -75,24 +75,22 @@ export class OpenApiGenerator {
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
     const paths = new Array<[string, OpenApi3.PathItemObject]>();
     classes.forEach((cls, index) => {
-      // if the security name is not specified, manufacture a name using the class index as the prefix
+      // if the class name is not specified, manufacture a name using the class index as the prefix
       // JS class identifiers cannot start with a digit but OpenApi security scheme names can
       const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
-      const authDecorator = this.getOperonDecorator(cls, 'Authentication');
-      if (authDecorator) {
-        const securityScheme = this.parseSecurityScheme(authDecorator?.args);
-        if (securityScheme) {
-          this.#securitySchemeMap.set(securitySchemeName, securityScheme);
-        } else {
-          this.#raise(`Missing security scheme information for ${cls.name}`, authDecorator.node);
-        }
+      const securitySchemeDecorator = this.getOperonDecorator(cls, 'OpenApiSecurityScheme');
+      const securityScheme = this.parseSecurityScheme(securitySchemeDecorator?.args[0]);
+
+      if (securityScheme) {
+        this.#securitySchemeMap.set(securitySchemeName, securityScheme);
       }
+
       const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]);
-      cls.methods.forEach(method => {
+      for (const method of cls.methods) {
         const http = this.getHttpInfo(method);
-        const path = this.generatePath(method, http, defaultRoles, securitySchemeName);
+        const path = this.generatePath(method, http, defaultRoles, securityScheme ? securitySchemeName : undefined);
         if (path) paths.push(path);
-      })
+      }
     })
 
     const openApi: OpenApi3.Document = {
@@ -108,7 +106,7 @@ export class OpenApiGenerator {
     return diagResult(openApi, this.#diags);
   }
 
-  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string): [string, OpenApi3.PathItemObject] | undefined {
+  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
     if (!endpoint) return undefined;
     const { verb, path } = endpoint;
 
@@ -118,7 +116,6 @@ export class OpenApiGenerator {
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
     const parameters: Array<OpenApi3.ReferenceObject | OpenApi3.ParameterObject> = this.generateParameters(sourcedParams);
-
     // add optional parameter for Operon workflow UUID header
     parameters.push(workflowUuidRef);
 
@@ -126,10 +123,14 @@ export class OpenApiGenerator {
     const response = this.generateResponse(method);
     if (!response) return;
 
-    const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles ?? [];
+    // if there is a security scheme specified, create a security requirement for it
+    // unless the method is decorated with @OpenApiAnonymous
     const security = new Array<OpenApi3.SecurityRequirementObject>();
-    if (roles.length > 0) {
-      security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
+    if (securityScheme) {
+      const anonymousDecorator = this.getOperonDecorator(method, 'OpenApiAnonymous')
+      if (!anonymousDecorator) {
+        security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
+      }
     }
 
     const operation: OpenApi3.OperationObject = {
@@ -495,9 +496,8 @@ export class OpenApiGenerator {
     return values;
   }
 
-  parseSecurityScheme(args?: readonly ts.Expression[]): SecurityScheme | undefined {
-    if (!args || args.length < 2) return undefined;
-    const arg = args[1];
+  parseSecurityScheme(arg?: ts.Expression): SecurityScheme | undefined {
+    if (!arg) return undefined;
     if (!ts.isObjectLiteralExpression(arg)) {
       this.#raise(`Expected Object Literal node, received: ${ts.SyntaxKind[arg.kind]}`, arg);
       return undefined;

@@ -84,4 +84,8 @@ export {
   // Middleware Decorators
   Authentication,
   KoaMiddleware,
+
+  // OpenApi Decorators
+  OpenApiSecurityScheme,
+  OpenApiAnonymous
 } from "./httpServer/middleware";
