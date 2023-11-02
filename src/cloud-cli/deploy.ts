@@ -5,14 +5,14 @@ import FormData from "form-data";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 
-export async function deploy(appName: string, host: string) {
+export async function deploy(appName: string, host: string, port: string) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
     const register = await axios.put(
-      `http://${host}:8080/${userCredentials.userName}/application`,
+      `http://${host}:${port}/${userCredentials.userName}/application`,
       {
         name: appName,
       },
@@ -32,7 +32,7 @@ export async function deploy(appName: string, host: string) {
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`operon_deploy/${uuid}.zip`));
 
-    await axios.post(`http://${host}:8080/${userCredentials.userName}/application/${appName}`, formData, {
+    await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`, formData, {
       headers: {
         ...formData.getHeaders(),
         Authorization: bearerToken,
