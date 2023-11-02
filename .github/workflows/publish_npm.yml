@@ -33,7 +33,7 @@ jobs:
         with:
           token: ${{ secrets.NPM_PUBLISH }}
           registry: https://registry.npmjs.org/
-          tag: ${{ endsWith(steps.nbgv.outputs.NpmPackageVersion, steps.nbgv.outputs.PrereleaseVersion) && 'preview' || 'latest' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
+          tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
       - name: Publish test package to npm
         uses: JS-DevTools/npm-publish@v3
         id: npmtest
