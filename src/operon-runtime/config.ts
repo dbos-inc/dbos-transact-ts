@@ -2,7 +2,6 @@ import { OperonInitializationError } from "../error";
 import { readFileSync } from "../utils";
 import { OperonConfig } from "../operon";
 import { PoolConfig } from "pg";
-import { execSync } from "child_process";
 import YAML from "yaml";
 import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
@@ -34,6 +33,18 @@ export interface ConfigFile {
 }
 
 /*
+* Substitute environment variables using a regex for matching.
+* Will find anything in curly braces.
+* TODO: Use a more robust solution.
+*/
+function substituteEnvVars(content: string): string {
+  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
+  return content.replace(regex, (_, g1: string) => {
+      return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+  });
+}
+
+/*
  * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
  * Considers OperonCLIStartOptions if provided, which takes precedence over config file
  * */
@@ -45,11 +56,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(configFilePath);
-    const interpolatedConfig = execSync("envsubst", {
-      encoding: "utf-8",
-      input: configFileContent,
-      env: process.env, // Jest modifies process.env, so we need to pass it explicitly for testing
-    });
+    const interpolatedConfig = substituteEnvVars(configFileContent);
     configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
     if (e instanceof Error) {
