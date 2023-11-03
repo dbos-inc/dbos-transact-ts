@@ -38,6 +38,20 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
+// type guard functions for ts.Type/TypeNode
+function isNodeWithTypeArguments(node: ts.TypeNode): node is ts.NodeWithTypeArguments {
+  return "typeArguments" in node;
+}
+
+function isObjectType(node: ts.Type): node is ts.ObjectType {
+  return !!(node.flags & ts.TypeFlags.Object);
+}
+
+function isTypeReference(node: ts.Type): node is ts.TypeReference {
+  return isObjectType(node) && !!(node.objectFlags & ts.ObjectFlags.Reference);
+}
+
+// workflow UUID header parameter info which is added to every generated endpoint
 const workflowUuidParamName = "operonWorkflowUUID";
 const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
 const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
@@ -70,6 +84,10 @@ export class OpenApiGenerator {
 
   #raise(message: string, node?: ts.Node): void {
     this.#diags.push(createDiagnostic(message, { node }));
+  }
+
+  #warn(message: string, node?: ts.Node): void {
+    this.#diags.push(createDiagnostic(message, { node, category: ts.DiagnosticCategory.Warning }));
   }
 
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
@@ -169,28 +187,54 @@ export class OpenApiGenerator {
     }
   }
 
-  generateResponse(method: MethodInfo): [string, OpenApi3.ResponseObject] | undefined {
-    const signature = this.#checker.getSignatureFromDeclaration(method.node);
+  getMethodReturnType(node: ts.MethodDeclaration): ts.Type | undefined {
+    // if the method has a declared return type, try to use that
+    if (node.type) {
+      if (!isNodeWithTypeArguments(node.type)) {
+        this.#warn(`Unexpected type node kind ${ts.SyntaxKind[node.type.kind]}`, node.type);
+      } else {
+        // return type must be a Promise<T>, so take the first type argument
+        const typeArg = node.type.typeArguments?.[0];
+        if (typeArg) return this.#checker.getTypeFromTypeNode(typeArg);
+
+        const printer = ts.createPrinter();
+        const text = printer.printNode(ts.EmitHint.Unspecified, node.type, node.getSourceFile());
+        this.#warn(`Unexpected return type without at least one type argument ${text}`, node.type);
+      }
+    }
+
+    // if the return type is inferred or the Promise type argument could not be determined,
+    // infer the return type via the type checker
+    const signature = this.#checker.getSignatureFromDeclaration(node);
     const returnType = signature?.getReturnType();
+    if (!returnType || !isTypeReference(returnType)) return undefined;
+    // again, return type must be a Promise<T>, so take the first type argument
+    return returnType.typeArguments?.[0];
+  }
+
+  generateResponse(method: MethodInfo): [string, OpenApi3.ResponseObject] | undefined {
+
+    const returnType = this.getMethodReturnType(method.node);
     if (!returnType) {
-      this.#raise(`Method ${method.name} has no return type`, method.node);
+      this.#raise(`Could not determine return type of ${method.name}`, method.node);
       return;
     }
 
-    // Operon handlers must return a promise. Since this is enforced by the type system
-    // extract the first type argument w/o checking if it's a promise
-    const typeArg = (returnType as ts.TypeReference).typeArguments![0];
+    if (returnType.flags & ts.TypeFlags.VoidLike) {
+      return ["204", { description: "No Content" }];
+    }
 
-    // if the type argument is void, return a 204 status code with no content
-    if (typeArg.flags & ts.TypeFlags.Void) return ["204", { description: "No Content" }];
-
-    const decl = signature ? this.#checker.signatureToSignatureDeclaration(signature, method.node.kind, undefined, undefined) : undefined;
-    const schema = this.generateSchema(decl?.type);
+    const typeNode = this.#checker.typeToTypeNode(returnType, undefined, undefined);
+    if (!typeNode) {
+      this.#warn(`Could not determine return type node of ${method.name}`, method.node);
+    }
 
     return ["200", {
       description: "Ok",
       content: {
-        "application/json": { schema }
+        "application/json": {
+          schema: this.generateSchema(typeNode)
+        }
       }
     }];
   }
