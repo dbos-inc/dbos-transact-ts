@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { createDiagnostic, diagResult } from './tsDiagUtil';
+import { DiagnosticsCollector, diagResult } from './tsDiagUtil';
 
 export interface ClassInfo {
   readonly node: ts.ClassDeclaration;
@@ -38,21 +38,12 @@ function isStaticMethod(node: ts.MethodDeclaration): boolean {
 export class TypeParser {
   readonly #program: ts.Program;
   readonly #checker: ts.TypeChecker;
-  readonly #diags = new Array<ts.Diagnostic>();
-  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
+  readonly #diags = new DiagnosticsCollector();
+  get diags() { return this.#diags.diags; }
 
   constructor(program: ts.Program) {
     this.#program = program;
     this.#checker = program.getTypeChecker();
-  }
-
-  #raise(message: string, node?: ts.Node): void {
-    this.#diags.push(createDiagnostic(message, { node }));
-  }
-
-  static parse(program: ts.Program): readonly ClassInfo[] | undefined {
-    const parser = new TypeParser(program);
-    return parser.parse();
   }
 
   parse(): readonly ClassInfo[] | undefined {
@@ -80,10 +71,10 @@ export class TypeParser {
     }
 
     if (classes.length === 0) {
-      this.#diags.push(createDiagnostic(`no classes found in ${JSON.stringify(this.#program.getRootFileNames())}`, { category: ts.DiagnosticCategory.Warning }));
+      this.#diags.warn(`no classes found in ${JSON.stringify(this.#program.getRootFileNames())}`);
     }
 
-    return diagResult(classes, this.#diags);
+    return diagResult(classes, this.diags);
   }
 
   #getMethod(node: ts.MethodDeclaration): MethodInfo {
@@ -105,13 +96,13 @@ export class TypeParser {
       if (ts.isIdentifier(node.expression.expression)) {
         return { identifier: node.expression.expression, args: node.expression.arguments };
       }
-      this.#raise(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`, node);
+      this.#diags.raise(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`, node);
     }
 
     if (ts.isIdentifier(node.expression)) {
       return { identifier: node.expression, args: [] };
     }
-    this.#raise(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`, node);
+    this.#diags.raise(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`, node);
   }
 
   #getDecorators(node: ts.HasDecorators): DecoratorInfo[] {

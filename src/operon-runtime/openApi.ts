@@ -5,7 +5,7 @@ import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createDiagnostic, diagResult } from './tsDiagUtil';
+import { diagResult, logDiagnostics, DiagnosticsCollector } from './tsDiagUtil';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 
@@ -67,9 +67,8 @@ export class OpenApiGenerator {
   readonly #schemaGenerator: SchemaGenerator;
   readonly #schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
   readonly #securitySchemeMap: Map<string, OpenApi3.SecuritySchemeObject | OpenApi3.ReferenceObject> = new Map();
-  readonly #diags = new Array<ts.Diagnostic>();
-
-  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
+  readonly #diags = new DiagnosticsCollector();
+  get diags() { return this.#diags.diags; }
 
   constructor(readonly program: ts.Program) {
     this.#checker = program.getTypeChecker();
@@ -80,14 +79,6 @@ export class OpenApiGenerator {
     const parser = createParser(program, config, aug => aug.addNodeParser(new BigIntKeywordParser()));
     const formatter = createFormatter(config, (fmt) => fmt.addTypeFormatter(new BigIntTypeFormatter()));
     this.#schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
-  }
-
-  #raise(message: string, node?: ts.Node): void {
-    this.#diags.push(createDiagnostic(message, { node }));
-  }
-
-  #warn(message: string, node?: ts.Node): void {
-    this.#diags.push(createDiagnostic(message, { node, category: ts.DiagnosticCategory.Warning }));
   }
 
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
@@ -121,7 +112,7 @@ export class OpenApiGenerator {
         securitySchemes: Object.fromEntries(this.#securitySchemeMap)
       }
     }
-    return diagResult(openApi, this.#diags);
+    return diagResult(openApi, this.diags);
   }
 
   generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
@@ -167,11 +158,11 @@ export class OpenApiGenerator {
     for (const pathParam of pathParams) {
       const param = sourcedParams.find(([parameter, _]) => parameter.name === pathParam);
       if (!param) {
-        this.#raise(`Missing path parameter ${pathParam} for ${method.name}`, method.node);
+        this.#diags.raise(`Missing path parameter ${pathParam} for ${method.name}`, method.node);
         return;
       }
       if (param[1] !== ArgSources.URL) {
-        this.#raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
+        this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
         return;
       }
     }
@@ -191,7 +182,7 @@ export class OpenApiGenerator {
     // if the method has a declared return type, try to use that
     if (node.type) {
       if (!isNodeWithTypeArguments(node.type)) {
-        this.#warn(`Unexpected type node kind ${ts.SyntaxKind[node.type.kind]}`, node.type);
+        this.#diags.warn(`Unexpected type node kind ${ts.SyntaxKind[node.type.kind]}`, node.type);
       } else {
         // return type must be a Promise<T>, so take the first type argument
         const typeArg = node.type.typeArguments?.[0];
@@ -199,7 +190,7 @@ export class OpenApiGenerator {
 
         const printer = ts.createPrinter();
         const text = printer.printNode(ts.EmitHint.Unspecified, node.type, node.getSourceFile());
-        this.#warn(`Unexpected return type without at least one type argument ${text}`, node.type);
+        this.#diags.warn(`Unexpected return type without at least one type argument ${text}`, node.type);
       }
     }
 
@@ -216,7 +207,7 @@ export class OpenApiGenerator {
 
     const returnType = this.getMethodReturnType(method.node);
     if (!returnType) {
-      this.#raise(`Could not determine return type of ${method.name}`, method.node);
+      this.#diags.raise(`Could not determine return type of ${method.name}`, method.node);
       return;
     }
 
@@ -226,7 +217,7 @@ export class OpenApiGenerator {
 
     const typeNode = this.#checker.typeToTypeNode(returnType, undefined, undefined);
     if (!typeNode) {
-      this.#warn(`Could not determine return type node of ${method.name}`, method.node);
+      this.#diags.warn(`Could not determine return type node of ${method.name}`, method.node);
     }
 
     return ["200", {
@@ -250,11 +241,11 @@ export class OpenApiGenerator {
 
   generateParameter(parameter: ParameterInfo, argSource: ArgSources): OpenApi3.ParameterObject | undefined {
     if (argSource === ArgSources.BODY) {
-      this.#raise(`BODY parameters must be specified in the Operation.requestBody field: ${parameter.name}`, parameter.node);
+      this.#diags.raise(`BODY parameters must be specified in the Operation.requestBody field: ${parameter.name}`, parameter.node);
       return;
     }
     if (argSource === ArgSources.URL && !parameter.required) {
-      this.#raise(`URL parameters must be required: ${parameter.name}`, parameter.node);
+      this.#diags.raise(`URL parameters must be required: ${parameter.name}`, parameter.node);
       return;
     }
 
@@ -277,7 +268,7 @@ export class OpenApiGenerator {
       case ArgSources.QUERY: return 'query';
       case ArgSources.URL: return 'path';
       default:
-        this.#raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
+        this.#diags.raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
         return;
     }
   }
@@ -338,7 +329,7 @@ export class OpenApiGenerator {
     const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/operon' && d.name === name);
     if (filtered.length === 0) return undefined;
     if (filtered.length > 1) {
-      this.#raise(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`, decorated.node);
+      this.#diags.raise(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`, decorated.node);
     }
     return filtered[0];
   }
@@ -347,7 +338,7 @@ export class OpenApiGenerator {
     const getApiDecorator = this.getOperonDecorator(method, 'GetApi');
     const postApiDecorator = this.getOperonDecorator(method, 'PostApi');
     if (getApiDecorator && postApiDecorator) {
-      this.#raise(`Method ${method.name} has both GetApi and PostApi decorators`);
+      this.#diags.raise(`Method ${method.name} has both GetApi and PostApi decorators`);
       return;
     }
     if (!getApiDecorator && !postApiDecorator) return undefined;
@@ -355,11 +346,11 @@ export class OpenApiGenerator {
     const verb = getApiDecorator ? APITypes.GET : APITypes.POST;
     const arg = getApiDecorator ? getApiDecorator.args[0] : postApiDecorator?.args[0];
     if (!arg) {
-      this.#raise(`Missing path argument for ${verb}Api decorator`, method.node);
+      this.#diags.raise(`Missing path argument for ${verb}Api decorator`, method.node);
       return;
     }
     if (!ts.isStringLiteral(arg)) {
-      this.#raise(`Unexpected path argument type: ${ts.SyntaxKind[arg.kind]}`, method.node);
+      this.#diags.raise(`Unexpected path argument type: ${ts.SyntaxKind[arg.kind]}`, method.node);
       return;
     }
     return { verb, path: arg.text };
@@ -370,7 +361,7 @@ export class OpenApiGenerator {
     if (!argSource) return getDefaultArgSource(verb);
 
     if (!ts.isPropertyAccessExpression(argSource.args[0])) {
-      this.#raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
+      this.#diags.raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
       return;
     }
     switch (argSource.args[0].name.text) {
@@ -379,7 +370,7 @@ export class OpenApiGenerator {
       case "URL": return ArgSources.URL;
       case "DEFAULT": return getDefaultArgSource(verb);
       default:
-        this.#raise(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`, parameter.node);
+        this.#diags.raise(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`, parameter.node);
         return;
     }
 
@@ -398,13 +389,13 @@ export class OpenApiGenerator {
     const nameParam = argName.args[0];
     if (nameParam && ts.isStringLiteral(nameParam)) return nameParam.text;
 
-    this.#raise(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`, parameter.node);
+    this.#diags.raise(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`, parameter.node);
   }
 
   mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceObject | undefined {
 
     if (Array.isArray(schema.type)) {
-      this.#raise(`OpenApi 3.0.x doesn't support type arrays: ${JSON.stringify(schema.type)}`);
+      this.#diags.raise(`OpenApi 3.0.x doesn't support type arrays: ${JSON.stringify(schema.type)}`);
       return;
     }
 
@@ -458,15 +449,15 @@ export class OpenApiGenerator {
 
     if (schema.type === 'array') {
       if (schema.items === undefined) {
-        this.#raise(`Array schema has no items`);
+        this.#diags.raise(`Array schema has no items`);
         return;
       }
       if (Array.isArray(schema.items)) {
-        this.#raise(`OpenApi 3.0.x doesn't support array items arrays: ${JSON.stringify(schema.items)}`);
+        this.#diags.raise(`OpenApi 3.0.x doesn't support array items arrays: ${JSON.stringify(schema.items)}`);
         return;
       }
       if (typeof schema.items === 'boolean') {
-        this.#raise(`OpenApi 3.0.x doesn't support array items booleans: ${JSON.stringify(schema.items)}`);
+        this.#diags.raise(`OpenApi 3.0.x doesn't support array items booleans: ${JSON.stringify(schema.items)}`);
         return;
       }
 
@@ -525,7 +516,7 @@ export class OpenApiGenerator {
   parseStringLiteralArray(node: ts.Expression | undefined): string[] | undefined {
     if (!node) return undefined;
     if (!ts.isArrayLiteralExpression(node)) {
-      this.#raise(`Expected Array Literal node, received: ${ts.SyntaxKind[node.kind]}`, node);
+      this.#diags.raise(`Expected Array Literal node, received: ${ts.SyntaxKind[node.kind]}`, node);
       return;
     }
 
@@ -534,7 +525,7 @@ export class OpenApiGenerator {
       if (ts.isStringLiteral(exp)) {
         values.push(exp.getText());
       } else {
-        this.#raise(`Expected String Literal node, received: ${ts.SyntaxKind[exp.kind]}`, exp);
+        this.#diags.raise(`Expected String Literal node, received: ${ts.SyntaxKind[exp.kind]}`, exp);
       }
     }
     return values;
@@ -543,19 +534,19 @@ export class OpenApiGenerator {
   parseSecurityScheme(arg?: ts.Expression): SecurityScheme | undefined {
     if (!arg) return undefined;
     if (!ts.isObjectLiteralExpression(arg)) {
-      this.#raise(`Expected Object Literal node, received: ${ts.SyntaxKind[arg.kind]}`, arg);
+      this.#diags.raise(`Expected Object Literal node, received: ${ts.SyntaxKind[arg.kind]}`, arg);
       return undefined;
     }
 
     const map = new Map<string, string>();
     for (const prop of arg.properties) {
       if (!ts.isPropertyAssignment(prop)) {
-        this.#raise(`Expected Property Assignment node, received: ${ts.SyntaxKind[prop.kind]}`, prop);
+        this.#diags.raise(`Expected Property Assignment node, received: ${ts.SyntaxKind[prop.kind]}`, prop);
         continue;
       }
 
       if (!ts.isStringLiteral(prop.initializer)) {
-        this.#raise(`Expected String Literal node, received: ${ts.SyntaxKind[prop.initializer.kind]}`, prop.initializer);
+        this.#diags.raise(`Expected String Literal node, received: ${ts.SyntaxKind[prop.initializer.kind]}`, prop.initializer);
         continue;
       }
 
@@ -565,14 +556,14 @@ export class OpenApiGenerator {
     const type = map.get("type");
     const description = map.get("description");
     if (!type) {
-      this.#raise(`missing type property`, arg);
+      this.#diags.raise(`missing type property`, arg);
       return;
     }
 
     if (type === 'http') {
       const scheme = map.get("scheme");
       if (!scheme) {
-        this.#raise(`missing scheme property`, arg);
+        this.#diags.raise(`missing scheme property`, arg);
         return;
       }
       const bearerFormat = map.get("bearerFormat");
@@ -583,12 +574,12 @@ export class OpenApiGenerator {
     if (type === 'apiKey') {
       const name = map.get("name");
       if (!name) {
-        this.#raise(`missing name property`, arg);
+        this.#diags.raise(`missing name property`, arg);
         return;
       }
       const $in = map.get("id");
       if (!$in) {
-        this.#raise(`missing in property`, arg);
+        this.#diags.raise(`missing in property`, arg);
         return;
       }
 
@@ -598,7 +589,7 @@ export class OpenApiGenerator {
     if (type === "openIdConnect") {
       const openIdConnectUrl = map.get("openIdConnectUrl");
       if (!openIdConnectUrl) {
-        this.#raise(`missing openIdConnectUrl property`, arg);
+        this.#diags.raise(`missing openIdConnectUrl property`, arg);
         return;
       }
       return <OpenApi3.OpenIdSecurityScheme>{ type, openIdConnectUrl, description };
@@ -606,9 +597,9 @@ export class OpenApiGenerator {
 
 
     if (type === 'oauth2') {
-      this.#raise(`OAuth2 Security Scheme not supported`, arg);
+      this.#diags.raise(`OAuth2 Security Scheme not supported`, arg);
     } else {
-      this.#raise(`unrecognized Security Scheme type ${type}`, arg);
+      this.#diags.raise(`unrecognized Security Scheme type ${type}`, arg);
     }
     return;
   }
@@ -646,10 +637,16 @@ async function findPackageInfo(entrypoint: string): Promise<{ name: string, vers
 
 export async function generateOpenApi(entrypoint: string): Promise<OpenApi3.Document | undefined> {
 
-  const { name, version } = await findPackageInfo(entrypoint);
   const program = ts.createProgram([entrypoint], {});
-  const classes = TypeParser.parse(program);
+
+  const parser = new TypeParser(program);
+  const classes = parser.parse();
+  logDiagnostics(parser.diags);
   if (!classes || classes.length === 0) return undefined;
+
+  const { name, version } = await findPackageInfo(entrypoint);
   const generator = new OpenApiGenerator(program);
-  return generator.generate(classes, name, version);
+  const openapi = generator.generate(classes, name, version);
+  logDiagnostics(generator.diags);
+  return openapi;
 }
