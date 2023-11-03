@@ -1,8 +1,8 @@
 import ts from "typescript";
 import { TypeParser } from "../../src/operon-runtime/TypeParser";
-
-import path from "node:path";
 import { OpenApiGenerator } from "../../src/operon-runtime/openApi";
+import path from "node:path";
+import { makeTestTypescriptProgram } from "../makeProgram";
 
 const printer = ts.createPrinter();
 
@@ -14,7 +14,6 @@ describe("TypeParser", () => {
     const parser = new TypeParser(program);
     const classes = parser.parse();
     expect(parser.diags.length).toBe(0);
-
     expect(classes).toBeDefined();
     expect(classes!.length).toBe(1);
 
@@ -53,8 +52,65 @@ describe("TypeParser", () => {
 });
 
 describe("OpenApiGenerator", () => {
+
   it("examples/hello", () => {
-    const classes = TypeParser.parse(program);
+    const expected = {
+      openapi: "3.0.3",
+      info: {
+        title: "operon-hello",
+        version: "0.0.1"
+      },
+      paths: {
+        "/greeting/{user}": {
+          get: {
+            operationId: "helloTransaction",
+            responses: {
+              "200": {
+                description: "Ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "string"
+                    }
+                  }
+                }
+              }
+            },
+            parameters: [
+              {
+                name: "user",
+                in: "path",
+                required: true,
+                schema: {
+                  type: "string"
+                }
+              },
+              {
+                "$ref": "#/components/parameters/operonWorkflowUUID"
+              }
+            ]
+          }
+        }
+      },
+      components: {
+        schemas: {},
+        parameters: {
+          operonWorkflowUUID: {
+            name: "operon-workflowuuid",
+            in: "header",
+            required: false,
+            schema: {
+              type: "string"
+            }
+          }
+        }
+      }
+    };
+
+    const parser = new TypeParser(program);
+    const classes = parser.parse();
+    expect(parser.diags.length).toBe(0);
+    expect(classes).toBeDefined();
     expect(classes!.length).toBe(1);
 
     const generator = new OpenApiGenerator(program);
@@ -62,59 +118,183 @@ describe("OpenApiGenerator", () => {
     expect(generator.diags.length).toBe(0);
 
     expect(openApi).toBeDefined();
-    expect(openApi).toMatchObject(helloExampleExpected);
+    expect(openApi).toMatchObject(expected);
   });
-});
 
-const helloExampleExpected = {
-  "openapi": "3.0.3",
-  "info": {
-    "title": "operon-hello",
-    "version": "0.0.1"
-  },
-  "paths": {
-    "/greeting/{user}": {
-      "get": {
-        "operationId": "helloTransaction",
-        "responses": {
-          "200": {
-            "description": "Ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string"
+  it("OpenApiSecurityScheme", () => {
+    const source = /*javascript*/`
+    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme } from '@dbos-inc/operon'
+
+    @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
+    export class Hello {
+      @GetApi('/greeting/:user')
+      static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
+        return "";
+      }
+    }
+    `;
+
+    const expected = {
+      openapi: "3.0.3",
+      info: {
+        title: "operon-hello",
+        version: "0.0.1"
+      },
+      paths: {
+        "/greeting/{user}": {
+          get: {
+            operationId: "helloTransaction",
+            responses: {
+              200: {
+                description: "Ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "string"
+                    }
+                  }
                 }
               }
+            },
+            parameters: [
+              {
+                name: "user",
+                in: "path",
+                required: true,
+                schema: {
+                  type: "string"
+                }
+              },
+              {
+                $ref: "#/components/parameters/operonWorkflowUUID"
+              }
+            ],
+            security: [
+              {
+                HelloAuth: []
+              }
+            ]
+          }
+        }
+      },
+      components: {
+        parameters: {
+          operonWorkflowUUID: {
+            name: "operon-workflowuuid",
+            in: "header",
+            required: false,
+            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            schema: {
+              type: "string"
             }
           }
         },
-        "parameters": [
-          {
-            "name": "user",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "$ref": "#/components/parameters/operonWorkflowUUID"
+        schemas: {},
+        securitySchemes: {
+          HelloAuth: {
+            type: "http",
+            scheme: "bearer"
           }
-        ]
-      }
-    }
-  },
-  "components": {
-    "schemas": {},
-    "parameters": {
-      "operonWorkflowUUID": {
-        "name": "operon-workflowuuid",
-        "in": "header",
-        "required": false,
-        "schema": {
-          "type": "string"
         }
       }
+    };
+
+    const program = makeTestTypescriptProgram(source);
+    const parser = new TypeParser(program);
+    const classes = parser.parse();
+    expect(parser.diags.length).toBe(0);
+    const generator = new OpenApiGenerator(program);
+    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    expect(generator.diags.length).toBe(0);
+    expect(openApi).toBeDefined();
+    expect(openApi).toMatchObject(expected);
+  });
+
+  it("OpenApiAnonymous", () => {
+    const source = /*javascript*/`
+    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme } from '@dbos-inc/operon'
+
+    @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
+    export class Hello {
+      @GetApi('/greeting/:user')
+      @OpenApiAnonymous()
+      static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
+        return "";
+      }
     }
-  }
-};
+    `;
+
+    const expected = {
+      openapi: "3.0.3",
+      info: {
+        title: "operon-hello",
+        version: "0.0.1"
+      },
+      paths: {
+        "/greeting/{user}": {
+          get: {
+            operationId: "helloTransaction",
+            responses: {
+              200: {
+                description: "Ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "string"
+                    }
+                  }
+                }
+              }
+            },
+            parameters: [
+              {
+                name: "user",
+                in: "path",
+                required: true,
+                schema: {
+                  type: "string"
+                }
+              },
+              {
+                $ref: "#/components/parameters/operonWorkflowUUID"
+              }
+            ]
+          }
+        }
+      },
+      components: {
+        parameters: {
+          operonWorkflowUUID: {
+            name: "operon-workflowuuid",
+            in: "header",
+            required: false,
+            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            schema: {
+              type: "string"
+            }
+          }
+        },
+        schemas: {},
+        securitySchemes: {
+          HelloAuth: {
+            type: "http",
+            scheme: "bearer"
+          }
+        }
+      }
+    };
+
+    const program = makeTestTypescriptProgram(source);
+    const parser = new TypeParser(program);
+    const classes = parser.parse();
+    expect(parser.diags.length).toBe(0);
+    const generator = new OpenApiGenerator(program);
+    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    expect(generator.diags.length).toBe(0);
+    expect(openApi).toBeDefined();
+    expect(openApi).toMatchObject(expected);
+  })
+});
+
+
+
