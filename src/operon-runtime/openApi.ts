@@ -1,11 +1,11 @@
-import * as ts from 'typescript';
+import ts from 'typescript';
 import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
 import { APITypes, ArgSources } from '../httpServer/handler';
 import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config } from 'ts-json-schema-generator';
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 import path from 'node:path';
 import fs from 'node:fs/promises';
-import { createDiagnostic, diagResult } from './tsDiagUtil';
+import { diagResult, logDiagnostics, DiagnosticsCollector } from './tsDiagUtil';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 
@@ -38,6 +38,20 @@ class BigIntTypeFormatter implements SubTypeFormatter {
   }
 }
 
+// type guard functions for ts.Type/TypeNode
+function isNodeWithTypeArguments(node: ts.TypeNode): node is ts.NodeWithTypeArguments {
+  return "typeArguments" in node;
+}
+
+function isObjectType(node: ts.Type): node is ts.ObjectType {
+  return !!(node.flags & ts.TypeFlags.Object);
+}
+
+function isTypeReference(node: ts.Type): node is ts.TypeReference {
+  return isObjectType(node) && !!(node.objectFlags & ts.ObjectFlags.Reference);
+}
+
+// workflow UUID header parameter info which is added to every generated endpoint
 const workflowUuidParamName = "operonWorkflowUUID";
 const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
 const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
@@ -52,8 +66,9 @@ export class OpenApiGenerator {
   readonly #checker: ts.TypeChecker;
   readonly #schemaGenerator: SchemaGenerator;
   readonly #schemaMap: Map<string, OpenApi3.SchemaObject | OpenApi3.ReferenceObject> = new Map();
-  readonly #diags = new Array<ts.Diagnostic>();
-  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
+  readonly #securitySchemeMap: Map<string, OpenApi3.SecuritySchemeObject | OpenApi3.ReferenceObject> = new Map();
+  readonly #diags = new DiagnosticsCollector();
+  get diags() { return this.#diags.diags; }
 
   constructor(readonly program: ts.Program) {
     this.#checker = program.getTypeChecker();
@@ -66,41 +81,48 @@ export class OpenApiGenerator {
     this.#schemaGenerator = new SchemaGenerator(program, parser, formatter, {});
   }
 
-  #raise(message: string, node?: ts.Node): void {
-    this.#diags.push(createDiagnostic(message, { node }));
-  }
-
   generate(classes: readonly ClassInfo[], title: string, version: string): OpenApi3.Document | undefined {
-    const handlers = classes
-      .flatMap(c => c.methods)
-      .map(method => {
-        const http = this.getHttpInfo(method);
-        return http ? [method, http] as [MethodInfo, HttpEndpointInfo] : undefined;
-      })
-      .filter(isValid);
+    const paths = new Array<[string, OpenApi3.PathItemObject]>();
+    classes.forEach((cls, index) => {
+      // if the class name is not specified, manufacture a name using the class index as the prefix
+      // JS class identifiers cannot start with a digit but OpenApi security scheme names can
+      const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
+      const securitySchemeDecorator = this.getOperonDecorator(cls, 'OpenApiSecurityScheme');
+      const securityScheme = this.parseSecurityScheme(securitySchemeDecorator?.args[0]);
+      const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]) ?? [];
 
-    const paths = handlers.map(h => this.generatePath(h)).filter(isValid);
+      if (securityScheme) {
+        this.#securitySchemeMap.set(securitySchemeName, securityScheme);
+      }
+
+      for (const method of cls.methods) {
+        const http = this.getHttpInfo(method);
+        if (!http) continue;
+        const path = this.generatePath(method, http, defaultRoles, securityScheme ? securitySchemeName : undefined);
+        if (path) paths.push(path);
+      }
+    })
 
     const openApi: OpenApi3.Document = {
       openapi: "3.0.3", // https://spec.openapis.org/oas/v3.0.3
       info: { title, version },
       paths: Object.fromEntries(paths),
       components: {
-        schemas: Object.fromEntries(this.#schemaMap),
         parameters: Object.fromEntries([workflowUuidParam]),
+        schemas: Object.fromEntries(this.#schemaMap),
+        securitySchemes: Object.fromEntries(this.#securitySchemeMap)
       }
     }
-    return diagResult(openApi, this.#diags);
+    return diagResult(openApi, this.diags);
   }
 
-  generatePath([method, { verb, path }]: [MethodInfo, HttpEndpointInfo]): [string, OpenApi3.PathItemObject] | undefined {
+  generatePath(method: MethodInfo, { verb, path } : HttpEndpointInfo, defaultRoles: readonly string[], securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
     const sourcedParams = method.parameters
       // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
       .slice(1)
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
     const parameters: Array<OpenApi3.ReferenceObject | OpenApi3.ParameterObject> = this.generateParameters(sourcedParams);
-
     // add optional parameter for Operon workflow UUID header
     parameters.push(workflowUuidRef);
 
@@ -108,11 +130,22 @@ export class OpenApiGenerator {
     const response = this.generateResponse(method);
     if (!response) return;
 
+    // if there is a security scheme specified, create a security requirement for it
+    // unless the method has no required roles
+    const security = new Array<OpenApi3.SecurityRequirementObject>();
+    if (securityScheme) {
+      const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles;
+      if (roles.length > 0) {
+        security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
+      }
+    }
+
     const operation: OpenApi3.OperationObject = {
       operationId: method.name,
       responses: Object.fromEntries([response]),
       parameters,
       requestBody,
+      security: security.length > 0 ? security : undefined,
     }
 
     // validate all path parameters have matching parameters with URL ArgSource
@@ -123,48 +156,74 @@ export class OpenApiGenerator {
     for (const pathParam of pathParams) {
       const param = sourcedParams.find(([parameter, _]) => parameter.name === pathParam);
       if (!param) {
-        this.#raise(`Missing path parameter ${pathParam} for ${method.name}`, method.node);
+        this.#diags.raise(`Missing path parameter ${pathParam} for ${method.name}`, method.node);
         return;
       }
       if (param[1] !== ArgSources.URL) {
-        this.#raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
+        this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
         return;
       }
     }
 
     // OpenAPI indicates path parameters with curly braces, but Operon uses colons
-    path = path.split('/')
+    const $path = path.split('/')
       .map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p)
       .join('/');
 
     switch (verb) {
-      case APITypes.GET: return [path, { get: operation }];
-      case APITypes.POST: return [path, { post: operation }];
+      case APITypes.GET: return [$path, { get: operation }];
+      case APITypes.POST: return [$path, { post: operation }];
     }
   }
 
-  generateResponse(method: MethodInfo): [string, OpenApi3.ResponseObject] | undefined {
-    const signature = this.#checker.getSignatureFromDeclaration(method.node);
+  getMethodReturnType(node: ts.MethodDeclaration): ts.Type | undefined {
+    // if the method has a declared return type, try to use that
+    if (node.type) {
+      if (!isNodeWithTypeArguments(node.type)) {
+        this.#diags.warn(`Unexpected type node kind ${ts.SyntaxKind[node.type.kind]}`, node.type);
+      } else {
+        // return type must be a Promise<T>, so take the first type argument
+        const typeArg = node.type.typeArguments?.[0];
+        if (typeArg) return this.#checker.getTypeFromTypeNode(typeArg);
+
+        const printer = ts.createPrinter();
+        const text = printer.printNode(ts.EmitHint.Unspecified, node.type, node.getSourceFile());
+        this.#diags.warn(`Unexpected return type without at least one type argument ${text}`, node.type);
+      }
+    }
+
+    // if the return type is inferred or the Promise type argument could not be determined,
+    // infer the return type via the type checker
+    const signature = this.#checker.getSignatureFromDeclaration(node);
     const returnType = signature?.getReturnType();
+    if (!returnType || !isTypeReference(returnType)) return undefined;
+    // again, return type must be a Promise<T>, so take the first type argument
+    return returnType.typeArguments?.[0];
+  }
+
+  generateResponse(method: MethodInfo): [string, OpenApi3.ResponseObject] | undefined {
+
+    const returnType = this.getMethodReturnType(method.node);
     if (!returnType) {
-      this.#raise(`Method ${method.name} has no return type`, method.node);
+      this.#diags.raise(`Could not determine return type of ${method.name}`, method.node);
       return;
     }
 
-    // Operon handlers must return a promise. Since this is enforced by the type system
-    // extract the first type argument w/o checking if it's a promise
-    const typeArg = (returnType as ts.TypeReference).typeArguments![0];
+    if (returnType.flags & ts.TypeFlags.VoidLike) {
+      return ["204", { description: "No Content" }];
+    }
 
-    // if the type argument is void, return a 204 status code with no content
-    if (typeArg.flags & ts.TypeFlags.Void) return ["204", { description: "No Content" }];
-
-    const decl = signature ? this.#checker.signatureToSignatureDeclaration(signature, method.node.kind, undefined, undefined) : undefined;
-    const schema = this.generateSchema(decl?.type);
+    const typeNode = this.#checker.typeToTypeNode(returnType, undefined, undefined);
+    if (!typeNode) {
+      this.#diags.warn(`Could not determine return type node of ${method.name}`, method.node);
+    }
 
     return ["200", {
       description: "Ok",
       content: {
-        "application/json": { schema }
+        "application/json": {
+          schema: this.generateSchema(typeNode)
+        }
       }
     }];
   }
@@ -180,11 +239,11 @@ export class OpenApiGenerator {
 
   generateParameter(parameter: ParameterInfo, argSource: ArgSources): OpenApi3.ParameterObject | undefined {
     if (argSource === ArgSources.BODY) {
-      this.#raise(`BODY parameters must be specified in the Operation.requestBody field: ${parameter.name}`, parameter.node);
+      this.#diags.raise(`BODY parameters must be specified in the Operation.requestBody field: ${parameter.name}`, parameter.node);
       return;
     }
     if (argSource === ArgSources.URL && !parameter.required) {
-      this.#raise(`URL parameters must be required: ${parameter.name}`, parameter.node);
+      this.#diags.raise(`URL parameters must be required: ${parameter.name}`, parameter.node);
       return;
     }
 
@@ -207,7 +266,7 @@ export class OpenApiGenerator {
       case ArgSources.QUERY: return 'query';
       case ArgSources.URL: return 'path';
       default:
-        this.#raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
+        this.#diags.raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
         return;
     }
   }
@@ -268,7 +327,7 @@ export class OpenApiGenerator {
     const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/operon' && d.name === name);
     if (filtered.length === 0) return undefined;
     if (filtered.length > 1) {
-      this.#raise(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`, decorated.node);
+      this.#diags.raise(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`, decorated.node);
     }
     return filtered[0];
   }
@@ -277,7 +336,7 @@ export class OpenApiGenerator {
     const getApiDecorator = this.getOperonDecorator(method, 'GetApi');
     const postApiDecorator = this.getOperonDecorator(method, 'PostApi');
     if (getApiDecorator && postApiDecorator) {
-      this.#raise(`Method ${method.name} has both GetApi and PostApi decorators`);
+      this.#diags.raise(`Method ${method.name} has both GetApi and PostApi decorators`);
       return;
     }
     if (!getApiDecorator && !postApiDecorator) return undefined;
@@ -285,11 +344,11 @@ export class OpenApiGenerator {
     const verb = getApiDecorator ? APITypes.GET : APITypes.POST;
     const arg = getApiDecorator ? getApiDecorator.args[0] : postApiDecorator?.args[0];
     if (!arg) {
-      this.#raise(`Missing path argument for ${verb}Api decorator`, method.node);
+      this.#diags.raise(`Missing path argument for ${verb}Api decorator`, method.node);
       return;
     }
     if (!ts.isStringLiteral(arg)) {
-      this.#raise(`Unexpected path argument type: ${ts.SyntaxKind[arg.kind]}`, method.node);
+      this.#diags.raise(`Unexpected path argument type: ${ts.SyntaxKind[arg.kind]}`, method.node);
       return;
     }
     return { verb, path: arg.text };
@@ -300,7 +359,7 @@ export class OpenApiGenerator {
     if (!argSource) return getDefaultArgSource(verb);
 
     if (!ts.isPropertyAccessExpression(argSource.args[0])) {
-      this.#raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
+      this.#diags.raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
       return;
     }
     switch (argSource.args[0].name.text) {
@@ -309,7 +368,7 @@ export class OpenApiGenerator {
       case "URL": return ArgSources.URL;
       case "DEFAULT": return getDefaultArgSource(verb);
       default:
-        this.#raise(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`, parameter.node);
+        this.#diags.raise(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`, parameter.node);
         return;
     }
 
@@ -328,13 +387,13 @@ export class OpenApiGenerator {
     const nameParam = argName.args[0];
     if (nameParam && ts.isStringLiteral(nameParam)) return nameParam.text;
 
-    this.#raise(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`, parameter.node);
+    this.#diags.raise(`Unexpected ArgName argument type: ${ts.SyntaxKind[nameParam.kind]}`, parameter.node);
   }
 
   mapSchema(schema: Schema): OpenApi3.SchemaObject | OpenApi3.ReferenceObject | undefined {
 
     if (Array.isArray(schema.type)) {
-      this.#raise(`OpenApi 3.0.x doesn't support type arrays: ${JSON.stringify(schema.type)}`);
+      this.#diags.raise(`OpenApi 3.0.x doesn't support type arrays: ${JSON.stringify(schema.type)}`);
       return;
     }
 
@@ -388,15 +447,15 @@ export class OpenApiGenerator {
 
     if (schema.type === 'array') {
       if (schema.items === undefined) {
-        this.#raise(`Array schema has no items`);
+        this.#diags.raise(`Array schema has no items`);
         return;
       }
       if (Array.isArray(schema.items)) {
-        this.#raise(`OpenApi 3.0.x doesn't support array items arrays: ${JSON.stringify(schema.items)}`);
+        this.#diags.raise(`OpenApi 3.0.x doesn't support array items arrays: ${JSON.stringify(schema.items)}`);
         return;
       }
       if (typeof schema.items === 'boolean') {
-        this.#raise(`OpenApi 3.0.x doesn't support array items booleans: ${JSON.stringify(schema.items)}`);
+        this.#diags.raise(`OpenApi 3.0.x doesn't support array items booleans: ${JSON.stringify(schema.items)}`);
         return;
       }
 
@@ -452,8 +511,99 @@ export class OpenApiGenerator {
     }
   }
 
+  parseStringLiteralArray(node: ts.Expression | undefined): string[] | undefined {
+    if (!node) return undefined;
+    if (!ts.isArrayLiteralExpression(node)) {
+      this.#diags.raise(`Expected Array Literal node, received: ${ts.SyntaxKind[node.kind]}`, node);
+      return;
+    }
+
+    const values = new Array<string>();
+    for (const exp of node.elements) {
+      if (ts.isStringLiteral(exp)) {
+        values.push(exp.getText());
+      } else {
+        this.#diags.raise(`Expected String Literal node, received: ${ts.SyntaxKind[exp.kind]}`, exp);
+      }
+    }
+    return values;
+  }
+
+  parseSecurityScheme(arg?: ts.Expression): SecurityScheme | undefined {
+    if (!arg) return undefined;
+    if (!ts.isObjectLiteralExpression(arg)) {
+      this.#diags.raise(`Expected Object Literal node, received: ${ts.SyntaxKind[arg.kind]}`, arg);
+      return undefined;
+    }
+
+    const map = new Map<string, string>();
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop)) {
+        this.#diags.raise(`Expected Property Assignment node, received: ${ts.SyntaxKind[prop.kind]}`, prop);
+        continue;
+      }
+
+      if (!ts.isStringLiteral(prop.initializer)) {
+        this.#diags.raise(`Expected String Literal node, received: ${ts.SyntaxKind[prop.initializer.kind]}`, prop.initializer);
+        continue;
+      }
+
+      map.set(prop.name.getText(), prop.initializer.text);
+    }
+
+    const type = map.get("type");
+    const description = map.get("description");
+    if (!type) {
+      this.#diags.raise(`missing type property`, arg);
+      return;
+    }
+
+    if (type === 'http') {
+      const scheme = map.get("scheme");
+      if (!scheme) {
+        this.#diags.raise(`missing scheme property`, arg);
+        return;
+      }
+      const bearerFormat = map.get("bearerFormat");
+
+      return <OpenApi3.HttpSecurityScheme>{ type, scheme, bearerFormat, description };
+    }
+
+    if (type === 'apiKey') {
+      const name = map.get("name");
+      if (!name) {
+        this.#diags.raise(`missing name property`, arg);
+        return;
+      }
+      const $in = map.get("id");
+      if (!$in) {
+        this.#diags.raise(`missing in property`, arg);
+        return;
+      }
+
+      return <OpenApi3.ApiKeySecurityScheme>{ type, name, in: $in, description };
+    }
+
+    if (type === "openIdConnect") {
+      const openIdConnectUrl = map.get("openIdConnectUrl");
+      if (!openIdConnectUrl) {
+        this.#diags.raise(`missing openIdConnectUrl property`, arg);
+        return;
+      }
+      return <OpenApi3.OpenIdSecurityScheme>{ type, openIdConnectUrl, description };
+    }
+
+
+    if (type === 'oauth2') {
+      this.#diags.raise(`OAuth2 Security Scheme not supported`, arg);
+    } else {
+      this.#diags.raise(`unrecognized Security Scheme type ${type}`, arg);
+    }
+    return;
+  }
 }
 
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
 
 async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string }> {
   let dirname = path.dirname(entrypoint);
@@ -485,10 +635,16 @@ async function findPackageInfo(entrypoint: string): Promise<{ name: string, vers
 
 export async function generateOpenApi(entrypoint: string): Promise<OpenApi3.Document | undefined> {
 
-  const { name, version } = await findPackageInfo(entrypoint);
   const program = ts.createProgram([entrypoint], {});
-  const classes = TypeParser.parse(program);
+
+  const parser = new TypeParser(program);
+  const classes = parser.parse();
+  logDiagnostics(parser.diags);
   if (!classes || classes.length === 0) return undefined;
+
+  const { name, version } = await findPackageInfo(entrypoint);
   const generator = new OpenApiGenerator(program);
-  return generator.generate(classes, name, version);
+  const openapi = generator.generate(classes, name, version);
+  logDiagnostics(generator.diags);
+  return openapi;
 }

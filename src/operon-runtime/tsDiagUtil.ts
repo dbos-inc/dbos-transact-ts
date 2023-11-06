@@ -25,7 +25,10 @@ export function createDiagnostic(messageText: string, options?: DiagnosticOption
 }
 
 export function diagResult<T>(value: T, diags: readonly ts.Diagnostic[]): T | undefined {
+  return diags.some(e => e.category === ts.DiagnosticCategory.Error) ? undefined : value;
+}
 
+export function logDiagnostics(diags: readonly ts.Diagnostic[]): void {
   if (diags.length > 0) {
     const formatHost: ts.FormatDiagnosticsHost = {
       getCurrentDirectory: () => ts.sys.getCurrentDirectory(),
@@ -34,9 +37,20 @@ export function diagResult<T>(value: T, diags: readonly ts.Diagnostic[]): T | un
         ? fileName : fileName.toLowerCase()
     }
 
-    const msg = ts.formatDiagnosticsWithColorAndContext(diags, formatHost);
-    console.log(msg);
+    const text = ts.formatDiagnosticsWithColorAndContext(diags, formatHost);
+    console.log(text);
+  }
+}
+
+export class DiagnosticsCollector {
+  readonly #diags = new Array<ts.Diagnostic>();
+  get diags() { return this.#diags as readonly ts.Diagnostic[]; }
+
+  raise(message: string, node?: ts.Node): void {
+    this.#diags.push(createDiagnostic(message, { node }));
   }
 
-  return diags.some(e => e.category === ts.DiagnosticCategory.Error) ? undefined : value;
+  warn(message: string, node?: ts.Node): void {
+    this.#diags.push(createDiagnostic(message, { node, category: ts.DiagnosticCategory.Warning }));
+  }
 }

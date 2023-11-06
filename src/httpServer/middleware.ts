@@ -6,6 +6,7 @@ import { UserDatabaseClient } from "../user_database";
 
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as OperonLogger } from "../telemetry/logs";
+import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
 export interface MiddlewareContext {
@@ -16,7 +17,7 @@ export interface MiddlewareContext {
   readonly logger: OperonLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
 
-  getConfig<T>(key: string, deflt: T | undefined) : T | undefined; // Access to configuration information
+  getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
 
   query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, ...args: T) => Promise<R>, ...args: T): Promise<R>;
 }
@@ -83,4 +84,21 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
     clsreg.koaMiddlewares = koaMiddleware;
   }
   return clsdec;
+}
+
+/////////////////////////////////
+/* OPEN API DECORATORS */
+/////////////////////////////////
+
+// Note, OAuth2 is not supported yet.
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
+
+/**
+ * Declare an OpenApi Security Scheme (https://spec.openapis.org/oas/v3.0.3#security-scheme-object
+ * for the methods of a class. Note, this decorator is only used in OpenApi generation and does not
+ * affect runtime behavior of the Operon app.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {
+  return function <T extends { new(...args: unknown[]): object }>(_ctor: T) { }
 }
