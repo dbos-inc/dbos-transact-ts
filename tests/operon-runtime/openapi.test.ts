@@ -121,11 +121,102 @@ describe("OpenApiGenerator", () => {
     expect(openApi).toMatchObject(expected);
   });
 
-  it("OpenApiSecurityScheme", () => {
+  it("OpenApiSecurityScheme RequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme } from '@dbos-inc/operon'
+    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/operon'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
+    export class Hello {
+      @GetApi('/greeting/:user')
+      @RequiredRole(['user'])
+      static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
+        return "";
+      }
+    }
+    `;
+
+    const expected = {
+      openapi: "3.0.3",
+      info: {
+        title: "operon-hello",
+        version: "0.0.1"
+      },
+      paths: {
+        "/greeting/{user}": {
+          get: {
+            operationId: "helloTransaction",
+            responses: {
+              200: {
+                description: "Ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "string"
+                    }
+                  }
+                }
+              }
+            },
+            parameters: [
+              {
+                name: "user",
+                in: "path",
+                required: true,
+                schema: {
+                  type: "string"
+                }
+              },
+              {
+                $ref: "#/components/parameters/operonWorkflowUUID"
+              }
+            ],
+            security: [
+              {
+                HelloAuth: []
+              }
+            ]
+          }
+        }
+      },
+      components: {
+        parameters: {
+          operonWorkflowUUID: {
+            name: "operon-workflowuuid",
+            in: "header",
+            required: false,
+            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            schema: {
+              type: "string"
+            }
+          }
+        },
+        schemas: {},
+        securitySchemes: {
+          HelloAuth: {
+            type: "http",
+            scheme: "bearer"
+          }
+        }
+      }
+    };
+
+    const program = makeTestTypescriptProgram(source);
+    const parser = new TypeParser(program);
+    const classes = parser.parse();
+    expect(parser.diags.length).toBe(0);
+    const generator = new OpenApiGenerator(program);
+    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    expect(generator.diags.length).toBe(0);
+    expect(openApi).toBeDefined();
+    expect(openApi).toMatchObject(expected);
+  });
+
+  it("OpenApiSecurityScheme DefaultRequiredRole", () => {
+    const source = /*javascript*/`
+    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, DefaultRequiredRole, OpenApiSecurityScheme } from '@dbos-inc/operon'
+
+    @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
+    @DefaultRequiredRole(['user'])
     export class Hello {
       @GetApi('/greeting/:user')
       static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
@@ -210,14 +301,15 @@ describe("OpenApiGenerator", () => {
     expect(openApi).toMatchObject(expected);
   });
 
-  it("OpenApiAnonymous", () => {
+  it("OpenApiSecurityScheme empty RequiredRole array", () => {
     const source = /*javascript*/`
-    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme } from '@dbos-inc/operon'
+    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, DefaultRequiredRole, RequiredRole } from '@dbos-inc/operon'
 
+    @DefaultRequiredRole(['user'])
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     export class Hello {
       @GetApi('/greeting/:user')
-      @OpenApiAnonymous()
+      @RequiredRole([])
       static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
         return "";
       }

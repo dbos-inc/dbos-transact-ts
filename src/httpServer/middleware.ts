@@ -7,7 +7,6 @@ import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as OperonLogger } from "../telemetry/logs";
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
-import { OperonContext } from "../context";
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
 export interface MiddlewareContext {
@@ -103,18 +102,3 @@ type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2Secu
 export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {
   return function <T extends { new(...args: unknown[]): object }>(_ctor: T) { }
 }
-
-/**
- * Declare that the decorated method should not declare a security requirement.
- * By default, all methods in a class decorated with @OpenApiSecurityScheme specify
- * the named security requirement associated with this class.
- * This decorator overrides that behavior for the decorated method.
- */
-
-export function OpenApiAnonymous() {
-  return function <This, Ctx extends OperonContext, Args extends unknown[], Return>(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
-  ) { }
-}
-

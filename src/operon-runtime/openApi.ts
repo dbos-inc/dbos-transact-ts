@@ -89,14 +89,15 @@ export class OpenApiGenerator {
       const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
       const securitySchemeDecorator = this.getOperonDecorator(cls, 'OpenApiSecurityScheme');
       const securityScheme = this.parseSecurityScheme(securitySchemeDecorator?.args[0]);
+      const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]) ?? [];
 
       if (securityScheme) {
         this.#securitySchemeMap.set(securitySchemeName, securityScheme);
       }
 
-      const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]);
       for (const method of cls.methods) {
         const http = this.getHttpInfo(method);
+        if (!http) continue;
         const path = this.generatePath(method, http, defaultRoles, securityScheme ? securitySchemeName : undefined);
         if (path) paths.push(path);
       }
@@ -115,10 +116,7 @@ export class OpenApiGenerator {
     return diagResult(openApi, this.diags);
   }
 
-  generatePath(method: MethodInfo, endpoint: HttpEndpointInfo | undefined, defaultRoles: readonly string[] | undefined, securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
-    if (!endpoint) return undefined;
-    const { verb, path } = endpoint;
-
+  generatePath(method: MethodInfo, { verb, path } : HttpEndpointInfo, defaultRoles: readonly string[], securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
     const sourcedParams = method.parameters
       // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
       .slice(1)
@@ -133,11 +131,11 @@ export class OpenApiGenerator {
     if (!response) return;
 
     // if there is a security scheme specified, create a security requirement for it
-    // unless the method is decorated with @OpenApiAnonymous
+    // unless the method has no required roles
     const security = new Array<OpenApi3.SecurityRequirementObject>();
     if (securityScheme) {
-      const anonymousDecorator = this.getOperonDecorator(method, 'OpenApiAnonymous')
-      if (!anonymousDecorator) {
+      const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles;
+      if (roles.length > 0) {
         security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
       }
     }
