@@ -6,6 +6,7 @@ import { login } from "./login";
 import { registerUser } from "./register";
 import { deleteApp } from "./delete";
 import { getAppLogs } from "./monitor";
+import { createUserDb } from "./userdb";
 
 const program = new Command();
 
@@ -70,6 +71,25 @@ program
     await getAppLogs(options.name, options.host, options.port);
   });
 
+  const userdb = program
+  .command('userdb')
+  .description('Create, delete or check status of a user database')
+  //.requiredOption('-o, --operation <string>', 'Specify the operation name')
+  // .option('-h, --host <string>', 'Specify the host', 'localhost')
+  // .option('-p, --port <port>', 'Specify the port', '8080')
+  .action(async (options: {  host: string, port: string }) => {
+    console.log("npx userdb command " + options.host + ":" + options.port )
+  });  
+
+  userdb
+  .command('create')
+  .argument('<dbname>', 'database name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .option('-p, --port <port>', 'Specify the port', '8080')
+  .action((async (dbname, options: { host: string, port: string }) => {
+    console.log("npx userdb create command with " + dbname + " at " + options.host + ":"+ options.port)
+    await createUserDb(options.host, options.port, dbname, "postgres", "postgres")
+  }))
 
 program.parse(process.argv);
 
