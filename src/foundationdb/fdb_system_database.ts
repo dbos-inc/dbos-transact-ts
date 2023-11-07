@@ -18,7 +18,7 @@ interface WorkflowOutput<R> {
   authenticatedRoles: Array<string>;
   assumedRole: string;
   request: HTTPRequest;
-  executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
+  executorID: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
 }
 
 interface OperationOutput<R> {
@@ -157,9 +157,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getPendingWorkflows(): Promise<string[]> {
+  async getPendingWorkflows(executorID: string): Promise<string[]> {
     const workflows = await this.workflowStatusDB.getRangeAll('', '\xff') as Array<[string, WorkflowOutput<unknown>]>;
-    return workflows.filter(i => i[1].status === StatusString.PENDING).map(i => i[0]);
+    return workflows.filter(i => (i[1].status === StatusString.PENDING && i[1].executorID === executorID)).map(i => i[0]);
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {

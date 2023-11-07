@@ -21,7 +21,7 @@ export interface SystemDatabase {
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
-  getPendingWorkflows(): Promise<Array<string>>;
+  getPendingWorkflows(executorID: string): Promise<Array<string>>;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
@@ -136,10 +136,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getPendingWorkflows(): Promise<Array<string>> {
+  async getPendingWorkflows(executorID: string): Promise<Array<string>> {
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM workflow_status WHERE status=$1`,
-      [StatusString.PENDING]
+      `SELECT workflow_uuid FROM workflow_status WHERE status=$1 AND executor_id=$2`,
+      [StatusString.PENDING, executorID]
     )
     return rows.map(i => i.workflow_uuid);
   }
