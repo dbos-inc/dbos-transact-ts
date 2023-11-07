@@ -2,7 +2,7 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { Operon, OperonNull, operonNull } from "../operon";
-import { SystemDatabase } from "../system_database";
+import { OperonExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
@@ -18,6 +18,7 @@ interface WorkflowOutput<R> {
   authenticatedRoles: Array<string>;
   assumedRole: string;
   request: HTTPRequest;
+  executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
 }
 
 interface OperationOutput<R> {
@@ -92,6 +93,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
 
+      let executorID: string = "local"
+      if (request && request.headers && request.headers[OperonExecutorIDHeader]) {
+        executorID = request.headers[OperonExecutorIDHeader] as string
+      }
+
       const present = await statusDB.get(workflowUUID);
       if (present === undefined) {
         statusDB.set(workflowUUID, {
@@ -103,6 +109,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
           assumedRole: assumedRole,
           authenticatedRoles: authenticatedRoles,
           request: request,
+          executorID: executorID,
         });
       }
 

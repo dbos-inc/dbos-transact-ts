@@ -8,6 +8,7 @@ export interface workflow_status {
   assumed_role: string;
   authenticated_roles: string;  // Serialized list of roles.
   request: string;  // Serialized HTTPRequest
+  executor_id: string;  // Set to "local" for local deployment, set to microVM ID for cloud deployment.
 }
 
 export interface notifications {
@@ -57,7 +58,8 @@ export const systemDBSchema = `
     authenticated_roles TEXT,
     request TEXT,
     output TEXT,
-    error TEXT
+    error TEXT,
+    executor_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS notifications (
