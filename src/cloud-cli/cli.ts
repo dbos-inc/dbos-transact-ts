@@ -72,39 +72,36 @@ program
   });
 
 const userdb = program
-  .command('userdb')
-  .description('Create, delete or check status of a user database')
-  .action(async (options: {  host: string, port: string }) => {
-    console.log("npx userdb command " + options.host + ":" + options.port )
-  });  
+  .command('userdb');
+   
 
 userdb
   .command('create')
-  .argument('<dbname>', 'database name')
+  .argument('<string>', 'database name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
   .option('-a, --admin <admin>', 'Specify the admin user', 'postgres')
   .option('-W, --password <admin>', 'Specify the admin password', 'postgres')
   .option('-s, --sync', 'make synchronous call', false)
-  .action((async (dbname, options: { host: string, port: string, admin: string, password: string, sync: boolean }) => {
+  .action((async (dbname: string, options: { host: string, port: string, admin: string, password: string, sync: boolean }) => {
     await createUserDb(options.host, options.port, dbname, options.admin, options.password, options.sync)
   }))
 
 userdb
   .command('status')
-  .argument('<dbname>', 'database name')
+  .argument('<string>', 'database name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
-  .action((async (dbname, options: { host: string, port: string }) => {
+  .action((async (dbname: string, options: { host: string, port: string }) => {
     await getUserDb(options.host, options.port, dbname)
   })) 
 
 userdb
   .command('delete')
-  .argument('<dbname>', 'database name')
+  .argument('<string>', 'database name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
-  .action((async (dbname, options: { host: string, port: string }) => {
+  .action((async (dbname: string, options: { host: string, port: string }) => {
     await deleteUserDb(options.host, options.port, dbname)
   })) 
 

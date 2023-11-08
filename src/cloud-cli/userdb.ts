@@ -1,7 +1,6 @@
 import axios from "axios";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
-import { JsonObject } from "@prisma/client/runtime/library";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -9,7 +8,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
   const bearerToken = "Bearer " + userCredentials.token;
   
   try {
-    const res = await axios.post(`http://${host}:${port}/${userCredentials.userName}/databases/userdb`, 
+    await axios.post(`http://${host}:${port}/${userCredentials.userName}/databases/userdb`, 
     {"Name": dbName,"AdminName": adminName, "AdminPassword": adminPassword},
     {
       headers: {
@@ -19,13 +18,16 @@ export async function createUserDb(host: string, port: string, dbName: string, a
     });
 
     logger.info(`Successfully started creating database: ${dbName}`);
-    var status = ""
+    let status = ""
     if(sync) {
 
       while (status != "available") {
         await sleep(60000)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const data = await getDb(host, port, dbName)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         logger.info(data)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         status = data.Status
       }
 
@@ -45,7 +47,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    const res = await axios.delete(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, 
+    await axios.delete(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, 
     {
       headers: {
         "Content-Type": "application/json",
@@ -54,7 +56,6 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
     });
 
     logger.info(`Successfully started deleting database: ${dbName}`);
-    // logger.info(res.data)
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error deleting database ${dbName}: ${e.response?.data}`);
@@ -66,10 +67,9 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
 
 export async function getUserDb(host: string, port: string, dbName: string) {
   const logger = createGlobalLogger();
-  const userCredentials = getCloudCredentials();
-  const bearerToken = "Bearer " + userCredentials.token;
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await getDb(host, port, dbName)
     logger.info(res)
   } catch (e) {
@@ -81,6 +81,7 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
 async function getDb(host: string, port: string, dbName: string) : Promise<any> {
 
   const userCredentials = getCloudCredentials();
@@ -94,6 +95,7 @@ async function getDb(host: string, port: string, dbName: string) : Promise<any> 
       },
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
    return res.data 
 }
 
