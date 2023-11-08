@@ -6,7 +6,7 @@ import { login } from "./login";
 import { registerUser } from "./register";
 import { deleteApp } from "./delete";
 import { getAppLogs } from "./monitor";
-import { createUserDb } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
 
 const program = new Command();
 
@@ -71,7 +71,7 @@ program
     await getAppLogs(options.name, options.host, options.port);
   });
 
-  const userdb = program
+const userdb = program
   .command('userdb')
   .description('Create, delete or check status of a user database')
   //.requiredOption('-o, --operation <string>', 'Specify the operation name')
@@ -81,7 +81,7 @@ program
     console.log("npx userdb command " + options.host + ":" + options.port )
   });  
 
-  userdb
+userdb
   .command('create')
   .argument('<dbname>', 'database name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
@@ -90,6 +90,27 @@ program
     console.log("npx userdb create command with " + dbname + " at " + options.host + ":"+ options.port)
     await createUserDb(options.host, options.port, dbname, "postgres", "postgres")
   }))
+
+
+userdb
+  .command('status')
+  .argument('<dbname>', 'database name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .option('-p, --port <port>', 'Specify the port', '8080')
+  .action((async (dbname, options: { host: string, port: string }) => {
+    console.log("npx userdb status command with " + dbname + " at " + options.host + ":"+ options.port)
+    await getUserDb(options.host, options.port, dbname)
+  })) 
+
+userdb
+  .command('delete')
+  .argument('<dbname>', 'database name')
+  .option('-h, --host <string>', 'Specify the host', 'localhost')
+  .option('-p, --port <port>', 'Specify the port', '8080')
+  .action((async (dbname, options: { host: string, port: string }) => {
+    console.log("npx userdb delete command with " + dbname + " at " + options.host + ":"+ options.port)
+    await deleteUserDb(options.host, options.port, dbname)
+  })) 
 
 program.parse(process.argv);
 
