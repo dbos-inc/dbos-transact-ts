@@ -23,6 +23,8 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { OperonCommunicator } from '../communicator';
 
 export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
+export const OperonWorkflowRecoveryUrl = "/operon-workflow-recovery"
+export const OperonWorkflowRecoveryArg = "ids"
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -56,6 +58,7 @@ export class OperonHttpServer {
     this.app = config.koa;
 
     // Register operon endpoints.
+    OperonHttpServer.registerRecoveryEndpoint(this.operon, this.router);
     OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
@@ -71,12 +74,40 @@ export class OperonHttpServer {
     });
   }
 
+  /**
+   * Register workflow recovery endpoint.
+   */
+  static registerRecoveryEndpoint(operon: Operon, router: Router) {
+    // Handler function that parses request for recovery.
+    const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      const executorIDs = koaCtxt.request.body[OperonWorkflowRecoveryArg] as string[];
+      operon.logger.info("Recovering workflows for executors: " + executorIDs.toString());
+      const recoverHandles = await operon.recoverPendingWorkflows(executorIDs);
+      operon.recoveryWorkflowHandles.push(...recoverHandles);
+      await koaNext();
+    }
+
+    router.post(OperonWorkflowRecoveryUrl, recoveryHandler);
+    operon.logger.debug(`Operon Server Registered Recovery POST ${OperonWorkflowRecoveryUrl}`);
+
+  }
+
+  /**
+   * Register functions decorated with Operon decorators as HTTP endpoints.
+   */
   static registerDecoratedEndpoints(operon : Operon, router : Router)
   {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
+        // Ignore URL with "/operon-workflow-recovery" prefix. 
+        if (ro.apiURL.startsWith(OperonWorkflowRecoveryUrl)) {
+          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`)
+          return;
+        }
+
         // Check if we need to apply any Koa middleware.
         const defaults = ro.defaults as OperonMiddlewareDefaults;
         if (defaults?.koaMiddlewares) {

@@ -29,6 +29,11 @@ describe("recovery-tests", () => {
       LocalRecovery.resolve1 = resolve;
     });
 
+    static resolve2: () => void;
+    static promise2 = new Promise<void>((resolve) => {
+      LocalRecovery.resolve2 = resolve;
+    });
+
     static cnt = 0;
 
     @OperonWorkflow()
@@ -36,6 +41,12 @@ describe("recovery-tests", () => {
       if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
         LocalRecovery.cnt += input;
       }
+
+      // Signal the recovery is done.
+      if (LocalRecovery.cnt > input) {
+        LocalRecovery.resolve2();
+      }
+
       await LocalRecovery.promise1;
       return ctxt.authenticatedUser;
     }
@@ -44,12 +55,12 @@ describe("recovery-tests", () => {
   test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
     const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer, making sure the workflow is executed.
 
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverHandles = await operon.recoverPendingWorkflows();
-    LocalRecovery.resolve1();
+    await LocalRecovery.promise2; // Wait for the recovery is done.
+    LocalRecovery.resolve1(); // Both can finish now.
 
     expect(recoverHandles.length).toBe(1);
     await expect(recoverHandles[0].getResult()).resolves.toBe("test_recovery_user");
@@ -61,6 +72,11 @@ describe("recovery-tests", () => {
    * Test for selectively recovering workflows run by an executor.
    */
   class ExecutorRecovery {
+    static localResolve: () => void;
+    static localPromise = new Promise<void>((resolve) => {
+      ExecutorRecovery.localResolve = resolve;
+    });
+
     static resolve1: () => void;
     static promise1 = new Promise<void>((resolve) => {
       ExecutorRecovery.resolve1 = resolve;
@@ -77,14 +93,20 @@ describe("recovery-tests", () => {
     @OperonWorkflow()
     static async localWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.localCnt += input;
-      await ExecutorRecovery.promise1;
+      await ExecutorRecovery.localPromise;
       return ctxt.authenticatedUser;
     }
 
     @OperonWorkflow()
     static async executorWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.executorCnt += input;
-      await ExecutorRecovery.promise2;
+
+      // Signal the recovery is done.
+      if (ExecutorRecovery.executorCnt > input) {
+        ExecutorRecovery.resolve2();
+      }
+
+      await ExecutorRecovery.promise1;
       return ctxt.authenticatedUser;
     }
   }
@@ -92,15 +114,15 @@ describe("recovery-tests", () => {
   test("selective-recovery", async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
     const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer, making sure workflows are executed.
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
     const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executorid": "fcvm123" } } }).executorWorkflow(5);
 
     const recoverHandles = await operon.recoverPendingWorkflows(["fcvm123"]);
+    await ExecutorRecovery.promise2; // Wait for the recovery is done.
     ExecutorRecovery.resolve1();
-    ExecutorRecovery.resolve2();
+    ExecutorRecovery.localResolve();
 
     expect(recoverHandles.length).toBe(1);
     await expect(recoverHandles[0].getResult()).resolves.toBe("cloud_user");
