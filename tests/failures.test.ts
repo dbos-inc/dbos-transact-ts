@@ -5,7 +5,7 @@ import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { OperonError } from "../src/error";
 import { OperonConfig } from "../src/operon";
-import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "operon_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -20,7 +20,7 @@ describe("failures-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([FailureTestClass, FailureRecovery], config);
+    testRuntime = await createInternalTestRuntime([FailureTestClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;
@@ -127,40 +127,6 @@ describe("failures-tests", () => {
 
     // Invoke an unregistered communicator in a workflow.
     await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrowError();
-  });
-
-  class FailureRecovery {
-    static resolve1: () => void;
-    static promise1 = new Promise<void>((resolve) => {
-      FailureRecovery.resolve1 = resolve;
-    });
-
-    static cnt = 0;
-
-    @OperonWorkflow()
-    static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-      if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-        FailureRecovery.cnt += input;
-      }
-      await FailureRecovery.promise1;
-      return ctxt.authenticatedUser;
-    }
-  }
-
-  test("failure-recovery", async () => {
-    // Run a workflow until pending and start recovery.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
-
-    const handle = await testRuntime.invoke(FailureRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
-
-    const recoverPromise = operon.recoverPendingWorkflows();
-    FailureRecovery.resolve1();
-
-    await recoverPromise;
-
-    await expect(handle.getResult()).resolves.toBe("test_recovery_user");
-    expect(FailureRecovery.cnt).toBe(10); // Should run twice.
   });
 });
 

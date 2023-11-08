@@ -86,6 +86,7 @@ export class Operon {
   readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
+  readonly recoveryWorkflowHandles: Array<WorkflowHandle<any>> = [];
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -99,7 +100,7 @@ export class Operon {
   entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase, readonly recreateSystemDB: boolean = false) {
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
     if (systemDatabase) {
@@ -223,14 +224,15 @@ export class Operon {
 
       await this.telemetryCollector.init(this.registeredOperations);
       await this.userDatabase.init();
-      await this.systemDatabase.init();
+      await this.systemDatabase.init(this.recreateSystemDB);
     } catch (err) {
       if (err instanceof Error) {
         this.logger.error(`failed to initialize Operon: ${err.message}`);
         throw new OperonInitializationError(err.message);
       }
     }
-    void this.recoverPendingWorkflows();
+    const initRecoveryHandles = await this.recoverPendingWorkflows();
+    this.recoveryWorkflowHandles.push(...initRecoveryHandles)
     this.initialized = true;
 
     for ( const v of this.registeredOperations) {
@@ -246,6 +248,8 @@ export class Operon {
   }
 
   async destroy() {
+    // Wait for recovery workflows to finish.
+    await Promise.allSettled(this.recoveryWorkflowHandles.map((i) => i.getResult()));
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
     await this.systemDatabase.destroy();
@@ -388,10 +392,10 @@ export class Operon {
   }
 
   /**
-   * A recovery process that runs during Operon init time.
+   * A recovery process that by default runs during Operon init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
-  async recoverPendingWorkflows(executorIDs?: string[]) {
+  async recoverPendingWorkflows(executorIDs?: string[]): Promise<WorkflowHandle<any>[]> {
     if (!executorIDs) {
       executorIDs = ["local"]  // For local deployment.
     }
@@ -421,7 +425,7 @@ export class Operon {
         this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
     }
-    await Promise.allSettled(handlerArray.map((i) => i.getResult()));
+    return handlerArray;
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): OperonContextImpl {

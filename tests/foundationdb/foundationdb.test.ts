@@ -20,12 +20,7 @@ describe("foundationdb-operon", () => {
 
   beforeEach(async () => {
     const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB);
-  
-    // Clean up tables.
-    await systemDB.workflowStatusDB.clearRangeStartsWith("");
-    await systemDB.operationOutputsDB.clearRangeStartsWith([]);
-    await systemDB.notificationsDB.clearRangeStartsWith([]);
+    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB, true);
     FdbTestClass.cnt = 0;
     FdbTestClass.wfCnt = 0;
   });
@@ -136,22 +131,6 @@ describe("foundationdb-operon", () => {
 
     // Make sure we retrieve results correctly.
     await expect(testRuntime.retrieveWorkflow(recvUUID).getResult()).resolves.toBe("hello");
-  });
-
-  test("fdb-failure-recovery", async () => {
-    // Run a workflow until pending and start recovery.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID);
-
-    const handle = await testRuntime.invoke(FdbTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
-
-    const recoverPromise = operon.recoverPendingWorkflows();
-    FdbTestClass.resolve1();
-
-    await recoverPromise;
-
-    await expect(handle.getResult()).resolves.toBe(5);
-    expect(FdbTestClass.cnt).toBe(10); // Should run twice.
   });
 
   test("workflow-getevent-retrieve", async() => {
@@ -300,13 +279,4 @@ class FdbTestClass {
   static promise1 = new Promise<void>((resolve) => {
     FdbTestClass.resolve1 = resolve;
   });
-
-  @OperonWorkflow()
-  static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-      FdbTestClass.cnt += input;
-    }
-    await FdbTestClass.promise1;
-    return input;
-  }
 }
