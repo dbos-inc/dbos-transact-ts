@@ -110,7 +110,6 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe("customize error");
     expect(response.body.message).toBe("customize error");
-    console.log(response);
   });
 
   test("datavalidation-error", async () => {

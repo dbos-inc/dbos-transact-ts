@@ -31,7 +31,6 @@ describe("recovery-tests", () => {
     @OperonWorkflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
       if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-        console.trace("Invoked! " + FailureRecovery.cnt + " " + input)
         FailureRecovery.cnt += input;
       }
       await FailureRecovery.promise1;
