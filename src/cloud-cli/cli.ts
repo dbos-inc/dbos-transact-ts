@@ -34,7 +34,7 @@ program
   .option('-p, --port <port>', 'Specify the port', '8080')
   .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, host: string, port: string, machines: string }) => {
-    await deploy(options.name, options.host, options.port, parseInt(options.port));
+    await deploy(options.name, options.host, options.port, parseInt(options.machines));
   });
 
 program
