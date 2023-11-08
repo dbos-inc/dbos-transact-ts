@@ -74,9 +74,6 @@ program
 const userdb = program
   .command('userdb')
   .description('Create, delete or check status of a user database')
-  //.requiredOption('-o, --operation <string>', 'Specify the operation name')
-  // .option('-h, --host <string>', 'Specify the host', 'localhost')
-  // .option('-p, --port <port>', 'Specify the port', '8080')
   .action(async (options: {  host: string, port: string }) => {
     console.log("npx userdb command " + options.host + ":" + options.port )
   });  
@@ -86,11 +83,12 @@ userdb
   .argument('<dbname>', 'database name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
-  .action((async (dbname, options: { host: string, port: string }) => {
-    console.log("npx userdb create command with " + dbname + " at " + options.host + ":"+ options.port)
-    await createUserDb(options.host, options.port, dbname, "postgres", "postgres")
+  .option('-a, --admin <admin>', 'Specify the admin user', 'postgres')
+  .option('-W, --password <admin>', 'Specify the admin password', 'postgres')
+  .option('-s, --sync', 'make synchronous call', false)
+  .action((async (dbname, options: { host: string, port: string, admin: string, password: string, sync: boolean }) => {
+    await createUserDb(options.host, options.port, dbname, options.admin, options.password, options.sync)
   }))
-
 
 userdb
   .command('status')
@@ -98,7 +96,6 @@ userdb
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
   .action((async (dbname, options: { host: string, port: string }) => {
-    console.log("npx userdb status command with " + dbname + " at " + options.host + ":"+ options.port)
     await getUserDb(options.host, options.port, dbname)
   })) 
 
@@ -108,7 +105,6 @@ userdb
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
   .action((async (dbname, options: { host: string, port: string }) => {
-    console.log("npx userdb delete command with " + dbname + " at " + options.host + ":"+ options.port)
     await deleteUserDb(options.host, options.port, dbname)
   })) 
 
