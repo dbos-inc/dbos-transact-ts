@@ -32,8 +32,9 @@ program
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-h, --host <string>', 'Specify the host', 'localhost')
   .option('-p, --port <port>', 'Specify the port', '8080')
-  .action(async (options: { name: string, host: string, port: string }) => {
-    await deploy(options.name, options.host, options.port);
+  .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
+  .action(async (options: { name: string, host: string, port: string, machines: string }) => {
+    await deploy(options.name, options.host, options.port, parseInt(options.port));
   });
 
 program
