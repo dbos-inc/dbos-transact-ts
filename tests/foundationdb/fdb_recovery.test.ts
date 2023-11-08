@@ -15,17 +15,20 @@ describe("foundationdb-recovery", () => {
 
   beforeEach(async () => {
     const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    testRuntime = await createInternalTestRuntime([FailureRecovery], config, systemDB, true);
+    testRuntime = await createInternalTestRuntime([LocalRecovery, ExecutorRecovery], config, systemDB);
   });
 
   afterEach(async () => {
     await testRuntime.destroy();
   });
 
-  class FailureRecovery {
+  /**
+   * Test for the default local workflow recovery.
+   */
+  class LocalRecovery {
     static resolve1: () => void;
     static promise1 = new Promise<void>((resolve) => {
-      FailureRecovery.resolve1 = resolve;
+      LocalRecovery.resolve1 = resolve;
     });
 
     static cnt = 0;
@@ -33,26 +36,80 @@ describe("foundationdb-recovery", () => {
     @OperonWorkflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
       if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-        FailureRecovery.cnt += input;
+        LocalRecovery.cnt += input;
       }
-      await FailureRecovery.promise1;
+      await LocalRecovery.promise1;
       return ctxt.authenticatedUser;
     }
   }
 
-  test("failure-recovery", async () => {
+  test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
     const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
+    clearInterval(operon.flushBufferID); // Don't flush the output buffer, making sure the workflow is executed.
 
-    const handle = await testRuntime.invoke(FailureRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+    const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverHandles = await operon.recoverPendingWorkflows();
-    FailureRecovery.resolve1();
+    LocalRecovery.resolve1();
 
     expect(recoverHandles.length).toBe(1);
     await expect(recoverHandles[0].getResult()).resolves.toBe("test_recovery_user");
     await expect(handle.getResult()).resolves.toBe("test_recovery_user");
-    expect(FailureRecovery.cnt).toBe(10); // Should run twice.
+    expect(LocalRecovery.cnt).toBe(10); // Should run twice.
+  });
+
+  /**
+   * Test for selectively recovering workflows run by an executor.
+   */
+  class ExecutorRecovery {
+    static resolve1: () => void;
+    static promise1 = new Promise<void>((resolve) => {
+      ExecutorRecovery.resolve1 = resolve;
+    });
+
+    static resolve2: () => void;
+    static promise2 = new Promise<void>((resolve) => {
+      ExecutorRecovery.resolve2 = resolve;
+    });
+
+    static localCnt = 0;
+    static executorCnt = 0;
+
+    @OperonWorkflow()
+    static async localWorkflow(ctxt: WorkflowContext, input: number) {
+      ExecutorRecovery.localCnt += input;
+      await ExecutorRecovery.promise1;
+      return ctxt.authenticatedUser;
+    }
+
+    @OperonWorkflow()
+    static async executorWorkflow(ctxt: WorkflowContext, input: number) {
+      ExecutorRecovery.executorCnt += input;
+      await ExecutorRecovery.promise2;
+      return ctxt.authenticatedUser;
+    }
+  }
+
+  test("selective-recovery", async () => {
+    // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
+    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    clearInterval(operon.flushBufferID); // Don't flush the output buffer, making sure workflows are executed.
+
+    const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
+
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executorid": "fcvm123" } } }).executorWorkflow(5);
+
+    const recoverHandles = await operon.recoverPendingWorkflows(["fcvm123"]);
+    ExecutorRecovery.resolve1();
+    ExecutorRecovery.resolve2();
+
+    expect(recoverHandles.length).toBe(1);
+    await expect(recoverHandles[0].getResult()).resolves.toBe("cloud_user");
+    await expect(localHandle.getResult()).resolves.toBe("local_user");
+    await expect(execHandle.getResult()).resolves.toBe("cloud_user");
+
+    expect(ExecutorRecovery.localCnt).toBe(3); // Should run only once.
+    expect(ExecutorRecovery.executorCnt).toBe(10); // Should run twice.
   });
 });
