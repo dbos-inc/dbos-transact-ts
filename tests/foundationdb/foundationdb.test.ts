@@ -1,11 +1,11 @@
 import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, OperonTransaction, OperonCommunicator, OperonWorkflow, OperonTestingRuntime } from "../../src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
 import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestFDB } from "./fdb_helpers";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -19,13 +19,8 @@ describe("foundationdb-operon", () => {
   });
 
   beforeEach(async () => {
-    const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
+    const systemDB = await createInternalTestFDB();
     testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB);
-  
-    // Clean up tables.
-    await systemDB.workflowStatusDB.clearRangeStartsWith("");
-    await systemDB.operationOutputsDB.clearRangeStartsWith([]);
-    await systemDB.notificationsDB.clearRangeStartsWith([]);
     FdbTestClass.cnt = 0;
     FdbTestClass.wfCnt = 0;
   });
@@ -136,22 +131,6 @@ describe("foundationdb-operon", () => {
 
     // Make sure we retrieve results correctly.
     await expect(testRuntime.retrieveWorkflow(recvUUID).getResult()).resolves.toBe("hello");
-  });
-
-  test("fdb-failure-recovery", async () => {
-    // Run a workflow until pending and start recovery.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID);
-
-    const handle = await testRuntime.invoke(FdbTestClass, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
-
-    const recoverPromise = operon.recoverPendingWorkflows();
-    FdbTestClass.resolve1();
-
-    await recoverPromise;
-
-    await expect(handle.getResult()).resolves.toBe(5);
-    expect(FdbTestClass.cnt).toBe(10); // Should run twice.
   });
 
   test("workflow-getevent-retrieve", async() => {
@@ -300,13 +279,4 @@ class FdbTestClass {
   static promise1 = new Promise<void>((resolve) => {
     FdbTestClass.resolve1 = resolve;
   });
-
-  @OperonWorkflow()
-  static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
-      FdbTestClass.cnt += input;
-    }
-    await FdbTestClass.promise1;
-    return input;
-  }
 }

@@ -13,17 +13,16 @@ import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
-import { Client } from "pg";
 import { get, has } from "lodash";
+import { Client } from "pg";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
-  const otr = new OperonTestingRuntimeImpl();
   const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
 
-  // Drop system database
+  // Drop system database. Testing runtime always uses Postgres for local testing.
   const pgSystemClient = new Client({
     user: operonConfig.poolConfig.user,
     port: operonConfig.poolConfig.port,
@@ -35,8 +34,7 @@ export async function createTestingRuntime(userClasses: object[], configFilePath
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
   await pgSystemClient.end();
 
-  // Initialize the runtime.
-  await otr.init(userClasses, operonConfig);
+  const otr = createInternalTestRuntime(userClasses, operonConfig, undefined)
   return otr;
 }
 
@@ -66,9 +64,9 @@ export interface OperonTestingRuntime {
 }
 
 /**
- * For internal unit tests only. We do not drop the system database for internal unit tests because we want more control over the behavior.
+ * For internal unit tests which allows us to provide different system DB and control its behavior.
  */
-export async function createInternalTestRuntime(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
+export async function createInternalTestRuntime(userClasses: object[], testConfig: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
   await otr.init(userClasses, testConfig, systemDB);
   return otr;
