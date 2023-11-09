@@ -35,9 +35,10 @@ program
   .description('Deploy an application to the cloud')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
-  .action(async (options: { name: string, host: string, port: string }) => {
-    await deploy(options.name, options.host, options.port);
+  .option('-p, --port <port>', 'Specify the port', DEFAULT_HOST)
+  .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
+  .action(async (options: { name: string, host: string, port: string, machines: string }) => {
+    await deploy(options.name, options.host, options.port, parseInt(options.machines));
   });
 
 program
@@ -80,8 +81,8 @@ const userdb = program
 userdb
   .command('create')
   .argument('<string>', 'database name')
-  .option('-h, --host <string>', 'Specify the host', 'localhost')
-  .option('-p, --port <port>', 'Specify the port', '8080')
+  .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
+  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
   .option('-a, --admin <admin>', 'Specify the admin user', 'postgres')
   .option('-W, --password <admin>', 'Specify the admin password', 'postgres')
   .option('-s, --sync', 'make synchronous call', false)
@@ -92,8 +93,8 @@ userdb
 userdb
   .command('status')
   .argument('<string>', 'database name')
-  .option('-h, --host <string>', 'Specify the host', 'localhost')
-  .option('-p, --port <port>', 'Specify the port', '8080')
+  .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
+  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
   .action((async (dbname: string, options: { host: string, port: string }) => {
     await getUserDb(options.host, options.port, dbname)
   })) 
@@ -101,8 +102,8 @@ userdb
 userdb
   .command('delete')
   .argument('<string>', 'database name')
-  .option('-h, --host <string>', 'Specify the host', 'localhost')
-  .option('-p, --port <port>', 'Specify the port', '8080')
+  .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
+  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
   .option('-s, --sync', 'make synchronous call', false)
   .action((async (dbname: string, options: { host: string, port: string, sync:boolean }) => {
     await deleteUserDb(options.host, options.port, dbname, options.sync)

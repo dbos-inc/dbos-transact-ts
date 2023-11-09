@@ -5,7 +5,7 @@ import FormData from "form-data";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 
-export async function deploy(appName: string, host: string, port: string) {
+export async function deploy(appName: string, host: string, port: string, machines: number) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -15,6 +15,7 @@ export async function deploy(appName: string, host: string, port: string) {
       `http://${host}:${port}/${userCredentials.userName}/application`,
       {
         name: appName,
+        max_vms: machines
       },
       {
         headers: {
