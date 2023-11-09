@@ -35,7 +35,7 @@ program
   .description('Deploy an application to the cloud')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <port>', 'Specify the port', DEFAULT_HOST)
+  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
   .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, host: string, port: string, machines: string }) => {
     await deploy(options.name, options.host, options.port, parseInt(options.machines));
