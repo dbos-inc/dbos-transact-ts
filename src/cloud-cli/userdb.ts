@@ -1,6 +1,7 @@
 import axios from "axios";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
+import { sleep } from "../utils"
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -18,9 +19,9 @@ export async function createUserDb(host: string, port: string, dbName: string, a
     });
 
     logger.info(`Successfully started creating database: ${dbName}`);
-    let status = ""
+    
     if(sync) {
-
+      let status = ""
       while (status != "available") {
         await sleep(60000)
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -41,7 +42,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
   }
 }
 
-export async function deleteUserDb(host: string, port: string, dbName: string) {
+export async function deleteUserDb(host: string, port: string, dbName: string, sync: boolean) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -56,6 +57,25 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
     });
 
     logger.info(`Successfully started deleting database: ${dbName}`);
+    if(sync) {
+      let status = "deleting"
+      while (status == "deleting") {
+        await sleep(60000)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          var data
+          try {
+            // HACK to exit gracefully because the get throws an exception on 500
+            data = await getDb(host, port, dbName)
+          } catch(e) {
+            logger.info(`Deleted database: ${dbName}`);
+            break;
+          }
+         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          logger.info(data)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+          status = data.Status
+      }
+    }
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error deleting database ${dbName}: ${e.response?.data}`);
@@ -96,10 +116,9 @@ async function getDb(host: string, port: string, dbName: string) : Promise<any> 
     });
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-   return res.data 
-}
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise(
-      (resolve) => setTimeout(resolve, ms));
+   if (res.status == axios.HttpStatusCode.Ok) {
+     return res.data 
+   } else {
+     return {"Status" : "notfound"}
+   }
 }
