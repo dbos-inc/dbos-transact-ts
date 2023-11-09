@@ -62,9 +62,10 @@ export async function deleteUserDb(host: string, port: string, dbName: string, s
       while (status == "deleting") {
         await sleep(60000)
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          var data
+          let data
           try {
             // HACK to exit gracefully because the get throws an exception on 500
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             data = await getDb(host, port, dbName)
           } catch(e) {
             logger.info(`Deleted database: ${dbName}`);
@@ -115,8 +116,9 @@ async function getDb(host: string, port: string, dbName: string) : Promise<any> 
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-enum-comparison
    if (res.status == axios.HttpStatusCode.Ok) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
      return res.data 
    } else {
      return {"Status" : "notfound"}
