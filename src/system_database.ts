@@ -12,7 +12,7 @@ import { HTTPRequest } from "./context";
 export const OperonExecutorIDHeader = "operon-executor-id";
 
 export interface SystemDatabase {
-  init(recreateSystemDB: boolean): Promise<void>;
+  init(): Promise<void>;
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
@@ -53,15 +53,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.pool = new Pool(poolConfig);
   }
 
-  async init(recreateSystemDB: boolean) {
+  async init() {
     const pgSystemClient = new Client(this.pgPoolConfig);
     await pgSystemClient.connect();
-
-    // If recreate is set to true, drop the existing system database.
-    if (recreateSystemDB) {
-      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${this.systemDatabaseName};`);
-    }
-
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`);
     if (dbExists.rows.length === 0) {

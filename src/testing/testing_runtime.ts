@@ -14,13 +14,27 @@ import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 import { get, has } from "lodash";
+import { Client } from "pg";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
   const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
-  const otr = createInternalTestRuntime(userClasses, operonConfig, undefined, /*dropSystemDB=*/true)
+
+  // Drop system database. Testing runtime always uses Postgres for local testing.
+  const pgSystemClient = new Client({
+    user: operonConfig.poolConfig.user,
+    port: operonConfig.poolConfig.port,
+    host: operonConfig.poolConfig.host,
+    password: operonConfig.poolConfig.password,
+    database: operonConfig.poolConfig.database,
+  });
+  await pgSystemClient.connect();
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
+  await pgSystemClient.end();
+
+  const otr = createInternalTestRuntime(userClasses, operonConfig, undefined)
   return otr;
 }
 
@@ -52,9 +66,9 @@ export interface OperonTestingRuntime {
 /**
  * For internal unit tests which allows us to provide different system DB and control its behavior.
  */
-export async function createInternalTestRuntime(userClasses: object[], testConfig: OperonConfig, systemDB?: SystemDatabase, dropSystemDB: boolean = true): Promise<OperonTestingRuntime> {
+export async function createInternalTestRuntime(userClasses: object[], testConfig: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
   const otr = new OperonTestingRuntimeImpl();
-  await otr.init(userClasses, testConfig, systemDB, dropSystemDB);
+  await otr.init(userClasses, testConfig, systemDB);
   return otr;
 }
 
@@ -69,9 +83,9 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase, dropSystemDB: boolean = false) {
+  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
     const operonConfig = testConfig ? [testConfig] : parseConfigFile();
-    const operon = new Operon(operonConfig[0], systemDB, dropSystemDB);
+    const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);
     this.#applicationConfig = operon.config.application;

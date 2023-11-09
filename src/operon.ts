@@ -100,7 +100,7 @@ export class Operon {
   entities: Function[] = []
 
   /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase, readonly recreateSystemDB: boolean = false) {
+  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
     if (systemDatabase) {
@@ -224,7 +224,7 @@ export class Operon {
 
       await this.telemetryCollector.init(this.registeredOperations);
       await this.userDatabase.init();
-      await this.systemDatabase.init(this.recreateSystemDB);
+      await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
         this.logger.error(`failed to initialize Operon: ${err.message}`);

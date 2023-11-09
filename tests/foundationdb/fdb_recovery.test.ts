@@ -1,10 +1,10 @@
 import { WorkflowContext, OperonWorkflow, OperonTestingRuntime } from "../../src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { OperonConfig } from "../../src/operon";
 import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import request from "supertest";
 import { OperonWorkflowRecoveryUrl } from "../../src/httpServer/server";
+import { createInternalTestFDB } from "./fdb_helpers";
 
 describe("foundationdb-recovery", () => {
   let config: OperonConfig;
@@ -16,7 +16,7 @@ describe("foundationdb-recovery", () => {
   });
 
   beforeEach(async () => {
-    const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
+    const systemDB = await createInternalTestFDB();
     testRuntime = await createInternalTestRuntime([LocalRecovery, ExecutorRecovery], config, systemDB);
   });
 

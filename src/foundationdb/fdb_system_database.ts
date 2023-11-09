@@ -69,16 +69,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .withValueEncoding(fdb.encoders.json);
   }
 
-  async init(recreateSystemDB: boolean): Promise<void> {
-    if (recreateSystemDB) {
-      // Clean up tables.
-      await this.workflowEventsDB.clearRangeStartsWith("");
-      await this.operationOutputsDB.clearRangeStartsWith([]);
-      await this.notificationsDB.clearRangeStartsWith([]);
-      await this.workflowEventsDB.clearRangeStartsWith([]);
-      await this.workflowInputsDB.clearRangeStartsWith("");
-    }
-  }
+  async init(): Promise<void> {}
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {
@@ -96,14 +87,22 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(
+    workflowUUID: string,
+    name: string,
+    authenticatedUser: string,
+    assumedRole: string,
+    authenticatedRoles: string[],
+    request: HTTPRequest | null,
+    args: T
+  ): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
 
-      let executorID: string = "local"
+      let executorID: string = "local";
       if (request && request.headers && request.headers[OperonExecutorIDHeader]) {
-        executorID = request.headers[OperonExecutorIDHeader] as string
+        executorID = request.headers[OperonExecutorIDHeader] as string;
       }
 
       const present = await statusDB.get(workflowUUID);
@@ -140,17 +139,17 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
       for (const [workflowUUID, output] of localBuffer) {
-          const currWf = (await txn.get(workflowUUID)) as WorkflowOutput<unknown>;
-          txn.set(workflowUUID, {
-            status: StatusString.SUCCESS,
-            error: null,
-            output: output,
-            name: currWf?.name ?? null,
-            authenticatedUser: currWf?.authenticatedUser ?? null,
-            authenticatedRoles: currWf?.authenticatedRoles ?? null,
-            assumedRole: currWf?.assumedRole ?? null,
-            request: currWf?.request ?? null,
-          });
+        const currWf = (await txn.get(workflowUUID)) as WorkflowOutput<unknown>;
+        txn.set(workflowUUID, {
+          status: StatusString.SUCCESS,
+          error: null,
+          output: output,
+          name: currWf?.name ?? null,
+          authenticatedUser: currWf?.authenticatedUser ?? null,
+          authenticatedRoles: currWf?.authenticatedRoles ?? null,
+          assumedRole: currWf?.assumedRole ?? null,
+          request: currWf?.request ?? null,
+        });
       }
     });
     return Array.from(localBuffer.keys());
@@ -166,12 +165,12 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async getPendingWorkflows(executorID: string): Promise<string[]> {
-    const workflows = await this.workflowStatusDB.getRangeAll('', '\xff') as Array<[string, WorkflowOutput<unknown>]>;
-    return workflows.filter(i => (i[1].status === StatusString.PENDING && i[1].executorID === executorID)).map(i => i[0]);
+    const workflows = (await this.workflowStatusDB.getRangeAll("", "\xff")) as Array<[string, WorkflowOutput<unknown>]>;
+    return workflows.filter((i) => i[1].status === StatusString.PENDING && i[1].executorID === executorID).map((i) => i[0]);
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
-    return await this.workflowInputsDB.get(workflowUUID) as T ?? null;
+    return ((await this.workflowInputsDB.get(workflowUUID)) as T) ?? null;
   }
 
   async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
@@ -258,7 +257,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       return output.output;
     } else if (status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
-    } else { // StatusString.PENDING
+    } else {
+      // StatusString.PENDING
       return this.getWorkflowResult(workflowUUID);
     }
   }
@@ -313,14 +313,14 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const notifications = txn.at(this.notificationsDB);
       const messages = (await notifications.get([workflowUUID, currTopic])) as Array<unknown> | undefined;
-      const message = (messages ? messages.shift() as T : undefined) ?? null;  // If no message is found, return null.
+      const message = (messages ? (messages.shift() as T) : undefined) ?? null; // If no message is found, return null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
         throw new OperonWorkflowConflictUUIDError(workflowUUID);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
       if (messages && messages.length > 0) {
-        notifications.set([workflowUUID, currTopic], messages);  // Update the message table.
+        notifications.set([workflowUUID, currTopic], messages); // Update the message table.
       } else {
         notifications.clear([workflowUUID, currTopic]);
       }

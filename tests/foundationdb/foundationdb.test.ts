@@ -1,11 +1,11 @@
 import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, OperonTransaction, OperonCommunicator, OperonWorkflow, OperonTestingRuntime } from "../../src/";
 import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { v1 as uuidv1 } from "uuid";
 import { OperonConfig } from "../../src/operon";
 import { PoolClient } from "pg";
 import { OperonError } from "../../src/error";
 import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestFDB } from "./fdb_helpers";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
@@ -19,8 +19,8 @@ describe("foundationdb-operon", () => {
   });
 
   beforeEach(async () => {
-    const systemDB: FoundationDBSystemDatabase = new FoundationDBSystemDatabase();
-    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB, true);
+    const systemDB = await createInternalTestFDB();
+    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB);
     FdbTestClass.cnt = 0;
     FdbTestClass.wfCnt = 0;
   });
