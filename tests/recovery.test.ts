@@ -44,7 +44,7 @@ describe("recovery-tests", () => {
         LocalRecovery.cnt += input;
       }
 
-      // Signal the recovery is done.
+      // Signal the workflow has been executed more than once.
       if (LocalRecovery.cnt > input) {
         LocalRecovery.resolve2();
       }
@@ -61,7 +61,7 @@ describe("recovery-tests", () => {
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverHandles = await operon.recoverPendingWorkflows();
-    await LocalRecovery.promise2; // Wait for the recovery is done.
+    await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 
     expect(recoverHandles.length).toBe(1);
@@ -103,7 +103,7 @@ describe("recovery-tests", () => {
     static async executorWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.executorCnt += input;
 
-      // Signal the recovery is done.
+      // Signal the workflow has been executed more than once.
       if (ExecutorRecovery.executorCnt > input) {
         ExecutorRecovery.resolve2();
       }
@@ -119,10 +119,10 @@ describe("recovery-tests", () => {
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executorid": "fcvm123" } } }).executorWorkflow(5);
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
     const recoverHandles = await operon.recoverPendingWorkflows(["fcvm123"]);
-    await ExecutorRecovery.promise2; // Wait for the recovery is done.
+    await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
     ExecutorRecovery.localResolve();
 
@@ -146,7 +146,7 @@ describe("recovery-tests", () => {
       ExecutorRecovery.resolve2 = resolve;
     });
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executorid": "fcvm123" } } }).executorWorkflow(5);
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
     const response = await request(testRuntime.getHandlersCallback())
       .post(OperonWorkflowRecoveryUrl)
@@ -154,7 +154,7 @@ describe("recovery-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toStrictEqual([execHandle.getWorkflowUUID()]);
 
-    await ExecutorRecovery.promise2; // Wait for the recovery is done.
+    await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
 
     // Check output.

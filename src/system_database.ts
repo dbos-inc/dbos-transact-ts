@@ -9,7 +9,7 @@ import { systemDBSchema, notifications, operation_outputs, workflow_status, work
 import { sleep } from "./utils";
 import { HTTPRequest } from "./context";
 
-export const OperonExecutorIDHeader = "operon-executorid";
+export const OperonExecutorIDHeader = "operon-executor-id";
 
 export interface SystemDatabase {
   init(recreateSystemDB: boolean): Promise<void>;
