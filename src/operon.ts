@@ -395,11 +395,7 @@ export class Operon {
    * A recovery process that by default runs during Operon init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
-  async recoverPendingWorkflows(executorIDs?: string[]): Promise<WorkflowHandle<any>[]> {
-    if (!executorIDs || executorIDs.length === 0) {
-      executorIDs = ["local"]  // For local deployment.
-    }
-
+  async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows of executor: ${execID}`)
