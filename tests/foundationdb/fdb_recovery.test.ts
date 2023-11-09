@@ -3,6 +3,8 @@ import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
 import { FoundationDBSystemDatabase } from "../../src/foundationdb/fdb_system_database";
 import { OperonConfig } from "../../src/operon";
 import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import request from "supertest";
+import { OperonWorkflowRecoveryUrl } from "../../src/httpServer/server";
 
 describe("foundationdb-recovery", () => {
   let config: OperonConfig;
@@ -132,6 +134,33 @@ describe("foundationdb-recovery", () => {
     await expect(execHandle.getResult()).resolves.toBe("cloud_user");
 
     expect(ExecutorRecovery.localCnt).toBe(3); // Should run only once.
+    expect(ExecutorRecovery.executorCnt).toBe(10); // Should run twice.
+  });
+
+  test("http-recovery", async () => {
+    // Invoke a workflow and invoke a recovery through HTTP endpoint.
+    // Reset variables.
+    ExecutorRecovery.executorCnt = 0;
+    ExecutorRecovery.promise1 = new Promise<void>((resolve) => {
+      ExecutorRecovery.resolve1 = resolve;
+    });
+    ExecutorRecovery.promise2 = new Promise<void>((resolve) => {
+      ExecutorRecovery.resolve2 = resolve;
+    });
+
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executorid": "fcvm123" } } }).executorWorkflow(5);
+
+    const response = await request(testRuntime.getHandlersCallback())
+      .post(OperonWorkflowRecoveryUrl)
+      .send(["fcvm123"]);
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toStrictEqual([execHandle.getWorkflowUUID()]);
+
+    await ExecutorRecovery.promise2; // Wait for the recovery is done.
+    ExecutorRecovery.resolve1();
+
+    // Check output.
+    await expect(execHandle.getResult()).resolves.toBe("cloud_user");
     expect(ExecutorRecovery.executorCnt).toBe(10); // Should run twice.
   });
 });

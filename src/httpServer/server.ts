@@ -24,7 +24,6 @@ import { OperonCommunicator } from '../communicator';
 
 export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
 export const OperonWorkflowRecoveryUrl = "/operon-workflow-recovery"
-export const OperonWorkflowRecoveryArg = "ids"
 
 export class OperonHttpServer {
   readonly app: Koa;
@@ -36,11 +35,7 @@ export class OperonHttpServer {
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
-  constructor(readonly operon: Operon, config : {
-    koa ?: Koa,
-    router ?: Router,
-  } = {})
-  {
+  constructor(readonly operon: Operon, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
       config.router = new Router();
     }
@@ -76,35 +71,39 @@ export class OperonHttpServer {
 
   /**
    * Register workflow recovery endpoint.
+   * Receives a list of executor IDs and returns a list of workflowUUIDs.
    */
   static registerRecoveryEndpoint(operon: Operon, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const executorIDs = koaCtxt.request.body[OperonWorkflowRecoveryArg] as string[];
+      const executorIDs = koaCtxt.request.body as string[];
       operon.logger.info("Recovering workflows for executors: " + executorIDs.toString());
       const recoverHandles = await operon.recoverPendingWorkflows(executorIDs);
       operon.recoveryWorkflowHandles.push(...recoverHandles);
+
+      // Return a list of workflowUUIDs being recovered.
+      koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.getWorkflowUUID())).then((results) =>
+        results.filter((i) => i.status === "fulfilled").map((i) => (i as PromiseFulfilledResult<unknown>).value)
+      );
       await koaNext();
-    }
+    };
 
     router.post(OperonWorkflowRecoveryUrl, recoveryHandler);
     operon.logger.debug(`Operon Server Registered Recovery POST ${OperonWorkflowRecoveryUrl}`);
-
   }
 
   /**
    * Register functions decorated with Operon decorators as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(operon : Operon, router : Router)
-  {
+  static registerDecoratedEndpoints(operon: Operon, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        // Ignore URL with "/operon-workflow-recovery" prefix. 
+        // Ignore URL with "/operon-workflow-recovery" prefix.
         if (ro.apiURL.startsWith(OperonWorkflowRecoveryUrl)) {
-          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`)
+          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`);
           return;
         }
 
@@ -114,7 +113,7 @@ export class OperonHttpServer {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
             operon.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
-          })
+          });
         }
 
         // Wrapper function that parses request and send response.
@@ -125,10 +124,17 @@ export class OperonHttpServer {
             // Check for auth first
             if (defaults?.authMiddleware) {
               const res = await defaults.authMiddleware({
-                name: ro.name, requiredRole: ro.getRequiredRoles(), koaContext: koaCtxt,
-                logger: oc.logger, span: oc.span,
-                getConfig: (key:string, def)=>{return oc.getConfig(key, def);},
-                query: (query, ...args) => {return operon.userDatabase.queryFunction(query, ...args);}
+                name: ro.name,
+                requiredRole: ro.getRequiredRoles(),
+                koaContext: koaCtxt,
+                logger: oc.logger,
+                span: oc.span,
+                getConfig: (key: string, def) => {
+                  return oc.getConfig(key, def);
+                },
+                query: (query, ...args) => {
+                  return operon.userDatabase.queryFunction(query, ...args);
+                },
               });
               if (res) {
                 oc.authenticatedUser = res.authenticatedUser;
@@ -139,7 +145,7 @@ export class OperonHttpServer {
             // Parse the arguments.
             const args: unknown[] = [];
             ro.args.forEach((marg, idx) => {
-              marg.argSource = marg.argSource ?? ArgSources.DEFAULT;  // Assign a default value.
+              marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
               if (idx === 0) {
                 return; // Do not parse the context.
               }
@@ -201,10 +207,10 @@ export class OperonHttpServer {
             if (e instanceof Error) {
               oc.logger.error(e.message);
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-              let st = ((e as OperonResponseError)?.status || 500);
+              let st = (e as OperonResponseError)?.status || 500;
               const operonErrorCode = (e as OperonError)?.operonErrorCode;
               if (operonErrorCode && isOperonClientError(operonErrorCode)) {
-                st = 400;  // Set to 400: client-side error.
+                st = 400; // Set to 400: client-side error.
               }
               koaCtxt.status = st;
               koaCtxt.message = e.message;
@@ -237,10 +243,10 @@ export class OperonHttpServer {
               {
                 set: (carrier: Carrier, key: string, value: string) => {
                   carrier.context.set(key, value);
-                }
-              },
+                },
+              }
             );
-            operon.tracer.endSpan(oc.span)
+            operon.tracer.endSpan(oc.span);
             await koaNext();
           }
         };
