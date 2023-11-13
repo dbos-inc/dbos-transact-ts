@@ -1,9 +1,11 @@
 import axios from "axios";
+import YAML from "yaml";
 import { execSync } from "child_process";
 import fs from "fs";
 import FormData from "form-data";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
+import { ConfigFile, parseConfigFile } from "../operon-runtime/config";
 
 export async function deploy(appName: string, host: string, port: string, machines: number) {
   const logger = createGlobalLogger();
@@ -26,7 +28,19 @@ export async function deploy(appName: string, host: string, port: string, machin
     );
     const uuid = register.data as string;
     execSync(`mkdir -p operon_deploy`);
-    execSync(`envsubst < operon-config.yaml > operon_deploy/operon-config.yaml`);
+
+    const configFile: ConfigFile | undefined = parseConfigFile('operon-config.yaml');
+    if (!configFile) {
+      logger.error(`failed to parse operon-config.yaml`);
+      return;
+    }
+    try {
+      fs.writeFileSync(`operon_deploy/operon-config.yaml`, YAML.stringify(configFile));
+    } catch (e) {
+      logger.error(`failed to write operon-config.yaml: ${(e as Error).message}`);
+      return;
+    }
+
     execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x operon_deploy/* operon-config.yaml > /dev/null`);
     execSync(`zip -j operon_deploy/${uuid}.zip operon_deploy/operon-config.yaml > /dev/null`);
 
