@@ -33,15 +33,7 @@ export interface ConfigFile {
   dbClientMetadata?: any;
 }
 
-/*
- * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
- * Considers OperonCLIStartOptions if provided, which takes precedence over config file
- * */
-export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
-  /****************************/
-  /* Parse configuration file */
-  /****************************/
-  const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
+export function parseConfigFile(configFilePath: string): ConfigFile | undefined {
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(configFilePath);
@@ -53,6 +45,16 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
     }
   }
 
+  return configFile;
+}
+
+/*
+ * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
+ * Considers OperonCLIStartOptions if provided, which takes precedence over config file
+ * */
+export function buildConfigs(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+  const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
+  const configFile: ConfigFile | undefined = parseConfigFile(configFilePath);
   if (!configFile) {
     throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
