@@ -101,7 +101,7 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack, ...args } = info;
-    const { applicationVersion } = args;
+    const { applicationVersion } = args;
     delete args.applicationVersion;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
