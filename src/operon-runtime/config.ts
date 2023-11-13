@@ -1,5 +1,5 @@
 import { OperonInitializationError } from "../error";
-import { readFileSync } from "../utils";
+import { readFileSync, substituteEnvVars } from "../utils";
 import { OperonConfig } from "../operon";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
@@ -31,18 +31,6 @@ export interface ConfigFile {
   runtimeConfig?: OperonRuntimeConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
-}
-
-/*
-* Substitute environment variables using a regex for matching.
-* Will find anything in curly braces.
-* TODO: Use a more robust solution.
-*/
-function substituteEnvVars(content: string): string {
-  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
-  return content.replace(regex, (_, g1: string) => {
-      return process.env[g1] || "";  // If the env variable is not set, return an empty string.
-  });
 }
 
 /*
