@@ -53,7 +53,7 @@
     "@types/lodash": "^4.14.197",
     "@types/pg": "^8.10.2",
     "@types/uuid": "^9.0.2",
-    "axios": "^1.5.0",
+    "axios": "^1.6.0",
     "commander": "^11.0.0",
     "fast-glob": "^3.3.1",
     "form-data": "^4.0.0",
