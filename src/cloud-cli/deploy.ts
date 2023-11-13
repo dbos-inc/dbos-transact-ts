@@ -7,6 +7,8 @@ import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 import { ConfigFile, parseConfigFile } from "../operon-runtime/config";
 
+const operonConfigFilePath = "operon-config.yaml";
+
 export async function deploy(appName: string, host: string, port: string, machines: number) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
@@ -29,20 +31,20 @@ export async function deploy(appName: string, host: string, port: string, machin
     const uuid = register.data as string;
     execSync(`mkdir -p operon_deploy`);
 
-    const configFile: ConfigFile | undefined = parseConfigFile('operon-config.yaml');
+    const configFile: ConfigFile | undefined = parseConfigFile(operonConfigFilePath);
     if (!configFile) {
-      logger.error(`failed to parse operon-config.yaml`);
+      logger.error(`failed to parse ${operonConfigFilePath}`);
       return;
     }
     try {
-      fs.writeFileSync(`operon_deploy/operon-config.yaml`, YAML.stringify(configFile));
+      fs.writeFileSync(`operon_deploy/${operonConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
-      logger.error(`failed to write operon-config.yaml: ${(e as Error).message}`);
+      logger.error(`failed to write ${operonConfigFilePath}: ${(e as Error).message}`);
       return;
     }
 
-    execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x operon_deploy/* operon-config.yaml > /dev/null`);
-    execSync(`zip -j operon_deploy/${uuid}.zip operon_deploy/operon-config.yaml > /dev/null`);
+    execSync(`zip -ry operon_deploy/${uuid}.zip ./* -x operon_deploy/* ${operonConfigFilePath} > /dev/null`);
+    execSync(`zip -j operon_deploy/${uuid}.zip operon_deploy/${operonConfigFilePath} > /dev/null`);
 
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`operon_deploy/${uuid}.zip`));
