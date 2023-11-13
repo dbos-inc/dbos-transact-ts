@@ -29,7 +29,7 @@ export class CommunicatorContextImpl extends OperonContextImpl implements Commun
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContextImpl, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
-    super(commName, span, logger, workflowContext);
+    super(commName, span, logger, workflowContext.applicationVersion, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;

@@ -11,6 +11,7 @@ import { TelemetryConfig } from "../telemetry";
 export const operonConfigFilePath = "operon-config.yaml";
 
 export interface ConfigFile {
+  version: string;
   database: {
     hostname: string;
     port: number;
@@ -111,6 +112,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /* Build final Operon Configuration */
   /************************************/
   const operonConfig: OperonConfig = {
+    applicationVersion: configFile.version,
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,

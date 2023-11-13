@@ -65,7 +65,7 @@ export class OperonHttpServer {
   listen(port: number) {
     // Start the HTTP server.
     return this.app.listen(port, () => {
-      this.logger.info(`Operon Server is running at http://localhost:${port}`);
+      this.logger.info(`Operon Server is running at http://localhost:${port}`, { applicationVersion: this.operon.config.applicationVersion });
     });
   }
 

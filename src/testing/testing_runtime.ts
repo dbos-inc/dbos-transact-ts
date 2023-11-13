@@ -78,7 +78,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
   #server: OperonHttpServer | null = null;
   #applicationConfig: unknown = undefined;
- 
+
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
@@ -131,7 +131,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
 
     // Creates an Operon context to pass in necessary info.
     const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("test", span, operon.logger);
+    const oc = new OperonContextImpl("test", span, operon.logger, operon.config.applicationVersion);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];

@@ -30,6 +30,8 @@ export interface OperonContext {
   readonly logger: OperonLogger;
   readonly span: Span;
 
+  readonly applicationVersion: string;
+
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
 }
@@ -42,7 +44,7 @@ export class OperonContextImpl implements OperonContext {
   workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
   readonly logger: OperonLogger;      // Wrapper around the global logger for this context.
 
-  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, readonly applicationVersion: string, parentCtx?: OperonContextImpl) {
     this.logger = new OperonLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;
@@ -83,8 +85,8 @@ export class OperonContextImpl implements OperonContext {
  * TODO : move logger and application, getConfig to a BaseContext which is at the root of all contexts
  */
 export class InitContext {
-  
-  readonly logger: Logger ;
+
+  readonly logger: Logger;
 
   // All private Not exposed
   private userDatabase: UserDatabase;
@@ -96,13 +98,12 @@ export class InitContext {
     this.userDatabase = operon.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.application = operon.config.application;
-
   }
 
   createUserSchema(): Promise<void> {
-    return this.userDatabase.createSchema()  ;
+    return this.userDatabase.createSchema();
   }
-    
+
   dropUserSchema(): Promise<void> {
     return this.userDatabase.dropSchema();
   }
@@ -116,7 +117,7 @@ export class InitContext {
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     // If there is no application config at all, or the key is missing, return the default value or undefined.
-    if (!this.application|| !has(this.application, key)) {
+    if (!this.application || !has(this.application, key)) {
       if (defaultValue) {
         return defaultValue;
       }

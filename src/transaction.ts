@@ -26,7 +26,7 @@ export interface TransactionContext<T extends UserDatabaseClient> extends Operon
   readonly client: T;
 }
 
-export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T>  {
+export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T> {
   constructor(
     readonly clientKind: UserDatabaseName,
     readonly client: T,
@@ -36,7 +36,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends Operon
     readonly functionID: number,
     operationName: string
   ) {
-    super(operationName, span, logger, workflowContext);
+    super(operationName, span, logger, workflowContext.applicationVersion, workflowContext);
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = workflowContext.applicationConfig;

@@ -46,6 +46,7 @@ export const operonNull: OperonNull = {};
 
 /* Interface for Operon configuration */
 export interface OperonConfig {
+  readonly applicationVersion: string;
   readonly poolConfig: PoolConfig;
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
@@ -235,16 +236,15 @@ export class Operon {
     this.recoveryWorkflowHandles.push(...initRecoveryHandles)
     this.initialized = true;
 
-    for ( const v of this.registeredOperations) {
+    for (const v of this.registeredOperations) {
       const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
         this.logger.debug("Executing init method: " + m.name);
         await m.origFunction(new InitContext(this));
       }
-
     }
 
-    this.logger.info("Operon initialized");
+    this.logger.info("Operon initialized", {applicationVersion: this.config.applicationVersion});
   }
 
   async destroy() {
@@ -429,7 +429,7 @@ export class Operon {
     span.setAttributes({
       operationName: status.workflowName,
     });
-    const oc = new OperonContextImpl(status.workflowName, span, this.logger);
+    const oc = new OperonContextImpl(status.workflowName, span, this.logger, this.config.applicationVersion);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
@@ -449,14 +449,14 @@ export class Operon {
   }
 
   logRegisteredHTTPUrls() {
-    this.logger.info("HTTP endpoints supported:");
+    this.logger.info("HTTP endpoints supported:", { applicationVersion: this.config.applicationVersion });
     this.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
+        this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL, { applicationVersion: this.config.applicationVersion });
         const roles = ro.getRequiredRoles();
         if (roles.length > 0) {
-          this.logger.info("        Required Roles: " + JSON.stringify(roles));
+          this.logger.info("        Required Roles: " + JSON.stringify(roles), { applicationVersion: this.config.applicationVersion });
         }
       }
     });
