@@ -5,9 +5,7 @@ import fs from "fs";
 import FormData from "form-data";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
-import { ConfigFile, parseConfigFile } from "../operon-runtime/config";
-
-const operonConfigFilePath = "operon-config.yaml";
+import { ConfigFile, parseConfigFile, operonConfigFilePath } from "../operon-runtime/config";
 
 export async function deploy(appName: string, host: string, port: string, machines: number) {
   const logger = createGlobalLogger();
