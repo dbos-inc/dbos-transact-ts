@@ -31,7 +31,7 @@ export class OperonRuntime {
   async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
-      this.operon.logger.error("operations not found");
+      this.operon.logger.error("operations not found", { applicationVersion: this.operon.config.applicationVersion } );
       throw new OperonError("operations not found");
     }
 
@@ -39,7 +39,7 @@ export class OperonRuntime {
     for (const key in exports) {
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
-        this.operon.logger.debug(`Loaded class: ${key}`);
+        this.operon.logger.debug(`Loaded class: ${key}`, { applicationVersion: this.operon.config.applicationVersion });
       }
     }
 
@@ -56,7 +56,7 @@ export class OperonRuntime {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(operations) as Promise<ModuleExports>;
     } else {
-      this.operon.logger.warn(`${entrypoint} not found`);
+      this.operon.logger.warn(`${entrypoint} not found`, { applicationVersion: this.operon.config.applicationVersion });
       return null;
     }
   }

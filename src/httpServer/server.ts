@@ -78,7 +78,7 @@ export class OperonHttpServer {
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const executorIDs = koaCtxt.request.body as string[];
-      operon.logger.info("Recovering workflows for executors: " + executorIDs.toString());
+      operon.logger.info("Recovering workflows for executors: " + executorIDs.toString(), { applicationVersion: operon.config.applicationVersion });
       const recoverHandles = await operon.recoverPendingWorkflows(executorIDs);
       operon.recoveryWorkflowHandles.push(...recoverHandles);
 
@@ -90,7 +90,7 @@ export class OperonHttpServer {
     };
 
     router.post(OperonWorkflowRecoveryUrl, recoveryHandler);
-    operon.logger.debug(`Operon Server Registered Recovery POST ${OperonWorkflowRecoveryUrl}`);
+    operon.logger.debug(`Operon Server Registered Recovery POST ${OperonWorkflowRecoveryUrl}`, { applicationVersion: operon.config.applicationVersion });
   }
 
   /**
@@ -103,7 +103,7 @@ export class OperonHttpServer {
       if (ro.apiURL) {
         // Ignore URL with "/operon-workflow-recovery" prefix.
         if (ro.apiURL.startsWith(OperonWorkflowRecoveryUrl)) {
-          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`);
+          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`, { applicationVersion: operon.config.applicationVersion });
           return;
         }
 
@@ -111,7 +111,7 @@ export class OperonHttpServer {
         const defaults = ro.defaults as OperonMiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            operon.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
+            operon.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`, { applicationVersion: operon.config.applicationVersion });
             router.use(ro.apiURL, koaMiddleware);
           });
         }
@@ -254,10 +254,10 @@ export class OperonHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`Operon Server Registered GET ${ro.apiURL}`);
+          operon.logger.debug(`Operon Server Registered GET ${ro.apiURL}`, { applicationVersion: operon.config.applicationVersion });
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`Operon Server Registered POST ${ro.apiURL}`);
+          operon.logger.debug(`Operon Server Registered POST ${ro.apiURL}`, { applicationVersion: operon.config.applicationVersion });
         }
       }
     });
