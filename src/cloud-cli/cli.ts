@@ -4,12 +4,12 @@ import {
   registerApp,
   listApps,
   deleteApp,
-  deployAppCode
+  deployAppCode,
+  getAppLogs,
 } from "./applications/";
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { getAppLogs } from "./monitor";
 import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
 
 const program = new Command();
