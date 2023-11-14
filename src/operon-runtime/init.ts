@@ -1,12 +1,10 @@
+import { async as glob } from 'fast-glob'
+import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
 import { OperonError } from '../error'
-import path from 'path';
-import { async as glob } from 'fast-glob'
 
-/* A wrap around glob, mkdir and copyFile to copy files from one directory to another
- **/
-export interface CopyOption {
+interface CopyOption {
   rename?: (basename: string) => string
 }
 
@@ -48,6 +46,7 @@ export const copy = async (
 }
 
 export async function init(appName: string) {
+
   if (fs.existsSync(appName)) {
     throw new OperonError(`Directory ${appName} already exists, exiting...`);
   }
