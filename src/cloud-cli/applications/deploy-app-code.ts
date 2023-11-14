@@ -2,8 +2,8 @@ import axios from "axios";
 import { execSync } from "child_process";
 import fs from "fs";
 import FormData from "form-data";
-import { createGlobalLogger } from "../telemetry/logs";
-import { getCloudCredentials } from "./utils";
+import { createGlobalLogger } from "../../telemetry/logs";
+import { getCloudCredentials } from "../utils";
 
 export async function deployAppCode(appName: string, host: string, port: string) {
   const logger = createGlobalLogger();
