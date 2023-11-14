@@ -16,6 +16,10 @@ export async function listApps(host: string, port: string) {
         },
       }
     );
+    if (list.data.length === 0) {
+      logger.info("no application found");
+      return;
+    }
     for (const application of list.data) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       console.log({ Name: application.Name, ID: application.ID, Status: application.Status });
