@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { operonConfigFilePath, buildConfigs } from "./config";
+import { operonConfigFilePath, parseConfigFile } from "./config";
 import { OperonRuntime, OperonRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { OperonConfig } from "../operon";
@@ -43,7 +43,7 @@ program
   .option('-c, --configfile <string>', 'Specify the Operon config file path', operonConfigFilePath)
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async (options: OperonCLIStartOptions) => {
-    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = buildConfigs(options);
+    const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(options);
     const runtime = new OperonRuntime(operonConfig, runtimeConfig);
     await runtime.init();
     runtime.startServer();
