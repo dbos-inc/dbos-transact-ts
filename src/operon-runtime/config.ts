@@ -7,13 +7,9 @@ import { OperonRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { OperonCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
+import { setApplicationVersion } from "./applicationVersion";
 
 export const operonConfigFilePath = "operon-config.yaml";
-
-export function getApplicationVersion(): string | undefined {
-    return applicationVersion;
-}
-let applicationVersion: string | undefined = undefined;
 
 export interface ConfigFile {
   version: string;
@@ -76,7 +72,7 @@ export function buildConfigs(cliOptions?: OperonCLIStartOptions): [OperonConfig,
     throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
 
-  applicationVersion = configFile.version;
+  setApplicationVersion(configFile.version);
 
   /*******************************/
   /* Handle user database config */

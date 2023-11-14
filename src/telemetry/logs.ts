@@ -1,5 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
-import { getApplicationVersion } from "../operon-runtime/config";
+import { getApplicationVersion } from "../operon-runtime/applicationVersion";
 import { OperonContext } from "../context";
 
 export interface LoggerConfig {
@@ -17,54 +17,51 @@ export interface WinstonLogger extends IWinstonLogger {
  * This class is expected to be instantiated by new OperonContext such that they can share context information.
  **/
 export class Logger {
-  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {}
-
-  // Eventually we this object will implement one of our TelemetrySignal interface
-  formatContextInfo(): object {
+  // Eventually this object will implement one of our TelemetrySignal interface
+  readonly metadata: object = {};
+  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {
     if (this.globalLogger.addContextMetadata) {
-      return {
+      this.metadata = {
         workflowUUID: this.ctx.workflowUUID,
         authenticatedUser: this.ctx.authenticatedUser,
         traceId: this.ctx.span.spanContext().traceId,
         spanId: this.ctx.span.spanContext().spanId,
       };
     }
-    return {}
   }
 
   info(message: string): void {
-    this.globalLogger.info(message, this.formatContextInfo());
+    this.globalLogger.info(message, this.metadata);
   }
 
   debug(message: string): void {
-    this.globalLogger.debug(message, this.formatContextInfo());
+    this.globalLogger.debug(message, this.metadata);
   }
 
   warn(message: string): void {
-    this.globalLogger.warn(message, this.formatContextInfo());
+    this.globalLogger.warn(message, this.metadata);
   }
 
   emerg(message: string): void {
-    this.globalLogger.emerg(message, this.formatContextInfo());
+    this.globalLogger.emerg(message, this.metadata);
   }
 
   alert(message: string): void {
-    this.globalLogger.alert(message, this.formatContextInfo());
+    this.globalLogger.alert(message, this.metadata);
   }
 
   crit(message: string): void {
-    this.globalLogger.crit(message, this.formatContextInfo());
+    this.globalLogger.crit(message, this.metadata);
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
-    const metadata = this.formatContextInfo()
     if (inputError instanceof Error) {
-      this.globalLogger.error(inputError.message, { ...metadata, stack: inputError.stack, cause: inputError.cause });
+      this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack, cause: inputError.cause });
     } else if (typeof inputError === "string") {
       const e = new Error();
-      this.globalLogger.error(inputError, { ...metadata, stack: e.stack });
+      this.globalLogger.error(inputError, { ...this.metadata, stack: e.stack });
     } else {
       // If this is neither a string nor an error, we just log it as is an ommit the context
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
