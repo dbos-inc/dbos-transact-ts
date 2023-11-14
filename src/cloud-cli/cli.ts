@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
-import { deployAppCode } from "./deploy";
-import { registerApp } from "./register-app";
-import { listApps } from "./list-apps";
+import {
+  registerApp,
+  listApps,
+  deleteApp,
+  deployAppCode
+} from "./applications/";
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { deleteApp } from "./delete";
 import { getAppLogs } from "./monitor";
 import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
 
