@@ -12,7 +12,6 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
   const silenceLogs: boolean = process.env.SILENCE_LOGS === "true" ? true : false;
 
   const operonTestConfig: OperonConfig = {
-    applicationVersion: "test",
     poolConfig: {
       host: "localhost",
       port: 5432,

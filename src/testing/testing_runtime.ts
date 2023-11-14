@@ -131,7 +131,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
 
     // Creates an Operon context to pass in necessary info.
     const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("test", span, operon.logger, operon.config.applicationVersion);
+    const oc = new OperonContextImpl("test", span, operon.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];

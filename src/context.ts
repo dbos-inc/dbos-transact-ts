@@ -30,8 +30,6 @@ export interface OperonContext {
   readonly logger: OperonLogger;
   readonly span: Span;
 
-  readonly applicationVersion: string;
-
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
 }
@@ -44,7 +42,7 @@ export class OperonContextImpl implements OperonContext {
   workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
   readonly logger: OperonLogger;      // Wrapper around the global logger for this context.
 
-  constructor(readonly operationName: string, readonly span: Span, logger: Logger, readonly applicationVersion: string, parentCtx?: OperonContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
     this.logger = new OperonLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;

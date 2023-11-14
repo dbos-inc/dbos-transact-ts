@@ -10,6 +10,11 @@ import { TelemetryConfig } from "../telemetry";
 
 export const operonConfigFilePath = "operon-config.yaml";
 
+export function getApplicationVersion(): string | undefined {
+    return applicationVersion;
+}
+let applicationVersion: string | undefined = undefined;
+
 export interface ConfigFile {
   version: string;
   database: {
@@ -71,6 +76,8 @@ export function buildConfigs(cliOptions?: OperonCLIStartOptions): [OperonConfig,
     throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
 
+  applicationVersion = configFile.version;
+
   /*******************************/
   /* Handle user database config */
   /*******************************/
@@ -114,7 +121,6 @@ export function buildConfigs(cliOptions?: OperonCLIStartOptions): [OperonConfig,
   /* Build final Operon Configuration */
   /************************************/
   const operonConfig: OperonConfig = {
-    applicationVersion: configFile.version,
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,

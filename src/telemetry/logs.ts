@@ -1,4 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
+import { getApplicationVersion } from "../operon-runtime/config";
 import { OperonContext } from "../context";
 
 export interface LoggerConfig {
@@ -20,52 +21,45 @@ export class Logger {
 
   // Eventually we this object will implement one of our TelemetrySignal interface
   formatContextInfo(): object {
-    return {
-      workflowUUID: this.ctx.workflowUUID,
-      authenticatedUser: this.ctx.authenticatedUser,
-      traceId: this.ctx.span.spanContext().traceId,
-      spanId: this.ctx.span.spanContext().spanId,
-    };
-  }
-
-  formatMetadata(): object {
-    let metadata = {
-      applicationVersion: this.ctx.applicationVersion
-    };
     if (this.globalLogger.addContextMetadata) {
-      metadata = { ...metadata, ...this.formatContextInfo() };
+      return {
+        workflowUUID: this.ctx.workflowUUID,
+        authenticatedUser: this.ctx.authenticatedUser,
+        traceId: this.ctx.span.spanContext().traceId,
+        spanId: this.ctx.span.spanContext().spanId,
+      };
     }
-    return metadata;
+    return {}
   }
 
   info(message: string): void {
-    this.globalLogger.info(message, this.formatMetadata());
+    this.globalLogger.info(message, this.formatContextInfo());
   }
 
   debug(message: string): void {
-    this.globalLogger.debug(message, this.formatMetadata());
+    this.globalLogger.debug(message, this.formatContextInfo());
   }
 
   warn(message: string): void {
-    this.globalLogger.warn(message, this.formatMetadata());
+    this.globalLogger.warn(message, this.formatContextInfo());
   }
 
   emerg(message: string): void {
-    this.globalLogger.emerg(message, this.formatMetadata());
+    this.globalLogger.emerg(message, this.formatContextInfo());
   }
 
   alert(message: string): void {
-    this.globalLogger.alert(message, this.formatMetadata());
+    this.globalLogger.alert(message, this.formatContextInfo());
   }
 
   crit(message: string): void {
-    this.globalLogger.crit(message, this.formatMetadata());
+    this.globalLogger.crit(message, this.formatContextInfo());
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
-    const metadata = this.formatMetadata()
+    const metadata = this.formatContextInfo()
     if (inputError instanceof Error) {
       this.globalLogger.error(inputError.message, { ...metadata, stack: inputError.stack, cause: inputError.cause });
     } else if (typeof inputError === "string") {
@@ -101,8 +95,7 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack, ...args } = info;
-    const { applicationVersion } = args;
-    delete args.applicationVersion;
+    const applicationVersion = getApplicationVersion();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment

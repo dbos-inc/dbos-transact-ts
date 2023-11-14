@@ -36,7 +36,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends Operon
     readonly functionID: number,
     operationName: string
   ) {
-    super(operationName, span, logger, workflowContext.applicationVersion, workflowContext);
+    super(operationName, span, logger, workflowContext);
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = workflowContext.applicationConfig;

@@ -89,7 +89,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       },
       parentCtx?.span,
     );
-    super(workflowName, span, operon.logger, operon.config.applicationVersion, parentCtx);
+    super(workflowName, span, operon.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#operon = operon;
     this.isTempWorkflow = operon.tempWorkflowName === workflowName;
