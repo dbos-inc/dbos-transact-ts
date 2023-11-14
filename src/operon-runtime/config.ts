@@ -43,7 +43,7 @@ export interface ConfigFile {
 * Will find anything in curly braces.
 * TODO: Use a more robust solution.
 */
-export function substituteEnvVars(content: string): string {
+function substituteEnvVars(content: string): string {
   const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
   return content.replace(regex, (_, g1: string) => {
       return process.env[g1] || "";  // If the env variable is not set, return an empty string.
