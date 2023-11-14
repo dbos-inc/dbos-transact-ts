@@ -1,6 +1,7 @@
 import { OperonConfig } from "../src/operon";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
+import { setApplicationVersion } from "../src/operon-runtime/applicationVersion";
 
 /* DB management helpers */
 export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonConfig {
@@ -10,6 +11,8 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
   }
 
   const silenceLogs: boolean = process.env.SILENCE_LOGS === "true" ? true : false;
+
+  setApplicationVersion("test");
 
   const operonTestConfig: OperonConfig = {
     poolConfig: {
