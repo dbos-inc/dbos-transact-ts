@@ -1,49 +1,4 @@
 import fs from "fs";
-import path from 'path';
-import { async as glob } from 'fast-glob'
-
-/* A wrap around glob, mkdir and copyFile to copy files from one directory to another
- **/
-export interface CopyOption {
-  rename?: (basename: string) => string
-}
-
-const identity = (x: string) => x
-
-export const copy = async (
-  src: string,
-  targets: string[],
-  dest: string,
-  { rename = identity }: CopyOption = {}
-) => {
-
-  if (targets.length === 0 || !dest) {
-    throw new TypeError('`src` and `dest` are required')
-  }
-
-  const sourceFiles = await glob(targets, {
-    cwd: src,
-    dot: true,
-    absolute: false,
-    stats: false,
-    ignore: ['**/node_modules/**', '**/dist/**']
-  })
-
-  return Promise.all(
-    sourceFiles.map(async (p) => {
-      const dirname = path.dirname(p)
-      const basename = rename(path.basename(p))
-
-      const from = path.resolve(src, p);
-      const to = path.join(dest, dirname, basename);
-
-      // Ensure the destination directory exists
-      await fs.promises.mkdir(path.dirname(to), { recursive: true })
-
-      return fs.promises.copyFile(from, to)
-    })
-  )
-}
 
 /*
  * Use the node.js `fs` module to read the content of a file
@@ -70,15 +25,3 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
 
-
-/*
-* Substitute environment variables using a regex for matching.
-* Will find anything in curly braces.
-* TODO: Use a more robust solution.
-*/
-export function substituteEnvVars(content: string): string {
-  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
-  return content.replace(regex, (_, g1: string) => {
-      return process.env[g1] || "";  // If the env variable is not set, return an empty string.
-  });
-}
