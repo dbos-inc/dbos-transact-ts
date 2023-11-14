@@ -2,6 +2,12 @@ import axios from "axios";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
+type Application = {
+  Name: string;
+  ID: string;
+  Status: string;
+};
+
 export async function listApps(host: string, port: string) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
@@ -16,11 +22,12 @@ export async function listApps(host: string, port: string) {
         },
       }
     );
-    if (list.data.length === 0) {
+    const data: Application[] = list.data;
+    if (data.length === 0) {
       logger.info("no application found");
       return;
     }
-    for (const application of list.data) {
+    for (const application of data) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       console.log({ Name: application.Name, ID: application.ID, Status: application.Status });
     }
