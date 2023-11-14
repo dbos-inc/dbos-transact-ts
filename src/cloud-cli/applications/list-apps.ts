@@ -16,7 +16,10 @@ export async function listApps(host: string, port: string) {
         },
       }
     );
-    console.log(list.data);
+    for (const application of list.data) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      console.log({ Name: application.Name, ID: application.ID, Status: application.Status });
+    }
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to list applications: ${e.response?.data}`);
