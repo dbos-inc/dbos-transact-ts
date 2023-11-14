@@ -22,7 +22,7 @@ export async function listApps(host: string, port: string) {
         },
       }
     );
-    const data: Application[] = list.data;
+    const data: Application[] = list.data as Application[];
     if (data.length === 0) {
       logger.info("no application found");
       return;
