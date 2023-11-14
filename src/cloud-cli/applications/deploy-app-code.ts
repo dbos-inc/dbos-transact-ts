@@ -23,6 +23,11 @@ export async function deployAppCode(appName: string, host: string, port: string)
       logger.error(`failed to parse ${operonConfigFilePath}`);
       return;
     }
+
+    // Parse version from config file. If missing, use current epoch
+    const version: string = configFile.version ?? Date.now().toString();
+    configFile.version = version;
+
     try {
       fs.writeFileSync(`${deployDirectoryName}/${operonConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
@@ -35,7 +40,6 @@ export async function deployAppCode(appName: string, host: string, port: string)
 
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`${deployDirectoryName}/${appName}.zip`));
-    const version: string = configFile.version ?? Date.now();
     formData.append("application_version", version);
 
     await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`, formData, {
@@ -44,7 +48,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
         Authorization: bearerToken,
       },
     });
-    logger.info(`Successfully deployed: ${appName}`);
+    logger.info(`Successfully deployed ${appName} with version ${version}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
