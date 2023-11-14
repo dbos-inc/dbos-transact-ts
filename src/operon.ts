@@ -235,7 +235,7 @@ export class Operon {
     this.recoveryWorkflowHandles.push(...initRecoveryHandles)
     this.initialized = true;
 
-    for ( const v of this.registeredOperations) {
+    for (const v of this.registeredOperations) {
       const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
         this.logger.debug("Executing init method: " + m.name);

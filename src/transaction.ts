@@ -26,7 +26,7 @@ export interface TransactionContext<T extends UserDatabaseClient> extends Operon
   readonly client: T;
 }
 
-export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T>  {
+export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T> {
   constructor(
     readonly clientKind: UserDatabaseName,
     readonly client: T,

@@ -1,4 +1,5 @@
 import fs from "fs";
+
 /*
  * Use the node.js `fs` module to read the content of a file
  * Handles cases where:
@@ -23,3 +24,8 @@ export function readFileSync(path: string): string {
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
+
+
+export function createDirectory(path: string): string | undefined {
+  return fs.mkdirSync(path, { recursive: true });
+}

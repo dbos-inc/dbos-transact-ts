@@ -1,4 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
+import { getApplicationVersion } from "../operon-runtime/applicationVersion";
 import { OperonContext } from "../context";
 
 export interface LoggerConfig {
@@ -16,52 +17,51 @@ export interface WinstonLogger extends IWinstonLogger {
  * This class is expected to be instantiated by new OperonContext such that they can share context information.
  **/
 export class Logger {
-  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {}
-
-  // Eventually we this object will implement one of our TelemetrySignal interface
-  formatContextInfo(): object {
-    return {
-      workflowUUID: this.ctx.workflowUUID,
-      authenticatedUser: this.ctx.authenticatedUser,
-      traceId: this.ctx.span.spanContext().traceId,
-      spanId: this.ctx.span.spanContext().spanId,
-    };
+  // Eventually this object will implement one of our TelemetrySignal interface
+  readonly metadata: object = {};
+  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {
+    if (this.globalLogger.addContextMetadata) {
+      this.metadata = {
+        workflowUUID: this.ctx.workflowUUID,
+        authenticatedUser: this.ctx.authenticatedUser,
+        traceId: this.ctx.span.spanContext().traceId,
+        spanId: this.ctx.span.spanContext().spanId,
+      };
+    }
   }
 
   info(message: string): void {
-    this.globalLogger.info(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.info(message, this.metadata);
   }
 
   debug(message: string): void {
-    this.globalLogger.debug(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.debug(message, this.metadata);
   }
 
   warn(message: string): void {
-    this.globalLogger.warn(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.warn(message, this.metadata);
   }
 
   emerg(message: string): void {
-    this.globalLogger.emerg(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.emerg(message, this.metadata);
   }
 
   alert(message: string): void {
-    this.globalLogger.alert(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.alert(message, this.metadata);
   }
 
   crit(message: string): void {
-    this.globalLogger.crit(message, this.globalLogger.addContextMetadata ? this.formatContextInfo() : {});
+    this.globalLogger.crit(message, this.metadata);
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
-    const contextInfo = this.globalLogger.addContextMetadata ? " " + JSON.stringify(this.formatContextInfo()) : ""
     if (inputError instanceof Error) {
-      inputError.message = `${inputError.message}${contextInfo}`;
-      this.globalLogger.error(inputError);
+      this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack, cause: inputError.cause });
     } else if (typeof inputError === "string") {
-      const message = new Error(`${inputError}${contextInfo}`);
-      this.globalLogger.error(message);
+      const e = new Error();
+      this.globalLogger.error(inputError, { ...this.metadata, stack: e.stack });
     } else {
       // If this is neither a string nor an error, we just log it as is an ommit the context
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
@@ -92,12 +92,14 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack, ...args } = info;
+    const applicationVersion = getApplicationVersion();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
+    const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return `${ts} [${level}]: ${messageString} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
+    return `${ts}${versionString} [${level}]: ${messageString} ${Object.keys(args).length ? "\n" + JSON.stringify(args, null, 2) : ""} ${stack ? "\n" + formattedStack : ""}`;
   })
 );

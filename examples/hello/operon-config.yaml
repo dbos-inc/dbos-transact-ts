@@ -12,3 +12,4 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
+version: "1.0"

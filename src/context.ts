@@ -83,8 +83,8 @@ export class OperonContextImpl implements OperonContext {
  * TODO : move logger and application, getConfig to a BaseContext which is at the root of all contexts
  */
 export class InitContext {
-  
-  readonly logger: Logger ;
+
+  readonly logger: Logger;
 
   // All private Not exposed
   private userDatabase: UserDatabase;
@@ -96,13 +96,12 @@ export class InitContext {
     this.userDatabase = operon.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.application = operon.config.application;
-
   }
 
   createUserSchema(): Promise<void> {
-    return this.userDatabase.createSchema()  ;
+    return this.userDatabase.createSchema();
   }
-    
+
   dropUserSchema(): Promise<void> {
     return this.userDatabase.dropSchema();
   }
@@ -116,7 +115,7 @@ export class InitContext {
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     // If there is no application config at all, or the key is missing, return the default value or undefined.
-    if (!this.application|| !has(this.application, key)) {
+    if (!this.application || !has(this.application, key)) {
       if (defaultValue) {
         return defaultValue;
       }
