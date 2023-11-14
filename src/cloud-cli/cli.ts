@@ -86,7 +86,7 @@ applicationCommands
 
 applicationCommands
   .command('list')
-  .description('List all the applications deployed')
+  .description('List all deployed applications')
   .action(async () => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await listApps(host, port);
