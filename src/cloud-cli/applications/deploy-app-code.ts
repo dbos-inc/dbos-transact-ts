@@ -5,7 +5,10 @@ import fs from "fs";
 import FormData from "form-data";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
+import { createDirectory } from "../../utils";
 import { ConfigFile, parseConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
+
+const deployDirectoryName = "operon_deploy";
 
 export async function deployAppCode(appName: string, host: string, port: string) {
   const logger = createGlobalLogger();
@@ -13,7 +16,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    execSync(`mkdir -p operon_deploy`);
+    createDirectory(deployDirectoryName);
 
     const configFile: ConfigFile | undefined = parseConfigFile(operonConfigFilePath);
     if (!configFile) {
@@ -21,17 +24,17 @@ export async function deployAppCode(appName: string, host: string, port: string)
       return;
     }
     try {
-      fs.writeFileSync(`operon_deploy/${operonConfigFilePath}`, YAML.stringify(configFile));
+      fs.writeFileSync(`${deployDirectoryName}/${operonConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
       logger.error(`failed to write ${operonConfigFilePath}: ${(e as Error).message}`);
       return;
     }
 
-    execSync(`zip -ry operon_deploy/${appName}.zip ./* -x operon_deploy/* ${operonConfigFilePath} > /dev/null`);
-    execSync(`zip -j operon_deploy/${appName}.zip operon_deploy/${operonConfigFilePath} > /dev/null`);
+    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${operonConfigFilePath} > /dev/null`);
+    execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${operonConfigFilePath} > /dev/null`);
 
     const formData = new FormData();
-    formData.append("app_archive", fs.createReadStream(`operon_deploy/${appName}.zip`));
+    formData.append("app_archive", fs.createReadStream(`${deployDirectoryName}/${appName}.zip`));
     formData.append("application_version", configFile.version);
 
     await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`, formData, {
