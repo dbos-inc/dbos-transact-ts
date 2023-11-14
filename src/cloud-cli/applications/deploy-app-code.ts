@@ -35,7 +35,8 @@ export async function deployAppCode(appName: string, host: string, port: string)
 
     const formData = new FormData();
     formData.append("app_archive", fs.createReadStream(`${deployDirectoryName}/${appName}.zip`));
-    formData.append("application_version", configFile.version);
+    const version: string = configFile.version ?? Date.now();
+    formData.append("application_version", version);
 
     await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`, formData, {
       headers: {
