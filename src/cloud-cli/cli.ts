@@ -62,7 +62,7 @@ applicationCommands
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, machines: string }) => {
-    const { host, port} = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await registerApp(options.name, host, port, parseInt(options.machines));
   });
 
@@ -71,7 +71,7 @@ applicationCommands
   .description('Deploy an application code to the cloud')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port} = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await deployAppCode(options.name, host, port);
   });
 
@@ -80,7 +80,7 @@ applicationCommands
   .description('Delete a previously deployed application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port} = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await deleteApp(options.name, host, port);
   });
 
@@ -88,7 +88,7 @@ applicationCommands
   .command('list')
   .description('List all the applications deployed')
   .action(async () => {
-    const { host, port} = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await listApps(host, port);
   });
 
@@ -97,7 +97,7 @@ applicationCommands
   .description('Print the microVM logs of a deployed application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port} = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await getAppLogs(options.name, host, port);
   });
 
