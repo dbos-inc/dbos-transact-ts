@@ -128,6 +128,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   /**
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
+   * TODO: All calls to flushResultBuffer must be retried on serialization error.
    */
   async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
