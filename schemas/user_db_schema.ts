@@ -16,7 +16,7 @@ export const userDBSchema = `
     output TEXT,
     error TEXT,
     txn_id TEXT,
-    txn_snapshot TEXT,
+    txn_snapshot TEXT NOT NULL,
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;

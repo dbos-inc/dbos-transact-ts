@@ -137,11 +137,12 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Capture output and also transaction snapshot information.
         await this.#operon.userDatabase.queryWithClient(
           client,
-          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, (select pg_current_xact_id_if_assigned()), (select pg_current_snapshot()));",
+          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, $5, (select pg_current_snapshot()));",
           this.workflowUUID,
           funcID,
           JSON.stringify(this.resultBuffer.get(funcID)),
-          JSON.stringify(null)
+          JSON.stringify(null),
+          JSON.stringify(null),  // Initially, no txn_id because no queries executed.
         );
       }
     } catch (error) {

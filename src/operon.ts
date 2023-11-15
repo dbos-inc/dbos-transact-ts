@@ -231,8 +231,7 @@ export class Operon {
         throw new OperonInitializationError(err.message);
       }
     }
-    const initRecoveryHandles = await this.recoverPendingWorkflows();
-    this.recoveryWorkflowHandles.push(...initRecoveryHandles)
+    await this.recoverPendingWorkflows();
     this.initialized = true;
 
     for (const v of this.registeredOperations) {
@@ -342,6 +341,13 @@ export class Operon {
       return result!;
     };
     const workflowPromise: Promise<R> = runWorkflow();
+
+    // Need to await for the workflow and capture errors.
+    const awaitWorkflowPromise = workflowPromise.catch((error) => {this.logger.debug("Captured error in awaitWorkflowPromise: " + error)});
+    const awaitHandle = new InvokedHandle(this.systemDatabase, awaitWorkflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+    this.recoveryWorkflowHandles.push(awaitHandle);
+
+    // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
