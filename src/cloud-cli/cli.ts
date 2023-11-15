@@ -23,15 +23,14 @@ const packageJson = require('../../../package.json') as { version: string };
 program.
   version(packageJson.version);
 
-///////////////////////
-/* CLOUD DEPLOYMENT  */
-///////////////////////
+/////////////////////
+/* AUTHENTICATION  */
+/////////////////////
 
-/*** AUTHENTICATION ***/
 program
   .command('login')
   .description('Log in Operon cloud')
-  .requiredOption('-u, --userName <string>', 'User name for login', )
+  .requiredOption('-u, --userName <string>', 'User name for login')
   .action((options: { userName: string }) => {
     login(options.userName);
   });
@@ -39,9 +38,9 @@ program
 program
   .command('register')
   .description('Register a user and log in Operon cloud')
-  .requiredOption('-u, --userName <string>', 'User name', )
+  .requiredOption('-u, --userName <string>', 'User name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
+  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
   .action(async (options: { userName: string, host: string, port: string }) => {
     const success = await registerUser(options.userName, options.host, options.port);
     // Then, log in as the user.
@@ -50,18 +49,21 @@ program
     }
   });
 
-/*** APPLICATIONS MANAGEMENT ***/
+/////////////////////////////
+/* APPLICATIONS MANAGEMENT */
+/////////////////////////////
+
 const applicationCommands = program
   .command('applications')
   .description('Manage your DBOS applications')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
+  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
 
 applicationCommands
   .command('register')
   .description('Register a new application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
-  .option('-m, --machines <number>', 'Number of VMs to deploy', '1')
+  .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await registerApp(options.name, host, port, parseInt(options.machines));
@@ -70,9 +72,9 @@ applicationCommands
 applicationCommands
   .command('update')
   .description('Update an application')
-  .requiredOption('-n, --name', 'Specify the app name')
-  .requiredOption('-m, --machines', 'Number of VMs to deploy')
-  .option('-N, --new-name', 'New name for the application')
+  .requiredOption('-n, --name <string>', 'Specify the app name')
+  .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
+  .option('-N, --new-name <string>', 'New name for the application', '')
   .action(async (options: { name: string, newName: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await updateApp(options.name, options.newName, host, port, parseInt(options.machines));
@@ -113,19 +115,22 @@ applicationCommands
     await getAppLogs(options.name, host, port);
   });
 
-/*** USER DATABASE MANAGEMENT ***/
+//////////////////////////////
+/* USER DATABASE MANAGEMENT */
+//////////////////////////////
+
 const userdb = program
   .command('userdb')
   .description('Manage your databases')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <port>', 'Specify the port', DEFAULT_PORT)
+  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
 
 userdb
   .command('create')
   .argument('<string>', 'database name')
-  .option('-a, --admin <admin>', 'Specify the admin user', 'postgres')
-  .option('-W, --password <admin>', 'Specify the admin password', 'postgres')
-  .option('-s, --sync', 'make synchronous call', false)
+  .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
+  .option('-W, --password <string>', 'Specify the admin password', 'postgres')
+  .option('-s, --sync <bool>', 'make synchronous call', false)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
@@ -142,7 +147,7 @@ userdb
 userdb
   .command('delete')
   .argument('<string>', 'database name')
-  .option('-s, --sync', 'make synchronous call', false)
+  .option('-s, --sync <bool>', 'make synchronous call', false)
   .action((async (dbname: string, options: { sync:boolean }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await deleteUserDb(host, port, dbname, options.sync)

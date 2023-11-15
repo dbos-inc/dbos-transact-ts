@@ -1,12 +1,7 @@
 import axios from "axios";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
-
-type Application = {
-  Name: string;
-  ID: string;
-  Status: string;
-};
+import { Application } from "./types";
 
 export async function listApps(host: string, port: string) {
   const logger = createGlobalLogger();
@@ -27,10 +22,12 @@ export async function listApps(host: string, port: string) {
       logger.info("no application found");
       return;
     }
+    const formattedData: Application[] = []
     for (const application of data) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      console.log({ Name: application.Name, ID: application.ID, Status: application.Status });
+      formattedData.push({ "Name": application.Name, "ID": application.ID, "Status": application.Status });
     }
+    console.log(JSON.stringify(formattedData));
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to list applications: ${e.response?.data}`);
