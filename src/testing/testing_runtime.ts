@@ -7,7 +7,7 @@ import { OperonConfigKeyTypeError, OperonError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
 import { OperonHttpServer } from "../httpServer/server";
 import { Operon, OperonConfig } from "../operon";
-import { operonConfigFilePath, buildConfigs } from "../operon-runtime/config";
+import { operonConfigFilePath, parseConfigFile } from "../operon-runtime/config";
 import { OperonTransaction } from "../transaction";
 import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
@@ -20,7 +20,7 @@ import { Client } from "pg";
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
-  const [ operonConfig ] = buildConfigs({configfile: configFilePath});
+  const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
 
   // Drop system database. Testing runtime always uses Postgres for local testing.
   const pgSystemClient = new Client({
@@ -84,7 +84,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * This should be the first function call before any subsequent calls.
    */
   async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
-    const operonConfig = testConfig ? [testConfig] : buildConfigs();
+    const operonConfig = testConfig ? [testConfig] : parseConfigFile();
     const operon = new Operon(operonConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new OperonHttpServer(operon);

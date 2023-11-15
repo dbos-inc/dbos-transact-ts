@@ -6,7 +6,7 @@ import FormData from "form-data";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory } from "../../utils";
-import { ConfigFile, parseConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
+import { ConfigFile, loadConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
 
 const deployDirectoryName = "operon_deploy";
 
@@ -18,7 +18,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
   try {
     createDirectory(deployDirectoryName);
 
-    const configFile: ConfigFile | undefined = parseConfigFile(operonConfigFilePath);
+    const configFile: ConfigFile | undefined = loadConfigFile(operonConfigFilePath);
     if (!configFile) {
       logger.error(`failed to parse ${operonConfigFilePath}`);
       return;

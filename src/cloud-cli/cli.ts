@@ -114,23 +114,26 @@ userdb
   .option('-a, --admin <admin>', 'Specify the admin user', 'postgres')
   .option('-W, --password <admin>', 'Specify the admin password', 'postgres')
   .option('-s, --sync', 'make synchronous call', false)
-  .action((async (dbname: string, options: { host: string, port: string, admin: string, password: string, sync: boolean }) => {
-    await createUserDb(options.host, options.port, dbname, options.admin, options.password, options.sync)
+  .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
   }))
 
 userdb
   .command('status')
   .argument('<string>', 'database name')
-  .action((async (dbname: string, options: { host: string, port: string }) => {
-    await getUserDb(options.host, options.port, dbname)
+  .action((async (dbname: string) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await getUserDb(host, port, dbname)
   }))
 
 userdb
   .command('delete')
   .argument('<string>', 'database name')
   .option('-s, --sync', 'make synchronous call', false)
-  .action((async (dbname: string, options: { host: string, port: string, sync:boolean }) => {
-    await deleteUserDb(options.host, options.port, dbname, options.sync)
+  .action((async (dbname: string, options: { sync:boolean }) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await deleteUserDb(host, port, dbname, options.sync)
   }))
 
 program.parse(process.argv);

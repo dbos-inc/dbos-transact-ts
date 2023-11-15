@@ -46,7 +46,7 @@ function substituteEnvVars(content: string): string {
   });
 }
 
-export function parseConfigFile(configFilePath: string): ConfigFile | undefined {
+export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(configFilePath);
@@ -65,9 +65,9 @@ export function parseConfigFile(configFilePath: string): ConfigFile | undefined 
  * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
  * Considers OperonCLIStartOptions if provided, which takes precedence over config file
  * */
-export function buildConfigs(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
+export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
   const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
-  const configFile: ConfigFile | undefined = parseConfigFile(configFilePath);
+  const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
     throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
   }
