@@ -86,7 +86,7 @@ export class Operon {
   readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow handle.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -350,7 +350,7 @@ export class Operon {
         this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
       })
       .finally(() => {
-        // Remove itself from pending workflow handles.
+        // Remove itself from pending workflow map.
         this.pendingWorkflowMap.delete(workflowUUID);
       });
     this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
