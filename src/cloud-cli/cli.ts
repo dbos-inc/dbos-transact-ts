@@ -2,6 +2,7 @@
 
 import {
   registerApp,
+  updateApp,
   listApps,
   deleteApp,
   deployAppCode,
@@ -64,6 +65,17 @@ applicationCommands
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await registerApp(options.name, host, port, parseInt(options.machines));
+  });
+
+applicationCommands
+  .command('update')
+  .description('Update an application')
+  .requiredOption('-n, --name', 'Specify the app name')
+  .requiredOption('-m, --machines', 'Number of VMs to deploy')
+  .option('-N, --new-name', 'New name for the application')
+  .action(async (options: { name: string, newName: string, machines: string }) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await updateApp(options.name, options.newName, host, port, parseInt(options.machines));
   });
 
 applicationCommands
