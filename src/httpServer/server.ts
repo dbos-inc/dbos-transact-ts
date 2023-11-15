@@ -80,7 +80,6 @@ export class OperonHttpServer {
       const executorIDs = koaCtxt.request.body as string[];
       operon.logger.info("Recovering workflows for executors: " + executorIDs.toString());
       const recoverHandles = await operon.recoverPendingWorkflows(executorIDs);
-      operon.recoveryWorkflowHandles.push(...recoverHandles);
 
       // Return a list of workflowUUIDs being recovered.
       koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.getWorkflowUUID())).then((results) =>
