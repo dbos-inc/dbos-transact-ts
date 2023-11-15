@@ -22,7 +22,7 @@ export async function registerApp(appName: string, host: string, port: string, m
       }
     );
     const uuid = register.data as string;
-    logger.info(`Successfully deployed: ${appName}`);
+    logger.info(`Successfully registered: ${appName}`);
     logger.info(`${appName} ID: ${uuid}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
