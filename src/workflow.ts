@@ -134,9 +134,10 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     funcIDs.sort();
     try {
       for (const funcID of funcIDs) {
+        // Capture output and also transaction snapshot information.
         await this.#operon.userDatabase.queryWithClient(
           client,
-          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error) VALUES ($1, $2, $3, $4);",
+          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, (select pg_current_xact_id_if_assigned()), (select pg_current_snapshot()));",
           this.workflowUUID,
           funcID,
           JSON.stringify(this.resultBuffer.get(funcID)),
@@ -165,7 +166,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
-    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialOutput, this.workflowUUID, funcID);
+    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()) WHERE workflow_uuid=$2 AND function_id=$3;", serialOutput, this.workflowUUID, funcID);
   }
 
   /**
