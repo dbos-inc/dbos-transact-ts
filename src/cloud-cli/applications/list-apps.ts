@@ -25,7 +25,7 @@ export async function listApps(host: string, port: string) {
     const formattedData: Application[] = []
     for (const application of data) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      formattedData.push({ "Name": application.Name, "ID": application.ID, "Status": application.Status });
+      formattedData.push({ "Name": application.Name, "ID": application.ID, "Status": application.Status, "MaxVMs": application.MaxVMs });
     }
     console.log(JSON.stringify(formattedData));
   } catch (e) {

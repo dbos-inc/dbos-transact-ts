@@ -26,12 +26,12 @@ export async function updateApp(appName: string, newName: string, host: string, 
     );
     const application: Application = update.data as Application;
     logger.info(`Successfully updated: ${application.Name}`);
-    console.log(JSON.stringify({ "Name": application.Name, "ID": application.ID, "Status": application.Status }));
+    console.log(JSON.stringify({ "Name": application.Name, "ID": application.ID, "Status": application.Status, "MaxVMs": application.MaxVMs }));
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to register application ${appName}: ${e.response?.data}`);
+      logger.error(`failed to update application ${appName}: ${e.response?.data}`);
     } else {
-      logger.error(`failed to register application ${appName}: ${(e as Error).message}`);
+      logger.error(`failed to update application ${appName}: ${(e as Error).message}`);
     }
   }
 }
