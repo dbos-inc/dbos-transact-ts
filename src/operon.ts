@@ -86,7 +86,7 @@ export class Operon {
   readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
-  readonly recoveryWorkflowHandles: Array<WorkflowHandle<any>> = [];
+  readonly pendingWorkflowHandles: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow handle.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -247,8 +247,10 @@ export class Operon {
   }
 
   async destroy() {
-    // Wait for recovery workflows to finish.
-    await Promise.allSettled(this.recoveryWorkflowHandles.map((i) => i.getResult()));
+    if (this.pendingWorkflowHandles.size > 0) {
+      this.logger.info("Waiting for pending workflows to finish.");
+      await Promise.allSettled(this.pendingWorkflowHandles.values());
+    }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
     await this.systemDatabase.destroy();
@@ -343,9 +345,15 @@ export class Operon {
     const workflowPromise: Promise<R> = runWorkflow();
 
     // Need to await for the workflow and capture errors.
-    const awaitWorkflowPromise = workflowPromise.catch((error) => {this.logger.debug("Captured error in awaitWorkflowPromise: " + error)});
-    const awaitHandle = new InvokedHandle(this.systemDatabase, awaitWorkflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
-    this.recoveryWorkflowHandles.push(awaitHandle);
+    const awaitWorkflowPromise = workflowPromise
+      .catch((error) => {
+        this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
+      })
+      .finally(() => {
+        // Remove itself from pending workflow handles.
+        this.pendingWorkflowHandles.delete(workflowUUID);
+      });
+    this.pendingWorkflowHandles.set(workflowUUID, awaitWorkflowPromise);
 
     // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
