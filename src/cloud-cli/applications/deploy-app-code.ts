@@ -9,7 +9,7 @@ import { ConfigFile, loadConfigFile, operonConfigFilePath } from "../../operon-r
 
 const deployDirectoryName = "operon_deploy";
 
-export async function deployAppCode(appName: string, host: string, port: string) {
+export async function deployAppCode(appName: string, host: string, port: string): Promise<number> {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -20,7 +20,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
     const configFile: ConfigFile | undefined = loadConfigFile(operonConfigFilePath);
     if (!configFile) {
       logger.error(`failed to parse ${operonConfigFilePath}`);
-      return;
+      return 1;
     }
 
     // Parse version from config file. If missing, use current epoch
@@ -31,7 +31,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
       fs.writeFileSync(`${deployDirectoryName}/${operonConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
       logger.error(`failed to write ${operonConfigFilePath}: ${(e as Error).message}`);
-      return;
+      return 1;
     }
 
     execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${operonConfigFilePath} > /dev/null`);
@@ -51,11 +51,14 @@ export async function deployAppCode(appName: string, host: string, port: string)
       }
     );
     logger.info(`Successfully deployed ${appName} with version ${version}`);
+    return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
+      return 1;
     } else {
       logger.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
+      return 1;
     }
   }
 }

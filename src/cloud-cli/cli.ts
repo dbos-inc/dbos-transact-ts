@@ -66,7 +66,8 @@ applicationCommands
   .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await registerApp(options.name, host, port, parseInt(options.machines));
+    const exitCode = await registerApp(options.name, host, port, parseInt(options.machines));
+    process.exit(exitCode)
   });
 
 applicationCommands
@@ -76,7 +77,8 @@ applicationCommands
   .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await updateApp(options.name, host, port, parseInt(options.machines));
+    const exitCode = await updateApp(options.name, host, port, parseInt(options.machines));
+    process.exit(exitCode)
   });
 
 applicationCommands
@@ -85,7 +87,8 @@ applicationCommands
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await deployAppCode(options.name, host, port);
+    const exitCode = await deployAppCode(options.name, host, port);
+    process.exit(exitCode)
   });
 
 applicationCommands
@@ -94,7 +97,8 @@ applicationCommands
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await deleteApp(options.name, host, port);
+    const exitCode = await deleteApp(options.name, host, port);
+    process.exit(exitCode)
   });
 
 applicationCommands
@@ -102,7 +106,8 @@ applicationCommands
   .description('List all deployed applications')
   .action(async () => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await listApps(host, port);
+    const exitCode = await listApps(host, port);
+    process.exit(exitCode)
   });
 
 applicationCommands
@@ -111,7 +116,8 @@ applicationCommands
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await getAppLogs(options.name, host, port);
+    const exitCode = await getAppLogs(options.name, host, port);
+    process.exit(exitCode)
   });
 
 //////////////////////////////
