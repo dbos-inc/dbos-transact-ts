@@ -383,7 +383,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await transactionFunction(transactionClient, ...args);
       },
-      { isolationLevel: isolationLevel }
+      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false }
     );
     return result;
   }
