@@ -125,6 +125,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     );
 
     if (rows.length === 0 || rows.length > 2) {
+      this.logger.error("Unexpected! This should never happen. Returned rows: " + rows.toString());
       throw new OperonError("This should never happen. Returned rows: " + rows.toString());
     }
 
