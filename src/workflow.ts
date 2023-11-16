@@ -49,6 +49,11 @@ export interface PgTransactionId {
   txid: string;
 }
 
+interface BufferedResult {
+  output: unknown;
+  txn_snapshot: string;
+}
+
 export const StatusString = {
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
@@ -70,7 +75,7 @@ export interface WorkflowContext extends OperonContext {
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #operon;
-  readonly resultBuffer: Map<number, any> = new Map<number, any>();
+  readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
 
   constructor(
@@ -108,21 +113,36 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * If it previously executed succesfully, return its output.
    * If it previously executed and threw an error, throw that error.
    * Otherwise, return OperonNull.
+   * Also return the transaction snapshot information of this current transaction.
    */
-  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<R | OperonNull> {
-    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
+    // Note: we read the current snapshot, not the recorded one!
+    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
-      "SELECT output, error FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2",
+      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
       funcID
     );
-    if (rows.length === 0) {
-      return operonNull;
-    } else if (JSON.parse(rows[0].error) !== null) {
-      throw deserializeError(JSON.parse(rows[0].error));
-    } else {
-      return JSON.parse(rows[0].output) as R;
+
+    if (rows.length === 0 || rows.length > 2) {
+      this.logger.error("Unexpected! This should never happen. Returned rows: " + rows.toString());
+      throw new OperonError("This should never happen. Returned rows: " + rows.toString());
     }
+
+    const res: BufferedResult = {
+      output: operonNull,
+      txn_snapshot: ""
+    }
+    // recorded=false row will be first because we used ORDER BY.
+    res.txn_snapshot = rows[0].txn_snapshot;
+    if (rows.length == 2) {
+      if (JSON.parse(rows[1].error) !== null) {
+        throw deserializeError(JSON.parse(rows[1].error));
+      } else {
+        res.output = JSON.parse(rows[1].output) as R;
+      }
+    }
+    return res;
   }
 
   /**
@@ -136,13 +156,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       for (const funcID of funcIDs) {
         // Capture output and also transaction snapshot information.
         // Initially, no txn_id because no queries executed.
+        const recorded = this.resultBuffer.get(funcID);
+        const output = recorded!.output;
+        const txnSnapshot = recorded!.txn_snapshot;
         await this.#operon.userDatabase.queryWithClient(
           client,
-          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, null, (select pg_current_snapshot()));",
+          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, null, $5);",
           this.workflowUUID,
           funcID,
-          JSON.stringify(this.resultBuffer.get(funcID)),
+          JSON.stringify(output),
           JSON.stringify(null),
+          txnSnapshot,
         );
       }
     } catch (error) {
@@ -158,16 +182,21 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   /**
    * Buffer a placeholder value to guard an operation against concurrent executions with the same UUID.
    */
-  guardOperation(funcID: number) {
-    this.resultBuffer.set(funcID, null);
+  guardOperation(funcID: number, txnSnapshot: string) {
+    const guardOutput: BufferedResult = {
+      output: null,
+      txn_snapshot: txnSnapshot,
+    }
+    this.resultBuffer.set(funcID, guardOutput);
   }
 
   /**
    * Write a guarded operation's output to the database.
    */
-  async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<void> {
+  async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
     const serialOutput = JSON.stringify(output);
-    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3;", serialOutput, this.workflowUUID, funcID);
+    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE operon.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
+    return rows[0].txn_id;  // Must have a transaction ID because we inserted the guard before.
   }
 
   /**
@@ -225,16 +254,17 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
           this.#operon.userDatabase.getName(), client, this,
           span, this.#operon.logger, funcId, txn.name,
         );
-        const check: R | OperonNull = await this.checkExecution<R>(client, funcId);
-        if (check !== operonNull) {
+        const check: BufferedResult = await this.checkExecution<R>(client, funcId);
+        if (check.output !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
           tCtxt.span.setStatus({ code: SpanStatusCode.OK });
           this.#operon.tracer.endSpan(tCtxt.span);
-          return check as R;
+          return check.output as R;
         }
+        // TODO: record snapshot information in result buffer.
 
         // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
-        this.guardOperation(funcId);
+        this.guardOperation(funcId, check.txn_snapshot);
         if (!readOnly) {
           await this.flushResultBuffer(client);
         }
@@ -245,14 +275,14 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Record the execution, commit, and return.
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
-          this.resultBuffer.set(funcId, result);
+          const guardOutput: BufferedResult = {
+            output: result,
+            txn_snapshot: check.txn_snapshot,
+          }
+          this.resultBuffer.set(funcId, guardOutput);
         } else {
-          // Synchronously record the output of write transactions.
-          await this.recordGuardedOutput<R>(client, funcId, result);
-
-          // Obtain the transaction ID.
-          // TODO: This needs to be part of interface, not an explicit call to PG
-          const pg_txn_id = (await this.#operon.userDatabase.queryWithClient<PgTransactionId>(client, "select CAST(pg_current_xact_id() AS TEXT) as txid;"))[0].txid;
+          // Synchronously record the output of write transactions and obtain the transaction ID.
+          const pg_txn_id = await this.recordGuardedOutput<R>(client, funcId, result);
           tCtxt.span.setAttribute("transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }

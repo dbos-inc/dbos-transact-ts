@@ -5,6 +5,7 @@ import { StatusString } from "../src/workflow";
 import { OperonConfig } from "../src/operon";
 import { PoolClient } from "pg";
 import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { transaction_outputs } from "../schemas/user_db_schema";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "operon_test_kv";
@@ -89,6 +90,7 @@ describe("operon-tests", () => {
     static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
       ReadRecording.cnt++;
+      await txnCtxt.client.query(`SELECT pg_current_xact_id()`);  // Increase transaction ID, testing if we can capture xid and snapshot correctly.
       if (rows.length === 0) {
         return null;
       }
@@ -126,6 +128,25 @@ describe("operon-tests", () => {
     await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
+  });
+
+  test("txn-snapshot-recording", async () => {
+    // Test the recording of transaction snapshot information in our transaction_outputs table.
+    const workflowUUID = uuidv1();
+    // Invoke the workflow, should get the error.
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+
+    // Check the transaction output table and make sure we record transaction information correctly.
+    const readProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM operon.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
+    expect(readProv[0].txn_id).toBeFalsy();
+    expect(readProv[0].txn_snapshot).toBeTruthy();
+
+    const writeProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM operon.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
+    expect(writeProv[0].txn_id).toBeTruthy();
+    expect(writeProv[0].txn_snapshot).toBeTruthy();
+
+    // Two snapshots must be different because we bumped transaction ID.
+    expect(readProv[0].txn_snapshot).not.toEqual(writeProv[0].txn_snapshot);
   });
 
   class RetrieveWorkflowStatus {
