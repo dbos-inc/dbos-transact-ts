@@ -61,9 +61,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (dbExists.rows.length === 0) {
       // Create the Operon system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
+      // Load the Operon system schemas.
+      await this.pool.query(systemDBSchema);
     }
-    // Load the Operon system schemas.
-    await this.pool.query(systemDBSchema);
     await this.listenForNotifications();
     await pgSystemClient.end();
   }

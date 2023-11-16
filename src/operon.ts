@@ -227,7 +227,7 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`failed to initialize Operon: ${err.message}`);
+        this.logger.error(`failed to initialize Operon: ${err.message}`, err, err.stack);
         throw new OperonInitializationError(err.message);
       }
     }
