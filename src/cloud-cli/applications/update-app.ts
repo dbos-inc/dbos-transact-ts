@@ -3,18 +3,17 @@ import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { Application } from "./types";
 
-export async function updateApp(appName: string, newName: string, host: string, port: string, machines: number) {
+export async function updateApp(appName: string, host: string, port: string, machines: number) {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    const updatedName = newName == '' ? appName : newName;
-    logger.info(`Updating application ${appName} to name ${updatedName} and ${machines} machines`);
+    logger.info(`Updating application ${appName} to ${machines} machines`);
     const update = await axios.patch(
       `http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
       {
-        name: updatedName,
+        name: appName,
         max_vms: machines
       },
       {

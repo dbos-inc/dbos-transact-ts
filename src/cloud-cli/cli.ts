@@ -74,10 +74,9 @@ applicationCommands
   .description('Update an application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
-  .option('-N, --new-name <string>', 'New name for the application', '')
-  .action(async (options: { name: string, newName: string, machines: string }) => {
+  .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await updateApp(options.name, options.newName, host, port, parseInt(options.machines));
+    await updateApp(options.name, host, port, parseInt(options.machines));
   });
 
 applicationCommands
