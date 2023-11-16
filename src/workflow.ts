@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Operon, OperonNull, operonNull } from "./operon";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
+import { IsolationLevel, OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { OperonCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
@@ -127,7 +127,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
   /**
    * Write all entries in the workflow result buffer to the database.
-   * If it encounters a primary key or serialization error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
+   * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
    */
   async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
@@ -279,7 +279,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
           await this.recordGuardedError(client, funcId, e);
-        }, {});
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
         this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         throw err;
@@ -319,7 +319,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-    }, {});
+    }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
@@ -387,7 +387,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-    }, {});
+    }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
@@ -403,7 +403,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-    }, {});
+    }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
@@ -418,7 +418,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
     await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
-    }, {});
+    }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     await this.#operon.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
