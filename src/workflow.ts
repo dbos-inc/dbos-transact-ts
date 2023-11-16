@@ -142,6 +142,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       // Find the row with recorded output.
       rows.forEach((row) => {
         if (row.recorded) {
+          this.logger.debug("Found recorded output. " + JSON.stringify(row))
           if (JSON.parse(row.error) !== null) {
             throw deserializeError(JSON.parse(row.error));
           } else {
