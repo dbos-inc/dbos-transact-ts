@@ -50,7 +50,7 @@ export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
   let configFile: ConfigFile | undefined;
   try {
     const configFileContent = readFileSync(configFilePath);
-    const interpolatedConfig = substituteEnvVars(configFileContent);
+    const interpolatedConfig = substituteEnvVars(configFileContent as string);
     configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
     if (e instanceof Error) {

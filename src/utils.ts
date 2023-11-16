@@ -6,7 +6,7 @@ import fs from "fs";
  * - the file does not exist
  * - the file is not a valid file
  **/
-export function readFileSync(path: string): string {
+export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
   // First, check the file
   fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
     if (error) {
@@ -17,7 +17,7 @@ export function readFileSync(path: string): string {
   });
 
   // Then, read its content
-  const fileContent: string = fs.readFileSync(path, "utf8");
+  const fileContent: string = fs.readFileSync(path, { encoding } );
   return fileContent;
 }
 
