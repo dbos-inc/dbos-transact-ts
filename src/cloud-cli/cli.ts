@@ -129,7 +129,7 @@ userdb
   .argument('<string>', 'database name')
   .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
   .option('-W, --password <string>', 'Specify the admin password', 'postgres')
-  .option('-s, --sync <bool>', 'make synchronous call', false)
+  .option('-s, --sync', 'make synchronous call', false)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
@@ -146,8 +146,8 @@ userdb
 userdb
   .command('delete')
   .argument('<string>', 'database name')
-  .option('-s, --sync <bool>', 'make synchronous call', false)
-  .action((async (dbname: string, options: { sync:boolean }) => {
+  .option('-s, --sync', 'make synchronous call', false)
+  .action((async (dbname: string, options: { sync: boolean }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await deleteUserDb(host, port, dbname, options.sync)
   }))
