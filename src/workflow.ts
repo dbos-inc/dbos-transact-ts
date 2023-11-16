@@ -53,7 +53,7 @@ interface RecordedOutput extends transaction_outputs {
   recorded: boolean;
 }
 
-interface ReturnRecordedOutput {
+interface BufferedResult {
   output: unknown;
   txn_snapshot: string;
 }
@@ -79,7 +79,7 @@ export interface WorkflowContext extends OperonContext {
 export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #operon;
-  readonly resultBuffer: Map<number, ReturnRecordedOutput> = new Map<number, ReturnRecordedOutput>();
+  readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
 
   constructor(
@@ -119,7 +119,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Otherwise, return OperonNull.
    * Also return the transaction snapshot information of this current transaction.
    */
-  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<ReturnRecordedOutput> {
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
     // Note: we read the current snapshot, not the recorded one!
     const rows = await this.#operon.userDatabase.queryWithClient<RecordedOutput>(
       client,
@@ -128,7 +128,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       funcID
     );
 
-    const res: ReturnRecordedOutput = {
+    const res: BufferedResult = {
       output: operonNull,
       txn_snapshot: ""
     }
@@ -193,7 +193,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Buffer a placeholder value to guard an operation against concurrent executions with the same UUID.
    */
   guardOperation(funcID: number, txnSnapshot: string) {
-    const guardOutput: ReturnRecordedOutput = {
+    const guardOutput: BufferedResult = {
       output: null,
       txn_snapshot: txnSnapshot,
     }
@@ -264,7 +264,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
           this.#operon.userDatabase.getName(), client, this,
           span, this.#operon.logger, funcId, txn.name,
         );
-        const check: ReturnRecordedOutput = await this.checkExecution<R>(client, funcId);
+        const check: BufferedResult = await this.checkExecution<R>(client, funcId);
         if (check.output !== operonNull) {
           tCtxt.span.setAttribute("cached", true);
           tCtxt.span.setStatus({ code: SpanStatusCode.OK });
@@ -285,7 +285,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Record the execution, commit, and return.
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
-          const guardOutput: ReturnRecordedOutput = {
+          const guardOutput: BufferedResult = {
             output: result,
             txn_snapshot: check.txn_snapshot,
           }
