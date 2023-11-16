@@ -49,10 +49,6 @@ export interface PgTransactionId {
   txid: string;
 }
 
-interface RecordedOutput extends transaction_outputs {
-  recorded: boolean;
-}
-
 interface BufferedResult {
   output: unknown;
   txn_snapshot: string;
@@ -121,36 +117,29 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
     // Note: we read the current snapshot, not the recorded one!
-    const rows = await this.#operon.userDatabase.queryWithClient<RecordedOutput>(
+    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
-      "SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded",
+      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
       funcID
     );
+
+    if (rows.length === 0 || rows.length > 2) {
+      throw new OperonError("This should never happen. Returned rows: " + rows.toString());
+    }
 
     const res: BufferedResult = {
       output: operonNull,
       txn_snapshot: ""
     }
-
-    if (rows.length === 0 || rows.length > 2) {
-      throw new OperonError("This should never happen. Returned rows: " + rows.toString());
-    } else if (rows.length === 1) {
-      // No recorded output found.
-      res.txn_snapshot = rows[0].txn_snapshot;
-    } else {
-      // Find the row with recorded output.
-      rows.forEach((row) => {
-        if (row.recorded) {
-          this.logger.debug("Found recorded output. " + JSON.stringify(row))
-          if (JSON.parse(row.error) !== null) {
-            throw deserializeError(JSON.parse(row.error));
-          } else {
-            res.output = JSON.parse(row.output) as R;
-            return;
-          }
-        }
-      })
+    // recorded=false row will be first because we used ORDER BY.
+    res.txn_snapshot = rows[0].txn_snapshot;
+    if (rows.length == 2) {
+      if (JSON.parse(rows[1].error) !== null) {
+        throw deserializeError(JSON.parse(rows[1].error));
+      } else {
+        res.output = JSON.parse(rows[1].output) as R;
+      }
     }
     return res;
   }
