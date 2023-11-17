@@ -108,7 +108,7 @@ export class Operon {
       this.systemDatabase = systemDatabase;
     } else {
       this.logger.debug("Using Postgres system database");
-      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
+      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database, this.logger);
     }
 
     this.flushBufferID = setInterval(() => {
