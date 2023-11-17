@@ -151,24 +151,29 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
+    if (funcIDs.length === 0) {
+      return;
+    }
     funcIDs.sort();
     try {
+      let sqlStmt = "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+      let paramCnt = 1;
+      const values: any[] = [];
       for (const funcID of funcIDs) {
         // Capture output and also transaction snapshot information.
         // Initially, no txn_id because no queries executed.
         const recorded = this.resultBuffer.get(funcID);
         const output = recorded!.output;
         const txnSnapshot = recorded!.txn_snapshot;
-        await this.#operon.userDatabase.queryWithClient(
-          client,
-          "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, $4, null, $5);",
-          this.workflowUUID,
-          funcID,
-          JSON.stringify(output),
-          JSON.stringify(null),
-          txnSnapshot,
-        );
+        if (paramCnt > 1) {
+          sqlStmt += ", ";
+        }
+        sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++})`;
+        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot);
       }
+      this.logger.debug(sqlStmt);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      await this.#operon.userDatabase.queryWithClient(client, sqlStmt, ...values);
     } catch (error) {
       if (this.#operon.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
