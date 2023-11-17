@@ -2,7 +2,7 @@ import axios from "axios";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
-export async function getAppLogs(appName: string, host: string, port: string) {
+export async function getAppLogs(appName: string, host: string, port: string): Promise<number> {
   const logger = createGlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -17,11 +17,14 @@ export async function getAppLogs(appName: string, host: string, port: string) {
 
     logger.info(`Successfully retrieved logs of application: ${appName}`);
     logger.info(res.data)
+    return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`failed to retrieve logs of application ${appName}: ${e.response?.data}`);
+      return 1;
     } else {
       logger.error(`failed to retrieve logs of application ${appName}: ${(e as Error).message}`);
+      return 1;
     }
   }
 }
