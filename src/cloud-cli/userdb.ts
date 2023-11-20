@@ -34,7 +34,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
       }
 
       const dbhostname = data.HostName ;
-      const dbport = data.port;
+      const dbport = data.Port;
 
       // Update the clouddb info record
       logger.info("Saving db state to cloud db");
