@@ -1,8 +1,8 @@
 import axios from "axios";
 import fs from "fs";
 import YAML from "yaml";
-import { createGlobalLogger } from "../telemetry/logs";
-import { getCloudCredentials } from "./utils";
+import { createGlobalLogger } from "../../telemetry/logs";
+import { getCloudCredentials } from "../utils";
 import { ConfigFile, loadConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
 
 export async function configureApp(host: string, port: string, dbName: string) {
@@ -21,7 +21,7 @@ export async function configureApp(host: string, port: string, dbName: string) {
 
     // if status is not available or no hostname/port print error and exit
     if (res.status != axios.HttpStatusCode.Ok) {
-      logger.Error("Error getting info for ${dbName} error: ${res.data}.")
+      logger.error("Error getting info for ${dbName} error: ${res.data}.")
       return
     }
 
@@ -29,7 +29,7 @@ export async function configureApp(host: string, port: string, dbName: string) {
     const userdbPort = res.data.Port
 
     if (userdbHostname == "" || userdbPort == 0) {
-      logger.Error("HostName: ${userdbHostname} Port: ${userdbPort} not available.")
+      logger.error("HostName: ${userdbHostname} Port: ${userdbPort} not available.")
       return
     }
 
