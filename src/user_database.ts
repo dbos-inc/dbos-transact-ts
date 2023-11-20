@@ -129,7 +129,7 @@ export class PGNodeUserDatabase implements UserDatabase {
       return false;
     }
     const pge = this.getPostgresErrorCode(error);
-    return pge === "40001" || pge === "23505";
+    return pge === "23505";
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -229,7 +229,7 @@ export class PrismaUserDatabase implements UserDatabase {
 
   isKeyConflictError(error: unknown): boolean {
     const pge = this.getPostgresErrorCode(error);
-    return pge === "40001" || pge === "23505";
+    return pge === "23505";
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -336,7 +336,7 @@ export class TypeORMDatabase implements UserDatabase {
 
   isKeyConflictError(error: unknown): boolean {
     const pge = this.getPostgresErrorCode(error);
-    return pge === "40001" || pge === "23505";
+    return pge === "23505";
   }
 
   async createSchema(): Promise<void> {
@@ -383,7 +383,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await transactionFunction(transactionClient, ...args);
       },
-      { isolationLevel: isolationLevel }
+      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false }
     );
     return result;
   }
@@ -423,7 +423,7 @@ export class KnexUserDatabase implements UserDatabase {
 
   isKeyConflictError(error: unknown): boolean {
     const pge = this.getPostgresErrorCode(error);
-    return pge === "40001" || pge === "23505";
+    return pge === "23505";
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await

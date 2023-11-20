@@ -8,6 +8,7 @@ import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 import { HTTPRequest } from "./context";
+import { Logger } from "winston";
 
 export const OperonExecutorIDHeader = "operon-executor-id";
 
@@ -47,7 +48,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly workflowStatusBuffer: Map<string, any> = new Map();
 
-  constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string) {
+  constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
     const poolConfig = { ...pgPoolConfig };
     poolConfig.database = systemDatabaseName;
     this.pool = new Pool(poolConfig);
@@ -61,9 +62,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (dbExists.rows.length === 0) {
       // Create the Operon system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
+      // Load the Operon system schemas.
+      await this.pool.query(systemDBSchema);
     }
-    // Load the Operon system schemas.
-    await this.pool.query(systemDBSchema);
     await this.listenForNotifications();
     await pgSystemClient.end();
   }
@@ -113,17 +114,27 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async flushWorkflowStatusBuffer() {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
-    const client: PoolClient = await this.pool.connect();
-    await client.query("BEGIN");
-    for (const [workflowUUID, output] of localBuffer) {
-      await client.query(
-        `INSERT INTO workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
-        DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
-        [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
-      );
+    try {
+      const client: PoolClient = await this.pool.connect();
+      await client.query("BEGIN");
+      for (const [workflowUUID, output] of localBuffer) {
+        await client.query(
+          `INSERT INTO workflow_status (workflow_uuid, status, output) VALUES($1, $2, $3) ON CONFLICT (workflow_uuid)
+          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
+          [workflowUUID, StatusString.SUCCESS, JSON.stringify(output)]
+        );
+      }
+      await client.query("COMMIT");
+      client.release();
+    } catch (error) {
+      this.logger.error("Error flushing workflow buffer", error)
+      // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
+      for (const [workflowUUID, output] of localBuffer) {
+        if (!this.workflowStatusBuffer.has(workflowUUID)) {
+          this.workflowStatusBuffer.set(workflowUUID, output)
+        }
+      }
     }
-    await client.query("COMMIT");
-    client.release();
     return Array.from(localBuffer.keys());
   }
 

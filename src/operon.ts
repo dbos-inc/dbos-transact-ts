@@ -86,7 +86,7 @@ export class Operon {
   readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
-  readonly recoveryWorkflowHandles: Array<WorkflowHandle<any>> = [];
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -108,7 +108,7 @@ export class Operon {
       this.systemDatabase = systemDatabase;
     } else {
       this.logger.debug("Using Postgres system database");
-      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database);
+      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database, this.logger);
     }
 
     this.flushBufferID = setInterval(() => {
@@ -227,12 +227,11 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`failed to initialize Operon: ${err.message}`);
+        this.logger.error(`failed to initialize Operon: ${err.message}`, err, err.stack);
         throw new OperonInitializationError(err.message);
       }
     }
-    const initRecoveryHandles = await this.recoverPendingWorkflows();
-    this.recoveryWorkflowHandles.push(...initRecoveryHandles)
+    await this.recoverPendingWorkflows();
     this.initialized = true;
 
     for (const v of this.registeredOperations) {
@@ -248,8 +247,10 @@ export class Operon {
   }
 
   async destroy() {
-    // Wait for recovery workflows to finish.
-    await Promise.allSettled(this.recoveryWorkflowHandles.map((i) => i.getResult()));
+    if (this.pendingWorkflowMap.size > 0) {
+      this.logger.info("Waiting for pending workflows to finish.");
+      await Promise.allSettled(this.pendingWorkflowMap.values());
+    }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
     await this.systemDatabase.destroy();
@@ -342,6 +343,19 @@ export class Operon {
       return result!;
     };
     const workflowPromise: Promise<R> = runWorkflow();
+
+    // Need to await for the workflow and capture errors.
+    const awaitWorkflowPromise = workflowPromise
+      .catch((error) => {
+        this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
+      })
+      .finally(() => {
+        // Remove itself from pending workflow map.
+        this.pendingWorkflowMap.delete(workflowUUID);
+      });
+    this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+
+    // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
