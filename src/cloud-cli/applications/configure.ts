@@ -20,13 +20,15 @@ export async function configureApp(host: string, port: string, dbName: string) {
     });
 
     // if status is not available or no hostname/port print error and exit
-    if (res.status != axios.HttpStatusCode.Ok) {
+    if (res.status != 200) {
       logger.error("Error getting info for ${dbName} error: ${res.data}.")
       return
     }
 
-    const userdbHostname = res.data.HostName
-    const userdbPort = res.data.Port
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const userdbHostname: string = res.data.HostName
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const userdbPort: number = res.data.Port
 
     if (userdbHostname == "" || userdbPort == 0) {
       logger.error("HostName: ${userdbHostname} Port: ${userdbPort} not available.")

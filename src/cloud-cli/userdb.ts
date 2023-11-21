@@ -22,7 +22,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
     
     if(sync) {
       let status = ""
-      var data
+      let data
       while (status != "available") {
         await sleep(60000)
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -33,12 +33,15 @@ export async function createUserDb(host: string, port: string, dbName: string, a
         status = data.Status
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       const dbhostname = data.HostName ;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       const dbport = data.Port;
 
       // Update the clouddb info record
       logger.info("Saving db state to cloud db");
       await axios.put(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info`, 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       {"Name": dbName,"Status": status, "HostName": dbhostname, "Port": dbport},
       {
         headers: {
