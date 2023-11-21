@@ -7,6 +7,7 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
+  configureApp,
 } from "./applications/";
 import { Command } from 'commander';
 import { login } from "./login";
@@ -118,6 +119,16 @@ applicationCommands
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await getAppLogs(options.name, host, port);
     process.exit(exitCode)
+  });
+
+
+applicationCommands
+  .command('configure')
+  .description('Configure an application to be deployed')
+  .option('-d, --dbname <string>', 'Specify the name of an already setup RDS user databases')
+  .action(async (options: { dbname: string }) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await configureApp(host, port, options.dbname);
   });
 
 //////////////////////////////
