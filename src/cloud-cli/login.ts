@@ -1,6 +1,10 @@
 import { createGlobalLogger } from "../telemetry/logs";
 import axios from "axios";
 import { sleep } from "../utils";
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { execSync } from "child_process";
+import fs from "fs";
 
 export const operonEnvPath = ".operon";
 export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
@@ -26,6 +30,36 @@ interface TokenResponse {
   expires_in: number;
 }
 
+
+const client = jwksClient({
+  jwksUri: 'https://dbos-inc.us.auth0.com/.well-known/jwks.json'
+});
+
+async function getSigningKey(kid: string): Promise<string> {
+  const key = await client.getSigningKey(kid);
+  return key.getPublicKey();
+}
+
+async function verifyToken(token: string): Promise<JwtPayload> {
+  const decoded = jwt.decode(token, { complete: true });
+
+  if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+    throw new Error('Invalid token');
+  }
+
+  const signingKey = await getSigningKey(decoded.header.kid);
+
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, signingKey, { algorithms: ['RS256'] }, (err, verifiedToken) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(verifiedToken as JwtPayload);
+      }
+    });
+  });
+}
+
 export async function login(): Promise<number> {
   const logger = createGlobalLogger();
   logger.info(`Logging in!`);
@@ -34,7 +68,7 @@ export async function login(): Promise<number> {
     method: 'POST',
     url: 'https://dbos-inc.us.auth0.com/oauth/device/code',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    data: { client_id: DBOSClientID, scope: 'sub name email', audience: DBOSCloudIdentifier }
+    data: { client_id: DBOSClientID, scope: 'sub', audience: DBOSCloudIdentifier }
   };
   let deviceCodeResponse: DeviceCodeResponse | undefined;
   try {
@@ -75,6 +109,14 @@ export async function login(): Promise<number> {
     return 1;
   }
 
-  console.log(tokenResponse);
+  const decodedToken = await verifyToken(tokenResponse.access_token);
+  const credentials: OperonCloudCredentials = {
+    token: tokenResponse.access_token,
+    userName: decodedToken.sub!,
+  }
+  execSync(`mkdir -p ${operonEnvPath}`);
+  fs.writeFileSync(`${operonEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
+  logger.info(`Successfully logged in as user: ${credentials.userName}`);
+  logger.info(`You can view your credentials in: ./${operonEnvPath}/credentials`);
   return 0;
 }
