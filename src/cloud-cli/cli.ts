@@ -13,6 +13,7 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
+import { credentialsExist } from "./utils";
 
 const program = new Command();
 
@@ -39,15 +40,17 @@ program
 program
   .command('register')
   .description('Register a user and log in Operon cloud')
-  .requiredOption('-u, --userName <string>', 'User name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
-  .action(async (options: { userName: string, host: string, port: string }) => {
-    const success = await registerUser(options.userName, options.host, options.port);
-    // Then, log in as the user.
-    if (success) {
-      login();
+  .action(async (options: { host: string, port: string }) => {
+    if (!credentialsExist()) {
+      const exitCode = await login();
+      if (exitCode !== 0) {
+        process.exit(exitCode)
+      }
     }
+    const exitCode = await registerUser(options.host, options.port);
+    process.exit(exitCode)
   });
 
 /////////////////////////////

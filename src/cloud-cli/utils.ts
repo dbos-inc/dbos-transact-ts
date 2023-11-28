@@ -8,3 +8,7 @@ export function getCloudCredentials(): OperonCloudCredentials {
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
 }
+
+export function credentialsExist(): boolean {
+  return fs.existsSync(`./${operonEnvPath}/credentials`);
+}
