@@ -31,9 +31,9 @@ program.
 program
   .command('login')
   .description('Log in Operon cloud')
-  .requiredOption('-u, --userName <string>', 'User name for login')
-  .action((options: { userName: string }) => {
-    login(options.userName);
+  .action(async (options: {}) => {
+    const exitCode = await login();
+    process.exit(exitCode)
   });
 
 program
@@ -46,7 +46,7 @@ program
     const success = await registerUser(options.userName, options.host, options.port);
     // Then, log in as the user.
     if (success) {
-      login(options.userName);
+      login();
     }
   });
 

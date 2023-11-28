@@ -1,14 +1,11 @@
-import { execSync } from "child_process";
-import { TAlgorithm, encode } from "jwt-simple";
 import { createGlobalLogger } from "../telemetry/logs";
-import fs from "fs";
+import axios from "axios";
 
 export const operonEnvPath = ".operon";
-const secretKey = "SOME SECRET";
 
 export interface OperonCloudCredentials {
-	token: string;
-	userName: string;
+  token: string;
+  userName: string;
 }
 
 interface Session {
@@ -19,34 +16,22 @@ interface Session {
   expires: number;
 }
 
-export function login (userName: string) {
+export async function login(): Promise<number> {
   const logger = createGlobalLogger();
-  // TODO: in the future, we should integrate with Okta for login.
-  // Generate a valid JWT token based on the userName and store it in the `./.operon/credentials` file.
-  // Then the deploy command can retrieve the token from this file.
-  logger.info(`Logging in as user: ${userName}`);
+  logger.info(`Logging in!`);
 
-  const algorithm: TAlgorithm = "HS256";
-  const issued = Date.now();
-  const expires = issued + 1000; // Expires after 1 sec.
-  const session: Session = {
-    id: 1,
-    dateCreated: Date.now(),
-    username: userName,
-    issued: issued,
-    expires: expires
-  };
-
-  const token = encode(session, secretKey, algorithm);
-
-  const credentials: OperonCloudCredentials = {
-    token,
-    userName,
+  try {
+    const options = {
+      method: 'POST',
+      url: 'https://dbos-inc.us.auth0.com/oauth/device/code',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      data: { client_id: 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu', scope: 'sub name email', audience: 'dbos-cloud-api' }
+    };
+    const response = await axios.request(options);
+    console.log(response.data)
+    return 0;
+  } catch (e) {
+    logger.error(`failed to log in`, e);
+    return 1;
   }
-
-  execSync(`mkdir -p ${operonEnvPath}`);
-  fs.writeFileSync(`${operonEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
-
-  logger.info(`Successfully logged in as user: ${userName}`);
-  logger.info(`You can view your credentials in: ./${operonEnvPath}/credentials`);
 }
