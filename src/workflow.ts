@@ -110,7 +110,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
   /**
    * Check if an operation has already executed in a workflow.
-   * If it previously executed succesfully, return its output.
+   * If it previously executed successfully, return its output.
    * If it previously executed and threw an error, throw that error.
    * Otherwise, return DBOSNull.
    * Also return the transaction snapshot information of this current transaction.
@@ -135,13 +135,45 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     // recorded=false row will be first because we used ORDER BY.
     res.txn_snapshot = rows[0].txn_snapshot;
-    if (rows.length == 2) {
+    if (rows.length === 2) {
       if (JSON.parse(rows[1].error) !== null) {
         throw deserializeError(JSON.parse(rows[1].error));
       } else {
         res.output = JSON.parse(rows[1].output) as R;
       }
     }
+    return res;
+  }
+
+  async prepareDebugExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult & {txn_id: string}> {
+    // Note: we read the recorded snapshot and transaction ID!
+    const query = "SELECT output, error, txn_snapshot, txn_id FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
+
+    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(
+      client,
+      query,
+      this.workflowUUID,
+      funcID
+    );
+
+    if (rows.length === 0 || rows.length > 1) {
+      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString());
+      throw new DBOSError("This should never happen during debug. Returned rows: " + rows.toString());
+    }
+
+    if (JSON.parse(rows[0].error) != null) {
+      throw deserializeError(JSON.parse(rows[0].error)); // We don't replay errors.
+    }
+
+    const res: BufferedResult & {txn_id: string}= {
+      output: rows[0].output as R,
+      txn_snapshot: rows[0].txn_snapshot,
+      txn_id: rows[0].txn_id,
+    }
+
+    // Send a signal to the debug proxy.
+    await this.#wfe.userDatabase.queryWithClient(client, `--proxy(${res.txn_snapshot},${res.txn_id})`);
+
     return res;
   }
 
@@ -267,7 +299,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           this.#wfe.tracer.endSpan(tCtxt.span);
           return check.output as R;
         }
-        // TODO: record snapshot information in result buffer.
 
         // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
         this.guardOperation(funcId, check.txn_snapshot);

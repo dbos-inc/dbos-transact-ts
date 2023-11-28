@@ -53,6 +53,7 @@ export interface DBOSConfig {
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
+  readonly debugProxy?: string;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -93,6 +94,8 @@ export class DBOSExecutor {
 
   static readonly defaultNotificationTimeoutSec = 60;
 
+  readonly debugMode: boolean;
+
   readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -124,11 +127,21 @@ export class DBOSExecutor {
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
+    this.debugMode = config.debugProxy ? true : false;
   }
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
+    const localConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
+    if (this.debugMode) {
+      // TODO: find a better way to represent the debug proxy.
+      const parts = this.config.debugProxy!.split(':');
+      localConfig.host = parts[0];
+      localConfig.port = parseInt(parts[1], 10);
+      this.logger.info("Debugging mode proxy: " + this.config.debugProxy);
+    }
     if (userDbClient === UserDatabaseName.PRISMA) {
+      // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
       const { PrismaClient } = require("@prisma/client");
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
@@ -141,11 +154,11 @@ export class DBOSExecutor {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
-          host: this.config.poolConfig.host,
-          port: this.config.poolConfig.port,
-          username: this.config.poolConfig.user,
-          password: this.config.poolConfig.password,
-          database: this.config.poolConfig.database,
+          host: localConfig.host,
+          port: localConfig.port,
+          username: localConfig.user,
+          password: localConfig.password,
+          database: localConfig.database,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           entities: this.entities
         }))
@@ -157,18 +170,18 @@ export class DBOSExecutor {
       const knexConfig: Knex.Config = {
         client: "postgres",
         connection: {
-          host: this.config.poolConfig.host,
-          port: this.config.poolConfig.port,
-          user: this.config.poolConfig.user,
-          password: this.config.poolConfig.password,
-          database: this.config.poolConfig.database,
-          ssl: this.config.poolConfig.ssl,
+          host: localConfig.host,
+          port: localConfig.port,
+          user: localConfig.user,
+          password: localConfig.password,
+          database: localConfig.database,
+          ssl: localConfig.ssl,
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
     } else {
-      this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+      this.userDatabase = new PGNodeUserDatabase(localConfig);
       this.logger.debug("Loaded Postgres user database");
     }
   }
@@ -221,15 +234,17 @@ export class DBOSExecutor {
       }
 
       await this.telemetryCollector.init(this.registeredOperations);
-      await this.userDatabase.init();
       await this.systemDatabase.init();
+      if (!this.debugMode) {
+        await this.userDatabase.init(); // Skip user DB init because we're using the proxy.
+        await this.recoverPendingWorkflows();
+      }
     } catch (err) {
       if (err instanceof Error) {
         this.logger.error(`failed to initialize workflow executor: ${err.message}`, err, err.stack);
         throw new DBOSInitializationError(err.message);
       }
     }
-    await this.recoverPendingWorkflows();
     this.initialized = true;
 
     for (const v of this.registeredOperations) {

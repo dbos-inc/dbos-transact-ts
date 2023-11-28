@@ -21,6 +21,7 @@ export interface DBOSCLIStartOptions {
   loglevel?: string,
   configfile?: string,
   entrypoint?: string,
+  debug?: string,
 }
 
 program
@@ -42,6 +43,7 @@ program
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
+  .option('-d, --debug <string>', 'Specify the debugger proxy URL')
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
