@@ -6,7 +6,7 @@ import { getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
-import { Operon, DBOSConfig } from "../dbos-sdk";
+import { Operon, DBOSConfig } from "../dbos-workflow";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
 import { DBOSTransaction } from "../transaction";
 import { DBOSWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";

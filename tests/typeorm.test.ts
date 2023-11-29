@@ -16,7 +16,7 @@ import {
    RequiredRole,
    PostApi,
 } from "../src";
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { v1 as uuidv1 } from "uuid";
 import { UserDatabaseName } from "../src/user_database";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";

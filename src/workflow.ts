@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, DBOSNull, dbosNull } from "./operon";
+import { Operon, DBOSNull, dbosNull } from "./dbos-workflow";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, DBOSTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { DBOSCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
-import { DBOSError, NotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
+import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
 import { SystemDatabase } from "./system_database";
@@ -233,7 +233,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async transaction<T extends any[], R>(txn: DBOSTransaction<T, R>, ...args: T): Promise<R> {
     const config = this.#wfe.transactionConfigMap.get(txn.name);
     if (config === undefined) {
-      throw new NotRegisteredError(txn.name);
+      throw new DBOSNotRegisteredError(txn.name);
     }
     const readOnly = config.readOnly ?? false;
     let retryWaitMillis = 1;
@@ -332,7 +332,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async external<T extends any[], R>(commFn: DBOSCommunicator<T, R>, ...args: T): Promise<R> {
     const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
-      throw new NotRegisteredError(commFn.name);
+      throw new DBOSNotRegisteredError(commFn.name);
     }
 
     const funcID = this.functionIDGetIncrement();

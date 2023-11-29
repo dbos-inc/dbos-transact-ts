@@ -105,7 +105,7 @@ database:
 runtimeConfig:
   entrypoint: dist/entrypoint.js
 `;
-    const filePath = "dbos-configb.yaml";
+    const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
     fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
 
@@ -137,7 +137,7 @@ describe("runtime-tests", () => {
     execSync("npm run test", { env: process.env });  // Make sure the hello example passes its own tests.
   });
 
-  // Attention! this test relies on example/hello/dbos-configb.yaml not declaring a port!
+  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("runtime-hello using default runtime configuration", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
@@ -166,7 +166,7 @@ database:
 runtimeConfig:
   port: 6666
 `;
-    const filePath = "dbos-configb.yaml";
+    const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
     fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
 

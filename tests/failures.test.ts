@@ -4,7 +4,7 @@ import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { DBOSError } from "../src/error";
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 const testTableName = "dbos_failure_test_kv";

@@ -18,7 +18,7 @@ import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
 import { v1 as uuidv1 } from "uuid";
-import { DBOSConfig } from "../../src/dbos-sdk";
+import { DBOSConfig } from "../../src/dbos-workflow";
 import { DBOSNotAuthorizedError, DBOSResponseError } from "../../src/error";
 import { PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";

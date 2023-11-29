@@ -19,7 +19,7 @@ import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { UserDatabaseName } from "../src/user_database";
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 interface PrismaPGError {

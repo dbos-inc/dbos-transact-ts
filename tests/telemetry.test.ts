@@ -1,6 +1,6 @@
 import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
-import { Operon, DBOSConfig } from "../src/dbos-sdk";
+import { Operon, DBOSConfig } from "../src/dbos-workflow";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSTransaction, DBOSWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";

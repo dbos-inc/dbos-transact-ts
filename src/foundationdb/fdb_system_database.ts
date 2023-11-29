@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, DBOSNull, dbosNull } from "../dbos-sdk";
+import { Operon, DBOSNull, dbosNull } from "../dbos-workflow";
 import { OperonExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";

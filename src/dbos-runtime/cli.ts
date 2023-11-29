@@ -3,7 +3,7 @@
 import { dbosConfigFilePath, parseConfigFile } from "./config";
 import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
-import { DBOSConfig } from "../dbos-sdk";
+import { DBOSConfig } from "../dbos-workflow";
 import { init } from "./init";
 import { generateOpenApi } from "./openApi";
 import YAML from 'yaml';

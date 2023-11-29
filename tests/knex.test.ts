@@ -11,7 +11,7 @@ import {
 import {
   DBOSNotAuthorizedError
 } from "../src/error"
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { UserDatabaseName } from "../src/user_database";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";

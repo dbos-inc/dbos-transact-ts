@@ -6,10 +6,10 @@ import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/dbos-runtime/config";
 import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
-import { Operon, DBOSConfig } from "../../src/dbos-sdk";
+import { Operon, DBOSConfig } from "../../src/dbos-workflow";
 import { WorkflowContextImpl } from "../../src/workflow";
 
-describe("dbos-configb", () => {
+describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
   const mockDBOSConfigYamlString = `
       database:

@@ -9,7 +9,7 @@
 .eslintrc.cjs
 Gruntfile.js
 jest.config.js
-operon-config.yaml
+dbos-config.yaml
 tsconfig.json
 tsconfig.*.json
 version.json

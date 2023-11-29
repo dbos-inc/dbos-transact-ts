@@ -1,4 +1,4 @@
-import { Operon, DBOSConfig } from '../dbos-sdk';
+import { Operon, DBOSConfig } from '../dbos-workflow';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';

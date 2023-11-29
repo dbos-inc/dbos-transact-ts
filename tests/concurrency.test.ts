@@ -2,7 +2,7 @@ import { CommunicatorContext, DBOSCommunicator, TestingRuntime, DBOSTransaction,
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { PoolClient } from "pg";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 

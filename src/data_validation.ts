@@ -1,13 +1,13 @@
 import { MethodRegistrationBase, ArgRequiredOptions } from "./decorators";
 import { DBOSContextImpl } from "./context";
-import { DataValidationError } from "./error";
+import { DBOSDataValidationError } from "./error";
 
 export function validateOperonMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args)
 {
     let opCtx : DBOSContextImpl | undefined = undefined;
 
     const validationError = (msg:string) => {
-        const err = new DataValidationError(msg);
+        const err = new DBOSDataValidationError(msg);
         opCtx?.span.addEvent("DataValidationError", { message: err.message });
         return err;
     }

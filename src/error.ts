@@ -78,7 +78,7 @@ export class DBOSInitializationError extends DBOSError {
 }
 
 const TopicPermissionDeniedError = 4;
-export class TopicPermissionDeniedError extends DBOSError {
+export class DBOSTopicPermissionDeniedError extends DBOSError {
   constructor(destinationUUID: string, workflowUUID: string, functionID: number, runAs: string) {
     const msg = `Subject ${runAs} does not have permission on destination UUID ${destinationUUID}.` + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
     super(msg, TopicPermissionDeniedError);
@@ -93,7 +93,7 @@ export class DBOSWorkflowConflictUUIDError extends DBOSError {
 }
 
 const NotRegisteredError = 6;
-export class NotRegisteredError extends DBOSError {
+export class DBOSNotRegisteredError extends DBOSError {
   constructor(name: string) {
     const msg = `Operation (Name: ${name}) not registered`;
     super(msg, NotRegisteredError);
@@ -101,7 +101,7 @@ export class NotRegisteredError extends DBOSError {
 }
 
 const PostgresExporterError = 7;
-export class PostgresExporterError extends DBOSError {
+export class DBOSPostgresExporterError extends DBOSError {
   constructor(err: Error) {
     let msg = `PostgresExporter error: ${err.message} \n`;
     if (err instanceof DatabaseError) {
@@ -112,7 +112,7 @@ export class PostgresExporterError extends DBOSError {
 }
 
 const DataValidationError = 9;
-export class DataValidationError extends DBOSError {
+export class DBOSDataValidationError extends DBOSError {
   constructor(msg: string) {
     super(msg, DataValidationError);
   }

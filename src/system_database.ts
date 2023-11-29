@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, dbosNull, DBOSNull } from "./operon";
+import { Operon, dbosNull, DBOSNull } from "./dbos-workflow";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";

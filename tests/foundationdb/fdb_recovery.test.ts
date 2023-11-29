@@ -1,6 +1,6 @@
 import { WorkflowContext, DBOSWorkflow, TestingRuntime } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { DBOSConfig } from "../../src/dbos-sdk";
+import { DBOSConfig } from "../../src/dbos-workflow";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import request from "supertest";
 import { DBOSWorkflowRecoveryUrl } from "../../src/httpServer/server";

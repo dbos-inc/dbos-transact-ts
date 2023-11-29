@@ -11,12 +11,12 @@ import {
 import { DBOSTransaction } from "../transaction";
 import { DBOSWorkflow } from "../workflow";
 import {
-  DataValidationError,
+  DBOSDataValidationError,
   DBOSError,
   DBOSResponseError,
   isClientError,
 } from "../error";
-import { Operon } from "../dbos-sdk";
+import { Operon } from "../dbos-workflow";
 import { Logger } from "winston";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -157,7 +157,7 @@ export class DBOSHttpServer {
                 }
               } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
                 if (!koaCtxt.request.body) {
-                  throw new DataValidationError(`Argument ${marg.name} requires a method body.`);
+                  throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
                 }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 foundArg = koaCtxt.request.body[marg.name];

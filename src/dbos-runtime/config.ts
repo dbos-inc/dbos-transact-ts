@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from "../error";
 import { readFileSync } from "../utils";
-import { DBOSConfig } from "../dbos-sdk";
+import { DBOSConfig } from "../dbos-workflow";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
 import { DBOSRuntimeConfig } from "./runtime";
@@ -9,7 +9,7 @@ import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
 
-export const dbosConfigFilePath = "dbos-configb.yaml";
+export const dbosConfigFilePath = "dbos-config.yaml";
 
 export interface ConfigFile {
   version: string;

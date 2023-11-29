@@ -1,7 +1,7 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { LogMasks, DBOSDataType, MethodRegistrationBase } from "./../decorators";
-import { PostgresExporterError } from "./../error";
+import { DBOSPostgresExporterError } from "./../error";
 import { DBOSSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
@@ -199,7 +199,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       // We do await here so we can catch and format PostgresExporter specific errors
       return await Promise.all<QueryArrayResult>(results);
     } catch (err) {
-      throw new PostgresExporterError(err as Error);
+      throw new DBOSPostgresExporterError(err as Error);
     }
   }
 }

@@ -5,7 +5,7 @@ import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 import { DBOSTransaction, DBOSWorkflow } from "../../src/decorators";
 import { TestingRuntime, TransactionContext, WorkflowContext } from "../../src";
 import { PgTransactionId } from "../../src/workflow";
-import { DBOSConfig } from "../../src/dbos-sdk";
+import { DBOSConfig } from "../../src/dbos-workflow";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 

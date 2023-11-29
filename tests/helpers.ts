@@ -1,4 +1,4 @@
-import { DBOSConfig } from "../src/dbos-sdk";
+import { DBOSConfig } from "../src/dbos-workflow";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
 import { setApplicationVersion } from "../src/dbos-runtime/applicationVersion";

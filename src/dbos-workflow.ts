@@ -3,7 +3,7 @@ import {
   DBOSError,
   DBOSInitializationError,
   DBOSWorkflowConflictUUIDError,
-  NotRegisteredError,
+  DBOSNotRegisteredError,
 } from './error';
 import {
   InvokedHandle,
@@ -295,7 +295,7 @@ export class Operon {
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
-      throw new NotRegisteredError(wf.name);
+      throw new DBOSNotRegisteredError(wf.name);
     }
     const wConfig = wInfo.config;
 
