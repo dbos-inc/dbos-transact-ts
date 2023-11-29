@@ -30,7 +30,6 @@ interface TokenResponse {
   expires_in: number;
 }
 
-
 const client = jwksClient({
   jwksUri: 'https://dbos-inc.us.auth0.com/.well-known/jwks.json'
 });
