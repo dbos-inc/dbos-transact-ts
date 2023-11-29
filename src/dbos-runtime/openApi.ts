@@ -52,13 +52,13 @@ function isTypeReference(node: ts.Type): node is ts.TypeReference {
 }
 
 // workflow UUID header parameter info which is added to every generated endpoint
-const workflowUuidParamName = "operonWorkflowUUID";
+const workflowUuidParamName = "dbosWorkflowUUID";
 const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
 const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
   name: 'dbos-workflowuuid',
   in: 'header',
   required: false,
-  description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+  description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
   schema: { type: 'string' },
 }] as const;
 
@@ -123,7 +123,7 @@ export class OpenApiGenerator {
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
     const parameters: Array<OpenApi3.ReferenceObject | OpenApi3.ParameterObject> = this.generateParameters(sourcedParams);
-    // add optional parameter for Operon workflow UUID header
+    // add optional parameter for workflow UUID header
     parameters.push(workflowUuidRef);
 
     const requestBody = this.generateRequestBody(sourcedParams);
@@ -165,7 +165,7 @@ export class OpenApiGenerator {
       }
     }
 
-    // OpenAPI indicates path parameters with curly braces, but Operon uses colons
+    // OpenAPI indicates path parameters with curly braces, but DBOS uses colons
     const $path = path.split('/')
       .map(p => p.startsWith(':') ? `{${p.substring(1)}}` : p)
       .join('/');
