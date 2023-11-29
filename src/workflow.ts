@@ -22,7 +22,7 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
+// Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
@@ -119,7 +119,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: we read the current snapshot, not the recorded one!
     const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
-      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
+      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
       funcID
     );
@@ -156,7 +156,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     funcIDs.sort();
     try {
-      let sqlStmt = "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+      let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
       let paramCnt = 1;
       const values: any[] = [];
       for (const funcID of funcIDs) {
@@ -200,7 +200,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
     const serialOutput = JSON.stringify(output);
-    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE operon.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
+    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE dbos.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
     return rows[0].txn_id;  // Must have a transaction ID because we inserted the guard before.
   }
 
@@ -209,7 +209,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await this.#wfe.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
+    await this.#wfe.userDatabase.queryWithClient(client, "UPDATE dbos.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
   }
 
   /**

@@ -137,11 +137,11 @@ describe("dbos-tests", () => {
     await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
 
     // Check the transaction output table and make sure we record transaction information correctly.
-    const readProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM operon.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
+    const readProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
     expect(readProv[0].txn_id).toBeFalsy();
     expect(readProv[0].txn_snapshot).toBeTruthy();
 
-    const writeProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM operon.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
+    const writeProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
     expect(writeProv[0].txn_id).toBeTruthy();
     expect(writeProv[0].txn_snapshot).toBeTruthy();
 
@@ -207,8 +207,8 @@ describe("dbos-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
-    await operon.flushWorkflowStatusBuffer();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    await wfe.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);

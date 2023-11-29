@@ -6,7 +6,7 @@ type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("testruntime-test", () => {
   const username = "postgres";
-  const configFilePath = "operon-test-config.yaml";
+  const configFilePath = "dbos-test-config.yaml";
   let testRuntime: TestingRuntime;
 
   beforeAll(async () => {

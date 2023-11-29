@@ -130,14 +130,14 @@ describe("prisma-tests", () => {
   });
 });
 
-const userTableName = 'operon_test_user';
+const userTableName = 'dbos_test_user';
 
 @Authentication(PUserManager.authMiddlware)
 class PUserManager {
   @DBOSTransaction()
   @PostApi('/register')
   static async createUser(txnCtxt: TestTransactionContext, uname: string) {
-    const res = await txnCtxt.client.operon_test_user.create({
+    const res = await txnCtxt.client.dbos_test_user.create({
       data: {
         id: 1234,
         username: uname,
@@ -167,7 +167,7 @@ class PUserManager {
     }
     const u = await ctx.query(
       (dbClient: PrismaClient, uname: string) => {
-        return dbClient.operon_test_user.findFirst({
+        return dbClient.dbos_test_user.findFirst({
           where: {
             username: uname,
           },
