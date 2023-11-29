@@ -114,7 +114,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
   }
 
   /************************************/
-  /* Build final workflow configuration */
+  /* Build final DBOS configuration */
   /************************************/
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
