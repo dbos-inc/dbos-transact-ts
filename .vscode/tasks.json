@@ -9,7 +9,7 @@
 				"$tsc"
 			],
 			"label": "npm: build",
-			"detail": "tsc --project tsconfig.build.json && chmod +x ./dist/src/operon-runtime/cli.js"
+			"detail": "tsc --project tsconfig.build.json && chmod +x ./dist/src/dbos-runtime/cli.js"
 		},
 		{
 			"type": "npm",

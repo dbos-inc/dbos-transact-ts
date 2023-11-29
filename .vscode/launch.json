@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "command": "npx operon start",
+            "command": "npx dbos start",
             "name": "Launch Example",
             "preLaunchTask": "build example",
             "request": "launch",
@@ -14,7 +14,7 @@
             "envFile": "${workspaceFolder}/examples/hello/.env"
         },
         {
-            "command": "npx operon openapi ${workspaceFolder}/examples/hello/src/operations.ts",
+            "command": "npx dbos openapi ${workspaceFolder}/examples/hello/src/operations.ts",
             "name": "Generate Example",
             "preLaunchTask": "build example",
             "request": "launch",

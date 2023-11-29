@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Operon Config",
+  "title": "DBOS Config",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -34,7 +34,7 @@
         },
         "system_database": {
           "type": "string",
-          "description": "The name of a database to which Operon can write system data. Defaults to `operon_systemdb`"
+          "description": "The name of a database to which DBOS can write system data. Defaults to `dbos_systemdb`"
         },
         "ssl_ca": {
           "type": "string",
