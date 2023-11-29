@@ -1,10 +1,10 @@
-import { OperonConfig } from "../src/operon";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
-import { setApplicationVersion } from "../src/operon-runtime/applicationVersion";
+import { setApplicationVersion } from "../src/dbos-runtime/applicationVersion";
 
 /* DB management helpers */
-export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonConfig {
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
@@ -14,7 +14,7 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
 
   setApplicationVersion("test");
 
-  const operonTestConfig: OperonConfig = {
+  const operonTestConfig: DBOSConfig = {
     poolConfig: {
       host: "localhost",
       port: 5432,
@@ -46,7 +46,7 @@ export function generateOperonTestConfig(dbClient?: UserDatabaseName): OperonCon
   return operonTestConfig;
 }
 
-export async function setupOperonTestDb(config: OperonConfig) {
+export async function setUpDBOSTestDb(config: DBOSConfig) {
   const pgSystemClient = new Client({
     user: config.poolConfig.user,
     port: config.poolConfig.port,

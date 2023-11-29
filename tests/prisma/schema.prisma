@@ -15,7 +15,7 @@ model testkv {
   value        String
 }
 
-model operon_test_user {
+model dbos_test_user {
   id           Int @id
   username     String
 }

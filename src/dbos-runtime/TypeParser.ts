@@ -55,7 +55,7 @@ export class TypeParser {
 
           const staticMethods = stmt.members
             .filter(ts.isMethodDeclaration)
-            // Operon only supports static methods, so filter out instance methods by default
+            // Only static methods are supported now, so filter out instance methods by default
             .filter(isStaticMethod)
             .map(m => this.#getMethod(m));
 

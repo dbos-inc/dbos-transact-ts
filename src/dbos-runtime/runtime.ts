@@ -1,9 +1,9 @@
-import { Operon, OperonConfig } from '../operon';
-import { OperonHttpServer } from '../httpServer/server';
+import { Operon, DBOSConfig } from '../dbos-sdk';
+import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
 import { Server } from 'http';
-import { OperonError } from '../error';
+import { DBOSError } from '../error';
 import path from 'node:path';
 
 interface ModuleExports {
@@ -11,18 +11,18 @@ interface ModuleExports {
   [key: string]: any;
 }
 
-export interface OperonRuntimeConfig {
+export interface DBOSRuntimeConfig {
   entrypoint: string;
   port: number;
 }
 
-export class OperonRuntime {
+export class DBOSRuntime {
   private operon: Operon;
   private server: Server | null = null;
 
-  constructor(operonConfig: OperonConfig, private readonly runtimeConfig: OperonRuntimeConfig) {
+  constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize Operon.
-    this.operon = new Operon(operonConfig);
+    this.operon = new Operon(dbosConfig);
   }
 
   /**
@@ -32,7 +32,7 @@ export class OperonRuntime {
     const exports = await this.loadFunctions();
     if (exports === null) {
       this.operon.logger.error("operations not found");
-      throw new OperonError("operations not found");
+      throw new DBOSError("operations not found");
     }
 
     const classes: object[] = [];
@@ -67,7 +67,7 @@ export class OperonRuntime {
   startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
 
-    const server: OperonHttpServer = new OperonHttpServer(this.operon)
+    const server: DBOSHttpServer = new DBOSHttpServer(this.operon)
 
     this.server = server.listen(this.runtimeConfig.port);
     this.operon.logRegisteredHTTPUrls();

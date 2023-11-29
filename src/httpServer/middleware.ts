@@ -1,11 +1,11 @@
 import Koa from "koa";
-import { OperonClassRegistration, OperonRegistrationDefaults, getOrCreateOperonClassRegistration } from "../decorators";
-import { OperonUndefinedDecoratorInputError } from "../error";
+import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from "../decorators";
+import { DBOSUndefinedDecoratorInputError } from "../error";
 
 import { UserDatabaseClient } from "../user_database";
 
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger as OperonLogger } from "../telemetry/logs";
+import { Logger as DBOSLogger } from "../telemetry/logs";
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
 // Middleware context does not extend Operon context because it runs before actual Operon operations.
@@ -14,7 +14,7 @@ export interface MiddlewareContext {
   readonly name: string; // Method (handler, transaction, workflow) name
   readonly requiredRole: string[]; // Roles required for the invoked Operon operation, if empty perhaps auth is not required
 
-  readonly logger: OperonLogger; // Logger, for logging from middleware
+  readonly logger: DBOSLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
 
   getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
@@ -30,21 +30,21 @@ export interface MiddlewareContext {
  * If this succeeds, return the current authenticated user and a list of roles.
  * If any step fails, throw an error.
  */
-export type OperonHttpAuthMiddleware = (ctx: MiddlewareContext) => Promise<OperonHttpAuthReturn | void>;
+export type DBOSHttpAuthMiddleware = (ctx: MiddlewareContext) => Promise<DBOSHttpAuthReturn | void>;
 
-export interface OperonHttpAuthReturn {
+export interface DBOSHttpAuthReturn {
   authenticatedUser: string;
   authenticatedRoles: string[];
 }
 
 // Class-level decorators
-export interface OperonMiddlewareDefaults extends OperonRegistrationDefaults {
+export interface MiddlewareDefaults extends RegistrationDefaults {
   koaMiddlewares?: Koa.Middleware[];
-  authMiddleware?: OperonHttpAuthMiddleware;
+  authMiddleware?: DBOSHttpAuthMiddleware;
 }
 
-export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends OperonClassRegistration<CT> implements OperonMiddlewareDefaults {
-  authMiddleware?: OperonHttpAuthMiddleware;
+export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements MiddlewareDefaults {
+  authMiddleware?: DBOSHttpAuthMiddleware;
   koaMiddlewares?: Koa.Middleware[];
 
   constructor(ctor: CT) {
@@ -59,12 +59,12 @@ export class OperonMiddlewareClassRegistration<CT extends { new(...args: unknown
 /**
  * Define an authentication function for each endpoint in this class.
  */
-export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
+export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
-    throw new OperonUndefinedDecoratorInputError("Authentication");
+    throw new DBOSUndefinedDecoratorInputError("Authentication");
   }
   function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateOperonClassRegistration(ctor) as OperonMiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.authMiddleware = authMiddleware;
   }
   return clsdec;
@@ -76,11 +76,11 @@ export function Authentication(authMiddleware: OperonHttpAuthMiddleware) {
 export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new OperonUndefinedDecoratorInputError("KoaMiddleware");
+      throw new DBOSUndefinedDecoratorInputError("KoaMiddleware");
     }
   });
   function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateOperonClassRegistration(ctor) as OperonMiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaMiddlewares = koaMiddleware;
   }
   return clsdec;

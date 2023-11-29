@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, OperonNull, operonNull } from "../operon";
+import { Operon, DBOSNull, dbosNull } from "../dbos-sdk";
 import { OperonExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
-import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "../error";
+import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 import { HTTPRequest } from "../context";
 
@@ -27,9 +27,9 @@ interface OperationOutput<R> {
 }
 
 const Tables = {
-  WorkflowStatus: "operon_workflow_status",
+  WorkflowStatus: "dbos_workflow_status",
   OperationOutputs: "operon_operation_outputs",
-  Notifications: "operon_notifications",
+  Notifications: "dbos_notifications",
   WorkflowEvents: "workflow_events",
   WorkflowInpus: "workflow_inputs"
 } as const;
@@ -76,10 +76,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     this.dbRoot.close();
   }
 
-  async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | OperonNull> {
+  async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | DBOSNull> {
     const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<R> | undefined;
     if (output === undefined || output.status === StatusString.PENDING) {
-      return operonNull;
+      return dbosNull;
     } else if (output.status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
     } else {
@@ -173,10 +173,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return ((await this.workflowInputsDB.get(workflowUUID)) as T) ?? null;
   }
 
-  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
+  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R> {
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<R> | undefined;
     if (output === undefined) {
-      return operonNull;
+      return dbosNull;
     } else if (JSON.parse(output.error) !== null) {
       throw deserializeError(JSON.parse(output.error));
     } else {
@@ -189,7 +189,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
       if (keyOutput !== undefined) {
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       }
       txn.set([workflowUUID, functionID], {
         error: null,
@@ -204,7 +204,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
       if (keyOutput !== undefined) {
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       }
       txn.set([workflowUUID, functionID], {
         error: serialErr,
@@ -316,7 +316,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const message = (messages ? (messages.shift() as T) : undefined) ?? null; // If no message is found, return null.
       const output = await operationOutputs.get([workflowUUID, functionID]);
       if (output !== undefined) {
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       }
       operationOutputs.set([workflowUUID, functionID], { error: null, output: message });
       if (messages && messages.length > 0) {
@@ -342,7 +342,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       if (exists === undefined) {
         workflowEvents.set([workflowUUID, key], value);
       } else {
-        throw new OperonDuplicateWorkflowEventError(workflowUUID, key);
+        throw new DuplicateWorkflowEventError(workflowUUID, key);
       }
       // For OAOO, record the set.
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });

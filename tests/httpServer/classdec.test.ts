@@ -3,31 +3,31 @@ import {
   RequiredRole,
   DefaultRequiredRole,
   MiddlewareContext,
-  OperonTransaction,
-  OperonWorkflow,
+  DBOSTransaction,
+  DBOSWorkflow,
   TransactionContext,
   WorkflowContext,
-  OperonTestingRuntime,
+  TestingRuntime,
 } from "../../src";
-import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
-import { OperonNotAuthorizedError } from "../../src/error";
-import { OperonConfig } from "../../src/operon";
+import { DBOSNotAuthorizedError } from "../../src/error";
+import { DBOSConfig } from "../../src/dbos-sdk";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-defsec-tests", () => {
-  const testTableName = "operon_test_kv";
+  const testTableName = "dbos_test_kv";
 
-  let testRuntime: OperonTestingRuntime;
-  let config: OperonConfig;
+  let testRuntime: TestingRuntime;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -88,7 +88,7 @@ describe("httpserver-defsec-tests", () => {
 
     // Unauthorized.
     await expect(testRuntime.invoke(TestEndpointDefSec).testTranscation("alice")).rejects.toThrowError(
-      new OperonNotAuthorizedError("User does not have a role with permission to call testTranscation", 403)
+      new DBOSNotAuthorizedError("User does not have a role with permission to call testTranscation", 403)
     );
   });
 
@@ -99,11 +99,11 @@ describe("httpserver-defsec-tests", () => {
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        const err = new OperonNotAuthorizedError("Not logged in.", 401);
+        const err = new DBOSNotAuthorizedError("Not logged in.", 401);
         throw err;
       } else {
         if (uid === "go_away") {
-          throw new OperonNotAuthorizedError("Go away.", 401);
+          throw new DBOSNotAuthorizedError("Go away.", 401);
         }
         return {
           authenticatedUser: uid,
@@ -144,13 +144,13 @@ describe("httpserver-defsec-tests", () => {
       return `Please say hello to ${name}`;
     }
 
-    @OperonTransaction()
+    @DBOSTransaction()
     static async testTranscation(txnCtxt: TransactionContext<PoolClient>, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
     }
 
-    @OperonWorkflow()
+    @DBOSWorkflow()
     static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
       const res = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
       return res;

@@ -1,22 +1,22 @@
-import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { CommunicatorContext, DBOSCommunicator, TestingRuntime, DBOSTransaction, DBOSWorkflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonConfig } from "../src/operon";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { PoolClient } from "pg";
-import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("concurrency-tests", () => {
   const testTableName = "operon_concurrency_test_kv";
 
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -67,7 +67,7 @@ describe("concurrency-tests", () => {
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
     await operon.flushWorkflowStatusBuffer();
     ConcurrTestClass.resolve();
     await handle.getResult();
@@ -127,20 +127,20 @@ class ConcurrTestClass {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testReadWriteFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction({ readOnly: true })
+  @DBOSTransaction({ readOnly: true })
   static async testReadOnlyFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt += 1;
     return id;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testWorkflow(ctxt: WorkflowContext) {
     if (ConcurrTestClass.wfCnt++ === 1) {
       ConcurrTestClass.resolve2();
@@ -150,13 +150,13 @@ class ConcurrTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator()
+  @DBOSCommunicator()
   static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async receiveWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
     return ctxt.recv<string>(topic, timeout);
   }

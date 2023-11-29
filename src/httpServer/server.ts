@@ -6,26 +6,26 @@ import {
   APITypes,
   ArgSources,
   HandlerContextImpl,
-  OperonHandlerRegistration,
+  HandlerRegistration,
 } from "./handler";
-import { OperonTransaction } from "../transaction";
-import { OperonWorkflow } from "../workflow";
+import { DBOSTransaction } from "../transaction";
+import { DBOSWorkflow } from "../workflow";
 import {
-  OperonDataValidationError,
-  OperonError,
-  OperonResponseError,
-  isOperonClientError,
+  DataValidationError,
+  DBOSError,
+  DBOSResponseError,
+  isClientError,
 } from "../error";
-import { Operon } from "../operon";
+import { Operon } from "../dbos-sdk";
 import { Logger } from "winston";
-import { OperonMiddlewareDefaults } from './middleware';
+import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
-import { OperonCommunicator } from '../communicator';
+import { DBOSCommunicator } from '../communicator';
 
-export const OperonWorkflowUUIDHeader = "operon-workflowuuid";
-export const OperonWorkflowRecoveryUrl = "/operon-workflow-recovery"
+export const DBOSWorkflowUUIDHeader = "dbos-workflowuuid";
+export const DBOSWorkflowRecoveryUrl = "/dbos-workflow-recovery"
 
-export class OperonHttpServer {
+export class DBOSHttpServer {
   readonly app: Koa;
   readonly router: Router;
   readonly logger: Logger;
@@ -53,8 +53,8 @@ export class OperonHttpServer {
     this.app = config.koa;
 
     // Register operon endpoints.
-    OperonHttpServer.registerRecoveryEndpoint(this.operon, this.router);
-    OperonHttpServer.registerDecoratedEndpoints(this.operon, this.router);
+    DBOSHttpServer.registerRecoveryEndpoint(this.operon, this.router);
+    DBOSHttpServer.registerDecoratedEndpoints(this.operon, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
@@ -65,7 +65,7 @@ export class OperonHttpServer {
   listen(port: number) {
     // Start the HTTP server.
     return this.app.listen(port, () => {
-      this.logger.info(`Operon Server is running at http://localhost:${port}`);
+      this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
   }
 
@@ -88,8 +88,8 @@ export class OperonHttpServer {
       await koaNext();
     };
 
-    router.post(OperonWorkflowRecoveryUrl, recoveryHandler);
-    operon.logger.debug(`Operon Server Registered Recovery POST ${OperonWorkflowRecoveryUrl}`);
+    router.post(DBOSWorkflowRecoveryUrl, recoveryHandler);
+    operon.logger.debug(`DBOS Server Registered Recovery POST ${DBOSWorkflowRecoveryUrl}`);
   }
 
   /**
@@ -98,19 +98,19 @@ export class OperonHttpServer {
   static registerDecoratedEndpoints(operon: Operon, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        // Ignore URL with "/operon-workflow-recovery" prefix.
-        if (ro.apiURL.startsWith(OperonWorkflowRecoveryUrl)) {
-          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${OperonWorkflowRecoveryUrl}!`);
+        // Ignore URL with "/dbos-workflow-recovery" prefix.
+        if (ro.apiURL.startsWith(DBOSWorkflowRecoveryUrl)) {
+          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${DBOSWorkflowRecoveryUrl}!`);
           return;
         }
 
         // Check if we need to apply any Koa middleware.
-        const defaults = ro.defaults as OperonMiddlewareDefaults;
+        const defaults = ro.defaults as MiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            operon.logger.debug(`Operon Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
+            operon.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
           });
         }
@@ -157,7 +157,7 @@ export class OperonHttpServer {
                 }
               } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
                 if (!koaCtxt.request.body) {
-                  throw new OperonDataValidationError(`Argument ${marg.name} requires a method body.`);
+                  throw new DataValidationError(`Argument ${marg.name} requires a method body.`);
                 }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 foundArg = koaCtxt.request.body[marg.name];
@@ -177,7 +177,7 @@ export class OperonHttpServer {
 
             // Extract workflow UUID from headers (if any).
             // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
-            const headerWorkflowUUID = koaCtxt.get(OperonWorkflowUUIDHeader);
+            const headerWorkflowUUID = koaCtxt.get(DBOSWorkflowUUIDHeader);
 
             // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
             // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
@@ -187,11 +187,11 @@ export class OperonHttpServer {
             // - Otherwise, we return 500.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await operon.transaction(ro.registeredFunction as OperonTransaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await operon.transaction(ro.registeredFunction as DBOSTransaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as OperonWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as DBOSWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await operon.external(ro.registeredFunction as OperonCommunicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await operon.external(ro.registeredFunction as DBOSCommunicator<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
@@ -206,9 +206,9 @@ export class OperonHttpServer {
             if (e instanceof Error) {
               oc.logger.error(e.message);
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-              let st = (e as OperonResponseError)?.status || 500;
-              const operonErrorCode = (e as OperonError)?.operonErrorCode;
-              if (operonErrorCode && isOperonClientError(operonErrorCode)) {
+              let st = (e as DBOSResponseError)?.status || 500;
+              const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
+              if (dbosErrorCode && isClientError(dbosErrorCode)) {
                 st = 400; // Set to 400: client-side error.
               }
               koaCtxt.status = st;
@@ -253,10 +253,10 @@ export class OperonHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`Operon Server Registered GET ${ro.apiURL}`);
+          operon.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`Operon Server Registered POST ${ro.apiURL}`);
+          operon.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
         }
       }
     });

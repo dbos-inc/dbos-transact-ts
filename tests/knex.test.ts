@@ -1,7 +1,7 @@
 import request from "supertest";
 
 import {
-  OperonTestingRuntime, OperonTransaction, OperonWorkflow,
+  TestingRuntime, DBOSTransaction, DBOSWorkflow,
   TransactionContext, WorkflowContext,
   GetApi, PostApi,
   HandlerContext,
@@ -9,46 +9,46 @@ import {
   MiddlewareContext,
 } from "../src";
 import {
-  OperonNotAuthorizedError
+  DBOSNotAuthorizedError
 } from "../src/error"
-import { OperonConfig } from "../src/operon";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { UserDatabaseName } from "../src/user_database";
-import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { Knex } from "knex";
 import { DatabaseError } from "pg";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type KnexTransactionContext = TransactionContext<Knex>;
-const testTableName = "operon_test_kv";
+const testTableName = "dbos_test_kv";
 
 let insertCount = 0;
 
 class TestClass {
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testInsert(txnCtxt: KnexTransactionContext, value: string) {
     insertCount++;
     const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ value: value }).returning("id");
     return result[0].id!;
   }
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testSelect(txnCtxt: KnexTransactionContext, id: number) {
     const result = await txnCtxt.client<TestKvTable>(testTableName).select("value").where({ id: id });
     return result[0].value!;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testWf(ctxt: WorkflowContext, value: string) {
     const id = await ctxt.invoke(TestClass).testInsert(value);
     const result = await ctxt.invoke(TestClass).testSelect(id);
     return result;
   }
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async returnVoid(_ctxt: KnexTransactionContext) {}
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
     insertCount++;
     const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ id: key, value: value }).returning("id");
@@ -57,12 +57,12 @@ class TestClass {
 }
 
 describe("knex-tests", () => {
-  let testRuntime: OperonTestingRuntime;
-  let config: OperonConfig;
+  let testRuntime: TestingRuntime;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.KNEX);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.KNEX);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -118,7 +118,7 @@ interface UserTable
 
 @Authentication(KUserManager.authMiddlware)
 class KUserManager {
-  @OperonTransaction()
+  @DBOSTransaction()
   @PostApi('/register')
   static async createUser(txnCtxt: KnexTransactionContext, uname: string) {
     const result = await txnCtxt.client<UserTable>(userTableName).insert({username: uname}).returning("id");
@@ -138,7 +138,7 @@ class KUserManager {
     }
     const {user} = ctx.koaContext.query;
     if (!user) {
-      throw new OperonNotAuthorizedError("User not provided", 401);
+      throw new DBOSNotAuthorizedError("User not provided", 401);
     }
     const u = await ctx.query(
       (dbClient: Knex, uname: string) => {
@@ -147,7 +147,7 @@ class KUserManager {
       );
 
     if (!u || !u.length) {
-      throw new OperonNotAuthorizedError("User does not exist", 403);
+      throw new DBOSNotAuthorizedError("User does not exist", 403);
     }
     ctx.logger.info(`Allowed in user: ${u[0].username}`);
     return {
@@ -158,12 +158,12 @@ class KUserManager {
 }
 
 describe("knex-auth-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.KNEX);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.KNEX);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {

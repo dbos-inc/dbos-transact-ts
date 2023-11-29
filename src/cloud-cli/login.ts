@@ -3,10 +3,10 @@ import { TAlgorithm, encode } from "jwt-simple";
 import { createGlobalLogger } from "../telemetry/logs";
 import fs from "fs";
 
-export const operonEnvPath = ".operon";
+export const dbosEnvPath = ".operon";
 const secretKey = "SOME SECRET";
 
-export interface OperonCloudCredentials {
+export interface DBOSCloudCredentials {
 	token: string;
 	userName: string;
 }
@@ -39,14 +39,14 @@ export function login (userName: string) {
 
   const token = encode(session, secretKey, algorithm);
 
-  const credentials: OperonCloudCredentials = {
+  const credentials: DBOSCloudCredentials = {
     token,
     userName,
   }
 
-  execSync(`mkdir -p ${operonEnvPath}`);
-  fs.writeFileSync(`${operonEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
+  execSync(`mkdir -p ${dbosEnvPath}`);
+  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
 
   logger.info(`Successfully logged in as user: ${userName}`);
-  logger.info(`You can view your credentials in: ./${operonEnvPath}/credentials`);
+  logger.info(`You can view your credentials in: ./${dbosEnvPath}/credentials`);
 }

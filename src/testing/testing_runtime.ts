@@ -1,15 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
-import { OperonCommunicator } from "../communicator";
-import { HTTPRequest, OperonContextImpl } from "../context";
+import { DBOSCommunicator } from "../communicator";
+import { HTTPRequest, DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
-import { OperonConfigKeyTypeError, OperonError } from "../error";
+import { DBOSConfigKeyTypeError, DBOSError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
-import { OperonHttpServer } from "../httpServer/server";
-import { Operon, OperonConfig } from "../operon";
-import { operonConfigFilePath, parseConfigFile } from "../operon-runtime/config";
-import { OperonTransaction } from "../transaction";
-import { OperonWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
+import { DBOSHttpServer } from "../httpServer/server";
+import { Operon, DBOSConfig } from "../dbos-sdk";
+import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
+import { DBOSTransaction } from "../transaction";
+import { DBOSWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
@@ -19,33 +19,33 @@ import { Client } from "pg";
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
-export async function createTestingRuntime(userClasses: object[], configFilePath: string = operonConfigFilePath): Promise<OperonTestingRuntime> {
-  const [ operonConfig ] = parseConfigFile({configfile: configFilePath});
+export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath): Promise<TestingRuntime> {
+  const [ dbosConfig ] = parseConfigFile({configfile: configFilePath});
 
   // Drop system database. Testing runtime always uses Postgres for local testing.
   const pgSystemClient = new Client({
-    user: operonConfig.poolConfig.user,
-    port: operonConfig.poolConfig.port,
-    host: operonConfig.poolConfig.host,
-    password: operonConfig.poolConfig.password,
-    database: operonConfig.poolConfig.database,
+    user: dbosConfig.poolConfig.user,
+    port: dbosConfig.poolConfig.port,
+    host: dbosConfig.poolConfig.host,
+    password: dbosConfig.poolConfig.password,
+    database: dbosConfig.poolConfig.database,
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${operonConfig.system_database};`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
   await pgSystemClient.end();
 
-  const otr = createInternalTestRuntime(userClasses, operonConfig, undefined)
+  const otr = createInternalTestRuntime(userClasses, dbosConfig, undefined)
   return otr;
 }
 
-export interface OperonInvokeParams {
+export interface WorkflowInvokeParams {
   readonly authenticatedUser?: string; // The user who ran the function.
   readonly authenticatedRoles?: string[]; // Roles the authenticated user has.
   readonly request?: HTTPRequest; // The originating HTTP request.
 }
 
-export interface OperonTestingRuntime {
-  invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T>;
+export interface TestingRuntime {
+  invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -66,8 +66,8 @@ export interface OperonTestingRuntime {
 /**
  * For internal unit tests which allows us to provide different system DB and control its behavior.
  */
-export async function createInternalTestRuntime(userClasses: object[], testConfig: OperonConfig, systemDB?: SystemDatabase): Promise<OperonTestingRuntime> {
-  const otr = new OperonTestingRuntimeImpl();
+export async function createInternalTestRuntime(userClasses: object[], testConfig: DBOSConfig, systemDB?: SystemDatabase): Promise<TestingRuntime> {
+  const otr = new TestingRuntimeImpl();
   await otr.init(userClasses, testConfig, systemDB);
   return otr;
 }
@@ -75,19 +75,19 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 /**
  * This class provides a runtime to test Opeorn functions in unit tests.
  */
-export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
-  #server: OperonHttpServer | null = null;
+export class TestingRuntimeImpl implements TestingRuntime {
+  #server: DBOSHttpServer | null = null;
   #applicationConfig: unknown = undefined;
 
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: OperonConfig, systemDB?: SystemDatabase) {
-    const operonConfig = testConfig ? [testConfig] : parseConfigFile();
-    const operon = new Operon(operonConfig[0], systemDB);
+  async init(userClasses: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
+    const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
+    const operon = new Operon(dbosConfig[0], systemDB);
     await operon.init(...userClasses);
-    this.#server = new OperonHttpServer(operon);
+    this.#server = new DBOSHttpServer(operon);
     this.#applicationConfig = operon.config.application;
   }
 
@@ -114,7 +114,7 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
     // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment
     const value = get(this.#applicationConfig, key);
     if (defaultValue && typeof value !== typeof defaultValue) {
-      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
     return value as T;
   }
@@ -123,15 +123,15 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: OperonInvokeParams): InvokeFuncs<T> {
-    const operon = this.getOperon();
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
+    const operon = this.getWFE();
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
 
     // Creates an Operon context to pass in necessary info.
     const span = operon.tracer.startSpan("test");
-    const oc = new OperonContextImpl("test", span, operon.logger);
+    const oc = new DBOSContextImpl("test", span, operon.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
@@ -141,13 +141,13 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.transaction(op.registeredFunction as OperonTransaction<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => operon.transaction(op.registeredFunction as DBOSTransaction<any[], any>, wfParams, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.workflow(op.registeredFunction as OperonWorkflow<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => operon.workflow(op.registeredFunction as DBOSWorkflow<any[], any>, wfParams, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.external(op.registeredFunction as OperonCommunicator<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => operon.external(op.registeredFunction as DBOSCommunicator<any[], any>, wfParams, ...args)
         : undefined;
     }
     return proxy as InvokeFuncs<T>;
@@ -158,42 +158,42 @@ export class OperonTestingRuntimeImpl implements OperonTestingRuntime {
    */
   getHandlersCallback() {
     if (!this.#server) {
-      throw new OperonError("Uninitialized testing runtime! Did you forget to call init() first?");
+      throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }
     return this.#server.app.callback();
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
-    return this.getOperon().send(destinationUUID, message, topic, idempotencyKey);
+    return this.getWFE().send(destinationUUID, message, topic, idempotencyKey);
   }
 
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
-    return this.getOperon().getEvent(workflowUUID, key, timeoutSeconds);
+    return this.getWFE().getEvent(workflowUUID, key, timeoutSeconds);
   }
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    return this.getOperon().retrieveWorkflow(workflowUUID);
+    return this.getWFE().retrieveWorkflow(workflowUUID);
   }
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.getOperon().userDatabase.query(sql, ...params);
+    return this.getWFE().userDatabase.query(sql, ...params);
   }
 
   async createUserSchema(): Promise<void> {
-    return this.getOperon().userDatabase.createSchema();
+    return this.getWFE().userDatabase.createSchema();
   }
 
   dropUserSchema(): Promise<void> {
-    return this.getOperon().userDatabase.dropSchema();
+    return this.getWFE().userDatabase.dropSchema();
   }
 
   /**
    * For internal tests use only -- return the Operon object.
    */
-  getOperon(): Operon {
+  getWFE(): Operon {
     if (!this.#server) {
-      throw new OperonError("Uninitialized testing runtime! Did you forget to call init() first?");
+      throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }
     return this.#server.operon;
   }

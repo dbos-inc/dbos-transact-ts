@@ -55,7 +55,7 @@ function isTypeReference(node: ts.Type): node is ts.TypeReference {
 const workflowUuidParamName = "operonWorkflowUUID";
 const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
 const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
-  name: 'operon-workflowuuid',
+  name: 'dbos-workflowuuid',
   in: 'header',
   required: false,
   description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -87,9 +87,9 @@ export class OpenApiGenerator {
       // if the class name is not specified, manufacture a name using the class index as the prefix
       // JS class identifiers cannot start with a digit but OpenApi security scheme names can
       const securitySchemeName = cls.name ? `${cls.name}Auth` : `${index}ClassAuth`;
-      const securitySchemeDecorator = this.getOperonDecorator(cls, 'OpenApiSecurityScheme');
+      const securitySchemeDecorator = this.getDBOSDecorator(cls, 'OpenApiSecurityScheme');
       const securityScheme = this.parseSecurityScheme(securitySchemeDecorator?.args[0]);
-      const defaultRoles = this.parseStringLiteralArray(this.getOperonDecorator(cls, 'DefaultRequiredRole')?.args[0]) ?? [];
+      const defaultRoles = this.parseStringLiteralArray(this.getDBOSDecorator(cls, 'DefaultRequiredRole')?.args[0]) ?? [];
 
       if (securityScheme) {
         this.#securitySchemeMap.set(securitySchemeName, securityScheme);
@@ -118,7 +118,7 @@ export class OpenApiGenerator {
 
   generatePath(method: MethodInfo, { verb, path } : HttpEndpointInfo, defaultRoles: readonly string[], securityScheme: string | undefined): [string, OpenApi3.PathItemObject] | undefined {
     const sourcedParams = method.parameters
-      // The first parameter of a handle method must be an OperonContext, which is not exposed via the API
+      // The first parameter of a handle method must be an DBOSContext, which is not exposed via the API
       .slice(1)
       .map(p => [p, this.getParamSource(p, verb)] as [ParameterInfo, ArgSources]);
 
@@ -134,7 +134,7 @@ export class OpenApiGenerator {
     // unless the method has no required roles
     const security = new Array<OpenApi3.SecurityRequirementObject>();
     if (securityScheme) {
-      const roles = this.parseStringLiteralArray(this.getOperonDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles;
+      const roles = this.parseStringLiteralArray(this.getDBOSDecorator(method, 'RequiredRole')?.args[0]) ?? defaultRoles;
       if (roles.length > 0) {
         security.push(<OpenApi3.SecurityRequirementObject>{ [securityScheme]: [] });
       }
@@ -323,8 +323,8 @@ export class OpenApiGenerator {
     return this.mapSchema(def);
   }
 
-  getOperonDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, name: string): DecoratorInfo | undefined {
-    const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/operon' && d.name === name);
+  getDBOSDecorator(decorated: MethodInfo | ParameterInfo | ClassInfo, name: string): DecoratorInfo | undefined {
+    const filtered = decorated.decorators.filter(d => d.module === '@dbos-inc/dbos-sdk' && d.name === name);
     if (filtered.length === 0) return undefined;
     if (filtered.length > 1) {
       this.#diags.raise(`Multiple ${JSON.stringify(name)} decorators found on ${decorated.name ?? "<unknown>"}`, decorated.node);
@@ -333,8 +333,8 @@ export class OpenApiGenerator {
   }
 
   getHttpInfo(method: MethodInfo): HttpEndpointInfo | undefined {
-    const getApiDecorator = this.getOperonDecorator(method, 'GetApi');
-    const postApiDecorator = this.getOperonDecorator(method, 'PostApi');
+    const getApiDecorator = this.getDBOSDecorator(method, 'GetApi');
+    const postApiDecorator = this.getDBOSDecorator(method, 'PostApi');
     if (getApiDecorator && postApiDecorator) {
       this.#diags.raise(`Method ${method.name} has both GetApi and PostApi decorators`);
       return;
@@ -355,7 +355,7 @@ export class OpenApiGenerator {
   }
 
   getParamSource(parameter: ParameterInfo, verb: APITypes): ArgSources.BODY | ArgSources.QUERY | ArgSources.URL | undefined {
-    const argSource = this.getOperonDecorator(parameter, 'ArgSource');
+    const argSource = this.getDBOSDecorator(parameter, 'ArgSource');
     if (!argSource) return getDefaultArgSource(verb);
 
     if (!ts.isPropertyAccessExpression(argSource.args[0])) {
@@ -381,7 +381,7 @@ export class OpenApiGenerator {
   }
 
   getParamName(parameter: ParameterInfo): string | undefined {
-    const argName = this.getOperonDecorator(parameter, 'ArgName');
+    const argName = this.getDBOSDecorator(parameter, 'ArgName');
     if (!argName) return parameter.name;
 
     const nameParam = argName.args[0];

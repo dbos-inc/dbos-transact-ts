@@ -3,10 +3,10 @@ import request from "supertest";
 import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
 import { EntityManager, Unique } from "typeorm";
 
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import {
-   OperonTestingRuntime,
-   OperonTransaction,
+   TestingRuntime,
+   DBOSTransaction,
    OrmEntities,
    TransactionContext,
    Authentication,
@@ -16,11 +16,11 @@ import {
    RequiredRole,
    PostApi,
 } from "../src";
-import { OperonConfig } from "../src/operon";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { v1 as uuidv1 } from "uuid";
 import { UserDatabaseName } from "../src/user_database";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
-import { OperonNotAuthorizedError } from "../src/error";
+import { DBOSNotAuthorizedError } from "../src/error";
 
 /**
  * Funtions used in tests.
@@ -40,7 +40,7 @@ type TestTransactionContext = TransactionContext<EntityManager>;
 
 @OrmEntities([KV])
 class KVController {
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const kv: KV = new KV();
     kv.id = id;
@@ -51,7 +51,7 @@ class KVController {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction({ readOnly: true })
+  @DBOSTransaction({ readOnly: true })
   static async readTxn(txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
     const kvp = await txnCtxt.client.findOneBy(KV, {id: id});
@@ -60,12 +60,12 @@ class KVController {
 }
 
 describe("typeorm-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.TYPEORM);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -124,7 +124,7 @@ export class User {
 @OrmEntities([User])
 @Authentication(UserManager.authMiddlware)
 class UserManager {
-  @OperonTransaction()
+  @DBOSTransaction()
   @PostApi('/register')
   static async createUser(txnCtxt: TestTransactionContext, uname: string) {
     const u: User = new User();
@@ -150,7 +150,7 @@ class UserManager {
     }
     const {user} = ctx.koaContext.query;
     if (!user) {
-      throw new OperonNotAuthorizedError("User not provided", 401);
+      throw new DBOSNotAuthorizedError("User not provided", 401);
     }
     const u = await ctx.query(
       (dbClient: EntityManager, uname: string) => {
@@ -159,7 +159,7 @@ class UserManager {
       );
 
     if (!u) {
-      throw new OperonNotAuthorizedError("User does not exist", 403);
+      throw new DBOSNotAuthorizedError("User does not exist", 403);
     }
     ctx.logger.info(`Allowed in user: ${u.username}`);
     return {
@@ -170,12 +170,12 @@ class UserManager {
 }
 
 describe("typeorm-auth-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.TYPEORM);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {

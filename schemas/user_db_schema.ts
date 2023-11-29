@@ -7,10 +7,10 @@ export interface transaction_outputs {
   txn_snapshot: string;
 }
 
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS operon;`;
+export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS operon.transaction_outputs (
+  CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
     workflow_uuid TEXT NOT NULL,
     function_id INT NOT NULL,
     output TEXT,

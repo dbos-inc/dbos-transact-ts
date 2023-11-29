@@ -7,13 +7,13 @@ import {
 } from "../src/decorators";
 
 import {
-  OperonContextImpl
+  DBOSContextImpl
 }
 from "../src/context"
 
 class TestFunctions {
   static foo(
-    _ctx: OperonContextImpl,
+    _ctx: DBOSContextImpl,
     @LogMask(LogMasks.HASH) arg1: string,
     /*@ArgDate()*/ arg2: Date,
     @SkipLogging arg3: boolean,
@@ -76,7 +76,7 @@ describe("operon-logging", () => {
       console.log(cts);
     });
 
-    await TestFunctions.foo(null as unknown as OperonContextImpl, "a", new Date(), false, 4);
+    await TestFunctions.foo(null as unknown as DBOSContextImpl, "a", new Date(), false, 4);
   });
 });
 

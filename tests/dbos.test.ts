@@ -1,31 +1,31 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, OperonTransaction, OperonWorkflow, OperonCommunicator, OperonInitializer, InitContext } from "../src/";
-import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
+import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, DBOSTransaction, DBOSWorkflow, DBOSCommunicator, DBOSInitializer, InitContext } from "../src/";
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { OperonConfig } from "../src/operon";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { transaction_outputs } from "../schemas/user_db_schema";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
-const testTableName = "operon_test_kv";
+const testTableName = "dbos_test_kv";
 
-describe("operon-tests", () => {
+describe("dbos-tests", () => {
   let username: string;
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateDBOSTestConfig();
     username = config.poolConfig.user || "postgres";
-    await setupOperonTestDb(config);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([OperonTestClass, ReadRecording, RetrieveWorkflowStatus], config);
+    testRuntime = await createInternalTestRuntime([DBOSTestClass, ReadRecording, RetrieveWorkflowStatus], config);
     // await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    OperonTestClass.cnt = 0;
+    DBOSTestClass.cnt = 0;
   });
 
   afterEach(async () => {
@@ -33,48 +33,48 @@ describe("operon-tests", () => {
   });
 
   test("simple-function", async () => {
-    const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(OperonTestClass).testWorkflow(username);
+    const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
   });
 
   test("return-void", async () => {
     const workflowUUID = uuidv1();
-    await testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction();
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
+    await testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction();
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
   });
 
   test("tight-loop", async () => {
     for (let i = 0; i < 100; i++) {
-      await expect(testRuntime.invoke(OperonTestClass).testNameWorkflow(username).then((x) => x.getResult())).resolves.toBe(username);
+      await expect(testRuntime.invoke(DBOSTestClass).testNameWorkflow(username).then((x) => x.getResult())).resolves.toBe(username);
     }
   });
 
   test("abort-function", async () => {
     for (let i = 0; i < 10; i++) {
-      await expect(testRuntime.invoke(OperonTestClass).testFailWorkflow(username).then((x) => x.getResult())).resolves.toBe(i + 1);
+      await expect(testRuntime.invoke(DBOSTestClass).testFailWorkflow(username).then((x) => x.getResult())).resolves.toBe(i + 1);
     }
 
     // Should not appear in the database.
-    await expect(testRuntime.invoke(OperonTestClass).testFailWorkflow("fail").then((x) => x.getResult())).rejects.toThrow("fail");
+    await expect(testRuntime.invoke(DBOSTestClass).testFailWorkflow("fail").then((x) => x.getResult())).rejects.toThrow("fail");
   });
 
   test("simple-communicator", async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(OperonTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
-    await expect(testRuntime.invoke(OperonTestClass).testCommunicator()).resolves.toBe(1);
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
+    await expect(testRuntime.invoke(DBOSTestClass).testCommunicator()).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
     const workflowUUID = uuidv1();
-    const handle = await testRuntime.invoke(OperonTestClass, workflowUUID).receiveWorkflow();
-    await expect(testRuntime.invoke(OperonTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
+    const handle = await testRuntime.invoke(DBOSTestClass, workflowUUID).receiveWorkflow();
+    await expect(testRuntime.invoke(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test("simple-workflow-events", async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.invoke(OperonTestClass).setEventWorkflow();
+    const handle: WorkflowHandle<number> = await testRuntime.invoke(DBOSTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
@@ -86,7 +86,7 @@ describe("operon-tests", () => {
     static cnt: number = 0;
     static wfCnt: number = 0;
 
-    @OperonTransaction({ readOnly: true })
+    @DBOSTransaction({ readOnly: true })
     static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
       ReadRecording.cnt++;
@@ -97,7 +97,7 @@ describe("operon-tests", () => {
       return rows[0].value;
     }
   
-    @OperonTransaction()
+    @DBOSTransaction()
     static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
         id,
@@ -106,7 +106,7 @@ describe("operon-tests", () => {
       return rows[0].value;
     }
   
-    @OperonWorkflow()
+    @DBOSWorkflow()
     static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
       await workflowCtxt.invoke(ReadRecording).testReadFunction(id);
       ReadRecording.wfCnt++;
@@ -166,7 +166,7 @@ describe("operon-tests", () => {
       RetrieveWorkflowStatus.resolve3 = resolve;
     });
 
-    @OperonTransaction()
+    @DBOSTransaction()
     static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
         id,
@@ -175,7 +175,7 @@ describe("operon-tests", () => {
       return rows[0].value;
     }
 
-    @OperonWorkflow()
+    @DBOSWorkflow()
     static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
       await RetrieveWorkflowStatus.promise1;
       const value = await workflowCtxt.invoke(RetrieveWorkflowStatus).testWriteFunction(id, name);
@@ -207,7 +207,7 @@ describe("operon-tests", () => {
     await expect(workflowHandle.getResult()).resolves.toBe("hello");
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
     await operon.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
@@ -222,53 +222,53 @@ describe("operon-tests", () => {
   });
 });
 
-class OperonTestClass {
+class DBOSTestClass {
 
   static initialized = false;
   static cnt: number = 0;
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonInitializer()
+  @DBOSInitializer()
   static async init(_ctx: InitContext) { 
-    OperonTestClass.initialized = true;
+    DBOSTestClass.initialized = true;
     expect(_ctx.getConfig("counter")).toBe(3);
     await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   }
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
     expect(txnCtxt.getConfig<number>("counter")).toBe(3);
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
-    expect(OperonTestClass.initialized).toBe(true);
+    expect(DBOSTestClass.initialized).toBe(true);
     expect(ctxt.getConfig<number>("counter")).toBe(3);
-    const funcResult = await ctxt.invoke(OperonTestClass).testFunction(name);
+    const funcResult = await ctxt.invoke(DBOSTestClass).testFunction(name);
     return funcResult;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testVoidFunction(_txnCtxt: TestTransactionContext) {
     return;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testNameFunction(_txnCtxt: TestTransactionContext, name: string) {
     return name;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testNameWorkflow(ctxt: WorkflowContext, name: string) {
-    return ctxt.invoke(OperonTestClass).testNameFunction(name);
+    return ctxt.invoke(DBOSTestClass).testNameFunction(name);
   }
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testFailFunction(txnCtxt: TestTransactionContext, name: string) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
     if (name === "fail") {
@@ -277,7 +277,7 @@ class OperonTestClass {
     return Number(rows[0].id);
   }
 
-  @OperonTransaction({ readOnly: true })
+  @DBOSTransaction({ readOnly: true })
   static async testKvFunctionRead(txnCtxt: TestTransactionContext, id: number) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
     if (rows.length > 0) {
@@ -288,38 +288,38 @@ class OperonTestClass {
     }
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
-    expect(OperonTestClass.initialized).toBe(true);
-    const funcResult: number = await workflowCtxt.invoke(OperonTestClass).testFailFunction(name);
-    const checkResult: number = await workflowCtxt.invoke(OperonTestClass).testKvFunctionRead(funcResult);
+    expect(DBOSTestClass.initialized).toBe(true);
+    const funcResult: number = await workflowCtxt.invoke(DBOSTestClass).testFailFunction(name);
+    const checkResult: number = await workflowCtxt.invoke(DBOSTestClass).testKvFunctionRead(funcResult);
     return checkResult;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator()
+  @DBOSCommunicator()
   static async testCommunicator(ctxt: CommunicatorContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
-    return OperonTestClass.cnt++;
+    return DBOSTestClass.cnt++;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
-    expect(OperonTestClass.initialized).toBe(true);
+    expect(DBOSTestClass.initialized).toBe(true);
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
     const fail = await ctxt.recv("fail", 0);
     return message1 === "message1" && message2 === "message2" && fail === null;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
     await ctxt.send(destinationUUID, "message1");
     await ctxt.send(destinationUUID, "message2");
   }
 
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");

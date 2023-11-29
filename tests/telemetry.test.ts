@@ -1,10 +1,10 @@
 import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
-import { Operon, OperonConfig } from "../src/operon";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
-import { OperonTransaction, OperonWorkflow, RequiredRole } from "../src/decorators";
+import { Operon, DBOSConfig } from "../src/dbos-sdk";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
+import { DBOSTransaction, DBOSWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
-import { GetApi, HandlerContext, OperonTestingRuntime, TransactionContext, WorkflowContext } from "../src";
+import { GetApi, HandlerContext, TestingRuntime, TransactionContext, WorkflowContext } from "../src";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
@@ -25,7 +25,7 @@ type TelemetrySignalDbFields = {
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 class TestClass {
-  @OperonTransaction({ readOnly: false })
+  @DBOSTransaction({ readOnly: false })
   static async test_function(txnCtxt: TestTransactionContext, name: string): Promise<string> {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     const result = JSON.stringify(rows[0]);
@@ -33,7 +33,7 @@ class TestClass {
     return result;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   @RequiredRole(["operonAppAdmin", "operonAppUser"])
   static async test_workflow(workflowCtxt: WorkflowContext, name: string): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
@@ -52,20 +52,20 @@ describe("operon-telemetry", () => {
   });
 
   test("Operon init works with all exporters", async () => {
-    const operonConfig = generateOperonTestConfig();
-    await setupOperonTestDb(operonConfig);
-    const operon = new Operon(operonConfig);
+    const dbosConfig = generateDBOSTestConfig();
+    await setUpDBOSTestDb(dbosConfig);
+    const operon = new Operon(dbosConfig);
     await operon.init();
     await operon.destroy();
   });
 
   test("collector handles errors gracefully", async () => {
-    const operonConfig = generateOperonTestConfig();
-    if (operonConfig.telemetry?.traces) {
-      operonConfig.telemetry.traces.enabled = true;
+    const dbosConfig = generateDBOSTestConfig();
+    if (dbosConfig.telemetry?.traces) {
+      dbosConfig.telemetry.traces.enabled = true;
     }
-    await setupOperonTestDb(operonConfig);
-    const operon = new Operon(operonConfig);
+    await setUpDBOSTestDb(dbosConfig);
+    const operon = new Operon(dbosConfig);
     await operon.init(TestClass);
 
     const collector = operon.telemetryCollector.exporters[0] as JaegerExporter;
@@ -83,15 +83,15 @@ describe("operon-telemetry", () => {
   /*
   describe("Postgres exporter", () => {
     let operon: Operon;
-    let operonConfig: OperonConfig;
-    let testRuntime: OperonTestingRuntime;
+    let dbosConfig: DBOSConfig;
+    let testRuntime: TestingRuntime;
 
     beforeAll(async () => {
-      operonConfig = generateOperonTestConfig()
+      dbosConfig = generateDBOSTestConfig()
       // This attempts to clear all our DBs, including the observability one
-      await setupOperonTestDb(operonConfig);
-      testRuntime = await createInternalTestRuntime([TestClass], operonConfig);
-      operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+      await setUpDBOSTestDb(dbosConfig);
+      testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
+      operon = (testRuntime as TestingRuntimeImpl).getWFE();
       expect(operon.telemetryCollector.exporters.length).toBe(1);
       expect(operon.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
     });
@@ -180,7 +180,7 @@ describe("operon-telemetry", () => {
 
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const username = operonConfig.poolConfig.user as string;
+      const username = dbosConfig.poolConfig.user as string;
       const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["operonAppAdmin"], authenticatedUser: "operonAppAdmin"}).test_workflow(username);
       const result: string = await workflowHandle.getResult();
 
@@ -210,12 +210,12 @@ describe("operon-telemetry", () => {
  */
 
   describe("http Tracer", () => {
-    let config: OperonConfig;
-    let testRuntime: OperonTestingRuntime;
+    let config: DBOSConfig;
+    let testRuntime: TestingRuntime;
 
     beforeAll(async () => {
-      config = generateOperonTestConfig();
-      await setupOperonTestDb(config);
+      config = generateDBOSTestConfig();
+      await setUpDBOSTestDb(config);
     });
 
     beforeEach(async () => {

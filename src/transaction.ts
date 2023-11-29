@@ -2,12 +2,12 @@
 import { UserDatabaseName, UserDatabaseClient } from "./user_database";
 import { WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { OperonContext, OperonContextImpl } from "./context";
+import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { WinstonLogger as Logger } from "./telemetry/logs";
 
-// Can we call it OperonTransactionFunction
-export type OperonTransaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+// Can we call it DBOSTransactionFunction
+export type DBOSTransaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;
@@ -22,11 +22,11 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
-export interface TransactionContext<T extends UserDatabaseClient> extends OperonContext {
+export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
 }
 
-export class TransactionContextImpl<T extends UserDatabaseClient> extends OperonContextImpl implements TransactionContext<T> {
+export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSContextImpl implements TransactionContext<T> {
   constructor(
     readonly clientKind: UserDatabaseName,
     readonly client: T,

@@ -1,7 +1,7 @@
 import { Client, DatabaseError } from "pg";
 import { PostgresExporter } from "../telemetry/exporters";
 import { TelemetryCollector } from "../telemetry/collector";
-import { OperonConfig } from "../operon";
+import { DBOSConfig } from "../dbos-sdk";
 import { ProvenanceSignal } from "../telemetry/signals";
 
 interface wal2jsonRow {
@@ -43,15 +43,15 @@ export class ProvenanceDaemon {
   initialized = false;
 
   /**
-   * @param operonConfig An Operon config defining exporters and database connection information.
+   * @param dbosConfig An Operon config defining exporters and database connection information.
    * @param slotName  The name of a logical replication slot. This slot is persistent and must be deleted if the daemon is no longer to be used.
    */
-  constructor(operonConfig: OperonConfig, readonly slotName: string) {
-    this.client = new Client(operonConfig.poolConfig);
+  constructor(dbosConfig: DBOSConfig, readonly slotName: string) {
+    this.client = new Client(dbosConfig.poolConfig);
     this.daemonID = setInterval(() => {
       void this.recordProvenance();
     }, this.recordProvenanceIntervalMs);
-    const telemetryExporters = [new PostgresExporter(operonConfig.poolConfig, operonConfig?.observability_database)];
+    const telemetryExporters = [new PostgresExporter(dbosConfig.poolConfig, dbosConfig?.observability_database)];
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
   }
 

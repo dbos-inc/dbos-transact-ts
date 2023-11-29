@@ -1,21 +1,21 @@
-import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, OperonTransaction, OperonCommunicator, OperonWorkflow, OperonTestingRuntime } from "../../src/";
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, DBOSTransaction, DBOSCommunicator, DBOSWorkflow, TestingRuntime } from "../../src/";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
-import { OperonConfig } from "../../src/operon";
+import { DBOSConfig } from "../../src/dbos-sdk";
 import { PoolClient } from "pg";
-import { OperonError } from "../../src/error";
-import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { DBOSError } from "../../src/error";
+import { TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { createInternalTestFDB } from "./fdb_helpers";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
 describe("foundationdb-operon", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -57,8 +57,8 @@ describe("foundationdb-operon", () => {
     await expect(testRuntime.invoke(FdbTestClass).testErrorCommunicator()).resolves.toBe("success");
 
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrowError(new DBOSError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrowError(new DBOSError("Communicator reached maximum retries.", 1));
   });
 
   test("fdb-workflow-status", async () => {
@@ -72,7 +72,7 @@ describe("foundationdb-operon", () => {
     FdbTestClass.innerResolve();
     await expect(invokedHandle.then((x) => x.getResult())).resolves.toBe(3);
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
     await operon.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -137,7 +137,7 @@ describe("foundationdb-operon", () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
     clearInterval(operon.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
@@ -161,14 +161,14 @@ class FdbTestClass {
   static wfCnt = 0;
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testFunction(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
     return 5;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testErrorFunction(_txnCtxt: PGTransactionContext) {
     if (FdbTestClass.cnt++ === 0) {
       throw new Error("fail");
@@ -176,13 +176,13 @@ class FdbTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator()
+  @DBOSCommunicator()
   static async testCommunicator(_commCtxt: CommunicatorContext) {
     return FdbTestClass.cnt++;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
+  @DBOSCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
   static async testErrorCommunicator(ctxt: CommunicatorContext) {
     FdbTestClass.cnt++;
     if (FdbTestClass.cnt !== ctxt.maxAttempts) {
@@ -192,7 +192,7 @@ class FdbTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator({ retriesAllowed: false })
+  @DBOSCommunicator({ retriesAllowed: false })
   static async noRetryComm(_ctxt: CommunicatorContext, id: number) {
     FdbTestClass.cnt++;
     return id;
@@ -209,13 +209,13 @@ class FdbTestClass {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testStatusFunc(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
     return 3;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async testStatusWorkflow(ctxt: WorkflowContext) {
     const result = ctxt.invoke(FdbTestClass).testStatusFunc();
     FdbTestClass.outerResolve();
@@ -223,7 +223,7 @@ class FdbTestClass {
     return result;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
@@ -231,20 +231,20 @@ class FdbTestClass {
     return message1 === "message1" && message2 === "message2" && fail === null;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
     await ctxt.send(destinationUUID, "message1");
     await ctxt.send(destinationUUID, "message2");
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
     return 0;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
     let res = "";
     const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
@@ -270,7 +270,7 @@ class FdbTestClass {
     return res;
   }
 
-  @OperonWorkflow()
+  @DBOSWorkflow()
   static async receiveTopicworkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
     return ctxt.recv<string>(topic, timeout);
   }

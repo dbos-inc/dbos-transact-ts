@@ -1,6 +1,6 @@
 import ts from "typescript";
-import { TypeParser } from "../../src/operon-runtime/TypeParser";
-import { OpenApiGenerator } from "../../src/operon-runtime/openApi";
+import { TypeParser } from "../../src/dbos-runtime/TypeParser";
+import { OpenApiGenerator } from "../../src/dbos-runtime/openApi";
 import path from "node:path";
 import { makeTestTypescriptProgram } from "../makeProgram";
 
@@ -33,7 +33,7 @@ describe("TypeParser", () => {
     expect(arg1.kind).toBe(ts.SyntaxKind.StringLiteral);
     expect((arg1 as ts.StringLiteral).text).toBe("/greeting/:user");
 
-    expect(dec2.name).toBe("OperonTransaction");
+    expect(dec2.name).toBe("DBOSTransaction");
     expect(dec2.args.length).toBe(0);
 
     expect(method.parameters.length).toBe(2);
@@ -57,7 +57,7 @@ describe("OpenApiGenerator", () => {
     const expected = {
       openapi: "3.0.3",
       info: {
-        title: "operon-hello",
+        title: "dbos-hello",
         version: "0.0.1"
       },
       paths: {
@@ -96,7 +96,7 @@ describe("OpenApiGenerator", () => {
         schemas: {},
         parameters: {
           operonWorkflowUUID: {
-            name: "operon-workflowuuid",
+            name: "dbos-workflowuuid",
             in: "header",
             required: false,
             schema: {
@@ -114,7 +114,7 @@ describe("OpenApiGenerator", () => {
     expect(classes!.length).toBe(1);
 
     const generator = new OpenApiGenerator(program);
-    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    const openApi = generator.generate(classes!, "dbos-hello", "0.0.1");
     expect(generator.diags.length).toBe(0);
 
     expect(openApi).toBeDefined();
@@ -123,7 +123,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme RequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/operon'
+    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     export class Hello {
@@ -138,7 +138,7 @@ describe("OpenApiGenerator", () => {
     const expected = {
       openapi: "3.0.3",
       info: {
-        title: "operon-hello",
+        title: "dbos-hello",
         version: "0.0.1"
       },
       paths: {
@@ -181,7 +181,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           operonWorkflowUUID: {
-            name: "operon-workflowuuid",
+            name: "dbos-workflowuuid",
             in: "header",
             required: false,
             description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -205,7 +205,7 @@ describe("OpenApiGenerator", () => {
     const classes = parser.parse();
     expect(parser.diags.length).toBe(0);
     const generator = new OpenApiGenerator(program);
-    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    const openApi = generator.generate(classes!, "dbos-hello", "0.0.1");
     expect(generator.diags.length).toBe(0);
     expect(openApi).toBeDefined();
     expect(openApi).toMatchObject(expected);
@@ -213,7 +213,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme DefaultRequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, DefaultRequiredRole, OpenApiSecurityScheme } from '@dbos-inc/operon'
+    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, DefaultRequiredRole, OpenApiSecurityScheme } from '@dbos-inc/dbos-sdk'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     @DefaultRequiredRole(['user'])
@@ -228,7 +228,7 @@ describe("OpenApiGenerator", () => {
     const expected = {
       openapi: "3.0.3",
       info: {
-        title: "operon-hello",
+        title: "dbos-hello",
         version: "0.0.1"
       },
       paths: {
@@ -271,7 +271,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           operonWorkflowUUID: {
-            name: "operon-workflowuuid",
+            name: "dbos-workflowuuid",
             in: "header",
             required: false,
             description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -295,7 +295,7 @@ describe("OpenApiGenerator", () => {
     const classes = parser.parse();
     expect(parser.diags.length).toBe(0);
     const generator = new OpenApiGenerator(program);
-    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    const openApi = generator.generate(classes!, "dbos-hello", "0.0.1");
     expect(generator.diags.length).toBe(0);
     expect(openApi).toBeDefined();
     expect(openApi).toMatchObject(expected);
@@ -303,7 +303,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme empty RequiredRole array", () => {
     const source = /*javascript*/`
-    import { TransactionContext, OperonTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, DefaultRequiredRole, RequiredRole } from '@dbos-inc/operon'
+    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, DefaultRequiredRole, RequiredRole } from '@dbos-inc/dbos-sdk'
 
     @DefaultRequiredRole(['user'])
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
@@ -319,7 +319,7 @@ describe("OpenApiGenerator", () => {
     const expected = {
       openapi: "3.0.3",
       info: {
-        title: "operon-hello",
+        title: "dbos-hello",
         version: "0.0.1"
       },
       paths: {
@@ -357,7 +357,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           operonWorkflowUUID: {
-            name: "operon-workflowuuid",
+            name: "dbos-workflowuuid",
             in: "header",
             required: false,
             description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -381,7 +381,7 @@ describe("OpenApiGenerator", () => {
     const classes = parser.parse();
     expect(parser.diags.length).toBe(0);
     const generator = new OpenApiGenerator(program);
-    const openApi = generator.generate(classes!, "operon-hello", "0.0.1");
+    const openApi = generator.generate(classes!, "dbos-hello", "0.0.1");
     expect(generator.diags.length).toBe(0);
     expect(openApi).toBeDefined();
     expect(openApi).toMatchObject(expected);

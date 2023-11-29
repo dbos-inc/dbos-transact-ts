@@ -30,7 +30,7 @@ program.
 
 program
   .command('login')
-  .description('Log in Operon cloud')
+  .description('Log in to DBOS cloud')
   .requiredOption('-u, --userName <string>', 'User name for login')
   .action((options: { userName: string }) => {
     login(options.userName);
@@ -38,7 +38,7 @@ program
 
 program
   .command('register')
-  .description('Register a user and log in Operon cloud')
+  .description('Register a user and log in to DBOS cloud')
   .requiredOption('-u, --userName <string>', 'User name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)

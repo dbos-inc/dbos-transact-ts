@@ -1,9 +1,9 @@
 import request from "supertest";
 
 import { PrismaClient, testkv } from "@prisma/client";
-import { generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import {
-  OperonTestingRuntime, OperonTransaction, TransactionContext,
+  TestingRuntime, DBOSTransaction, TransactionContext,
   Authentication,
   MiddlewareContext,
   GetApi,
@@ -12,14 +12,14 @@ import {
   PostApi,
 } from "../src";
 import {
-  OperonNotAuthorizedError,
+  DBOSNotAuthorizedError,
 } from "../src/error";
 
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { UserDatabaseName } from "../src/user_database";
-import { OperonConfig } from "../src/operon";
+import { DBOSConfig } from "../src/dbos-sdk";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 interface PrismaPGError {
@@ -39,7 +39,7 @@ let globalCnt = 0;
 const testTableName = "testkv";
 
 class PrismaTestClass {
-  @OperonTransaction()
+  @DBOSTransaction()
   static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const res = await txnCtxt.client.testkv.create({
       data: {
@@ -51,14 +51,14 @@ class PrismaTestClass {
     return res.id;
   }
 
-  @OperonTransaction({ readOnly: true })
+  @DBOSTransaction({ readOnly: true })
   static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
     await sleep(1);
     globalCnt += 1;
     return id;
   }
 
-  @OperonTransaction()
+  @DBOSTransaction()
   static async conflictTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const res = await txnCtxt.client.$queryRawUnsafe<testkv>(`INSERT INTO ${testTableName} VALUES ($1, $2)`, id, value);
     return res.id;
@@ -66,12 +66,12 @@ class PrismaTestClass {
 }
 
 describe("prisma-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.PRISMA);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.PRISMA);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -134,7 +134,7 @@ const userTableName = 'operon_test_user';
 
 @Authentication(PUserManager.authMiddlware)
 class PUserManager {
-  @OperonTransaction()
+  @DBOSTransaction()
   @PostApi('/register')
   static async createUser(txnCtxt: TestTransactionContext, uname: string) {
     const res = await txnCtxt.client.operon_test_user.create({
@@ -163,7 +163,7 @@ class PUserManager {
     }
     const {user} = ctx.koaContext.query;
     if (!user) {
-      throw new OperonNotAuthorizedError("User not provided", 401);
+      throw new DBOSNotAuthorizedError("User not provided", 401);
     }
     const u = await ctx.query(
       (dbClient: PrismaClient, uname: string) => {
@@ -176,7 +176,7 @@ class PUserManager {
       );
 
     if (!u) {
-      throw new OperonNotAuthorizedError("User does not exist", 403);
+      throw new DBOSNotAuthorizedError("User does not exist", 403);
     }
     ctx.logger.info(`Allowed in user: ${u.username}`);
     return {
@@ -187,12 +187,12 @@ class PUserManager {
 }
 
 describe("prisma-auth-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig(UserDatabaseName.PRISMA);
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig(UserDatabaseName.PRISMA);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
