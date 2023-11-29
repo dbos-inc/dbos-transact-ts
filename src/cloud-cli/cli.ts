@@ -31,25 +31,27 @@ program.
 
 program
   .command('login')
-  .description('Log in Operon cloud')
-  .action(async (options: {}) => {
-    const exitCode = await login();
+  .description('Log in to Operon cloud')
+  .requiredOption('-u, --username <string>', 'User name')
+  .action(async (options: { username: string }) => {
+    const exitCode = await login(options.username);
     process.exit(exitCode)
   });
 
 program
   .command('register')
   .description('Register a user and log in Operon cloud')
+  .requiredOption('-u, --username <string>', 'User name')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
-  .action(async (options: { host: string, port: string }) => {
+  .action(async (options: { username: string, host: string, port: string }) => {
     if (!credentialsExist()) {
-      const exitCode = await login();
+      const exitCode = await login(options.username);
       if (exitCode !== 0) {
         process.exit(exitCode)
       }
     }
-    const exitCode = await registerUser(options.host, options.port);
+    const exitCode = await registerUser(options.username, options.host, options.port);
     process.exit(exitCode)
   });
 

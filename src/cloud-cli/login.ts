@@ -60,7 +60,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
   });
 }
 
-export async function login(): Promise<number> {
+export async function login(username: string): Promise<number> {
   const logger = createGlobalLogger();
   logger.info(`Logging in!`);
 
@@ -109,10 +109,10 @@ export async function login(): Promise<number> {
     return 1;
   }
 
-  const decodedToken = await verifyToken(tokenResponse.access_token);
+  await verifyToken(tokenResponse.access_token);
   const credentials: OperonCloudCredentials = {
     token: tokenResponse.access_token,
-    userName: decodedToken.sub!,
+    userName: username,
   }
   execSync(`mkdir -p ${operonEnvPath}`);
   fs.writeFileSync(`${operonEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
