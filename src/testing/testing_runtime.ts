@@ -85,17 +85,17 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
-    const operon = new DBOSWFE(dbosConfig[0], systemDB);
-    await operon.init(...userClasses);
-    this.#server = new DBOSHttpServer(operon);
-    this.#applicationConfig = operon.config.application;
+    const wfe = new DBOSWFE(dbosConfig[0], systemDB);
+    await wfe.init(...userClasses);
+    this.#server = new DBOSHttpServer(wfe);
+    this.#applicationConfig = wfe.config.application;
   }
 
   /**
    * Release resources after tests.
    */
   async destroy() {
-    await this.#server?.operon.destroy();
+    await this.#server?.wfe.destroy();
   }
 
   /**
@@ -195,6 +195,6 @@ export class TestingRuntimeImpl implements TestingRuntime {
     if (!this.#server) {
       throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }
-    return this.#server.operon;
+    return this.#server.wfe;
   }
 }

@@ -32,15 +32,15 @@ export class DBOSHttpServer {
 
   /**
    * Create a Koa app.
-   * @param operon User pass in an Operon instance.
-   * TODO: maybe call operon.init() somewhere in this class?
+   * @param wfe User pass in an DBOS workflow executor instance.
+   * TODO: maybe call wfe.init() somewhere in this class?
    */
-  constructor(readonly operon: DBOSWFE, config: { koa?: Koa; router?: Router } = {}) {
+  constructor(readonly wfe: DBOSWFE, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
       config.router = new Router();
     }
     this.router = config.router;
-    this.logger = operon.logger;
+    this.logger = wfe.logger;
 
     if (!config.koa) {
       config.koa = new Koa();
@@ -52,14 +52,14 @@ export class DBOSHttpServer {
     }
     this.app = config.koa;
 
-    // Register operon endpoints.
-    DBOSHttpServer.registerRecoveryEndpoint(this.operon, this.router);
-    DBOSHttpServer.registerDecoratedEndpoints(this.operon, this.router);
+    // Register HTTP endpoints.
+    DBOSHttpServer.registerRecoveryEndpoint(this.wfe, this.router);
+    DBOSHttpServer.registerDecoratedEndpoints(this.wfe, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 
   /**
-   * Register Operon endpoints and attach to the app. Then start the server at the given port.
+   * Register HTTP endpoints and attach to the app. Then start the server at the given port.
    * @param port
    */
   listen(port: number) {
@@ -73,13 +73,13 @@ export class DBOSHttpServer {
    * Register workflow recovery endpoint.
    * Receives a list of executor IDs and returns a list of workflowUUIDs.
    */
-  static registerRecoveryEndpoint(operon: DBOSWFE, router: Router) {
+  static registerRecoveryEndpoint(wfe: DBOSWFE, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const executorIDs = koaCtxt.request.body as string[];
-      operon.logger.info("Recovering workflows for executors: " + executorIDs.toString());
-      const recoverHandles = await operon.recoverPendingWorkflows(executorIDs);
+      wfe.logger.info("Recovering workflows for executors: " + executorIDs.toString());
+      const recoverHandles = await wfe.recoverPendingWorkflows(executorIDs);
 
       // Return a list of workflowUUIDs being recovered.
       koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.getWorkflowUUID())).then((results) =>
@@ -89,20 +89,20 @@ export class DBOSHttpServer {
     };
 
     router.post(DBOSWorkflowRecoveryUrl, recoveryHandler);
-    operon.logger.debug(`DBOS Server Registered Recovery POST ${DBOSWorkflowRecoveryUrl}`);
+    wfe.logger.debug(`DBOS Server Registered Recovery POST ${DBOSWorkflowRecoveryUrl}`);
   }
 
   /**
-   * Register functions decorated with Operon decorators as HTTP endpoints.
+   * Register decorated functions as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(operon: DBOSWFE, router: Router) {
+  static registerDecoratedEndpoints(wfe: DBOSWFE, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
-    operon.registeredOperations.forEach((registeredOperation) => {
+    wfe.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Ignore URL with "/dbos-workflow-recovery" prefix.
         if (ro.apiURL.startsWith(DBOSWorkflowRecoveryUrl)) {
-          operon.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${DBOSWorkflowRecoveryUrl}!`);
+          wfe.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${DBOSWorkflowRecoveryUrl}!`);
           return;
         }
 
@@ -110,14 +110,14 @@ export class DBOSHttpServer {
         const defaults = ro.defaults as MiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            operon.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
+            wfe.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
           });
         }
 
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContextImpl = new HandlerContextImpl(operon, koaCtxt);
+          const oc: HandlerContextImpl = new HandlerContextImpl(wfe, koaCtxt);
 
           try {
             // Check for auth first
@@ -132,7 +132,7 @@ export class DBOSHttpServer {
                   return oc.getConfig(key, def);
                 },
                 query: (query, ...args) => {
-                  return operon.userDatabase.queryFunction(query, ...args);
+                  return wfe.userDatabase.queryFunction(query, ...args);
                 },
               });
               if (res) {
@@ -182,16 +182,16 @@ export class DBOSHttpServer {
             // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
             // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
             // In case of an exception:
-            // - If an Operon client-side error is thrown, we return 400.
+            // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await operon.transaction(ro.registeredFunction as DBOSTransaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await wfe.transaction(ro.registeredFunction as DBOSTransaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await operon.workflow(ro.registeredFunction as DBOSWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (await wfe.workflow(ro.registeredFunction as DBOSWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await operon.external(ro.registeredFunction as DBOSCommunicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await wfe.external(ro.registeredFunction as DBOSCommunicator<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
@@ -245,7 +245,7 @@ export class DBOSHttpServer {
                 },
               }
             );
-            operon.tracer.endSpan(oc.span);
+            wfe.tracer.endSpan(oc.span);
             await koaNext();
           }
         };
@@ -253,10 +253,10 @@ export class DBOSHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
+          wfe.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
-          operon.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+          wfe.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
         }
       }
     });

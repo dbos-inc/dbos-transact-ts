@@ -33,7 +33,7 @@ export class Tracer {
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.tracer = new BasicTracerProvider({
       resource: new Resource({
-        [SemanticResourceAttributes.SERVICE_NAME]: "operon",
+        [SemanticResourceAttributes.SERVICE_NAME]: "dbos",
       }),
     });
     this.tracer.register();

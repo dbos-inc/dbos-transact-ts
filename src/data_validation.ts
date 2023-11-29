@@ -2,7 +2,7 @@ import { MethodRegistrationBase, ArgRequiredOptions } from "./decorators";
 import { DBOSContextImpl } from "./context";
 import { DBOSDataValidationError } from "./error";
 
-export function validateOperonMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args)
+export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args)
 {
     let opCtx : DBOSContextImpl | undefined = undefined;
 

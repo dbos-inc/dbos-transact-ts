@@ -8,7 +8,7 @@ import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
-import { validateOperonMethodArgs } from "./data_validation";
+import { validateMethodArgs } from "./data_validation";
 
 /**
  * Any column type column can be.
@@ -298,7 +298,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         }
       }
 
-      const validatedArgs = validateOperonMethodArgs(methReg, rawArgs);
+      const validatedArgs = validateMethodArgs(methReg, rawArgs);
 
       // Argument logging
       validatedArgs.forEach((argValue, idx) => {

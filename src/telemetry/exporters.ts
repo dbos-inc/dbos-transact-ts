@@ -48,7 +48,7 @@ export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]> {
   readonly pgClient: Client;
 
-  constructor(private readonly poolConfig: PoolConfig, readonly observabilityDBName: string = "operon_observability") {
+  constructor(private readonly poolConfig: PoolConfig, readonly observabilityDBName: string = "dbos_observability") {
     const pgClientConfig = { ...poolConfig };
     pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
@@ -64,7 +64,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
   async init(registeredOperations: ReadonlyArray<MethodRegistrationBase> = []) {
     const pgSystemClient: Client = new Client(this.poolConfig);
     await pgSystemClient.connect();
-    // First check if the log database exists using operon pgSystemClient.
+    // First check if the log database exists using pgSystemClient.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`);
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
