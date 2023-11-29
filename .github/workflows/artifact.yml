@@ -2,7 +2,7 @@ name: Create Operon Package Artifact
 
 on:
   workflow_call:
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,6 +24,12 @@ jobs:
         uses: dotnet/nbgv@v0.4.1
         with:
           stamp: package.json
+      - name: "Install FDB"
+        run: |
+          wget https://github.com/apple/foundationdb/releases/download/7.1.31/foundationdb-clients_7.1.31-1_amd64.deb
+          wget https://github.com/apple/foundationdb/releases/download/7.1.31/foundationdb-server_7.1.31-1_amd64.deb
+          sudo dpkg -i foundationdb-clients_7.1.31-1_amd64.deb
+          sudo dpkg -i foundationdb-server_7.1.31-1_amd64.deb
       - run: npm ci
       - run: npm run build
       - run: npm publish
