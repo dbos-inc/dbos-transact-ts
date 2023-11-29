@@ -26,6 +26,7 @@ import { createGlobalLogger, WinstonLogger as Logger } from './telemetry/logs';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
+import { FoundationDBSystemDatabase } from './foundationdb/fdb_system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -53,6 +54,7 @@ export interface OperonConfig {
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
+  readonly systemDB?: string;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -107,8 +109,15 @@ export class Operon {
       this.logger.debug("Using provided system database"); // XXX print the name or something
       this.systemDatabase = systemDatabase;
     } else {
-      this.logger.debug("Using Postgres system database");
-      this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database, this.logger);
+      if (this.config.systemDB === "postgres" || this.config.systemDB === undefined) {
+        this.logger.debug("Using FoundationDB system database");
+        this.systemDatabase = new FoundationDBSystemDatabase();
+      } else if (this.config.systemDB === "foundationdb") {
+        this.logger.debug("Using Postgres system database");
+        this.systemDatabase = new PostgresSystemDatabase(this.config.poolConfig, this.config.system_database, this.logger);
+      } else {
+        throw new OperonInitializationError(`Unknown system database: ${this.config.system_database}`);
+      }
     }
 
     this.flushBufferID = setInterval(() => {

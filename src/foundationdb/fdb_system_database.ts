@@ -69,7 +69,13 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       .withValueEncoding(fdb.encoders.json);
   }
 
-  async init(): Promise<void> {}
+  async init(): Promise<void> {
+    await this.workflowEventsDB.clearRangeStartsWith("");
+    await this.operationOutputsDB.clearRangeStartsWith([]);
+    await this.notificationsDB.clearRangeStartsWith([]);
+    await this.workflowEventsDB.clearRangeStartsWith([]);
+    await this.workflowInputsDB.clearRangeStartsWith("");
+  }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {

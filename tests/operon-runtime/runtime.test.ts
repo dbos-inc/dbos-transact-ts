@@ -67,7 +67,10 @@ async function dropHelloSystemDB() {
 function configureHelloExample() {
   execSync("npm i");
   execSync("npm run build");
-  execSync("npx knex migrate:up");
+  if (process.env.PGPASSWORD === undefined) {
+    process.env.PGPASSWORD = "dbos";
+  }
+  execSync("npx knex migrate:up", { env: process.env });
 }
 
 describe("runtime-entrypoint-tests", () => {
@@ -163,8 +166,12 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
+systemDB: 'foundationdb'
 runtimeConfig:
   port: 6666
+telemetry:
+  logs:
+    logLevel: 'debug'
 `;
     const filePath = "operon-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);

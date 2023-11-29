@@ -26,6 +26,7 @@ export interface ConfigFile {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
   };
+  system_database: string;
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
@@ -117,6 +118,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /* Build final Operon Configuration */
   /************************************/
   const operonConfig: OperonConfig = {
+    systemDB: configFile.system_database || undefined,
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
