@@ -24,7 +24,7 @@ jobs:
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
-  
+
     steps:
       - name: "Setup postgres config"
         run: |
@@ -32,6 +32,12 @@ jobs:
           docker exec -i ${{ job.services.postgres.id }} apt install -y postgresql-15-wal2json
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
+      - name: "Install FDB"
+        run: |
+          wget https://github.com/apple/foundationdb/releases/download/7.1.31/foundationdb-clients_7.1.31-1_amd64.deb
+          wget https://github.com/apple/foundationdb/releases/download/7.1.31/foundationdb-server_7.1.31-1_amd64.deb
+          sudo dpkg -i foundationdb-clients_7.1.31-1_amd64.deb
+          sudo dpkg -i foundationdb-server_7.1.31-1_amd64.deb
       - uses: actions/checkout@v3
       - name: Use Node.js 18
         uses: actions/setup-node@v3
