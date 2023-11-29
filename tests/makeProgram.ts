@@ -6,7 +6,7 @@ const sdkRepoRoot = path.join(__dirname, "..");
 
 function readFile(fileName: string) {
   if (fileName.startsWith("node_modules/@dbos-inc/dbos-sdk/")) {
-    const $path = path.join(sdkRepoRoot, fileName.slice(30));
+    const $path = path.join(sdkRepoRoot, fileName.slice(32));
     return fs.existsSync($path) ? fs.readFileSync($path, "utf-8") : undefined;
   }
   if (fileName.startsWith("node_modules/@dbos-inc/")) {
@@ -21,7 +21,7 @@ function readFile(fileName: string) {
 
 function readDirectory(directoryName: string) {
   if (directoryName.startsWith("node_modules/@dbos-inc/dbos-sdk/")) {
-    const $path = path.join(sdkRepoRoot, directoryName.slice(30));
+    const $path = path.join(sdkRepoRoot, directoryName.slice(32));
     return fs.readdirSync($path, { withFileTypes: true }).filter(f => f.isDirectory()).map(f => f.name);
   }
   if (directoryName.startsWith("node_modules/")) {

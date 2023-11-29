@@ -184,7 +184,7 @@ describe("OpenApiGenerator", () => {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }
@@ -274,7 +274,7 @@ describe("OpenApiGenerator", () => {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }
@@ -360,7 +360,7 @@ describe("OpenApiGenerator", () => {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }
