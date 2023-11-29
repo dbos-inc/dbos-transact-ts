@@ -1,4 +1,4 @@
-name: Create Operon Package Artifact
+name: Create DBOS Package Artifact
 
 on:
   workflow_call:
@@ -36,5 +36,5 @@ jobs:
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
-          name: operon
-          path: ./dbos-inc-operon-*.tgz
+          name: dbos-workflow
+          path: ./dbos-inc-workflow-*.tgz
