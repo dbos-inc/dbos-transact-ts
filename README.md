@@ -1,4 +1,4 @@
-# DBOS SDK
+# DBOS Typescript SDK
 
 The DBOS SDK (from [DBOS, Inc.](https://dbos.dev)) is a **Typescript framework built on the database** that helps you develop transactional backend applications.
 DBOS fully embraces the power of your application database, helping you write backend applications that are reliable by default.
