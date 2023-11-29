@@ -1,6 +1,6 @@
 import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
-import { Operon, DBOSConfig } from "../src/dbos-workflow";
+import { DBOSWFE, DBOSConfig } from "../src/dbos-workflow";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSTransaction, DBOSWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
@@ -54,7 +54,7 @@ describe("operon-telemetry", () => {
   test("Operon init works with all exporters", async () => {
     const dbosConfig = generateDBOSTestConfig();
     await setUpDBOSTestDb(dbosConfig);
-    const operon = new Operon(dbosConfig);
+    const operon = new DBOSWFE(dbosConfig);
     await operon.init();
     await operon.destroy();
   });
@@ -65,7 +65,7 @@ describe("operon-telemetry", () => {
       dbosConfig.telemetry.traces.enabled = true;
     }
     await setUpDBOSTestDb(dbosConfig);
-    const operon = new Operon(dbosConfig);
+    const operon = new DBOSWFE(dbosConfig);
     await operon.init(TestClass);
 
     const collector = operon.telemetryCollector.exporters[0] as JaegerExporter;

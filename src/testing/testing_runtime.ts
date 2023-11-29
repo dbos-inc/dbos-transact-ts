@@ -6,7 +6,7 @@ import { getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
 import { InvokeFuncs } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
-import { Operon, DBOSConfig } from "../dbos-workflow";
+import { DBOSWFE, DBOSConfig } from "../dbos-workflow";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
 import { DBOSTransaction } from "../transaction";
 import { DBOSWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
@@ -85,7 +85,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
-    const operon = new Operon(dbosConfig[0], systemDB);
+    const operon = new DBOSWFE(dbosConfig[0], systemDB);
     await operon.init(...userClasses);
     this.#server = new DBOSHttpServer(operon);
     this.#applicationConfig = operon.config.application;
@@ -167,7 +167,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getWFE().send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.getWFE().getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -191,7 +191,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   /**
    * For internal tests use only -- return the Operon object.
    */
-  getWFE(): Operon {
+  getWFE(): DBOSWFE {
     if (!this.#server) {
       throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }

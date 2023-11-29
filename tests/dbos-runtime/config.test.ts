@@ -6,7 +6,7 @@ import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/dbos-runtime/config";
 import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
-import { Operon, DBOSConfig } from "../../src/dbos-workflow";
+import { DBOSWFE, DBOSConfig } from "../../src/dbos-workflow";
 import { WorkflowContextImpl } from "../../src/workflow";
 
 describe("dbos-config", () => {
@@ -111,7 +111,7 @@ describe("dbos-config", () => {
 
     test("getConfig returns the expected values", async () => {
       const [dbosConfig, _operonRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(dbosConfig);
+      const operon = new DBOSWFE(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
       // Config key exists
       expect(ctx.getConfig("payments_url")).toBe("http://somedomain.com/payment");
@@ -137,7 +137,7 @@ describe("dbos-config", () => {
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _operonRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(dbosConfig);
+      const operon = new DBOSWFE(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
       expect(ctx.getConfig<string>("payments_url", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
@@ -147,7 +147,7 @@ describe("dbos-config", () => {
 
     test("getConfig throws when it finds a value of different type than the default", async () => {
       const [dbosConfig, _operonRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(dbosConfig);
+      const operon = new DBOSWFE(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
       expect(() => ctx.getConfig<number>("payments_url", 1234)).toThrow(DBOSConfigKeyTypeError);
       // We didn't init, so do some manual cleanup only

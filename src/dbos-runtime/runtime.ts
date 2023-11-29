@@ -1,4 +1,4 @@
-import { Operon, DBOSConfig } from '../dbos-workflow';
+import { DBOSWFE, DBOSConfig } from '../dbos-workflow';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -17,12 +17,12 @@ export interface DBOSRuntimeConfig {
 }
 
 export class DBOSRuntime {
-  private operon: Operon;
+  private operon: DBOSWFE;
   private server: Server | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize Operon.
-    this.operon = new Operon(dbosConfig);
+    this.operon = new DBOSWFE(dbosConfig);
   }
 
   /**

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, DBOSNull, dbosNull } from "./dbos-workflow";
+import { DBOSWFE, DBOSNull, dbosNull } from "./dbos-workflow";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, DBOSTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { DBOSCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
@@ -79,7 +79,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly isTempWorkflow: boolean;
 
   constructor(
-    operon: Operon,
+    operon: DBOSWFE,
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
@@ -433,7 +433,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -483,7 +483,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#wfe.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }

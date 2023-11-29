@@ -16,7 +16,7 @@ import {
   DBOSResponseError,
   isClientError,
 } from "../error";
-import { Operon } from "../dbos-workflow";
+import { DBOSWFE } from "../dbos-workflow";
 import { Logger } from "winston";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -35,7 +35,7 @@ export class DBOSHttpServer {
    * @param operon User pass in an Operon instance.
    * TODO: maybe call operon.init() somewhere in this class?
    */
-  constructor(readonly operon: Operon, config: { koa?: Koa; router?: Router } = {}) {
+  constructor(readonly operon: DBOSWFE, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
       config.router = new Router();
     }
@@ -73,7 +73,7 @@ export class DBOSHttpServer {
    * Register workflow recovery endpoint.
    * Receives a list of executor IDs and returns a list of workflowUUIDs.
    */
-  static registerRecoveryEndpoint(operon: Operon, router: Router) {
+  static registerRecoveryEndpoint(operon: DBOSWFE, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -95,7 +95,7 @@ export class DBOSHttpServer {
   /**
    * Register functions decorated with Operon decorators as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(operon: Operon, router: Router) {
+  static registerDecoratedEndpoints(operon: DBOSWFE, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     operon.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;

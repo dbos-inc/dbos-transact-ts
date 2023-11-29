@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { Operon } from "../dbos-workflow";
+import { DBOSWFE } from "../dbos-workflow";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { DBOSWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
@@ -27,10 +27,10 @@ export interface HandlerContext extends DBOSContext {
 }
 
 export class HandlerContextImpl extends DBOSContextImpl implements HandlerContext {
-  readonly #wfe: Operon;
+  readonly #wfe: DBOSWFE;
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
-  constructor(operon: Operon, readonly koaContext: Koa.Context) {
+  constructor(operon: DBOSWFE, readonly koaContext: Koa.Context) {
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
@@ -76,7 +76,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#wfe.send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.#wfe.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

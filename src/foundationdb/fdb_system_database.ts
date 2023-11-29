@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, DBOSNull, dbosNull } from "../dbos-workflow";
+import { DBOSWFE, DBOSNull, dbosNull } from "../dbos-workflow";
 import { OperonExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
@@ -290,7 +290,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async recv<T>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
     const currTopic = topic ?? this.nullTopic;
     // For OAOO, check if the recv already ran.
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<T | null> | undefined;

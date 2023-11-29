@@ -4,7 +4,7 @@ import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
-import { Operon } from "./dbos-workflow";
+import { DBOSWFE } from "./dbos-workflow";
 import { DBOSConfigKeyTypeError } from "./error";
 
 // Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
@@ -91,7 +91,7 @@ export class InitContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
-  constructor(readonly operon: Operon) {
+  constructor(readonly operon: DBOSWFE) {
     this.logger = operon.logger;
     this.userDatabase = operon.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
