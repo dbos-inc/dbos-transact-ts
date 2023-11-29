@@ -8,11 +8,11 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { Logger as DBOSLogger } from "../telemetry/logs";
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
 
-// Middleware context does not extend Operon context because it runs before actual Operon operations.
+// Middleware context does not extend base context because it runs before handler/workflow operations.
 export interface MiddlewareContext {
   readonly koaContext: Koa.Context;
   readonly name: string; // Method (handler, transaction, workflow) name
-  readonly requiredRole: string[]; // Roles required for the invoked Operon operation, if empty perhaps auth is not required
+  readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
 
   readonly logger: DBOSLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
@@ -26,7 +26,7 @@ export interface MiddlewareContext {
  * Authentication middleware that executes before a request reaches a function.
  * This is expected to:
  *   - Validate the request found in the handler context and extract auth information from the request.
- *   - Map the HTTP request to the user identity and roles defined in Operon app.
+ *   - Map the HTTP request to the user identity and roles defined in app.
  * If this succeeds, return the current authenticated user and a list of roles.
  * If any step fails, throw an error.
  */
@@ -96,7 +96,7 @@ type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2Secu
 /**
  * Declare an OpenApi Security Scheme (https://spec.openapis.org/oas/v3.0.3#security-scheme-object
  * for the methods of a class. Note, this decorator is only used in OpenApi generation and does not
- * affect runtime behavior of the Operon app.
+ * affect runtime behavior of the app.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {

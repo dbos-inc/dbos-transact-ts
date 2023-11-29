@@ -7,7 +7,7 @@ import { UserDatabase } from "./user_database";
 import { DBOSWFE } from "./dbos-workflow";
 import { DBOSConfigKeyTypeError } from "./error";
 
-// Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
+// HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
   readonly headers?: IncomingHttpHeaders;  // A node's http.IncomingHttpHeaders object.
   readonly rawHeaders?: string[];          // Raw headers.
@@ -91,11 +91,11 @@ export class InitContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
-  constructor(readonly operon: DBOSWFE) {
-    this.logger = operon.logger;
-    this.userDatabase = operon.userDatabase;
+  constructor(readonly wfe: DBOSWFE) {
+    this.logger = wfe.logger;
+    this.userDatabase = wfe.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    this.application = operon.config.application;
+    this.application = wfe.config.application;
   }
 
   createUserSchema(): Promise<void> {
@@ -124,7 +124,7 @@ export class InitContext {
 
     // If the key is found and the default value is provided, check whether the value is of the same type.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const value = get(this.operon.config.application, key);
+    const value = get(this.wfe.config.application, key);
     if (defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }

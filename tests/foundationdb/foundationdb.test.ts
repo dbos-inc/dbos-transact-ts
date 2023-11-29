@@ -9,7 +9,7 @@ import { createInternalTestFDB } from "./fdb_helpers";
 
 type PGTransactionContext = TransactionContext<PoolClient>;
 
-describe("foundationdb-operon", () => {
+describe("foundationdb-dbos", () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
@@ -29,7 +29,7 @@ describe("foundationdb-operon", () => {
     await testRuntime.destroy();
   });
 
-  test("fdb-operon", async () => {
+  test("fdb-dbos", async () => {
     const uuid = uuidv1();
     await expect(testRuntime.invoke(FdbTestClass, uuid).testFunction()).resolves.toBe(5);
     await expect(testRuntime.invoke(FdbTestClass, uuid).testFunction()).resolves.toBe(5);
@@ -72,8 +72,8 @@ describe("foundationdb-operon", () => {
     FdbTestClass.innerResolve();
     await expect(invokedHandle.then((x) => x.getResult())).resolves.toBe(3);
 
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
-    await operon.flushWorkflowStatusBuffer();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    await wfe.flushWorkflowStatusBuffer();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -137,8 +137,8 @@ describe("foundationdb-operon", () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    clearInterval(wfe.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
     const setUUID = getUUID + "-2";

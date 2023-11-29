@@ -45,13 +45,13 @@ function quoteSqlString(value: string): string {
 }
 
 // FIXME: this test relies on manually reading the console log and the code doesn't check for correctness.
-describe("operon-logging", () => {
+describe("dbos-logging", () => {
   test("Decorators", async () => {
     const ops = getRegisteredOperations(TestFunctions);
     ops.forEach((m) => {
       // This is not how you build SQL obviously.  It is up to the collector to do it, schema evolution, etc.
       let cts = `CREATE PGTABLEISH ${quoteSqlIdentifier(
-        "operon_log_" + m.name
+        "dbos_log_" + m.name
       )} (\n`;
       // Method-specific fields
       m.args.forEach((element) => {

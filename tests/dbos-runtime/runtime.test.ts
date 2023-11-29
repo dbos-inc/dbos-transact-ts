@@ -34,7 +34,7 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
     // Axios will throw an exception if the return status is 500
     // Trying and catching is the only way to debug issues in this test
     try {
-      const response = await axios.get(`http://127.0.0.1:${port}/greeting/operon`);
+      const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
     } catch (error) {
       console.error(error);

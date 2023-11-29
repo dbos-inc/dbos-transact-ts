@@ -106,7 +106,7 @@ describe("httpserver-tests", () => {
   }
 
   test("response-error", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
+    const response = await request(testRuntime.getHandlersCallback()).get("/dbos-error");
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe("customize error");
     expect(response.body.message).toBe("customize error");
@@ -118,10 +118,10 @@ describe("httpserver-tests", () => {
     expect(response.body.details.dbosErrorCode).toBe(9);
   });
 
-  test("operon-redirect", async () => {
+  test("dbos-redirect", async () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/redirect");
     expect(response.statusCode).toBe(302);
-    expect(response.headers.location).toBe("/redirect-operon");
+    expect(response.headers.location).toBe("/redirect-dbos");
   });
 
   test("not-authenticated", async () => {
@@ -150,8 +150,8 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
-    await operon.flushWorkflowStatusBuffer();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    await wfe.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
@@ -225,7 +225,7 @@ describe("httpserver-tests", () => {
     @GetApi("/redirect")
     static async redirectUrl(ctx: HandlerContext) {
       const url = ctx.request.url || "bad url"; // Get the raw url from request.
-      ctx.koaContext.redirect(url + "-operon");
+      ctx.koaContext.redirect(url + "-dbos");
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -242,9 +242,9 @@ describe("httpserver-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    @GetApi("/operon-error")
+    @GetApi("/dbos-error")
     @DBOSTransaction()
-    static async operonErr(_ctx: TestTransactionContext) {
+    static async dbosErr(_ctx: TestTransactionContext) {
       throw new DBOSResponseError("customize error", 503);
     }
 

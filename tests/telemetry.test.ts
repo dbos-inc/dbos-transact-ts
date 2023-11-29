@@ -34,7 +34,7 @@ class TestClass {
   }
 
   @DBOSWorkflow()
-  @RequiredRole(["operonAppAdmin", "operonAppUser"])
+  @RequiredRole(["dbosAppAdmin", "dbosAppUser"])
   static async test_workflow(workflowCtxt: WorkflowContext, name: string): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     return funcResult;
@@ -46,17 +46,17 @@ class TestClass {
   }
 }
 
-describe("operon-telemetry", () => {
+describe("dbos-telemetry", () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  test("Operon init works with all exporters", async () => {
+  test("DBOS init works with all exporters", async () => {
     const dbosConfig = generateDBOSTestConfig();
     await setUpDBOSTestDb(dbosConfig);
-    const operon = new DBOSWFE(dbosConfig);
-    await operon.init();
-    await operon.destroy();
+    const wfe = new DBOSWFE(dbosConfig);
+    await wfe.init();
+    await wfe.destroy();
   });
 
   test("collector handles errors gracefully", async () => {
@@ -65,24 +65,24 @@ describe("operon-telemetry", () => {
       dbosConfig.telemetry.traces.enabled = true;
     }
     await setUpDBOSTestDb(dbosConfig);
-    const operon = new DBOSWFE(dbosConfig);
-    await operon.init(TestClass);
+    const wfe = new DBOSWFE(dbosConfig);
+    await wfe.init(TestClass);
 
-    const collector = operon.telemetryCollector.exporters[0] as JaegerExporter;
+    const collector = wfe.telemetryCollector.exporters[0] as JaegerExporter;
     jest.spyOn(collector, "export").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(operon.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
+    await expect(wfe.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
 
-    await operon.destroy();
+    await wfe.destroy();
   });
 
   /*
   describe("Postgres exporter", () => {
-    let operon: Operon;
+    let wfe: DBOSWFE;
     let dbosConfig: DBOSConfig;
     let testRuntime: TestingRuntime;
 
@@ -91,9 +91,9 @@ describe("operon-telemetry", () => {
       // This attempts to clear all our DBs, including the observability one
       await setUpDBOSTestDb(dbosConfig);
       testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
-      operon = (testRuntime as TestingRuntimeImpl).getWFE();
-      expect(operon.telemetryCollector.exporters.length).toBe(1);
-      expect(operon.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
+      wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+      expect(wfe.telemetryCollector.exporters.length).toBe(1);
+      expect(wfe.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
     });
 
     afterAll(async () => {
@@ -101,7 +101,7 @@ describe("operon-telemetry", () => {
     });
 
     test("signal tables are correctly created", async () => {
-      const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
+      const pgExporter = wfe.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
       const stfQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`);
       const expectedStfColumns = [
@@ -181,16 +181,16 @@ describe("operon-telemetry", () => {
     test("correctly exports log entries with single workflow single operation", async () => {
       jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
       const username = dbosConfig.poolConfig.user as string;
-      const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["operonAppAdmin"], authenticatedUser: "operonAppAdmin"}).test_workflow(username);
+      const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["dbosAppAdmin"], authenticatedUser: "dbosAppAdmin"}).test_workflow(username);
       const result: string = await workflowHandle.getResult();
 
       // Workflow should have executed correctly
       expect(JSON.parse(result)).toEqual({ current_user: username });
 
       // Exporter should export the log entries
-      await operon.telemetryCollector.processAndExportSignals();
+      await wfe.telemetryCollector.processAndExportSignals();
 
-      const pgExporter = operon.telemetryCollector.exporters[0] as PostgresExporter;
+      const pgExporter = wfe.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
 
       // Exporter should export traces
@@ -226,7 +226,7 @@ describe("operon-telemetry", () => {
       await testRuntime.destroy();
     });
 
-    test("Trace context is propagated in and out Operon", async () => {
+    test("Trace context is propagated in and out of workflow execution", async () => {
       const headers = {
         [TRACE_PARENT_HEADER]: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         [TRACE_STATE_HEADER]: "some_state=some_value",
@@ -243,7 +243,7 @@ describe("operon-telemetry", () => {
       expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
     });
 
-    test("New trace context is propagated out of Operon", async () => {
+    test("New trace context is propagated out of workflow", async () => {
       const response = await request(testRuntime.getHandlersCallback()).get("/hello");
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

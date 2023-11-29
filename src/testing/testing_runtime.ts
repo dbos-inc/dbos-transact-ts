@@ -124,14 +124,14 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * to invoke workflows, transactions, and communicators;
    */
   invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
-    const operon = this.getWFE();
+    const wfe = this.getWFE();
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
 
-    // Creates an Operon context to pass in necessary info.
-    const span = operon.tracer.startSpan("test");
-    const oc = new DBOSContextImpl("test", span, operon.logger);
+    // Creates a context to pass in necessary info.
+    const span = wfe.tracer.startSpan("test");
+    const oc = new DBOSContextImpl("test", span, wfe.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
@@ -141,13 +141,13 @@ export class TestingRuntimeImpl implements TestingRuntime {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.transaction(op.registeredFunction as DBOSTransaction<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.transaction(op.registeredFunction as DBOSTransaction<any[], any>, wfParams, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.workflow(op.registeredFunction as DBOSWorkflow<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.workflow(op.registeredFunction as DBOSWorkflow<any[], any>, wfParams, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => operon.external(op.registeredFunction as DBOSCommunicator<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.external(op.registeredFunction as DBOSCommunicator<any[], any>, wfParams, ...args)
         : undefined;
     }
     return proxy as InvokeFuncs<T>;
@@ -189,7 +189,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   }
 
   /**
-   * For internal tests use only -- return the Operon object.
+   * For internal tests use only -- return the workflow executor object.
    */
   getWFE(): DBOSWFE {
     if (!this.#server) {

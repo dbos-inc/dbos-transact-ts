@@ -9,7 +9,7 @@ import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/te
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("concurrency-tests", () => {
-  const testTableName = "operon_concurrency_test_kv";
+  const testTableName = "dbos_concurrency_test_kv";
 
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
@@ -67,8 +67,8 @@ describe("concurrency-tests", () => {
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
-    await operon.flushWorkflowStatusBuffer();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    await wfe.flushWorkflowStatusBuffer();
     ConcurrTestClass.resolve();
     await handle.getResult();
 

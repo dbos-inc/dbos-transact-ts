@@ -2,7 +2,7 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSWFE, DBOSNull, dbosNull } from "../dbos-workflow";
-import { OperonExecutorIDHeader, SystemDatabase } from "../system_database";
+import { DBOSExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
@@ -28,7 +28,7 @@ interface OperationOutput<R> {
 
 const Tables = {
   WorkflowStatus: "dbos_workflow_status",
-  OperationOutputs: "operon_operation_outputs",
+  OperationOutputs: "dbos_operation_outputs",
   Notifications: "dbos_notifications",
   WorkflowEvents: "workflow_events",
   WorkflowInpus: "workflow_inputs"
@@ -101,8 +101,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       const inputsDB = txn.at(this.workflowInputsDB);
 
       let executorID: string = "local";
-      if (request && request.headers && request.headers[OperonExecutorIDHeader]) {
-        executorID = request.headers[OperonExecutorIDHeader] as string;
+      if (request && request.headers && request.headers[DBOSExecutorIDHeader]) {
+        executorID = request.headers[DBOSExecutorIDHeader] as string;
       }
 
       const present = await statusDB.get(workflowUUID);

@@ -25,7 +25,7 @@ interface wal2jsonChange {
 /**
  * A class implementing a daemon which collects and exports provenance information,
  * specifically a record of all INSERTs, UPDATEs, and DELETEs in the target database.
- * Only one daemon is needed per database. The daemon need not run in the same process as Operon.
+ * Only one daemon is needed per database. The daemon need not run in the same process as workflow runtime.
  * The daemon has three requirements and will fail to launch if any is not met:
  *
  *  1.  The database must be configured with wal_level=logical.
@@ -43,7 +43,7 @@ export class ProvenanceDaemon {
   initialized = false;
 
   /**
-   * @param dbosConfig An Operon config defining exporters and database connection information.
+   * @param dbosConfig An DBOS config defining exporters and database connection information.
    * @param slotName  The name of a logical replication slot. This slot is persistent and must be deleted if the daemon is no longer to be used.
    */
   constructor(dbosConfig: DBOSConfig, readonly slotName: string) {
@@ -75,7 +75,7 @@ export class ProvenanceDaemon {
 
   async recordProvenance() {
     if (this.initialized) {
-      const { rows } = await this.client.query<wal2jsonRow>("SELECT CAST(xid AS TEXT), data FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'operon.*')", [this.slotName]);
+      const { rows } = await this.client.query<wal2jsonRow>("SELECT CAST(xid AS TEXT), data FROM pg_logical_slot_get_changes($1, NULL, NULL, 'filter-tables', 'dbos.*')", [this.slotName]);
       for (const row of rows) {
         const data = (JSON.parse(row.data) as wal2jsonData).change;
         for (const change of data) {

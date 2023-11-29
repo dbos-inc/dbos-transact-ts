@@ -86,7 +86,7 @@ describe("OpenApiGenerator", () => {
                 }
               },
               {
-                "$ref": "#/components/parameters/operonWorkflowUUID"
+                "$ref": "#/components/parameters/dbosWorkflowUUID"
               }
             ]
           }
@@ -95,7 +95,7 @@ describe("OpenApiGenerator", () => {
       components: {
         schemas: {},
         parameters: {
-          operonWorkflowUUID: {
+          dbosWorkflowUUID: {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
@@ -167,7 +167,7 @@ describe("OpenApiGenerator", () => {
                 }
               },
               {
-                $ref: "#/components/parameters/operonWorkflowUUID"
+                $ref: "#/components/parameters/dbosWorkflowUUID"
               }
             ],
             security: [
@@ -180,11 +180,11 @@ describe("OpenApiGenerator", () => {
       },
       components: {
         parameters: {
-          operonWorkflowUUID: {
+          dbosWorkflowUUID: {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }
@@ -257,7 +257,7 @@ describe("OpenApiGenerator", () => {
                 }
               },
               {
-                $ref: "#/components/parameters/operonWorkflowUUID"
+                $ref: "#/components/parameters/dbosWorkflowUUID"
               }
             ],
             security: [
@@ -270,11 +270,11 @@ describe("OpenApiGenerator", () => {
       },
       components: {
         parameters: {
-          operonWorkflowUUID: {
+          dbosWorkflowUUID: {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }
@@ -348,7 +348,7 @@ describe("OpenApiGenerator", () => {
                 }
               },
               {
-                $ref: "#/components/parameters/operonWorkflowUUID"
+                $ref: "#/components/parameters/dbosWorkflowUUID"
               }
             ]
           }
@@ -356,11 +356,11 @@ describe("OpenApiGenerator", () => {
       },
       components: {
         parameters: {
-          operonWorkflowUUID: {
+          dbosWorkflowUUID: {
             name: "dbos-workflowuuid",
             in: "header",
             required: false,
-            description: "Caller specified [Operon idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
+            description: "Caller specified [Workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
             schema: {
               type: "string"
             }

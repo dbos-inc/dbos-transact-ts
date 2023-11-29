@@ -59,11 +59,11 @@ describe("foundationdb-recovery", () => {
   test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
     // This test simulates a "local" environment because the request parameter does not have an dbos-executor-id header.
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
 
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
-    const recoverHandles = await operon.recoverPendingWorkflows();
+    const recoverHandles = await wfe.recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 
@@ -118,13 +118,13 @@ describe("foundationdb-recovery", () => {
 
   test("selective-recovery", async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
-    const operon = (testRuntime as TestingRuntimeImpl).getWFE();
+    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
     const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
-    const recoverHandles = await operon.recoverPendingWorkflows(["fcvm123"]);
+    const recoverHandles = await wfe.recoverPendingWorkflows(["fcvm123"]);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
     ExecutorRecovery.localResolve();

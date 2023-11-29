@@ -31,20 +31,20 @@ describe("failures-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("operon-error", async () => {
+  test("dbos-error", async () => {
     const wfUUID1 = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new DBOSError("test operon error with code.", 11));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
 
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
-    await expect(retrievedHandle.getResult()).rejects.toThrowError(new DBOSError("test operon error with code.", 11));
+    await expect(retrievedHandle.getResult()).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new DBOSError("test operon error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new DBOSError("test dbos error without code"));
   });
 
   test("readonly-error", async () => {
@@ -138,9 +138,9 @@ class FailureTestClass {
   @DBOSCommunicator({ retriesAllowed: false })
   static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
     if (code) {
-      throw new DBOSError("test operon error with code.", code);
+      throw new DBOSError("test dbos error with code.", code);
     } else {
-      throw new DBOSError("test operon error without code");
+      throw new DBOSError("test dbos error without code");
     }
   }
 

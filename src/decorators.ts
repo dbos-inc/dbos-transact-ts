@@ -209,7 +209,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 ////////////////////////////////////////////////////////////////////////////////
 // DECORATOR REGISTRATION
 // These manage registration objects, creating them at decorator evaluation time
-// and making wrapped methods available for function registration at Operon
+// and making wrapped methods available for function registration at runtime
 // initialization time.
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -346,7 +346,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
 export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
-    throw Error("Use of operon decorator when original method is undefined");
+    throw Error("Use of decorator when original method is undefined");
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor);

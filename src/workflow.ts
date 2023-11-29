@@ -18,7 +18,7 @@ export type DBOSWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
-// local type declarations for Operon transaction and communicator functions
+// local type declarations for transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
@@ -79,13 +79,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly isTempWorkflow: boolean;
 
   constructor(
-    operon: DBOSWFE,
+    wfe: DBOSWFE,
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    const span = operon.tracer.startSpan(
+    const span = wfe.tracer.startSpan(
       workflowName,
       {
         workflowUUID: workflowUUID,
@@ -94,13 +94,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       parentCtx?.span,
     );
-    super(workflowName, span, operon.logger, parentCtx);
+    super(workflowName, span, wfe.logger, parentCtx);
     this.workflowUUID = workflowUUID;
-    this.#wfe = operon;
-    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    if (operon.config.application) {
+    this.#wfe = wfe;
+    this.isTempWorkflow = wfe.tempWorkflowName === workflowName;
+    if (wfe.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = operon.config.application;
+      this.applicationConfig = wfe.config.application;
     }
   }
 
@@ -519,7 +519,7 @@ export interface WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when invoking a workflow with Operon.workflow
+ * The handle returned when invoking a workflow with DBOSWFE.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string,
@@ -539,7 +539,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when retrieving a workflow with Operon.retrieve
+ * The handle returned when retrieving a workflow with DBOSWFE.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) {}

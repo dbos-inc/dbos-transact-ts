@@ -14,14 +14,14 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
 
   setApplicationVersion("test");
 
-  const operonTestConfig: DBOSConfig = {
+  const dbosTestConfig: DBOSConfig = {
     poolConfig: {
       host: "localhost",
       port: 5432,
       user: "postgres",
       password: process.env.PGPASSWORD,
       // We can use another way of randomizing the DB name if needed
-      database: "operontest",
+      database: "dbostest",
     },
     application: {
       counter: 3,
@@ -35,15 +35,15 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
         enabled: false,
       },
     },
-    system_database: "operontest_systemdb",
-    // observability_database: "operontest_observabilitydb",
+    system_database: "dbostest_systemdb",
+    // observability_database: "dbostest_observabilitydb",
     userDbclient: dbClient || UserDatabaseName.PGNODE,
     dbClientMetadata: {
       entities: ["KV"],
     },
   };
 
-  return operonTestConfig;
+  return dbosTestConfig;
 }
 
 export async function setUpDBOSTestDb(config: DBOSConfig) {

@@ -67,7 +67,7 @@ export class DBOSWFE {
   // System Database
   readonly systemDatabase: SystemDatabase;
 
-  // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
+  // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   readonly tempWorkflowName = "temp_workflow";
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
@@ -99,7 +99,7 @@ export class DBOSWFE {
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
 
-  /* OPERON LIFE CYCLE MANAGEMENT */
+  /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
@@ -197,7 +197,7 @@ export class DBOSWFE {
 
   async init(...classes: object[]): Promise<void> {
     if (this.initialized) {
-      this.logger.error("Operon already initialized!");
+      this.logger.error("Workflow executor already initialized!");
       return;
     }
 
@@ -227,7 +227,7 @@ export class DBOSWFE {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`failed to initialize Operon: ${err.message}`, err, err.stack);
+        this.logger.error(`failed to initialize workflow executor: ${err.message}`, err, err.stack);
         throw new DBOSInitializationError(err.message);
       }
     }
@@ -243,7 +243,7 @@ export class DBOSWFE {
 
     }
 
-    this.logger.info("Operon initialized");
+    this.logger.info("Workflow executor initialized");
   }
 
   async destroy() {
@@ -406,7 +406,7 @@ export class DBOSWFE {
   }
 
   /**
-   * A recovery process that by default runs during Operon init time.
+   * A recovery process that by default runs during executor init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {

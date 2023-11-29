@@ -109,7 +109,7 @@ describe("knex-tests", () => {
   });
 });
 
-const userTableName = 'operon_test_user';
+const userTableName = 'dbos_test_user';
 interface UserTable
 {
   id ?: number;

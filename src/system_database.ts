@@ -10,7 +10,7 @@ import { sleep } from "./utils";
 import { HTTPRequest } from "./context";
 import { Logger } from "winston";
 
-export const OperonExecutorIDHeader = "dbos-executor-id";
+export const DBOSExecutorIDHeader = "dbos-executor-id";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -60,9 +60,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`);
     if (dbExists.rows.length === 0) {
-      // Create the Operon system database.
+      // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
-      // Load the Operon system schemas.
+      // Load the DBOS system schemas.
       await this.pool.query(systemDBSchema);
     }
     await this.listenForNotifications();
@@ -90,8 +90,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T> {
     let executorID: string = "local"
-    if (request && request.headers && request.headers[OperonExecutorIDHeader]) {
-      executorID = request.headers[OperonExecutorIDHeader] as string
+    if (request && request.headers && request.headers[DBOSExecutorIDHeader]) {
+      executorID = request.headers[DBOSExecutorIDHeader] as string
     }
     await this.pool.query(
       `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,

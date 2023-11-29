@@ -10,7 +10,7 @@ import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSCommunicator } from "../communicator";
 
-// local type declarations for Operon workflow functions
+// local type declarations for workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
 
@@ -30,7 +30,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   readonly #wfe: DBOSWFE;
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
-  constructor(operon: DBOSWFE, readonly koaContext: Koa.Context) {
+  constructor(wfe: DBOSWFE, readonly koaContext: Koa.Context) {
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
@@ -41,12 +41,12 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       operationName: koaContext.url,
     };
     if (extractedSpanContext === undefined) {
-      span = operon.tracer.startSpan(koaContext.url, spanAttributes);
+      span = wfe.tracer.startSpan(koaContext.url, spanAttributes);
     } else {
       extractedSpanContext.isRemote = true;
-      span = operon.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
+      span = wfe.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
     }
-    super(koaContext.url, span, operon.logger);
+    super(koaContext.url, span, wfe.logger);
     this.W3CTraceContextPropagator = httpTracer;
     this.request = {
       headers: koaContext.request.headers,
@@ -61,11 +61,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       url: koaContext.request.url,
       ip: koaContext.request.ip,
     };
-    if (operon.config.application) {
+    if (wfe.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = operon.config.application;
+      this.applicationConfig = wfe.config.application;
     }
-    this.#wfe = operon;
+    this.#wfe = wfe;
   }
 
   ///////////////////////

@@ -3,7 +3,7 @@ import { TAlgorithm, encode } from "jwt-simple";
 import { createGlobalLogger } from "../telemetry/logs";
 import fs from "fs";
 
-export const dbosEnvPath = ".operon";
+export const dbosEnvPath = ".dbos";
 const secretKey = "SOME SECRET";
 
 export interface DBOSCloudCredentials {
@@ -22,7 +22,7 @@ interface Session {
 export function login (userName: string) {
   const logger = createGlobalLogger();
   // TODO: in the future, we should integrate with Okta for login.
-  // Generate a valid JWT token based on the userName and store it in the `./.operon/credentials` file.
+  // Generate a valid JWT token based on the userName and store it in the `./.dbos/credentials` file.
   // Then the deploy command can retrieve the token from this file.
   logger.info(`Logging in as user: ${userName}`);
 
