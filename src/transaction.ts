@@ -6,8 +6,8 @@ import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { WinstonLogger as Logger } from "./telemetry/logs";
 
-// Can we call it DBOSTransactionFunction
-export type DBOSTransaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+// Can we call it TransactionFunction
+export type Transaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;

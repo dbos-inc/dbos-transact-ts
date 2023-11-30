@@ -1,6 +1,6 @@
 import { PoolClient } from "pg";
 import { TransactionContext } from "../../src/transaction";
-import { TestingRuntime, DBOSTransaction, DBOSWorkflow, WorkflowContext, createTestingRuntime } from "../../src";
+import { TestingRuntime, Transaction, Workflow, WorkflowContext, createTestingRuntime } from "../../src";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -26,14 +26,14 @@ describe("testruntime-test", () => {
 });
 
 class TestClass {
-  @DBOSTransaction()
+  @Transaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     txnCtxt.logger.debug("Name: " + name);
     return JSON.stringify(rows[0]);
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
     const funcResult = await ctxt.invoke(TestClass).testFunction(name);
     return funcResult;

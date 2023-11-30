@@ -3,7 +3,7 @@ import request from "supertest";
 import { PrismaClient, testkv } from "@prisma/client";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import {
-  TestingRuntime, DBOSTransaction, TransactionContext,
+  TestingRuntime, Transaction, TransactionContext,
   Authentication,
   MiddlewareContext,
   GetApi,
@@ -39,7 +39,7 @@ let globalCnt = 0;
 const testTableName = "testkv";
 
 class PrismaTestClass {
-  @DBOSTransaction()
+  @Transaction()
   static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const res = await txnCtxt.client.testkv.create({
       data: {
@@ -51,14 +51,14 @@ class PrismaTestClass {
     return res.id;
   }
 
-  @DBOSTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
     await sleep(1);
     globalCnt += 1;
     return id;
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async conflictTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const res = await txnCtxt.client.$queryRawUnsafe<testkv>(`INSERT INTO ${testTableName} VALUES ($1, $2)`, id, value);
     return res.id;
@@ -134,7 +134,7 @@ const userTableName = 'dbos_test_user';
 
 @Authentication(PUserManager.authMiddlware)
 class PUserManager {
-  @DBOSTransaction()
+  @Transaction()
   @PostApi('/register')
   static async createUser(txnCtxt: TestTransactionContext, uname: string) {
     const res = await txnCtxt.client.dbos_test_user.create({

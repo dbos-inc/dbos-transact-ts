@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, DBOSCommunicator, DBOSWorkflow, DBOSTransaction, ArgOptional, TestingRuntime } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, Communicator, Workflow, Transaction, ArgOptional, TestingRuntime } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
@@ -135,7 +135,7 @@ class FailureTestClass {
   static success: string = "";
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator({ retriesAllowed: false })
+  @Communicator({ retriesAllowed: false })
   static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
     if (code) {
       throw new DBOSError("test dbos error with code.", code);
@@ -145,13 +145,13 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async testReadonlyError(_txnCtxt: TestTransactionContext) {
     FailureTestClass.cnt++;
     throw new Error("test error");
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async testKeyConflict(txnCtxt: TestTransactionContext, id: number, name: string) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
     FailureTestClass.cnt += 1;
@@ -160,7 +160,7 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testSerialError(_ctxt: TestTransactionContext, maxRetry: number) {
     if (FailureTestClass.cnt !== maxRetry) {
       const err = new DatabaseError("serialization error", 10, "error");
@@ -171,13 +171,13 @@ class FailureTestClass {
     return maxRetry;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testSerialWorkflow(ctxt: WorkflowContext, maxRetry: number) {
     return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
+  @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
   static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
@@ -187,7 +187,7 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator({ retriesAllowed: false })
+  @Communicator({ retriesAllowed: false })
   static async testNoRetry(_ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     throw new Error("failed no retry");
@@ -209,7 +209,7 @@ class FailureTestClass {
     return code + 1;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testCommWorkflow(ctxt: WorkflowContext) {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
   }

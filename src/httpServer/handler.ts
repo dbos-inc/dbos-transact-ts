@@ -3,12 +3,12 @@ import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCrea
 import { DBOSExecutor } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
-import { DBOSWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
-import { DBOSTransaction } from "../transaction";
+import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
+import { Transaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DBOSCommunicator } from "../communicator";
+import { Communicator } from "../communicator";
 
 // local type declarations for workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
@@ -97,13 +97,13 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#transaction(op.registeredFunction as DBOSTransaction<any[], any>, params, ...args)
+        ? (...args: any[]) => this.#transaction(op.registeredFunction as Transaction<any[], any>, params, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#workflow(op.registeredFunction as DBOSWorkflow<any[], any>, params, ...args)
+        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#external(op.registeredFunction as DBOSCommunicator<any[], any>, params, ...args)
+        ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
         : undefined;
     }
     return proxy as InvokeFuncs<T>;
@@ -113,15 +113,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PRIVATE METHODS */
   /////////////////////
 
-  async #workflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async #workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.#wfe.workflow(wf, params, ...args);
   }
 
-  async #transaction<T extends any[], R>(txn: DBOSTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#wfe.transaction(txn, params, ...args);
   }
 
-  async #external<T extends any[], R>(commFn: DBOSCommunicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#wfe.external(commFn, params, ...args);
   }
 }

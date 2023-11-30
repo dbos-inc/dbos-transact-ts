@@ -2,7 +2,7 @@ import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { DBOSExecutor, DBOSConfig } from "../src/dbos-executor";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSTransaction, DBOSWorkflow, RequiredRole } from "../src/decorators";
+import { Transaction, Workflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
 import { GetApi, HandlerContext, TestingRuntime, TransactionContext, WorkflowContext } from "../src";
 import { PoolClient } from "pg";
@@ -25,7 +25,7 @@ type TelemetrySignalDbFields = {
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 class TestClass {
-  @DBOSTransaction({ readOnly: false })
+  @Transaction({ readOnly: false })
   static async test_function(txnCtxt: TestTransactionContext, name: string): Promise<string> {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     const result = JSON.stringify(rows[0]);
@@ -33,7 +33,7 @@ class TestClass {
     return result;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   @RequiredRole(["dbosAppAdmin", "dbosAppUser"])
   static async test_workflow(workflowCtxt: WorkflowContext, name: string): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);

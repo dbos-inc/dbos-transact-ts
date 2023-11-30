@@ -52,9 +52,9 @@ export {
   OrmEntities,
 
   // Method Decorators
-  DBOSTransaction,
-  DBOSWorkflow,
-  DBOSCommunicator,
+  Transaction,
+  Workflow,
+  Communicator,
   RequiredRole,
   DBOSInitializer,
   DBOSDeploy,

@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, DBOSTransaction, DBOSWorkflow, DBOSCommunicator, DBOSInitializer, InitContext } from "../src/";
+import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, Transaction, Workflow, Communicator, DBOSInitializer, InitContext } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
@@ -86,7 +86,7 @@ describe("dbos-tests", () => {
     static cnt: number = 0;
     static wfCnt: number = 0;
 
-    @DBOSTransaction({ readOnly: true })
+    @Transaction({ readOnly: true })
     static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
       ReadRecording.cnt++;
@@ -97,7 +97,7 @@ describe("dbos-tests", () => {
       return rows[0].value;
     }
   
-    @DBOSTransaction()
+    @Transaction()
     static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
         id,
@@ -106,7 +106,7 @@ describe("dbos-tests", () => {
       return rows[0].value;
     }
   
-    @DBOSWorkflow()
+    @Workflow()
     static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
       await workflowCtxt.invoke(ReadRecording).testReadFunction(id);
       ReadRecording.wfCnt++;
@@ -166,7 +166,7 @@ describe("dbos-tests", () => {
       RetrieveWorkflowStatus.resolve3 = resolve;
     });
 
-    @DBOSTransaction()
+    @Transaction()
     static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
         id,
@@ -175,7 +175,7 @@ describe("dbos-tests", () => {
       return rows[0].value;
     }
 
-    @DBOSWorkflow()
+    @Workflow()
     static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
       await RetrieveWorkflowStatus.promise1;
       const value = await workflowCtxt.invoke(RetrieveWorkflowStatus).testWriteFunction(id, name);
@@ -236,14 +236,14 @@ class DBOSTestClass {
     await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
     expect(txnCtxt.getConfig<number>("counter")).toBe(3);
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
     expect(ctxt.getConfig<number>("counter")).toBe(3);
@@ -252,23 +252,23 @@ class DBOSTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testVoidFunction(_txnCtxt: TestTransactionContext) {
     return;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testNameFunction(_txnCtxt: TestTransactionContext, name: string) {
     return name;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testNameWorkflow(ctxt: WorkflowContext, name: string) {
     return ctxt.invoke(DBOSTestClass).testNameFunction(name);
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async testFailFunction(txnCtxt: TestTransactionContext, name: string) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
     if (name === "fail") {
@@ -277,7 +277,7 @@ class DBOSTestClass {
     return Number(rows[0].id);
   }
 
-  @DBOSTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async testKvFunctionRead(txnCtxt: TestTransactionContext, id: number) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
     if (rows.length > 0) {
@@ -288,7 +288,7 @@ class DBOSTestClass {
     }
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
     const funcResult: number = await workflowCtxt.invoke(DBOSTestClass).testFailFunction(name);
@@ -297,13 +297,13 @@ class DBOSTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator()
+  @Communicator()
   static async testCommunicator(ctxt: CommunicatorContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
     return DBOSTestClass.cnt++;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
     expect(DBOSTestClass.initialized).toBe(true);
     const message1 = await ctxt.recv<string>();
@@ -312,14 +312,14 @@ class DBOSTestClass {
     return message1 === "message1" && message2 === "message2" && fail === null;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
     await ctxt.send(destinationUUID, "message1");
     await ctxt.send(destinationUUID, "message2");
   }
 
 
-  @DBOSWorkflow()
+  @Workflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");

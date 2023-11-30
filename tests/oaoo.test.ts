@@ -1,5 +1,5 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, DBOSCommunicator, TestingRuntime, DBOSTransaction, DBOSWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
@@ -40,12 +40,12 @@ describe("oaoo-tests", () => {
       return CommunicatorOAOO.#counter;
     }
     // eslint-disable-next-line @typescript-eslint/require-await
-    @DBOSCommunicator()
+    @Communicator()
     static async testCommunicator(_commCtxt: CommunicatorContext) {
       return CommunicatorOAOO.#counter++;
     }
   
-    @DBOSWorkflow()
+    @Workflow()
     static async testCommWorkflow(workflowCtxt: WorkflowContext) {
       const funcResult = await workflowCtxt.invoke(CommunicatorOAOO).testCommunicator();
       return funcResult ?? -1;
@@ -79,14 +79,14 @@ describe("oaoo-tests", () => {
    * Workflow OAOO tests.
    */
   class WorkflowOAOO {
-    @DBOSTransaction()
+    @Transaction()
     static async testInsertTx(txnCtxt: TestTransactionContext, name: string) {
       expect(txnCtxt.getConfig<number>("counter")).toBe(3);
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return Number(rows[0].id);
     }
   
-    @DBOSTransaction({ readOnly: true })
+    @Transaction({ readOnly: true })
     static async testReadTx(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
@@ -97,7 +97,7 @@ describe("oaoo-tests", () => {
       }
     }
   
-    @DBOSWorkflow()
+    @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(wfCtxt.getConfig<number>("counter")).toBe(3);
@@ -107,7 +107,7 @@ describe("oaoo-tests", () => {
     }
   
     // eslint-disable-next-line @typescript-eslint/require-await
-    @DBOSWorkflow()
+    @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
       return wfCtxt.childWorkflow(WorkflowOAOO.testTxWorkflow, name).then((x) => x.getResult());
     }
@@ -166,7 +166,7 @@ describe("oaoo-tests", () => {
    * Workflow notification OAOO tests.
    */
   class NotificationOAOO {
-    @DBOSWorkflow()
+    @Workflow()
     static async receiveOaooWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
       // This returns true if and only if exactly one message is sent to it.
       const succeeds = await ctxt.recv<number>(topic, timeout);
@@ -197,14 +197,14 @@ describe("oaoo-tests", () => {
   class EventStatusOAOO {
     static wfCnt: number = 0;
 
-    @DBOSWorkflow()
+    @Workflow()
     static async setEventWorkflow(ctxt: WorkflowContext) {
       await ctxt.setEvent("key1", "value1");
       await ctxt.setEvent("key2", "value2");
       return 0;
     }
 
-    @DBOSWorkflow()
+    @Workflow()
     static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
       let res = "";
       const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);

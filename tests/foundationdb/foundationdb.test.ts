@@ -1,4 +1,4 @@
-import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, DBOSTransaction, DBOSCommunicator, DBOSWorkflow, TestingRuntime } from "../../src/";
+import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, Transaction, Communicator, Workflow, TestingRuntime } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -161,14 +161,14 @@ class FdbTestClass {
   static wfCnt = 0;
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testFunction(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
     return 5;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testErrorFunction(_txnCtxt: PGTransactionContext) {
     if (FdbTestClass.cnt++ === 0) {
       throw new Error("fail");
@@ -176,13 +176,13 @@ class FdbTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator()
+  @Communicator()
   static async testCommunicator(_commCtxt: CommunicatorContext) {
     return FdbTestClass.cnt++;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
+  @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
   static async testErrorCommunicator(ctxt: CommunicatorContext) {
     FdbTestClass.cnt++;
     if (FdbTestClass.cnt !== ctxt.maxAttempts) {
@@ -192,7 +192,7 @@ class FdbTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator({ retriesAllowed: false })
+  @Communicator({ retriesAllowed: false })
   static async noRetryComm(_ctxt: CommunicatorContext, id: number) {
     FdbTestClass.cnt++;
     return id;
@@ -209,13 +209,13 @@ class FdbTestClass {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testStatusFunc(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
     return 3;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testStatusWorkflow(ctxt: WorkflowContext) {
     const result = ctxt.invoke(FdbTestClass).testStatusFunc();
     FdbTestClass.outerResolve();
@@ -223,7 +223,7 @@ class FdbTestClass {
     return result;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
@@ -231,20 +231,20 @@ class FdbTestClass {
     return message1 === "message1" && message2 === "message2" && fail === null;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
     await ctxt.send(destinationUUID, "message1");
     await ctxt.send(destinationUUID, "message2");
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
     return 0;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
     let res = "";
     const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
@@ -270,7 +270,7 @@ class FdbTestClass {
     return res;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async receiveTopicworkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
     return ctxt.recv<string>(topic, timeout);
   }

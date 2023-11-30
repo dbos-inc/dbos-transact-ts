@@ -2,7 +2,7 @@
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 // import { PostgresExporter } from "../../src/telemetry/exporters";
-import { DBOSTransaction, DBOSWorkflow } from "../../src/decorators";
+import { Transaction, Workflow } from "../../src/decorators";
 import { TestingRuntime, TransactionContext, WorkflowContext } from "../../src";
 import { PgTransactionId } from "../../src/workflow";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -35,13 +35,13 @@ describe("dbos-provenance", () => {
   });
 
   class TestFunctions {
-    @DBOSTransaction()
+    @Transaction()
     static async testTransaction(ctxt: TransactionContext<PoolClient>, name: string) {
       await ctxt.client.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
       return (await ctxt.client.query<PgTransactionId>("select CAST(pg_current_xact_id() AS TEXT) as txid;")).rows[0].txid;
     }
 
-    @DBOSWorkflow()
+    @Workflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
       return await ctxt.invoke(TestFunctions).testTransaction(name);
     }

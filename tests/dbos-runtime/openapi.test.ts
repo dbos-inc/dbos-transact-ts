@@ -33,7 +33,7 @@ describe("TypeParser", () => {
     expect(arg1.kind).toBe(ts.SyntaxKind.StringLiteral);
     expect((arg1 as ts.StringLiteral).text).toBe("/greeting/:user");
 
-    expect(dec2.name).toBe("DBOSTransaction");
+    expect(dec2.name).toBe("Transaction");
     expect(dec2.args.length).toBe(0);
 
     expect(method.parameters.length).toBe(2);
@@ -123,7 +123,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme RequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
+    import { TransactionContext, Transaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     export class Hello {
@@ -213,7 +213,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme DefaultRequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, DefaultRequiredRole, OpenApiSecurityScheme } from '@dbos-inc/dbos-sdk'
+    import { TransactionContext, Transaction, GetApi, ArgSource, ArgSources, DefaultRequiredRole, OpenApiSecurityScheme } from '@dbos-inc/dbos-sdk'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     @DefaultRequiredRole(['user'])
@@ -303,7 +303,7 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme empty RequiredRole array", () => {
     const source = /*javascript*/`
-    import { TransactionContext, DBOSTransaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, DefaultRequiredRole, RequiredRole } from '@dbos-inc/dbos-sdk'
+    import { TransactionContext, Transaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, DefaultRequiredRole, RequiredRole } from '@dbos-inc/dbos-sdk'
 
     @DefaultRequiredRole(['user'])
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })

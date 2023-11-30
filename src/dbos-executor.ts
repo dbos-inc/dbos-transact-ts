@@ -7,7 +7,7 @@ import {
 } from './error';
 import {
   InvokedHandle,
-  DBOSWorkflow,
+  Workflow,
   WorkflowConfig,
   WorkflowContext,
   WorkflowHandle,
@@ -17,8 +17,8 @@ import {
   WorkflowStatus,
 } from './workflow';
 
-import { DBOSTransaction, TransactionConfig } from './transaction';
-import { CommunicatorConfig, DBOSCommunicator } from './communicator';
+import { Transaction, TransactionConfig } from './transaction';
+import { CommunicatorConfig, Communicator } from './communicator';
 import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
@@ -56,7 +56,7 @@ export interface DBOSConfig {
 }
 
 interface WorkflowInfo<T extends any[], R> {
-  workflow: DBOSWorkflow<T, R>;
+  workflow: Workflow<T, R>;
   config: WorkflowConfig;
 }
 
@@ -180,15 +180,15 @@ export class DBOSExecutor {
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
-        const wf = ro.registeredFunction as DBOSWorkflow<any, any>;
+        const wf = ro.registeredFunction as Workflow<any, any>;
         this.#registerWorkflow(wf, ro.workflowConfig);
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
-        const tx = ro.registeredFunction as DBOSTransaction<any, any>;
+        const tx = ro.registeredFunction as Transaction<any, any>;
         this.#registerTransaction(tx, ro.txnConfig);
         this.logger.debug(`Registered transaction ${ro.name}`);
       } else if (ro.commConfig) {
-        const comm = ro.registeredFunction as DBOSCommunicator<any, any>;
+        const comm = ro.registeredFunction as Communicator<any, any>;
         this.#registerCommunicator(comm, ro.commConfig);
         this.logger.debug(`Registered communicator ${ro.name}`);
       }
@@ -260,7 +260,7 @@ export class DBOSExecutor {
 
   /* WORKFLOW OPERATIONS */
 
-  #registerWorkflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, config: WorkflowConfig = {}) {
+  #registerWorkflow<T extends any[], R>(wf: Workflow<T, R>, config: WorkflowConfig = {}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new DBOSError(`Repeated workflow name: ${wf.name}`);
     }
@@ -271,26 +271,26 @@ export class DBOSExecutor {
     this.workflowInfoMap.set(wf.name, workflowInfo);
   }
 
-  #registerTransaction<T extends any[], R>(txn: DBOSTransaction<T, R>, params: TransactionConfig = {}) {
+  #registerTransaction<T extends any[], R>(txn: Transaction<T, R>, params: TransactionConfig = {}) {
     if (this.transactionConfigMap.has(txn.name)) {
       throw new DBOSError(`Repeated Transaction name: ${txn.name}`);
     }
     this.transactionConfigMap.set(txn.name, params);
   }
 
-  #registerCommunicator<T extends any[], R>(comm: DBOSCommunicator<T, R>, params: CommunicatorConfig = {}) {
+  #registerCommunicator<T extends any[], R>(comm: Communicator<T, R>, params: CommunicatorConfig = {}) {
     if (this.communicatorConfigMap.has(comm.name)) {
       throw new DBOSError(`Repeated Commmunicator name: ${comm.name}`);
     }
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  async workflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
-  async internalWorkflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+  async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const wInfo = this.workflowInfoMap.get(wf.name);
@@ -359,7 +359,7 @@ export class DBOSExecutor {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
-  async transaction<T extends any[], R>(txn: DBOSTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
@@ -368,7 +368,7 @@ export class DBOSExecutor {
     return (await this.workflow(temp_workflow, params, ...args)).getResult();
   }
 
-  async external<T extends any[], R>(commFn: DBOSCommunicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;

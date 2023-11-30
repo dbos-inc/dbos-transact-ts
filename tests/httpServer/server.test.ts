@@ -1,18 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   GetApi,
-  DBOSTransaction,
-  DBOSWorkflow,
+  Transaction,
+  Workflow,
   MiddlewareContext,
   PostApi,
   RequiredRole,
   TransactionContext,
   WorkflowContext,
   StatusString,
-  DBOSCommunicator,
+  Communicator,
   CommunicatorContext,
 } from "../../src";
-import { DBOSWorkflowUUIDHeader } from "../../src/httpServer/server";
+import { WorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
@@ -243,14 +243,14 @@ describe("httpserver-tests", () => {
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/dbos-error")
-    @DBOSTransaction()
+    @Transaction()
     static async dbosErr(_ctx: TestTransactionContext) {
       throw new DBOSResponseError("customize error", 503);
     }
 
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
-      const workflowUUID = ctxt.koaContext.get(DBOSWorkflowUUIDHeader);
+      const workflowUUID = ctxt.koaContext.get(WorkflowUUIDHeader);
       // Invoke a workflow using the given UUID.
       return ctxt
         .invoke(TestEndpoints, workflowUUID)
@@ -259,7 +259,7 @@ describe("httpserver-tests", () => {
     }
 
     @PostApi("/transaction/:name")
-    @DBOSTransaction()
+    @Transaction()
     static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
@@ -267,20 +267,20 @@ describe("httpserver-tests", () => {
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/communicator/:input")
-    @DBOSCommunicator()
+    @Communicator()
     static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
       return input;
     }
 
     @PostApi("/workflow")
-    @DBOSWorkflow()
+    @Workflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
       const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
     }
 
     @PostApi("/error")
-    @DBOSWorkflow()
+    @Workflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
       // This workflow should encounter duplicate primary key error.
       let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);

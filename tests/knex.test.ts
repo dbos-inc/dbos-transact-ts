@@ -1,7 +1,7 @@
 import request from "supertest";
 
 import {
-  TestingRuntime, DBOSTransaction, DBOSWorkflow,
+  TestingRuntime, Transaction, Workflow,
   TransactionContext, WorkflowContext,
   GetApi, PostApi,
   HandlerContext,
@@ -25,30 +25,30 @@ const testTableName = "dbos_test_kv";
 let insertCount = 0;
 
 class TestClass {
-  @DBOSTransaction()
+  @Transaction()
   static async testInsert(txnCtxt: KnexTransactionContext, value: string) {
     insertCount++;
     const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ value: value }).returning("id");
     return result[0].id!;
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async testSelect(txnCtxt: KnexTransactionContext, id: number) {
     const result = await txnCtxt.client<TestKvTable>(testTableName).select("value").where({ id: id });
     return result[0].value!;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testWf(ctxt: WorkflowContext, value: string) {
     const id = await ctxt.invoke(TestClass).testInsert(value);
     const result = await ctxt.invoke(TestClass).testSelect(id);
     return result;
   }
 
-  @DBOSTransaction()
+  @Transaction()
   static async returnVoid(_ctxt: KnexTransactionContext) {}
 
-  @DBOSTransaction()
+  @Transaction()
   static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
     insertCount++;
     const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ id: key, value: value }).returning("id");
@@ -118,7 +118,7 @@ interface UserTable
 
 @Authentication(KUserManager.authMiddlware)
 class KUserManager {
-  @DBOSTransaction()
+  @Transaction()
   @PostApi('/register')
   static async createUser(txnCtxt: KnexTransactionContext, uname: string) {
     const result = await txnCtxt.client<UserTable>(userTableName).insert({username: uname}).returning("id");

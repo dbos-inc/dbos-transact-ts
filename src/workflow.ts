@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, DBOSNull, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { IsolationLevel, DBOSTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { DBOSCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
+import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
+import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
@@ -13,7 +13,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
-export type DBOSWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
@@ -62,7 +62,7 @@ export const StatusString = {
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  childWorkflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -217,7 +217,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
    * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
    */
-  async childWorkflow<T extends any[], R>(wf: DBOSWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
@@ -230,7 +230,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If the transaction encounters a Postgres serialization error, retry it.
    * If it encounters any other error, throw it.
    */
-  async transaction<T extends any[], R>(txn: DBOSTransaction<T, R>, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
     const config = this.#wfe.transactionConfigMap.get(txn.name);
     if (config === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -329,7 +329,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends any[], R>(commFn: DBOSCommunicator<T, R>, ...args: T): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
     const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
@@ -471,10 +471,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as DBOSTransaction<any[], any>, ...args)
+        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.external(op.registeredFunction as DBOSCommunicator<any[], any>, ...args)
+        ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
         : undefined;
     }
     return proxy as WFInvokeFuncs<T>;

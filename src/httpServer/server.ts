@@ -8,8 +8,8 @@ import {
   HandlerContextImpl,
   HandlerRegistration,
 } from "./handler";
-import { DBOSTransaction } from "../transaction";
-import { DBOSWorkflow } from "../workflow";
+import { Transaction } from "../transaction";
+import { Workflow } from "../workflow";
 import {
   DBOSDataValidationError,
   DBOSError,
@@ -20,10 +20,10 @@ import { DBOSExecutor } from "../dbos-executor";
 import { Logger } from "winston";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
-import { DBOSCommunicator } from '../communicator';
+import { Communicator } from '../communicator';
 
-export const DBOSWorkflowUUIDHeader = "dbos-workflowuuid";
-export const DBOSWorkflowRecoveryUrl = "/dbos-workflow-recovery"
+export const WorkflowUUIDHeader = "dbos-workflowuuid";
+export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -88,8 +88,8 @@ export class DBOSHttpServer {
       await koaNext();
     };
 
-    router.post(DBOSWorkflowRecoveryUrl, recoveryHandler);
-    wfe.logger.debug(`DBOS Server Registered Recovery POST ${DBOSWorkflowRecoveryUrl}`);
+    router.post(WorkflowRecoveryUrl, recoveryHandler);
+    wfe.logger.debug(`DBOS Server Registered Recovery POST ${WorkflowRecoveryUrl}`);
   }
 
   /**
@@ -101,8 +101,8 @@ export class DBOSHttpServer {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Ignore URL with "/dbos-workflow-recovery" prefix.
-        if (ro.apiURL.startsWith(DBOSWorkflowRecoveryUrl)) {
-          wfe.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${DBOSWorkflowRecoveryUrl}!`);
+        if (ro.apiURL.startsWith(WorkflowRecoveryUrl)) {
+          wfe.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${WorkflowRecoveryUrl}!`);
           return;
         }
 
@@ -177,7 +177,7 @@ export class DBOSHttpServer {
 
             // Extract workflow UUID from headers (if any).
             // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
-            const headerWorkflowUUID = koaCtxt.get(DBOSWorkflowUUIDHeader);
+            const headerWorkflowUUID = koaCtxt.get(WorkflowUUIDHeader);
 
             // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
             // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
@@ -187,11 +187,11 @@ export class DBOSHttpServer {
             // - Otherwise, we return 500.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await wfe.transaction(ro.registeredFunction as DBOSTransaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await wfe.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await wfe.workflow(ro.registeredFunction as DBOSWorkflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (await wfe.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await wfe.external(ro.registeredFunction as DBOSCommunicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await wfe.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);

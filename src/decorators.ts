@@ -491,7 +491,7 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
-export function DBOSWorkflow(config: WorkflowConfig={}) {
+export function Workflow(config: WorkflowConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -504,7 +504,7 @@ export function DBOSWorkflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function DBOSTransaction(config: TransactionConfig={}) {
+export function Transaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -518,7 +518,7 @@ export function DBOSTransaction(config: TransactionConfig={}) {
   return decorator;
 }
 
-export function DBOSCommunicator(config: CommunicatorConfig={}) {
+export function Communicator(config: CommunicatorConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,

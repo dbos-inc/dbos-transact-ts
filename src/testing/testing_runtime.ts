@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
-import { DBOSCommunicator } from "../communicator";
+import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
@@ -8,8 +8,8 @@ import { InvokeFuncs } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
-import { DBOSTransaction } from "../transaction";
-import { DBOSWorkflow, WorkflowHandle, WorkflowParams } from "../workflow";
+import { Transaction } from "../transaction";
+import { Workflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
@@ -141,13 +141,13 @@ export class TestingRuntimeImpl implements TestingRuntime {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.transaction(op.registeredFunction as DBOSTransaction<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.workflow(op.registeredFunction as DBOSWorkflow<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.external(op.registeredFunction as DBOSCommunicator<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => wfe.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
         : undefined;
     }
     return proxy as InvokeFuncs<T>;

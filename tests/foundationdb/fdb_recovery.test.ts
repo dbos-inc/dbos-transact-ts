@@ -1,9 +1,9 @@
-import { WorkflowContext, DBOSWorkflow, TestingRuntime } from "../../src/";
+import { WorkflowContext, Workflow, TestingRuntime } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import request from "supertest";
-import { DBOSWorkflowRecoveryUrl } from "../../src/httpServer/server";
+import { WorkflowRecoveryUrl } from "../../src/httpServer/server";
 import { createInternalTestFDB } from "./fdb_helpers";
 
 describe("foundationdb-recovery", () => {
@@ -40,7 +40,7 @@ describe("foundationdb-recovery", () => {
 
     static cnt = 0;
 
-    @DBOSWorkflow()
+    @Workflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
       if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
         LocalRecovery.cnt += input;
@@ -95,14 +95,14 @@ describe("foundationdb-recovery", () => {
     static localCnt = 0;
     static executorCnt = 0;
 
-    @DBOSWorkflow()
+    @Workflow()
     static async localWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.localCnt += input;
       await ExecutorRecovery.localPromise;
       return ctxt.authenticatedUser;
     }
 
-    @DBOSWorkflow()
+    @Workflow()
     static async executorWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.executorCnt += input;
 
@@ -152,7 +152,7 @@ describe("foundationdb-recovery", () => {
     const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
     const response = await request(testRuntime.getHandlersCallback())
-      .post(DBOSWorkflowRecoveryUrl)
+      .post(WorkflowRecoveryUrl)
       .send(["fcvm123"]);
     expect(response.statusCode).toBe(200);
     expect(response.body).toStrictEqual([execHandle.getWorkflowUUID()]);

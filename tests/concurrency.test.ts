@@ -1,4 +1,4 @@
-import { CommunicatorContext, DBOSCommunicator, TestingRuntime, DBOSTransaction, DBOSWorkflow, TransactionContext, WorkflowContext } from "../src";
+import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleep } from "../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -127,20 +127,20 @@ class ConcurrTestClass {
   });
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction()
+  @Transaction()
   static async testReadWriteFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async testReadOnlyFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt += 1;
     return id;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async testWorkflow(ctxt: WorkflowContext) {
     if (ConcurrTestClass.wfCnt++ === 1) {
       ConcurrTestClass.resolve2();
@@ -150,13 +150,13 @@ class ConcurrTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSCommunicator()
+  @Communicator()
   static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
     ConcurrTestClass.cnt++;
     return id;
   }
 
-  @DBOSWorkflow()
+  @Workflow()
   static async receiveWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
     return ctxt.recv<string>(topic, timeout);
   }

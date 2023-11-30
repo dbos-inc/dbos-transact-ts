@@ -6,7 +6,7 @@ import { EntityManager, Unique } from "typeorm";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import {
    TestingRuntime,
-   DBOSTransaction,
+   Transaction,
    OrmEntities,
    TransactionContext,
    Authentication,
@@ -40,7 +40,7 @@ type TestTransactionContext = TransactionContext<EntityManager>;
 
 @OrmEntities([KV])
 class KVController {
-  @DBOSTransaction()
+  @Transaction()
   static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
     const kv: KV = new KV();
     kv.id = id;
@@ -51,7 +51,7 @@ class KVController {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @DBOSTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async readTxn(txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
     const kvp = await txnCtxt.client.findOneBy(KV, {id: id});
@@ -124,7 +124,7 @@ export class User {
 @OrmEntities([User])
 @Authentication(UserManager.authMiddlware)
 class UserManager {
-  @DBOSTransaction()
+  @Transaction()
   @PostApi('/register')
   static async createUser(txnCtxt: TestTransactionContext, uname: string) {
     const u: User = new User();

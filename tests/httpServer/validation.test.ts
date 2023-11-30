@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, TestingRuntime, DBOSWorkflow } from "../../src";
+import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, TestingRuntime, Workflow } from "../../src";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
@@ -571,7 +571,7 @@ describe("httpserver-datavalidation-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    @DBOSWorkflow()
+    @Workflow()
     static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
     {
       return {message: v};

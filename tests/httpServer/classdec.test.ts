@@ -3,8 +3,8 @@ import {
   RequiredRole,
   DefaultRequiredRole,
   MiddlewareContext,
-  DBOSTransaction,
-  DBOSWorkflow,
+  Transaction,
+  Workflow,
   TransactionContext,
   WorkflowContext,
   TestingRuntime,
@@ -144,13 +144,13 @@ describe("httpserver-defsec-tests", () => {
       return `Please say hello to ${name}`;
     }
 
-    @DBOSTransaction()
+    @Transaction()
     static async testTranscation(txnCtxt: TransactionContext<PoolClient>, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
     }
 
-    @DBOSWorkflow()
+    @Workflow()
     static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
       const res = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
       return res;
