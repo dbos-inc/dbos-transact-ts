@@ -15,7 +15,7 @@ import { HandlerContext } from "../../src/httpServer/handler";
 import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 import { DBOSNotAuthorizedError } from "../../src/error";
-import { DBOSConfig } from "../../src/dbos-workflow";
+import { DBOSConfig } from "../../src/dbos-executor";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 

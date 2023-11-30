@@ -1,7 +1,7 @@
 import { Client, DatabaseError } from "pg";
 import { PostgresExporter } from "../telemetry/exporters";
 import { TelemetryCollector } from "../telemetry/collector";
-import { DBOSConfig } from "../dbos-workflow";
+import { DBOSConfig } from "../dbos-executor";
 import { ProvenanceSignal } from "../telemetry/signals";
 
 interface wal2jsonRow {

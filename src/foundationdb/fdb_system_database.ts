@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { DBOSWFE, DBOSNull, dbosNull } from "../dbos-workflow";
+import { DBOSWFE, DBOSNull, dbosNull } from "../dbos-executor";
 import { DBOSExecutorIDHeader, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";

@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from "../error";
 import { readFileSync } from "../utils";
-import { DBOSConfig } from "../dbos-workflow";
+import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
 import { DBOSRuntimeConfig } from "./runtime";

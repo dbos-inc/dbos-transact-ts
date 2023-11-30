@@ -4,7 +4,7 @@ import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOpt
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
-import { DBOSConfig } from "../../src/dbos-workflow";
+import { DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContext } from "../../src";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 

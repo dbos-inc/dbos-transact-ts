@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { DBOSWFE } from "../dbos-workflow";
+import { DBOSWFE } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { DBOSWorkflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";

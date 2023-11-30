@@ -16,7 +16,7 @@ import {
   DBOSResponseError,
   isClientError,
 } from "../error";
-import { DBOSWFE } from "../dbos-workflow";
+import { DBOSWFE } from "../dbos-executor";
 import { Logger } from "winston";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';

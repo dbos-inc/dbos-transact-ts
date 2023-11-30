@@ -1,7 +1,7 @@
 import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, DBOSTransaction, DBOSCommunicator, DBOSWorkflow, TestingRuntime } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
-import { DBOSConfig } from "../../src/dbos-workflow";
+import { DBOSConfig } from "../../src/dbos-executor";
 import { PoolClient } from "pg";
 import { DBOSError } from "../../src/error";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";

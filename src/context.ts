@@ -4,7 +4,7 @@ import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
-import { DBOSWFE } from "./dbos-workflow";
+import { DBOSWFE } from "./dbos-executor";
 import { DBOSConfigKeyTypeError } from "./error";
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.

@@ -6,7 +6,7 @@ import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/dbos-runtime/config";
 import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
-import { DBOSWFE, DBOSConfig } from "../../src/dbos-workflow";
+import { DBOSWFE, DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContextImpl } from "../../src/workflow";
 
 describe("dbos-config", () => {

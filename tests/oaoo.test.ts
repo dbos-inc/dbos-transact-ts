@@ -1,6 +1,6 @@
 import { PoolClient } from "pg";
 import { CommunicatorContext, DBOSCommunicator, TestingRuntime, DBOSTransaction, DBOSWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { DBOSConfig } from "../src/dbos-workflow";
+import { DBOSConfig } from "../src/dbos-executor";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";

@@ -1,4 +1,4 @@
-import { DBOSWFE, DBOSConfig } from '../dbos-workflow';
+import { DBOSWFE, DBOSConfig } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
