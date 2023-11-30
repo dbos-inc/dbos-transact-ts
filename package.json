@@ -20,7 +20,7 @@
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
   "bin": {
-    "dbos": "./dist/src/dbos-runtime/cli.js",
+    "dbos-sdk": "./dist/src/dbos-runtime/cli.js",
     "dbos-cloud": "./dist/src/cloud-cli/cli.js"
   },
   "devDependencies": {
