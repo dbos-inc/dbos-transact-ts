@@ -1,13 +1,13 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { WinstonLogger as Logger, Logger as OperonLogger } from "./telemetry/logs";
+import { WinstonLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
-import { Operon } from "./operon";
-import { OperonConfigKeyTypeError } from "./error";
+import { DBOSExecutor } from "./dbos-executor";
+import { DBOSConfigKeyTypeError } from "./error";
 
-// Operon request includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
+// HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
   readonly headers?: IncomingHttpHeaders;  // A node's http.IncomingHttpHeaders object.
   readonly rawHeaders?: string[];          // Raw headers.
@@ -20,30 +20,30 @@ export interface HTTPRequest {
   readonly ip?: string;                    // Request remote address.
 }
 
-export interface OperonContext {
+export interface DBOSContext {
   readonly request: HTTPRequest;
   readonly workflowUUID: string;
   readonly authenticatedUser: string;
   readonly authenticatedRoles: string[];
   readonly assumedRole: string;
 
-  readonly logger: OperonLogger;
+  readonly logger: DBOSLogger;
   readonly span: Span;
 
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
 }
 
-export class OperonContextImpl implements OperonContext {
+export class DBOSContextImpl implements DBOSContext {
   request: HTTPRequest = {};          // Raw incoming HTTP request.
   authenticatedUser: string = "";     // The user that has been authenticated
   authenticatedRoles: string[] = [];  // All roles the user has according to authentication
   assumedRole: string = "";           // Role in use - that user has and provided authorization to current function
   workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
-  readonly logger: OperonLogger;      // Wrapper around the global logger for this context.
+  readonly logger: DBOSLogger;      // Wrapper around the global logger for this context.
 
-  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: OperonContextImpl) {
-    this.logger = new OperonLogger(logger, this);
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
+    this.logger = new DBOSLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -71,7 +71,7 @@ export class OperonContextImpl implements OperonContext {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const value = get(this.applicationConfig, key);
     if (defaultValue && typeof value !== typeof defaultValue) {
-      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
 
     return value as T;
@@ -91,11 +91,11 @@ export class InitContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
-  constructor(readonly operon: Operon) {
-    this.logger = operon.logger;
-    this.userDatabase = operon.userDatabase;
+  constructor(readonly wfe: DBOSExecutor) {
+    this.logger = wfe.logger;
+    this.userDatabase = wfe.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    this.application = operon.config.application;
+    this.application = wfe.config.application;
   }
 
   createUserSchema(): Promise<void> {
@@ -124,9 +124,9 @@ export class InitContext {
 
     // If the key is found and the default value is provided, check whether the value is of the same type.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const value = get(this.operon.config.application, key);
+    const value = get(this.wfe.config.application, key);
     if (defaultValue && typeof value !== typeof defaultValue) {
-      throw new OperonConfigKeyTypeError(key, typeof defaultValue, typeof value);
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
 
     return value as T;

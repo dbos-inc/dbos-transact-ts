@@ -3,8 +3,8 @@ database:
   port: 5432
   username: 'postgres'
   password: ${PGPASSWORD}
-  user_database: 'operontest'
-  system_database: 'operontest_systemdb'
+  user_database: 'dbostest'
+  system_database: 'dbostest_systemdb'
   user_dbclient: 'pg-node'
   connectionTimeoutMillis: 3000
 telemetry:

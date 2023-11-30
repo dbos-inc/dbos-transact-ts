@@ -3,15 +3,15 @@
 import * as utils from "../../src/utils";
 import { UserDatabaseName } from "../../src/user_database";
 import { PoolConfig } from "pg";
-import { parseConfigFile } from "../../src/operon-runtime/config";
-import { OperonRuntimeConfig } from "../../src/operon-runtime/runtime";
-import { OperonConfigKeyTypeError, OperonInitializationError } from "../../src/error";
-import { Operon, OperonConfig } from "../../src/operon";
+import { parseConfigFile } from "../../src/dbos-runtime/config";
+import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
+import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
+import { DBOSExecutor, DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContextImpl } from "../../src/workflow";
 
-describe("operon-config", () => {
+describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
-  const mockOperonConfigYamlString = `
+  const mockDBOSConfigYamlString = `
       database:
         hostname: 'some host'
         port: 1234
@@ -40,12 +40,12 @@ describe("operon-config", () => {
 
   describe("Configuration parsing", () => {
     test("Config is valid and is parsed as expected", () => {
-      jest.spyOn(utils, "readFileSync").mockReturnValue(mockOperonConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigYamlString);
 
-      const [operonConfig, runtimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
 
       // Test pool config options
-      const poolConfig: PoolConfig = operonConfig.poolConfig;
+      const poolConfig: PoolConfig = dbosConfig.poolConfig;
       expect(poolConfig.host).toBe("some host");
       expect(poolConfig.port).toBe(1234);
       expect(poolConfig.user).toBe("some user");
@@ -53,10 +53,10 @@ describe("operon-config", () => {
       expect(poolConfig.connectionTimeoutMillis).toBe(3000);
       expect(poolConfig.database).toBe("some DB");
 
-      expect(operonConfig.userDbclient).toBe(UserDatabaseName.KNEX);
+      expect(dbosConfig.userDbclient).toBe(UserDatabaseName.KNEX);
 
       // Application config
-      const applicationConfig: any = operonConfig.application;
+      const applicationConfig: any = dbosConfig.application;
       expect(applicationConfig.payments_url).toBe("http://somedomain.com/payment");
       expect(applicationConfig.foo).toBe(process.env.FOO);
       expect(applicationConfig.bar).toBe(process.env.BAR);
@@ -73,36 +73,36 @@ describe("operon-config", () => {
 
     test("fails to read config file", () => {
       jest.spyOn(utils, "readFileSync").mockImplementation(() => {
-        throw new OperonInitializationError("some error");
+        throw new DBOSInitializationError("some error");
       });
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
     test("config file is empty", () => {
       const mockConfigFile = "";
       jest.spyOn(utils, "readFileSync").mockReturnValue(JSON.stringify(mockConfigFile));
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
     test("config file is missing database config", () => {
       const mockConfigFile = { someOtherConfig: "some other config" };
       jest.spyOn(utils, "readFileSync").mockReturnValue(JSON.stringify(mockConfigFile));
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
     test("config file is missing database password", () => {
       const dbPassword = process.env.PGPASSWORD;
       delete process.env.PGPASSWORD;
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockOperonConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockDBOSConfigYamlString);
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(OperonInitializationError);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
       process.env.PGPASSWORD = dbPassword;
     });
   });
 
   describe("context getConfig()", () => {
     beforeEach(() => {
-      jest.spyOn(utils, "readFileSync").mockReturnValue(mockOperonConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigYamlString);
     });
 
     afterEach(() => {
@@ -110,9 +110,9 @@ describe("operon-config", () => {
     });
 
     test("getConfig returns the expected values", async () => {
-      const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(operonConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
       // Config key exists
       expect(ctx.getConfig("payments_url")).toBe("http://somedomain.com/payment");
       // Config key does not exist, no default value
@@ -120,12 +120,12 @@ describe("operon-config", () => {
       // Config key does not exist, default value
       expect(ctx.getConfig("no_key", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
-      clearInterval(operon.flushBufferID);
-      await operon.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
 
     test("getConfig returns the default value when no application config is provided", async () => {
-      const localMockOperonConfigYamlString = `
+      const localMockDBOSConfigYamlString = `
         database:
           hostname: 'some host'
           port: 1234
@@ -135,24 +135,24 @@ describe("operon-config", () => {
           user_database: 'some DB'
       `;
       jest.restoreAllMocks();
-      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockOperonConfigYamlString);
-      const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(operonConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
       expect(ctx.getConfig<string>("payments_url", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
-      clearInterval(operon.flushBufferID);
-      await operon.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
 
     test("getConfig throws when it finds a value of different type than the default", async () => {
-      const [operonConfig, _operonRuntimeConfig]: [OperonConfig, OperonRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const operon = new Operon(operonConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(operon, undefined, "testUUID", {}, "testContext");
-      expect(() => ctx.getConfig<number>("payments_url", 1234)).toThrow(OperonConfigKeyTypeError);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
+      expect(() => ctx.getConfig<number>("payments_url", 1234)).toThrow(DBOSConfigKeyTypeError);
       // We didn't init, so do some manual cleanup only
-      clearInterval(operon.flushBufferID);
-      await operon.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
   });
 });

@@ -1,24 +1,24 @@
 /*
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { ProvenanceDaemon } from "../../src/provenance/provenance_daemon";
 // import { PostgresExporter } from "../../src/telemetry/exporters";
-import { OperonTransaction, OperonWorkflow } from "../../src/decorators";
-import { OperonTestingRuntime, TransactionContext, WorkflowContext } from "../../src";
+import { Transaction, Workflow } from "../../src/decorators";
+import { TestingRuntime, TransactionContext, WorkflowContext } from "../../src";
 import { PgTransactionId } from "../../src/workflow";
-import { OperonConfig } from "../../src/operon";
+import { DBOSConfig } from "../../src/dbos-executor";
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
-describe("operon-provenance", () => {
-  const testTableName = "operon_test_kv";
+describe("dbos-provenance", () => {
+  const testTableName = "dbos_test_kv";
 
-  let config: OperonConfig;
+  let config: DBOSConfig;
   let provDaemon: ProvenanceDaemon;
-  let testRuntime: OperonTestingRuntime;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -35,13 +35,13 @@ describe("operon-provenance", () => {
   });
 
   class TestFunctions {
-    @OperonTransaction()
+    @Transaction()
     static async testTransaction(ctxt: TransactionContext<PoolClient>, name: string) {
       await ctxt.client.query(`INSERT INTO ${testTableName}(value) VALUES ($1)`, [name]);
       return (await ctxt.client.query<PgTransactionId>("select CAST(pg_current_xact_id() AS TEXT) as txid;")).rows[0].txid;
     }
 
-    @OperonWorkflow()
+    @Workflow()
     static async testWorkflow(ctxt: WorkflowContext, name: string) {
       return await ctxt.invoke(TestFunctions).testTransaction(name);
     }
@@ -55,13 +55,13 @@ describe("operon-provenance", () => {
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    const pgExporter = operon.telemetryCollector.exporters[1] as PostgresExporter;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getdbosExec();
+    const pgExporter = dbosExec.telemetryCollector.exporters[1] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(rows[0].table_name).toBe(testTableName);
-    await operon.telemetryCollector.processAndExportSignals();
+    await dbosExec.telemetryCollector.processAndExportSignals();
     ({ rows } = await pgExporter.pgClient.query(`SELECT * FROM signal_testtransaction WHERE transaction_id=$1`, [xid]));
     expect(rows.length).toBeGreaterThan(0);
   });

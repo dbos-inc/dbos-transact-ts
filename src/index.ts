@@ -1,10 +1,10 @@
 export {
   createTestingRuntime,
-  OperonTestingRuntime,
+  TestingRuntime,
 } from './testing/testing_runtime';
 
 export {
-  OperonContext,
+  DBOSContext,
   InitContext,
 } from './context';
 
@@ -28,7 +28,7 @@ export {
 export * as Error from './error';
 
 export {
-  OperonResponseError
+  DBOSResponseError
 } from './error';
 
 export {
@@ -52,12 +52,12 @@ export {
   OrmEntities,
 
   // Method Decorators
-  OperonTransaction,
-  OperonWorkflow,
-  OperonCommunicator,
+  Transaction,
+  Workflow,
+  Communicator,
   RequiredRole,
-  OperonInitializer,
-  OperonDeploy,
+  DBOSInitializer,
+  DBOSDeploy,
 } from "./decorators";
 
 export {
@@ -73,12 +73,12 @@ export {
 } from "./httpServer/handler";
 
 export {
-  OperonHttpServer, // TODO: Remove
+  DBOSHttpServer, // TODO: Remove
 } from "./httpServer/server";
 
 export {
-  OperonHttpAuthMiddleware,
-  OperonHttpAuthReturn,
+  DBOSHttpAuthMiddleware,
+  DBOSHttpAuthReturn,
   MiddlewareContext,
 
   // Middleware Decorators

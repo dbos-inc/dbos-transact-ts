@@ -1,15 +1,15 @@
-import { OperonMethodRegistrationBase } from "../decorators";
+import { MethodRegistrationBase } from "../decorators";
 import { ITelemetryExporter } from "./exporters";
-import { OperonSignal } from "./signals";
+import { DBOSSignal } from "./signals";
 
 class SignalsQueue {
-  data: OperonSignal[] = [];
+  data: DBOSSignal[] = [];
 
-  push(signal: OperonSignal): void {
+  push(signal: DBOSSignal): void {
     this.data.push(signal);
   }
 
-  pop(): OperonSignal | undefined {
+  pop(): DBOSSignal | undefined {
     return this.data.shift();
   }
 
@@ -33,7 +33,7 @@ export class TelemetryCollector {
     }, this.processAndExportSignalsIntervalMs);
   }
 
-  async init(registeredOperations: Array<OperonMethodRegistrationBase> = []) {
+  async init(registeredOperations: Array<MethodRegistrationBase> = []) {
     for (const exporter of this.exporters) {
       if (exporter.init) {
         await exporter.init(registeredOperations);
@@ -51,16 +51,16 @@ export class TelemetryCollector {
     }
   }
 
-  push(signal: OperonSignal) {
+  push(signal: DBOSSignal) {
     this.signals.push(signal);
   }
 
-  private pop(): OperonSignal | undefined {
+  private pop(): DBOSSignal | undefined {
     return this.signals.pop();
   }
 
   async processAndExportSignals(): Promise<void> {
-    const batch: OperonSignal[] = [];
+    const batch: DBOSSignal[] = [];
     while (this.signals.size() > 0 && batch.length < this.processAndExportSignalsMaxBatchSize) {
       const signal = this.pop();
       if (!signal) {

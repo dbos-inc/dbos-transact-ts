@@ -1,22 +1,22 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, OperonCommunicator, OperonWorkflow, OperonTransaction, ArgOptional, OperonTestingRuntime } from "../src/";
-import { generateOperonTestConfig, setupOperonTestDb, TestKvTable } from "./helpers";
+import { WorkflowContext, TransactionContext, CommunicatorContext, Communicator, Workflow, Transaction, ArgOptional, TestingRuntime } from "../src/";
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { OperonError } from "../src/error";
-import { OperonConfig } from "../src/operon";
+import { DBOSError } from "../src/error";
+import { DBOSConfig } from "../src/dbos-executor";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
-const testTableName = "operon_failure_test_kv";
+const testTableName = "dbos_failure_test_kv";
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("failures-tests", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -31,20 +31,20 @@ describe("failures-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("operon-error", async () => {
+  test("dbos-error", async () => {
     const wfUUID1 = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
 
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
-    await expect(retrievedHandle.getResult()).rejects.toThrowError(new OperonError("test operon error with code.", 11));
+    await expect(retrievedHandle.getResult()).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new OperonError("test operon error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new DBOSError("test dbos error without code"));
   });
 
   test("readonly-error", async () => {
@@ -100,7 +100,7 @@ describe("failures-tests", () => {
   test("failing-communicator", async () => {
     await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).resolves.toBe(4);
 
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrowError(new OperonError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrowError(new DBOSError("Communicator reached maximum retries.", 1));
   });
 
   test("nonretry-communicator", async () => {
@@ -117,7 +117,7 @@ describe("failures-tests", () => {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   test("no-registration", async () => {
-    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of OperonNotRegisteredError.
+    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
 
     // Invoke an unregistered workflow.
     expect(() => testRuntime.invoke(FailureTestClass).noRegWorkflow(10)).toThrowError();
@@ -135,23 +135,23 @@ class FailureTestClass {
   static success: string = "";
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator({ retriesAllowed: false })
+  @Communicator({ retriesAllowed: false })
   static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
     if (code) {
-      throw new OperonError("test operon error with code.", code);
+      throw new DBOSError("test dbos error with code.", code);
     } else {
-      throw new OperonError("test operon error without code");
+      throw new DBOSError("test dbos error without code");
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction({ readOnly: true })
+  @Transaction({ readOnly: true })
   static async testReadonlyError(_txnCtxt: TestTransactionContext) {
     FailureTestClass.cnt++;
     throw new Error("test error");
   }
 
-  @OperonTransaction()
+  @Transaction()
   static async testKeyConflict(txnCtxt: TestTransactionContext, id: number, name: string) {
     const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`, [id, name]);
     FailureTestClass.cnt += 1;
@@ -160,7 +160,7 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonTransaction()
+  @Transaction()
   static async testSerialError(_ctxt: TestTransactionContext, maxRetry: number) {
     if (FailureTestClass.cnt !== maxRetry) {
       const err = new DatabaseError("serialization error", 10, "error");
@@ -171,13 +171,13 @@ class FailureTestClass {
     return maxRetry;
   }
 
-  @OperonWorkflow()
+  @Workflow()
   static async testSerialWorkflow(ctxt: WorkflowContext, maxRetry: number) {
     return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator({ intervalSeconds: 0, maxAttempts: 4 })
+  @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
   static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
@@ -187,7 +187,7 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @OperonCommunicator({ retriesAllowed: false })
+  @Communicator({ retriesAllowed: false })
   static async testNoRetry(_ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     throw new Error("failed no retry");
@@ -209,7 +209,7 @@ class FailureTestClass {
     return code + 1;
   }
 
-  @OperonWorkflow()
+  @Workflow()
   static async testCommWorkflow(ctxt: WorkflowContext) {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
   }

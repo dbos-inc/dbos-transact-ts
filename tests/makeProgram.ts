@@ -2,30 +2,31 @@ import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 
-const operonRepoRoot = path.join(__dirname, "..");
+const sdkRepoRoot = path.join(__dirname, "..");
+const dbosSDKModule = "node_modules/@dbos-inc/dbos-sdk/";
 
 function readFile(fileName: string) {
-  if (fileName.startsWith("node_modules/@dbos-inc/operon/")) {
-    const $path = path.join(operonRepoRoot, fileName.slice(30));
+  if (fileName.startsWith(dbosSDKModule)) {
+    const $path = path.join(sdkRepoRoot, fileName.slice(dbosSDKModule.length));
     return fs.existsSync($path) ? fs.readFileSync($path, "utf-8") : undefined;
   }
   if (fileName.startsWith("node_modules/@dbos-inc/")) {
     return undefined;
   }
   if (fileName.startsWith("node_modules/")) {
-    const $path = path.join(operonRepoRoot, fileName);
+    const $path = path.join(sdkRepoRoot, fileName);
     return fs.existsSync($path) ? fs.readFileSync($path, "utf-8") : undefined;
   }
   return undefined;
 }
 
 function readDirectory(directoryName: string) {
-  if (directoryName.startsWith("node_modules/@dbos-inc/operon/")) {
-    const $path = path.join(operonRepoRoot, directoryName.slice(30));
+  if (directoryName.startsWith(dbosSDKModule)) {
+    const $path = path.join(sdkRepoRoot, directoryName.slice(dbosSDKModule.length));
     return fs.readdirSync($path, { withFileTypes: true }).filter(f => f.isDirectory()).map(f => f.name);
   }
   if (directoryName.startsWith("node_modules/")) {
-    const $path = path.join(operonRepoRoot, directoryName);
+    const $path = path.join(sdkRepoRoot, directoryName);
     return fs.readdirSync($path, { withFileTypes: true }).filter(f => f.isDirectory()).map(f => f.name);
   }
 
@@ -55,7 +56,7 @@ export function makeTestTypescriptProgram(source: string): ts.Program {
     directoryExists: (directoryName) => {
       if (directoryName === "node_modules") return true;
       if (directoryName === "node_modules/@dbos-inc") return true;
-      if (directoryName === "node_modules/@dbos-inc/operon") return true;
+      if (directoryName === "node_modules/@dbos-inc/dbos-sdk") return true;
       return readDirectory(directoryName) !== undefined;
     },
     getDirectories: (path) => readDirectory(path) ?? []

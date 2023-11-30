@@ -83,12 +83,12 @@ export const systemDBSchema = `
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
         -- Publish a notification for all keys
-        PERFORM pg_notify('operon_notifications_channel', payload);
+        PERFORM pg_notify('dbos_notifications_channel', payload);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
     
-    CREATE OR REPLACE TRIGGER operon_notifications_trigger
+    CREATE OR REPLACE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON notifications
     FOR EACH ROW EXECUTE FUNCTION notifications_function();
 
@@ -97,12 +97,12 @@ export const systemDBSchema = `
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
         -- Publish a notification for all keys
-        PERFORM pg_notify('operon_workflow_events_channel', payload);
+        PERFORM pg_notify('dbos_workflow_events_channel', payload);
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
 
-    CREATE OR REPLACE TRIGGER operon_workflow_events_trigger
+    CREATE OR REPLACE TRIGGER dbos_workflow_events_trigger
     AFTER INSERT ON workflow_events
     FOR EACH ROW EXECUTE FUNCTION workflow_events_function();
 `;

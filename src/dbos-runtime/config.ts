@@ -1,15 +1,15 @@
-import { OperonInitializationError } from "../error";
+import { DBOSInitializationError } from "../error";
 import { readFileSync } from "../utils";
-import { OperonConfig } from "../operon";
+import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
-import { OperonRuntimeConfig } from "./runtime";
+import { DBOSRuntimeConfig } from "./runtime";
 import { UserDatabaseName } from "../user_database";
-import { OperonCLIStartOptions } from "./cli";
+import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
 
-export const operonConfigFilePath = "operon-config.yaml";
+export const dbosConfigFilePath = "dbos-config.yaml";
 
 export interface ConfigFile {
   version: string;
@@ -29,7 +29,7 @@ export interface ConfigFile {
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
-  runtimeConfig?: OperonRuntimeConfig;
+  runtimeConfig?: DBOSRuntimeConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
 }
@@ -54,7 +54,7 @@ export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
     configFile = YAML.parse(interpolatedConfig) as ConfigFile;
   } catch (e) {
     if (e instanceof Error) {
-      throw new OperonInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
+      throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
     }
   }
 
@@ -62,14 +62,14 @@ export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
 }
 
 /*
- * Parse `operonConfigFilePath` and return OperonConfig and OperonRuntimeConfig
- * Considers OperonCLIStartOptions if provided, which takes precedence over config file
+ * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
+ * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConfig, OperonRuntimeConfig] {
-  const configFilePath = cliOptions?.configfile ?? operonConfigFilePath;
+export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, DBOSRuntimeConfig] {
+  const configFilePath = cliOptions?.configfile ?? dbosConfigFilePath;
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
-    throw new OperonInitializationError(`Operon configuration file ${configFilePath} is empty`);
+    throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
   setApplicationVersion(configFile.version);
@@ -78,7 +78,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /* Handle user database config */
   /*******************************/
   if (!configFile.database) {
-    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database config`);
+    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database config`);
   }
 
   const poolConfig: PoolConfig = {
@@ -91,7 +91,7 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   };
 
   if (!poolConfig.password) {
-    throw new OperonInitializationError(`Operon configuration ${configFilePath} does not contain database password`);
+    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
   }
 
   if (configFile.database.ssl_ca) {
@@ -114,13 +114,13 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   }
 
   /************************************/
-  /* Build final Operon Configuration */
+  /* Build final DBOS configuration */
   /************************************/
-  const operonConfig: OperonConfig = {
+  const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
-    system_database: configFile.database.system_database ?? "operon_systemdb",
+    system_database: configFile.database.system_database ?? "dbos_systemdb",
     observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
@@ -133,10 +133,10 @@ export function parseConfigFile(cliOptions?: OperonCLIStartOptions): [OperonConf
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
-  const runtimeConfig: OperonRuntimeConfig = {
+  const runtimeConfig: DBOSRuntimeConfig = {
     entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint || "dist/operations.js",
     port: cliOptions?.port || configFile.runtimeConfig?.port || 3000,
   };
 
-  return [operonConfig, runtimeConfig];
+  return [dbosConfig, runtimeConfig];
 }

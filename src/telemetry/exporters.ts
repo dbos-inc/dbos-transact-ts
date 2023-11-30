@@ -1,17 +1,17 @@
 import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
-import { LogMasks, OperonDataType, OperonMethodRegistrationBase } from "./../decorators";
-import { OperonPostgresExporterError } from "./../error";
-import { OperonSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
+import { LogMasks, DBOSDataType, MethodRegistrationBase } from "./../decorators";
+import { DBOSPostgresExporterError } from "./../error";
+import { DBOSSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { spanToString } from "./traces";
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: OperonSignal[]): Promise<T>;
-  process?(signal: OperonSignal[]): U;
-  init?(registeredOperations?: ReadonlyArray<OperonMethodRegistrationBase>): Promise<void>;
+  export(signal: DBOSSignal[]): Promise<T>;
+  process?(signal: DBOSSignal[]): U;
+  init?(registeredOperations?: ReadonlyArray<MethodRegistrationBase>): Promise<void>;
   destroy?(): Promise<void>;
 }
 
@@ -24,7 +24,7 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
     });
   }
 
-  async export(rawSignals: OperonSignal[]): Promise<void> {
+  async export(rawSignals: DBOSSignal[]): Promise<void> {
     // Note: it is not compatible with provenance signal.
     const signals = rawSignals as TelemetrySignal[];
     return await new Promise<void>((resolve) => {
@@ -48,23 +48,23 @@ export const POSTGRES_EXPORTER = "PostgresExporter";
 export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], QueryConfig[]> {
   readonly pgClient: Client;
 
-  constructor(private readonly poolConfig: PoolConfig, readonly observabilityDBName: string = "operon_observability") {
+  constructor(private readonly poolConfig: PoolConfig, readonly observabilityDBName: string = "dbos_observability") {
     const pgClientConfig = { ...poolConfig };
     pgClientConfig.database = this.observabilityDBName;
     this.pgClient = new Client(pgClientConfig);
   }
 
-  static getPGDataType(t: OperonDataType): string {
+  static getPGDataType(t: DBOSDataType): string {
     if (t.dataType === "double") {
       return "double precision"; // aka "float8"
     }
     return t.formatAsString();
   }
 
-  async init(registeredOperations: ReadonlyArray<OperonMethodRegistrationBase> = []) {
+  async init(registeredOperations: ReadonlyArray<MethodRegistrationBase> = []) {
     const pgSystemClient: Client = new Client(this.poolConfig);
     await pgSystemClient.connect();
-    // First check if the log database exists using operon pgSystemClient.
+    // First check if the log database exists using pgSystemClient.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.observabilityDBName}'`);
     if (dbExists.rows.length === 0) {
       // Create the logs backend database
@@ -178,7 +178,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return { name: `insert-provenance-log`, text: query, values: [values] };
   }
 
-  async export(signals: OperonSignal[]): Promise<QueryArrayResult[]> {
+  async export(signals: DBOSSignal[]): Promise<QueryArrayResult[]> {
     const results: Promise<QueryArrayResult>[] = [];
     // Find all telemetry signals and process.
     const telemetrySignals = signals.filter(obj => (obj as TelemetrySignal).workflowUUID !== undefined) as TelemetrySignal[];
@@ -199,7 +199,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       // We do await here so we can catch and format PostgresExporter specific errors
       return await Promise.all<QueryArrayResult>(results);
     } catch (err) {
-      throw new OperonPostgresExporterError(err as Error);
+      throw new DBOSPostgresExporterError(err as Error);
     }
   }
 }

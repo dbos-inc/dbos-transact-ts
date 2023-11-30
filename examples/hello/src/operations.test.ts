@@ -1,9 +1,9 @@
-import { OperonTestingRuntime, createTestingRuntime } from "@dbos-inc/operon";
-import { Hello, operon_hello } from "./operations";
+import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
+import { Hello, dbos_hello } from "./operations";
 import request from "supertest";
 
 describe("operations-test", () => {
-  let testRuntime: OperonTestingRuntime;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     testRuntime = await createTestingRuntime([Hello]);
@@ -17,11 +17,11 @@ describe("operations-test", () => {
    * Test the transaction.
    */
   test("test-transaction", async () => {
-    const res = await testRuntime.invoke(Hello).helloTransaction("operon");
-    expect(res).toMatch("Hello, operon! You have been greeted");
+    const res = await testRuntime.invoke(Hello).helloTransaction("dbos");
+    expect(res).toMatch("Hello, dbos! You have been greeted");
 
     // Check the greet count.
-    const rows = await testRuntime.queryUserDB<operon_hello>("SELECT * FROM operon_hello WHERE name=$1", "operon");
+    const rows = await testRuntime.queryUserDB<dbos_hello>("SELECT * FROM dbos_hello WHERE name=$1", "dbos");
     expect(rows[0].greet_count).toBe(1);
   });
 
@@ -30,9 +30,9 @@ describe("operations-test", () => {
    */
   test("test-endpoint", async () => {
     const res = await request(testRuntime.getHandlersCallback()).get(
-      "/greeting/operon"
+      "/greeting/dbos"
     );
     expect(res.statusCode).toBe(200);
-    expect(res.text).toMatch("Hello, operon! You have been greeted");
+    expect(res.text).toMatch("Hello, dbos! You have been greeted");
   });
 });

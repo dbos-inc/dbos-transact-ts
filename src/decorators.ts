@@ -5,25 +5,25 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { OperonContext, OperonContextImpl, InitContext } from "./context";
+import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
-import { OperonNotAuthorizedError } from "./error";
-import { validateOperonMethodArgs } from "./data_validation";
+import { DBOSNotAuthorizedError } from "./error";
+import { validateMethodArgs } from "./data_validation";
 
 /**
  * Any column type column can be.
  */
-export type OperonFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
+export type DBOSFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
 
-export class OperonDataType {
-  dataType: OperonFieldType = "text";
+export class DBOSDataType {
+  dataType: DBOSFieldType = "text";
   length: number = -1;
   precision: number = -1;
   scale: number = -1;
 
   /** Varchar has length */
   static varchar(length: number) {
-    const dt = new OperonDataType();
+    const dt = new DBOSDataType();
     dt.dataType = "varchar";
     dt.length = length;
     return dt;
@@ -31,7 +31,7 @@ export class OperonDataType {
 
   /** Some decimal has precision / scale (as opposed to floating point decimal) */
   static decimal(precision: number, scale: number) {
-    const dt = new OperonDataType();
+    const dt = new DBOSDataType();
     dt.dataType = "decimal";
     dt.precision = precision;
     dt.scale = scale;
@@ -42,7 +42,7 @@ export class OperonDataType {
   /** Take type from reflect metadata */
   // eslint-disable-next-line @typescript-eslint/ban-types
   static fromArg(arg: Function) {
-    const dt = new OperonDataType();
+    const dt = new DBOSDataType();
 
     if (arg === String) {
       dt.dataType = "text";
@@ -75,9 +75,9 @@ export class OperonDataType {
   }
 }
 
-const operonParamMetadataKey = Symbol("operon:parameter");
-const operonMethodMetadataKey = Symbol("operon:method");
-const operonClassMetadataKey = Symbol("operon:class");
+const paramMetadataKey = Symbol("dbos:parameter");
+const methodMetadataKey = Symbol("dbos:method");
+const classMetadataKey = Symbol("dbos:class");
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
@@ -106,7 +106,7 @@ export enum ArgRequiredOptions {
   DEFAULT = "DEFAULT",
 }
 
-export class OperonParameter {
+export class MethodParameter {
   name: string = "";
   required: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
   validate: boolean = true;
@@ -114,14 +114,14 @@ export class OperonParameter {
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   argType: Function = String;
-  dataType: OperonDataType;
+  dataType: DBOSDataType;
   index: number = -1;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   constructor(idx: number, at: Function) {
     this.index = idx;
     this.argType = at;
-    this.dataType = OperonDataType.fromArg(at);
+    this.dataType = DBOSDataType.fromArg(at);
   }
 }
 
@@ -129,19 +129,19 @@ export class OperonParameter {
 /* REGISTRATION OBJECTS */
 //////////////////////////
 
-export interface OperonRegistrationDefaults
+export interface RegistrationDefaults
 {
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
 }
 
-export interface OperonMethodRegistrationBase {
+export interface MethodRegistrationBase {
   name: string;
 
-  args: OperonParameter[];
+  args: MethodParameter[];
 
-  defaults?: OperonRegistrationDefaults;
+  defaults?: RegistrationDefaults;
 
   getRequiredRoles(): string [];
 
@@ -155,16 +155,16 @@ export interface OperonMethodRegistrationBase {
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
-export class OperonMethodRegistration <This, Args extends unknown[], Return>
-implements OperonMethodRegistrationBase
+export class MethodRegistration <This, Args extends unknown[], Return>
+implements MethodRegistrationBase
 {
-  defaults?: OperonRegistrationDefaults | undefined;
+  defaults?: RegistrationDefaults | undefined;
 
   name: string = "";
 
   requiredRole: string[] | undefined = undefined;
 
-  args: OperonParameter[] = [];
+  args: MethodParameter[] = [];
 
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
   {
@@ -191,7 +191,7 @@ implements OperonMethodRegistrationBase
   }
 }
 
-export class OperonClassRegistration <CT extends { new (...args: unknown[]) : object }> implements OperonRegistrationDefaults
+export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
 {
   name: string = "";
   requiredRole: string[] | undefined;
@@ -209,30 +209,30 @@ export class OperonClassRegistration <CT extends { new (...args: unknown[]) : ob
 ////////////////////////////////////////////////////////////////////////////////
 // DECORATOR REGISTRATION
 // These manage registration objects, creating them at decorator evaluation time
-// and making wrapped methods available for function registration at Operon
+// and making wrapped methods available for function registration at runtime
 // initialization time.
 ////////////////////////////////////////////////////////////////////////////////
 
-export function getRegisteredOperations(target: object): ReadonlyArray<OperonMethodRegistrationBase> {
-  const registeredOperations: OperonMethodRegistrationBase[] = [];
+export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
+  const registeredOperations: MethodRegistrationBase[] = [];
 
   for (const name of Object.getOwnPropertyNames(target)) {
-    const operation = Reflect.getOwnMetadata(operonMethodMetadataKey, target, name) as OperonMethodRegistrationBase | undefined;
+    const operation = Reflect.getOwnMetadata(methodMetadataKey, target, name) as MethodRegistrationBase | undefined;
     if (operation) { registeredOperations.push(operation); }
   }
 
   return registeredOperations;
 }
 
-export function getOrCreateOperonMethodArgsRegistration(target: object, propertyKey: string | symbol): OperonParameter[] {
-  let mParameters: OperonParameter[] = (Reflect.getOwnMetadata(operonParamMetadataKey, target, propertyKey) as OperonParameter[]) || [];
+export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
+  let mParameters: MethodParameter[] = (Reflect.getOwnMetadata(paramMetadataKey, target, propertyKey) as MethodParameter[]) || [];
 
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
     const designParamTypes = Reflect.getMetadata("design:paramtypes", target, propertyKey) as Function[];
-    mParameters = designParamTypes.map((value, index) => new OperonParameter(index, value));
+    mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
 
-    Reflect.defineMetadata(operonParamMetadataKey, mParameters, target, propertyKey);
+    Reflect.defineMetadata(paramMetadataKey, mParameters, target, propertyKey);
   }
 
   return mParameters;
@@ -244,18 +244,18 @@ function generateSaltedHash(data: string, salt: string): string {
   return hash.digest("hex");
 }
 
-function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Return>(
+function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
 ) {
-  const methReg: OperonMethodRegistration<This, Args, Return> =
-    (Reflect.getOwnMetadata(operonMethodMetadataKey, target, propertyKey) as OperonMethodRegistration<This, Args, Return>) || new OperonMethodRegistration<This, Args, Return>(descriptor.value!);
+  const methReg: MethodRegistration<This, Args, Return> =
+    (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
     methReg.name = propertyKey.toString();
 
-    methReg.args = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+    methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const argNames = getArgNames(descriptor.value!);
     methReg.args.forEach((e) => {
@@ -270,16 +270,16 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
       }
     });
 
-    Reflect.defineMetadata(operonMethodMetadataKey, methReg, target, propertyKey);
+    Reflect.defineMetadata(methodMetadataKey, methReg, target, propertyKey);
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
 
-      let opCtx : OperonContextImpl | undefined = undefined;
+      let opCtx : DBOSContextImpl | undefined = undefined;
 
       // Validate the user authentication and populate the role field
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
-        opCtx = rawArgs[0] as OperonContextImpl;
+        opCtx = rawArgs[0] as DBOSContextImpl;
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         const set = new Set(curRoles);
@@ -292,13 +292,13 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
           }
         }
         if (!authorized) {
-          const err = new OperonNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
-          opCtx.span.addEvent("OperonNotAuthorizedError", { message: err.message });
+          const err = new DBOSNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
+          opCtx.span.addEvent("DBOSNotAuthorizedError", { message: err.message });
           throw err;
         }
       }
 
-      const validatedArgs = validateOperonMethodArgs(methReg, rawArgs);
+      const validatedArgs = validateMethodArgs(methReg, rawArgs);
 
       // Argument logging
       validatedArgs.forEach((argValue, idx) => {
@@ -307,7 +307,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
         if (idx === 0)
         {
           // Context -- I suppose we could just instanceof
-          opCtx = validatedArgs[0] as OperonContextImpl;
+          opCtx = validatedArgs[0] as DBOSContextImpl;
           isCtx = true;
         }
 
@@ -322,7 +322,7 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
             } else {
               // Yes, we are doing the same as above for now.
               // It can be better if we have verified the type of the data
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "OPERONSALT");
+              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "DBOSSALT");
             }
           }
           opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
@@ -346,24 +346,24 @@ function getOrCreateOperonMethodRegistration<This, Args extends unknown[], Retur
 
 export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
-    throw Error("Use of operon decorator when original method is undefined");
+    throw Error("Use of decorator when original method is undefined");
   }
 
-  const registration = getOrCreateOperonMethodRegistration(target, propertyKey, descriptor);
+  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor);
 
   return { descriptor, registration };
 }
 
-export function getOrCreateOperonClassRegistration<CT extends { new (...args: unknown[]) : object }>(
+export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
-  const clsReg: OperonClassRegistration<CT> =
-    (Reflect.getOwnMetadata(operonClassMetadataKey, ctor, "opclassreg") as OperonClassRegistration<CT>) || new OperonClassRegistration<CT>(ctor);
+  const clsReg: ClassRegistration<CT> =
+    (Reflect.getOwnMetadata(classMetadataKey, ctor, "dbosclassreg") as ClassRegistration<CT>) || new ClassRegistration<CT>(ctor);
 
   if (clsReg.needsInitialized) {
     clsReg.name = ctor.name;
 
-    Reflect.defineMetadata(operonClassMetadataKey, clsReg, ctor, "opclassreg");
+    Reflect.defineMetadata(classMetadataKey, clsReg, ctor, "dbosclassreg");
 
     const ops = getRegisteredOperations(ctor);
     ops.forEach((op) => {
@@ -378,21 +378,21 @@ export function getOrCreateOperonClassRegistration<CT extends { new (...args: un
 //////////////////////////
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.REQUIRED;
 }
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.OPTIONAL;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.logMask = LogMasks.SKIP;
@@ -400,7 +400,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 
 export function LogMask(mask: LogMasks) {
   return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.logMask = mask;
@@ -409,7 +409,7 @@ export function LogMask(mask: LogMasks) {
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
@@ -418,7 +418,7 @@ export function ArgName(name: string) {
 
 export function ArgDate() { // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.dataType.dataType = 'timestamp';
@@ -427,10 +427,10 @@ export function ArgDate() { // TODO a little more info about it - is it a date o
 
 export function ArgVarchar(length: number) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateOperonMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
-    curParam.dataType = OperonDataType.varchar(length);
+    curParam.dataType = DBOSDataType.varchar(length);
   };
 }
 
@@ -441,7 +441,7 @@ export function ArgVarchar(length: number) {
 export function DefaultRequiredRole(anyOf: string[]) {
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
-     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     const clsreg = getOrCreateClassRegistration(ctor);
      clsreg.requiredRole = anyOf;
   }
   return clsdec;
@@ -449,13 +449,13 @@ export function DefaultRequiredRole(anyOf: string[]) {
 
 export function DefaultArgRequired<T extends { new (...args: unknown[]) : object }>(ctor: T)
 {
-   const clsreg = getOrCreateOperonClassRegistration(ctor);
+   const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
 }
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
 {
-   const clsreg = getOrCreateOperonClassRegistration(ctor);
+   const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
@@ -465,7 +465,7 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
 ///////////////////////
 
 export function Debug() {
-  function logdec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+  function logdec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
@@ -478,7 +478,7 @@ export function Debug() {
 }
 
 export function RequiredRole(anyOf: string[]) {
-  function apidec<This, Ctx extends OperonContext, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
@@ -491,7 +491,7 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
-export function OperonWorkflow(config: WorkflowConfig={}) {
+export function Workflow(config: WorkflowConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -504,7 +504,7 @@ export function OperonWorkflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function OperonTransaction(config: TransactionConfig={}) {
+export function Transaction(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -518,7 +518,7 @@ export function OperonTransaction(config: TransactionConfig={}) {
   return decorator;
 }
 
-export function OperonCommunicator(config: CommunicatorConfig={}) {
+export function Communicator(config: CommunicatorConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -537,13 +537,13 @@ export function OrmEntities(entities: Function[]) {
 
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
-     const clsreg = getOrCreateOperonClassRegistration(ctor);
+     const clsreg = getOrCreateClassRegistration(ctor);
      clsreg.ormEntities = entities;
   }
   return clsdec;
 }
 
-export function OperonInitializer() {
+export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -558,7 +558,7 @@ export function OperonInitializer() {
 }
 
 // For future use with Deploy
-export function OperonDeploy() {
+export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,

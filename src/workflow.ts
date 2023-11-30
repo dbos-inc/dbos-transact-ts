@@ -1,35 +1,35 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Operon, OperonNull, operonNull } from "./operon";
+import { DBOSExecutor, DBOSNull, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { IsolationLevel, OperonTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { OperonCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
-import { OperonError, OperonNotRegisteredError, OperonWorkflowConflictUUIDError } from "./error";
+import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
+import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
+import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { sleep } from "./utils";
 import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { HTTPRequest, OperonContext, OperonContextImpl } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
-export type OperonWorkflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
-// local type declarations for Operon transaction and communicator functions
+// local type declarations for transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes operon transaction/communicator functions + converts the method signature to exclude the context parameter
+// Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
   [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends  TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentCtx?: OperonContextImpl;
+  parentCtx?: DBOSContextImpl;
 }
 
 export interface WorkflowConfig {
@@ -60,9 +60,9 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export interface WorkflowContext extends OperonContext {
+export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -72,20 +72,20 @@ export interface WorkflowContext extends OperonContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 }
 
-export class WorkflowContextImpl extends OperonContextImpl implements WorkflowContext {
+export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
-  readonly #operon;
+  readonly #wfe;
   readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
 
   constructor(
-    operon: Operon,
-    parentCtx: OperonContextImpl | undefined,
+    wfe: DBOSExecutor,
+    parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    const span = operon.tracer.startSpan(
+    const span = wfe.tracer.startSpan(
       workflowName,
       {
         workflowUUID: workflowUUID,
@@ -94,13 +94,13 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       },
       parentCtx?.span,
     );
-    super(workflowName, span, operon.logger, parentCtx);
+    super(workflowName, span, wfe.logger, parentCtx);
     this.workflowUUID = workflowUUID;
-    this.#operon = operon;
-    this.isTempWorkflow = operon.tempWorkflowName === workflowName;
-    if (operon.config.application) {
+    this.#wfe = wfe;
+    this.isTempWorkflow = wfe.tempWorkflowName === workflowName;
+    if (wfe.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = operon.config.application;
+      this.applicationConfig = wfe.config.application;
     }
   }
 
@@ -112,25 +112,25 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * Check if an operation has already executed in a workflow.
    * If it previously executed succesfully, return its output.
    * If it previously executed and threw an error, throw that error.
-   * Otherwise, return OperonNull.
+   * Otherwise, return DBOSNull.
    * Also return the transaction snapshot information of this current transaction.
    */
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
     // Note: we read the current snapshot, not the recorded one!
-    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
+    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
-      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
+      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
       funcID
     );
 
     if (rows.length === 0 || rows.length > 2) {
       this.logger.error("Unexpected! This should never happen. Returned rows: " + rows.toString());
-      throw new OperonError("This should never happen. Returned rows: " + rows.toString());
+      throw new DBOSError("This should never happen. Returned rows: " + rows.toString());
     }
 
     const res: BufferedResult = {
-      output: operonNull,
+      output: dbosNull,
       txn_snapshot: ""
     }
     // recorded=false row will be first because we used ORDER BY.
@@ -147,7 +147,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
   /**
    * Write all entries in the workflow result buffer to the database.
-   * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an OperonError.
+   * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.
    */
   async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
@@ -156,7 +156,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
     }
     funcIDs.sort();
     try {
-      let sqlStmt = "INSERT INTO operon.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+      let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
       let paramCnt = 1;
       const values: any[] = [];
       for (const funcID of funcIDs) {
@@ -173,11 +173,11 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       }
       this.logger.debug(sqlStmt);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await this.#operon.userDatabase.queryWithClient(client, sqlStmt, ...values);
+      await this.#wfe.userDatabase.queryWithClient(client, sqlStmt, ...values);
     } catch (error) {
-      if (this.#operon.userDatabase.isKeyConflictError(error)) {
+      if (this.#wfe.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError(this.workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
@@ -200,7 +200,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
     const serialOutput = JSON.stringify(output);
-    const rows = await this.#operon.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE operon.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
+    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE dbos.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
     return rows[0].txn_id;  // Must have a transaction ID because we inserted the guard before.
   }
 
@@ -209,7 +209,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await this.#operon.userDatabase.queryWithClient(client, "UPDATE operon.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
+    await this.#wfe.userDatabase.queryWithClient(client, "UPDATE dbos.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
   }
 
   /**
@@ -217,11 +217,11 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
    * We pass in itself as a parent context adn assign the child workflow with a derministic UUID "this.workflowUUID-functionID", which appends a function ID to its own UUID.
    */
-  async childWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#operon.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
+    return this.#wfe.workflow(wf, { parentCtx: this, workflowUUID: childUUID }, ...args);
   }
 
   /**
@@ -230,16 +230,16 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * If the transaction encounters a Postgres serialization error, retry it.
    * If it encounters any other error, throw it.
    */
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#operon.transactionConfigMap.get(txn.name);
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
+    const config = this.#wfe.transactionConfigMap.get(txn.name);
     if (config === undefined) {
-      throw new OperonNotRegisteredError(txn.name);
+      throw new DBOSNotRegisteredError(txn.name);
     }
     const readOnly = config.readOnly ?? false;
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#operon.tracer.startSpan(
+    const span: Span = this.#wfe.tracer.startSpan(
       txn.name,
       {
         workflowUUID: this.workflowUUID,
@@ -256,14 +256,14 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         // Check if this execution previously happened, returning its original result if it did.
 
         const tCtxt = new TransactionContextImpl(
-          this.#operon.userDatabase.getName(), client, this,
-          span, this.#operon.logger, funcId, txn.name,
+          this.#wfe.userDatabase.getName(), client, this,
+          span, this.#wfe.logger, funcId, txn.name,
         );
         const check: BufferedResult = await this.checkExecution<R>(client, funcId);
-        if (check.output !== operonNull) {
+        if (check.output !== dbosNull) {
           tCtxt.span.setAttribute("cached", true);
           tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-          this.#operon.tracer.endSpan(tCtxt.span);
+          this.#wfe.tracer.endSpan(tCtxt.span);
           return check.output as R;
         }
         // TODO: record snapshot information in result buffer.
@@ -296,11 +296,11 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       };
 
       try {
-        const result = await this.#operon.userDatabase.transaction(wrappedTransaction, config);
+        const result = await this.#wfe.userDatabase.transaction(wrappedTransaction, config);
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (this.#operon.userDatabase.isRetriableTransactionError(err)) {
+        if (this.#wfe.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
           // Retry serialization failures.
@@ -311,7 +311,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
 
         // Record and throw other errors.
         const e: Error = err as Error;
-        await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+        await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
           await this.recordGuardedError(client, funcId, e);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
@@ -319,25 +319,25 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         throw err;
       } finally {
-        this.#operon.tracer.endSpan(span);
+        this.#wfe.tracer.endSpan(span);
       }
     }
   }
 
   /**
    * Execute a communicator function.
-   * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an OperonError.
+   * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, ...args: T): Promise<R> {
-    const commConfig = this.#operon.communicatorConfigMap.get(commFn.name);
+  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
+    const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
-      throw new OperonNotRegisteredError(commFn.name);
+      throw new DBOSNotRegisteredError(commFn.name);
     }
 
     const funcID = this.functionIDGetIncrement();
 
-    const span: Span = this.#operon.tracer.startSpan(
+    const span: Span = this.#wfe.tracer.startSpan(
       commFn.name,
       {
         workflowUUID: this.workflowUUID,
@@ -350,30 +350,30 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       },
       this.span,
     );
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#operon.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#wfe.logger, commConfig, commFn.name);
 
-    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | OperonNull = await this.#operon.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
-    if (check !== operonNull) {
+    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
+    if (check !== dbosNull) {
       ctxt.span.setAttribute("cached", true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#operon.tracer.endSpan(ctxt.span);
+      this.#wfe.tracer.endSpan(ctxt.span);
       return check as R;
     }
 
     // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
-    // After reaching the maximum number of retries, throw an OperonError.
-    let result: R | OperonNull = operonNull;
-    let err: Error | OperonNull = operonNull;
+    // After reaching the maximum number of retries, throw an DBOSError.
+    let result: R | DBOSNull = dbosNull;
+    let err: Error | DBOSNull = dbosNull;
     if (ctxt.retriesAllowed) {
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
-      while (result === operonNull && numAttempts++ < ctxt.maxAttempts) {
+      while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
         } catch (error) {
@@ -383,7 +383,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
             intervalSeconds *= ctxt.backoffRate;
           }
           ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-          this.#operon.tracer.endSpan(ctxt.span);
+          this.#wfe.tracer.endSpan(ctxt.span);
         }
       }
     } else {
@@ -392,23 +392,23 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       } catch (error) {
         err = error as Error;
         ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-        this.#operon.tracer.endSpan(ctxt.span);
+        this.#wfe.tracer.endSpan(ctxt.span);
       }
     }
 
-    // `result` can only be operonNull when the communicator timed out
-    if (result === operonNull) {
+    // `result` can only be dbosNull when the communicator timed out
+    if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === operonNull ? new OperonError("Communicator reached maximum retries.", 1) : err;
-      await this.#operon.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
+      err = err === dbosNull ? new DBOSError("Communicator reached maximum retries.", 1) : err;
+      await this.#wfe.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      this.#operon.tracer.endSpan(ctxt.span);
+      this.#wfe.tracer.endSpan(ctxt.span);
       throw err;
     } else {
       // Record the execution and return.
-      await this.#operon.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
+      await this.#wfe.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#operon.tracer.endSpan(ctxt.span);
+      this.#wfe.tracer.endSpan(ctxt.span);
       return result as R;
     }
   }
@@ -420,12 +420,12 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    await this.#operon.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
+    await this.#wfe.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
   /**
@@ -433,15 +433,15 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    return this.#operon.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
+    return this.#wfe.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
 
   /**
@@ -451,12 +451,12 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   async setEvent<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#operon.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    await this.#operon.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
+    await this.#wfe.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
   }
 
   /**
@@ -471,10 +471,10 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as OperonTransaction<any[], any>, ...args)
+        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.external(op.registeredFunction as OperonCommunicator<any[], any>, ...args)
+        ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
         : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
@@ -483,9 +483,9 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-    return this.#operon.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
+    return this.#wfe.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
 
   /**
@@ -493,7 +493,7 @@ export class WorkflowContextImpl extends OperonContextImpl implements WorkflowCo
    */
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
     const functionID: number = this.functionIDGetIncrement();
-    return new RetrievedHandle(this.#operon.systemDatabase, targetUUID, this.workflowUUID, functionID);
+    return new RetrievedHandle(this.#wfe.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
 }
@@ -519,7 +519,7 @@ export interface WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when invoking a workflow with Operon.workflow
+ * The handle returned when invoking a workflow with DBOSExecutor.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string,
@@ -539,7 +539,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when retrieving a workflow with Operon.retrieve
+ * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) {}
