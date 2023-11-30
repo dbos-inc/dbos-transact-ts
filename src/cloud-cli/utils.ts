@@ -8,3 +8,7 @@ export function getCloudCredentials(): DBOSCloudCredentials {
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
 }
+
+export function credentialsExist(): boolean {
+  return fs.existsSync(`./${dbosEnvPath}/credentials`);
+}

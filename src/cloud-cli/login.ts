@@ -1,52 +1,121 @@
-import { execSync } from "child_process";
-import { TAlgorithm, encode } from "jwt-simple";
 import { createGlobalLogger } from "../telemetry/logs";
+import axios from "axios";
+import { sleep } from "../utils";
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { execSync } from "child_process";
 import fs from "fs";
 
 export const dbosEnvPath = ".dbos";
-const secretKey = "SOME SECRET";
+export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
+export const DBOSCloudIdentifier = 'dbos-cloud-api'
 
 export interface DBOSCloudCredentials {
-	token: string;
-	userName: string;
+  token: string;
+  userName: string;
 }
 
-interface Session {
-  id: number;
-  dateCreated: number;
-  username: string;
-  issued: number;
-  expires: number;
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_in: number;
+  interval: number;
 }
 
-export function login (userName: string) {
-  const logger = createGlobalLogger();
-  // TODO: in the future, we should integrate with Okta for login.
-  // Generate a valid JWT token based on the userName and store it in the `./.dbos/credentials` file.
-  // Then the deploy command can retrieve the token from this file.
-  logger.info(`Logging in as user: ${userName}`);
+interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
 
-  const algorithm: TAlgorithm = "HS256";
-  const issued = Date.now();
-  const expires = issued + 1000; // Expires after 1 sec.
-  const session: Session = {
-    id: 1,
-    dateCreated: Date.now(),
-    username: userName,
-    issued: issued,
-    expires: expires
-  };
+const client = jwksClient({
+  jwksUri: 'https://dbos-inc.us.auth0.com/.well-known/jwks.json'
+});
 
-  const token = encode(session, secretKey, algorithm);
+async function getSigningKey(kid: string): Promise<string> {
+  const key = await client.getSigningKey(kid);
+  return key.getPublicKey();
+}
 
-  const credentials: DBOSCloudCredentials = {
-    token,
-    userName,
+async function verifyToken(token: string): Promise<JwtPayload> {
+  const decoded = jwt.decode(token, { complete: true });
+
+  if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+    throw new Error('Invalid token');
   }
 
+  const signingKey = await getSigningKey(decoded.header.kid);
+
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, signingKey, { algorithms: ['RS256'] }, (err, verifiedToken) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(verifiedToken as JwtPayload);
+      }
+    });
+  });
+}
+
+export async function login(username: string): Promise<number> {
+  const logger = createGlobalLogger();
+  logger.info(`Logging in!`);
+
+  const deviceCodeRequest = {
+    method: 'POST',
+    url: 'https://dbos-inc.us.auth0.com/oauth/device/code',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    data: { client_id: DBOSClientID, scope: 'sub', audience: DBOSCloudIdentifier }
+  };
+  let deviceCodeResponse: DeviceCodeResponse | undefined;
+  try {
+    const response = await axios.request(deviceCodeRequest);
+    deviceCodeResponse = response.data as DeviceCodeResponse;
+  } catch (e) {
+    logger.error(`failed to log in`, e);
+  }
+  if (!deviceCodeResponse) {
+    return 1;
+  }
+  console.log(`Login URL: ${deviceCodeResponse.verification_uri_complete}`);
+
+  const tokenRequest = {
+    method: 'POST',
+    url: 'https://dbos-inc.us.auth0.com/oauth/token',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    data: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      device_code: deviceCodeResponse.device_code,
+      client_id: DBOSClientID
+    })
+  };
+  let tokenResponse: TokenResponse | undefined;
+  let elapsedTimeSec = 0;
+  while (elapsedTimeSec < deviceCodeResponse.expires_in) {
+    try {
+      await sleep(deviceCodeResponse.interval * 1000)
+      elapsedTimeSec += deviceCodeResponse.interval;
+      const response = await axios.request(tokenRequest);
+      tokenResponse = response.data as TokenResponse;
+      break;
+    } catch (e) {
+      logger.info(`Waiting for login...`);
+    }
+  }
+  if (!tokenResponse) {
+    return 1;
+  }
+
+  await verifyToken(tokenResponse.access_token);
+  const credentials: DBOSCloudCredentials = {
+    token: tokenResponse.access_token,
+    userName: username,
+  }
   execSync(`mkdir -p ${dbosEnvPath}`);
   fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
-
-  logger.info(`Successfully logged in as user: ${userName}`);
+  logger.info(`Successfully logged in as user: ${credentials.userName}`);
   logger.info(`You can view your credentials in: ./${dbosEnvPath}/credentials`);
+  return 0;
 }

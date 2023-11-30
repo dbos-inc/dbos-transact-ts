@@ -57,6 +57,8 @@
     "commander": "^11.0.0",
     "fast-glob": "^3.3.1",
     "form-data": "^4.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
     "jwt-simple": "^0.5.6",
     "knex": "^3.0.1",
     "koa": "^2.14.2",

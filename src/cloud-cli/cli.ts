@@ -13,6 +13,7 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
+import { credentialsExist } from "./utils";
 
 const program = new Command();
 
@@ -31,23 +32,27 @@ program.
 program
   .command('login')
   .description('Log in to DBOS cloud')
-  .requiredOption('-u, --userName <string>', 'User name for login')
-  .action((options: { userName: string }) => {
-    login(options.userName);
+  .requiredOption('-u, --username <string>', 'Username')
+  .action(async (options: { username: string }) => {
+    const exitCode = await login(options.username);
+    process.exit(exitCode)
   });
 
 program
   .command('register')
   .description('Register a user and log in to DBOS cloud')
-  .requiredOption('-u, --userName <string>', 'User name')
+  .requiredOption('-u, --username <string>', 'Username')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
-  .action(async (options: { userName: string, host: string, port: string }) => {
-    const success = await registerUser(options.userName, options.host, options.port);
-    // Then, log in as the user.
-    if (success) {
-      login(options.userName);
+  .action(async (options: { username: string, host: string, port: string }) => {
+    if (!credentialsExist()) {
+      const exitCode = await login(options.username);
+      if (exitCode !== 0) {
+        process.exit(exitCode)
+      }
     }
+    const exitCode = await registerUser(options.username, options.host, options.port);
+    process.exit(exitCode)
   });
 
 /////////////////////////////
