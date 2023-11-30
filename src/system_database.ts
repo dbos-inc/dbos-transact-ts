@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { DBOSWFE, dbosNull, DBOSNull } from "./dbos-executor";
+import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
@@ -248,7 +248,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;

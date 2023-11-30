@@ -1,4 +1,4 @@
-import { DBOSWFE, DBOSConfig } from '../dbos-executor';
+import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -17,12 +17,12 @@ export interface DBOSRuntimeConfig {
 }
 
 export class DBOSRuntime {
-  private wfe: DBOSWFE;
+  private wfe: DBOSExecutor;
   private server: Server | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
-    this.wfe = new DBOSWFE(dbosConfig);
+    this.wfe = new DBOSExecutor(dbosConfig);
   }
 
   /**

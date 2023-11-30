@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSWFE, DBOSNull, dbosNull } from "./dbos-executor";
+import { DBOSExecutor, DBOSNull, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, DBOSTransaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { DBOSCommunicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
@@ -79,7 +79,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly isTempWorkflow: boolean;
 
   constructor(
-    wfe: DBOSWFE,
+    wfe: DBOSExecutor,
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
@@ -433,7 +433,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -483,7 +483,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#wfe.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
@@ -519,7 +519,7 @@ export interface WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when invoking a workflow with DBOSWFE.workflow
+ * The handle returned when invoking a workflow with DBOSExecutor.workflow
  */
 export class InvokedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowPromise: Promise<R>, readonly workflowUUID: string, readonly workflowName: string,
@@ -539,7 +539,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 }
 
 /**
- * The handle returned when retrieving a workflow with DBOSWFE.retrieve
+ * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
 export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) {}

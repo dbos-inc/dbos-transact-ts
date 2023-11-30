@@ -16,7 +16,7 @@ import {
   DBOSResponseError,
   isClientError,
 } from "../error";
-import { DBOSWFE } from "../dbos-executor";
+import { DBOSExecutor } from "../dbos-executor";
 import { Logger } from "winston";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -35,7 +35,7 @@ export class DBOSHttpServer {
    * @param wfe User pass in an DBOS workflow executor instance.
    * TODO: maybe call wfe.init() somewhere in this class?
    */
-  constructor(readonly wfe: DBOSWFE, config: { koa?: Koa; router?: Router } = {}) {
+  constructor(readonly wfe: DBOSExecutor, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
       config.router = new Router();
     }
@@ -73,7 +73,7 @@ export class DBOSHttpServer {
    * Register workflow recovery endpoint.
    * Receives a list of executor IDs and returns a list of workflowUUIDs.
    */
-  static registerRecoveryEndpoint(wfe: DBOSWFE, router: Router) {
+  static registerRecoveryEndpoint(wfe: DBOSExecutor, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -95,7 +95,7 @@ export class DBOSHttpServer {
   /**
    * Register decorated functions as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(wfe: DBOSWFE, router: Router) {
+  static registerDecoratedEndpoints(wfe: DBOSExecutor, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     wfe.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;

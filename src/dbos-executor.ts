@@ -60,7 +60,7 @@ interface WorkflowInfo<T extends any[], R> {
   config: WorkflowConfig;
 }
 
-export class DBOSWFE {
+export class DBOSExecutor {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -389,7 +389,7 @@ export class DBOSWFE {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSWFE.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

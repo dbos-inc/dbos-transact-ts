@@ -4,7 +4,7 @@ import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
-import { DBOSWFE } from "./dbos-executor";
+import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError } from "./error";
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
@@ -91,7 +91,7 @@ export class InitContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
-  constructor(readonly wfe: DBOSWFE) {
+  constructor(readonly wfe: DBOSExecutor) {
     this.logger = wfe.logger;
     this.userDatabase = wfe.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
