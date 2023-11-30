@@ -55,13 +55,13 @@ describe("dbos-provenance", () => {
     await provDaemon.recordProvenance();
     await provDaemon.telemetryCollector.processAndExportSignals();
 
-    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
-    const pgExporter = wfe.telemetryCollector.exporters[1] as PostgresExporter;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getdbosExec();
+    const pgExporter = dbosExec.telemetryCollector.exporters[1] as PostgresExporter;
     let { rows } = await pgExporter.pgClient.query(`SELECT * FROM provenance_logs WHERE transaction_id=$1`, [xid]);
     expect(rows.length).toBeGreaterThan(0);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(rows[0].table_name).toBe(testTableName);
-    await wfe.telemetryCollector.processAndExportSignals();
+    await dbosExec.telemetryCollector.processAndExportSignals();
     ({ rows } = await pgExporter.pgClient.query(`SELECT * FROM signal_testtransaction WHERE transaction_id=$1`, [xid]));
     expect(rows.length).toBeGreaterThan(0);
   });

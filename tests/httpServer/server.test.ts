@@ -150,8 +150,8 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
-    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
-    await wfe.flushWorkflowStatusBuffer();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    await dbosExec.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);

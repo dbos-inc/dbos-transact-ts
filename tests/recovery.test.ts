@@ -56,7 +56,7 @@ describe("recovery-tests", () => {
 
   test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
@@ -115,7 +115,7 @@ describe("recovery-tests", () => {
 
   test("selective-recovery", async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
-    const wfe = (testRuntime as TestingRuntimeImpl).getWFE();
+    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 

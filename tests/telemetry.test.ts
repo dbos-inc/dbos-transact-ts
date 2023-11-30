@@ -54,9 +54,9 @@ describe("dbos-telemetry", () => {
   test("DBOS init works with all exporters", async () => {
     const dbosConfig = generateDBOSTestConfig();
     await setUpDBOSTestDb(dbosConfig);
-    const wfe = new DBOSExecutor(dbosConfig);
-    await wfe.init();
-    await wfe.destroy();
+    const dbosExec = new DBOSExecutor(dbosConfig);
+    await dbosExec.init();
+    await dbosExec.destroy();
   });
 
   test("collector handles errors gracefully", async () => {
@@ -65,24 +65,24 @@ describe("dbos-telemetry", () => {
       dbosConfig.telemetry.traces.enabled = true;
     }
     await setUpDBOSTestDb(dbosConfig);
-    const wfe = new DBOSExecutor(dbosConfig);
-    await wfe.init(TestClass);
+    const dbosExec = new DBOSExecutor(dbosConfig);
+    await dbosExec.init(TestClass);
 
-    const collector = wfe.telemetryCollector.exporters[0] as JaegerExporter;
+    const collector = dbosExec.telemetryCollector.exporters[0] as JaegerExporter;
     jest.spyOn(collector, "export").mockImplementation(() => {
       throw new Error("exporter crashed");
     });
     // "mute" console.error
     jest.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(wfe.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
+    await expect(dbosExec.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
 
-    await wfe.destroy();
+    await dbosExec.destroy();
   });
 
   /*
   describe("Postgres exporter", () => {
-    let wfe: DBOSExecutor;
+    let dbosExec: DBOSExecutor;
     let dbosConfig: DBOSConfig;
     let testRuntime: TestingRuntime;
 
@@ -91,9 +91,9 @@ describe("dbos-telemetry", () => {
       // This attempts to clear all our DBs, including the observability one
       await setUpDBOSTestDb(dbosConfig);
       testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
-      wfe = (testRuntime as TestingRuntimeImpl).getWFE();
-      expect(wfe.telemetryCollector.exporters.length).toBe(1);
-      expect(wfe.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
+      dbosExec = (testRuntime as TestingRuntimeImpl).getdbosExec();
+      expect(dbosExec.telemetryCollector.exporters.length).toBe(1);
+      expect(dbosExec.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
     });
 
     afterAll(async () => {
@@ -101,7 +101,7 @@ describe("dbos-telemetry", () => {
     });
 
     test("signal tables are correctly created", async () => {
-      const pgExporter = wfe.telemetryCollector.exporters[0] as PostgresExporter;
+      const pgExporter = dbosExec.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
       const stfQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`);
       const expectedStfColumns = [
@@ -188,9 +188,9 @@ describe("dbos-telemetry", () => {
       expect(JSON.parse(result)).toEqual({ current_user: username });
 
       // Exporter should export the log entries
-      await wfe.telemetryCollector.processAndExportSignals();
+      await dbosExec.telemetryCollector.processAndExportSignals();
 
-      const pgExporter = wfe.telemetryCollector.exporters[0] as PostgresExporter;
+      const pgExporter = dbosExec.telemetryCollector.exporters[0] as PostgresExporter;
       const pgExporterPgClient = pgExporter.pgClient;
 
       // Exporter should export traces

@@ -32,15 +32,15 @@ export class DBOSHttpServer {
 
   /**
    * Create a Koa app.
-   * @param wfe User pass in an DBOS workflow executor instance.
+   * @param dbosExec User pass in an DBOS workflow executor instance.
    * TODO: maybe call wfe.init() somewhere in this class?
    */
-  constructor(readonly wfe: DBOSExecutor, config: { koa?: Koa; router?: Router } = {}) {
+  constructor(readonly dbosExec: DBOSExecutor, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
       config.router = new Router();
     }
     this.router = config.router;
-    this.logger = wfe.logger;
+    this.logger = dbosExec.logger;
 
     if (!config.koa) {
       config.koa = new Koa();
@@ -53,8 +53,8 @@ export class DBOSHttpServer {
     this.app = config.koa;
 
     // Register HTTP endpoints.
-    DBOSHttpServer.registerRecoveryEndpoint(this.wfe, this.router);
-    DBOSHttpServer.registerDecoratedEndpoints(this.wfe, this.router);
+    DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.router);
+    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
   }
 

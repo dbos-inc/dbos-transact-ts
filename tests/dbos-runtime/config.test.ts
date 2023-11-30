@@ -111,8 +111,8 @@ describe("dbos-config", () => {
 
     test("getConfig returns the expected values", async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const wfe = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(wfe, undefined, "testUUID", {}, "testContext");
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
       // Config key exists
       expect(ctx.getConfig("payments_url")).toBe("http://somedomain.com/payment");
       // Config key does not exist, no default value
@@ -120,8 +120,8 @@ describe("dbos-config", () => {
       // Config key does not exist, default value
       expect(ctx.getConfig("no_key", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
-      clearInterval(wfe.flushBufferID);
-      await wfe.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
 
     test("getConfig returns the default value when no application config is provided", async () => {
@@ -137,22 +137,22 @@ describe("dbos-config", () => {
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const wfe = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(wfe, undefined, "testUUID", {}, "testContext");
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
       expect(ctx.getConfig<string>("payments_url", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
-      clearInterval(wfe.flushBufferID);
-      await wfe.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
 
     test("getConfig throws when it finds a value of different type than the default", async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const wfe = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(wfe, undefined, "testUUID", {}, "testContext");
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
       expect(() => ctx.getConfig<number>("payments_url", 1234)).toThrow(DBOSConfigKeyTypeError);
       // We didn't init, so do some manual cleanup only
-      clearInterval(wfe.flushBufferID);
-      await wfe.telemetryCollector.destroy();
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
     });
   });
 });

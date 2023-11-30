@@ -85,17 +85,17 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
-    const wfe = new DBOSExecutor(dbosConfig[0], systemDB);
-    await wfe.init(...userClasses);
-    this.#server = new DBOSHttpServer(wfe);
-    this.#applicationConfig = wfe.config.application;
+    const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
+    await dbosExec.init(...userClasses);
+    this.#server = new DBOSHttpServer(dbosExec);
+    this.#applicationConfig = dbosExec.config.application;
   }
 
   /**
    * Release resources after tests.
    */
   async destroy() {
-    await this.#server?.wfe.destroy();
+    await this.#server?.dbosExec.destroy();
   }
 
   /**
@@ -124,14 +124,14 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * to invoke workflows, transactions, and communicators;
    */
   invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
-    const wfe = this.getWFE();
+    const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
     const proxy: any = {};
 
     // Creates a context to pass in necessary info.
-    const span = wfe.tracer.startSpan("test");
-    const oc = new DBOSContextImpl("test", span, wfe.logger);
+    const span = dbosExec.tracer.startSpan("test");
+    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
@@ -141,13 +141,13 @@ export class TestingRuntimeImpl implements TestingRuntime {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
         : op.workflowConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => wfe.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+        ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
         : undefined;
     }
     return proxy as InvokeFuncs<T>;
@@ -164,37 +164,37 @@ export class TestingRuntimeImpl implements TestingRuntime {
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
-    return this.getWFE().send(destinationUUID, message, topic, idempotencyKey);
+    return this.getDBOSExec().send(destinationUUID, message, topic, idempotencyKey);
   }
 
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
-    return this.getWFE().getEvent(workflowUUID, key, timeoutSeconds);
+    return this.getDBOSExec().getEvent(workflowUUID, key, timeoutSeconds);
   }
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    return this.getWFE().retrieveWorkflow(workflowUUID);
+    return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.getWFE().userDatabase.query(sql, ...params);
+    return this.getDBOSExec().userDatabase.query(sql, ...params);
   }
 
   async createUserSchema(): Promise<void> {
-    return this.getWFE().userDatabase.createSchema();
+    return this.getDBOSExec().userDatabase.createSchema();
   }
 
   dropUserSchema(): Promise<void> {
-    return this.getWFE().userDatabase.dropSchema();
+    return this.getDBOSExec().userDatabase.dropSchema();
   }
 
   /**
    * For internal tests use only -- return the workflow executor object.
    */
-  getWFE(): DBOSExecutor {
+  getDBOSExec(): DBOSExecutor {
     if (!this.#server) {
       throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }
-    return this.#server.wfe;
+    return this.#server.dbosExec;
   }
 }
