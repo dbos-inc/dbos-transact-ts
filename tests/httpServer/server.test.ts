@@ -1,38 +1,38 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   GetApi,
-  OperonTransaction,
-  OperonWorkflow,
+  Transaction,
+  Workflow,
   MiddlewareContext,
   PostApi,
   RequiredRole,
   TransactionContext,
   WorkflowContext,
   StatusString,
-  OperonCommunicator,
+  Communicator,
   CommunicatorContext,
 } from "../../src";
-import { OperonWorkflowUUIDHeader } from "../../src/httpServer/server";
-import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { WorkflowUUIDHeader } from "../../src/httpServer/server";
+import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
 import { v1 as uuidv1 } from "uuid";
-import { OperonConfig } from "../../src/operon";
-import { OperonNotAuthorizedError, OperonResponseError } from "../../src/error";
+import { DBOSConfig } from "../../src/dbos-executor";
+import { DBOSNotAuthorizedError, DBOSResponseError } from "../../src/error";
 import { PoolClient } from "pg";
-import { OperonTestingRuntime, OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { IncomingMessage } from "http";
 
 describe("httpserver-tests", () => {
-  const testTableName = "operon_test_kv";
+  const testTableName = "dbos_test_kv";
 
-  let testRuntime: OperonTestingRuntime;
-  let config: OperonConfig;
+  let testRuntime: TestingRuntime;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -106,7 +106,7 @@ describe("httpserver-tests", () => {
   }
 
   test("response-error", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/operon-error");
+    const response = await request(testRuntime.getHandlersCallback()).get("/dbos-error");
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe("customize error");
     expect(response.body.message).toBe("customize error");
@@ -115,13 +115,13 @@ describe("httpserver-tests", () => {
   test("datavalidation-error", async () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/query");
     expect(response.statusCode).toBe(400);
-    expect(response.body.details.operonErrorCode).toBe(9);
+    expect(response.body.details.dbosErrorCode).toBe(9);
   });
 
-  test("operon-redirect", async () => {
+  test("dbos-redirect", async () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/redirect");
     expect(response.statusCode).toBe(302);
-    expect(response.headers.location).toBe("/redirect-operon");
+    expect(response.headers.location).toBe("/redirect-dbos");
   });
 
   test("not-authenticated", async () => {
@@ -146,12 +146,12 @@ describe("httpserver-tests", () => {
 
   test("test-workflowUUID-header", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "operon-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "dbos-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    await operon.flushWorkflowStatusBuffer();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    await dbosExec.flushWorkflowStatusBuffer();
 
     // Retrieve the workflow with UUID.
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
@@ -165,7 +165,7 @@ describe("httpserver-tests", () => {
 
   test("endpoint-handler-UUID", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(testRuntime.getHandlersCallback()).get("/handler/bob").set({ "operon-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).get("/handler/bob").set({ "dbos-workflowuuid": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
@@ -186,11 +186,11 @@ describe("httpserver-tests", () => {
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        const err = new OperonNotAuthorizedError("Not logged in.", 401);
+        const err = new DBOSNotAuthorizedError("Not logged in.", 401);
         throw err;
       } else {
         if (uid === "go_away") {
-          throw new OperonNotAuthorizedError("Go away.", 401);
+          throw new DBOSNotAuthorizedError("Go away.", 401);
         }
         return {
           authenticatedUser: uid,
@@ -225,7 +225,7 @@ describe("httpserver-tests", () => {
     @GetApi("/redirect")
     static async redirectUrl(ctx: HandlerContext) {
       const url = ctx.request.url || "bad url"; // Get the raw url from request.
-      ctx.koaContext.redirect(url + "-operon");
+      ctx.koaContext.redirect(url + "-dbos");
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -242,15 +242,15 @@ describe("httpserver-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    @GetApi("/operon-error")
-    @OperonTransaction()
-    static async operonErr(_ctx: TestTransactionContext) {
-      throw new OperonResponseError("customize error", 503);
+    @GetApi("/dbos-error")
+    @Transaction()
+    static async dbosErr(_ctx: TestTransactionContext) {
+      throw new DBOSResponseError("customize error", 503);
     }
 
     @GetApi("/handler/:name")
     static async testHandler(ctxt: HandlerContext, name: string) {
-      const workflowUUID = ctxt.koaContext.get(OperonWorkflowUUIDHeader);
+      const workflowUUID = ctxt.koaContext.get(WorkflowUUIDHeader);
       // Invoke a workflow using the given UUID.
       return ctxt
         .invoke(TestEndpoints, workflowUUID)
@@ -259,7 +259,7 @@ describe("httpserver-tests", () => {
     }
 
     @PostApi("/transaction/:name")
-    @OperonTransaction()
+    @Transaction()
     static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
@@ -267,20 +267,20 @@ describe("httpserver-tests", () => {
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/communicator/:input")
-    @OperonCommunicator()
+    @Communicator()
     static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
       return input;
     }
 
     @PostApi("/workflow")
-    @OperonWorkflow()
+    @Workflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
       const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
       return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
     }
 
     @PostApi("/error")
-    @OperonWorkflow()
+    @Workflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
       // This workflow should encounter duplicate primary key error.
       let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
@@ -293,13 +293,13 @@ describe("httpserver-tests", () => {
     @RequiredRole(["user"])
     static async testAuth(ctxt: HandlerContext, name: string) {
       if (ctxt.authenticatedUser !== "a_real_user") {
-        throw new OperonResponseError("uid not a real user!", 400);
+        throw new DBOSResponseError("uid not a real user!", 400);
       }
       if (!ctxt.authenticatedRoles.includes("user")) {
-        throw new OperonResponseError("roles don't include user!", 400);
+        throw new DBOSResponseError("roles don't include user!", 400);
       }
       if (ctxt.assumedRole !== "user") {
-        throw new OperonResponseError("Should never happen! Not assumed to be user", 400);
+        throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
       }
       return `Please say hello to ${name}`;
     }

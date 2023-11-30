@@ -3,7 +3,7 @@ import fs from "fs";
 import YAML from "yaml";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
-import { ConfigFile, loadConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
+import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
 
 export async function configureApp(host: string, port: string, dbName: string) {
     const logger = createGlobalLogger();
@@ -36,9 +36,9 @@ export async function configureApp(host: string, port: string, dbName: string) {
     }
 
     // read the yaml file
-    const configFile: ConfigFile | undefined = loadConfigFile(operonConfigFilePath);
+    const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
-      logger.error(`failed to parse ${operonConfigFilePath}`);
+      logger.error(`failed to parse ${dbosConfigFilePath}`);
       return;
     }
 
@@ -48,9 +48,9 @@ export async function configureApp(host: string, port: string, dbName: string) {
 
     // save the file
     try {
-      fs.writeFileSync(`${operonConfigFilePath}`, YAML.stringify(configFile));
+      fs.writeFileSync(`${dbosConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
-      logger.error(`failed to write ${operonConfigFilePath}: ${(e as Error).message}`);
+      logger.error(`failed to write ${dbosConfigFilePath}: ${(e as Error).message}`);
       return;
     }
 

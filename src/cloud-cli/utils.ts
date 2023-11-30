@@ -1,8 +1,8 @@
-import { OperonCloudCredentials, operonEnvPath } from "./login";
+import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import fs from "fs";
 
-export function getCloudCredentials(): OperonCloudCredentials {
-  const userCredentials = JSON.parse(fs.readFileSync(`./${operonEnvPath}/credentials`).toString("utf-8")) as OperonCloudCredentials;
+export function getCloudCredentials(): DBOSCloudCredentials {
+  const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
   return {
     userName: userCredentials.userName,
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
@@ -10,5 +10,5 @@ export function getCloudCredentials(): OperonCloudCredentials {
 }
 
 export function credentialsExist(): boolean {
-  return fs.existsSync(`./${operonEnvPath}/credentials`);
+  return fs.existsSync(`./${dbosEnvPath}/credentials`);
 }

@@ -1,18 +1,18 @@
-import { WorkflowContext, OperonWorkflow, OperonTestingRuntime } from "../../src/";
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
-import { OperonConfig } from "../../src/operon";
-import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { WorkflowContext, Workflow, TestingRuntime } from "../../src/";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
+import { DBOSConfig } from "../../src/dbos-executor";
+import { TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import request from "supertest";
-import { OperonWorkflowRecoveryUrl } from "../../src/httpServer/server";
+import { WorkflowRecoveryUrl } from "../../src/httpServer/server";
 import { createInternalTestFDB } from "./fdb_helpers";
 
 describe("foundationdb-recovery", () => {
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -40,7 +40,7 @@ describe("foundationdb-recovery", () => {
 
     static cnt = 0;
 
-    @OperonWorkflow()
+    @Workflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
       if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
         LocalRecovery.cnt += input;
@@ -58,12 +58,12 @@ describe("foundationdb-recovery", () => {
 
   test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    // This test simulates a "local" environment because the request parameter does not have an operon-executor-id header.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    // This test simulates a "local" environment because the request parameter does not have an dbos-executor-id header.
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
-    const recoverHandles = await operon.recoverPendingWorkflows();
+    const recoverHandles = await dbosExec.recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 
@@ -95,14 +95,14 @@ describe("foundationdb-recovery", () => {
     static localCnt = 0;
     static executorCnt = 0;
 
-    @OperonWorkflow()
+    @Workflow()
     static async localWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.localCnt += input;
       await ExecutorRecovery.localPromise;
       return ctxt.authenticatedUser;
     }
 
-    @OperonWorkflow()
+    @Workflow()
     static async executorWorkflow(ctxt: WorkflowContext, input: number) {
       ExecutorRecovery.executorCnt += input;
 
@@ -118,13 +118,13 @@ describe("foundationdb-recovery", () => {
 
   test("selective-recovery", async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executor-id": "fcvm123" } } }).executorWorkflow(5);
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
-    const recoverHandles = await operon.recoverPendingWorkflows(["fcvm123"]);
+    const recoverHandles = await dbosExec.recoverPendingWorkflows(["fcvm123"]);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
     ExecutorRecovery.localResolve();
@@ -149,10 +149,10 @@ describe("foundationdb-recovery", () => {
       ExecutorRecovery.resolve2 = resolve;
     });
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "operon-executor-id": "fcvm123" } } }).executorWorkflow(5);
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
     const response = await request(testRuntime.getHandlersCallback())
-      .post(OperonWorkflowRecoveryUrl)
+      .post(WorkflowRecoveryUrl)
       .send(["fcvm123"]);
     expect(response.statusCode).toBe(200);
     expect(response.body).toStrictEqual([execHandle.getWorkflowUUID()]);

@@ -1,14 +1,14 @@
-import { OperonMethodRegistrationBase, ArgRequiredOptions } from "./decorators";
-import { OperonContextImpl } from "./context";
-import { OperonDataValidationError } from "./error";
+import { MethodRegistrationBase, ArgRequiredOptions } from "./decorators";
+import { DBOSContextImpl } from "./context";
+import { DBOSDataValidationError } from "./error";
 
-export function validateOperonMethodArgs<Args extends unknown[]>(methReg: OperonMethodRegistrationBase, args: Args)
+export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args)
 {
-    let opCtx : OperonContextImpl | undefined = undefined;
+    let opCtx : DBOSContextImpl | undefined = undefined;
 
     const validationError = (msg:string) => {
-        const err = new OperonDataValidationError(msg);
-        opCtx?.span.addEvent("OperonDataValidationError", { message: err.message });
+        const err = new DBOSDataValidationError(msg);
+        opCtx?.span.addEvent("DataValidationError", { message: err.message });
         return err;
     }
 
@@ -17,7 +17,7 @@ export function validateOperonMethodArgs<Args extends unknown[]>(methReg: Operon
         if (idx === 0)
         {
           // Context, may find a more robust way.
-          opCtx = args[idx] as OperonContextImpl;
+          opCtx = args[idx] as DBOSContextImpl;
           return;
         }
 

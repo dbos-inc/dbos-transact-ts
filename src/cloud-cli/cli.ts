@@ -31,8 +31,8 @@ program.
 
 program
   .command('login')
-  .description('Log in to Operon cloud')
-  .requiredOption('-u, --username <string>', 'User name')
+  .description('Log in to DBOS cloud')
+  .requiredOption('-u, --username <string>', 'Username')
   .action(async (options: { username: string }) => {
     const exitCode = await login(options.username);
     process.exit(exitCode)
@@ -40,8 +40,8 @@ program
 
 program
   .command('register')
-  .description('Register a user and log in Operon cloud')
-  .requiredOption('-u, --username <string>', 'User name')
+  .description('Register a user and log in to DBOS cloud')
+  .requiredOption('-u, --username <string>', 'Username')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
   .action(async (options: { username: string, host: string, port: string }) => {

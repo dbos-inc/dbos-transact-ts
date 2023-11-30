@@ -1,23 +1,23 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, OperonCommunicator, OperonTestingRuntime, OperonTransaction, OperonWorkflow, TransactionContext, WorkflowContext } from "../src";
-import { OperonConfig } from "../src/operon";
-import { TestKvTable, generateOperonTestConfig, setupOperonTestDb } from "./helpers";
+import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
+import { DBOSConfig } from "../src/dbos-executor";
+import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
-import { OperonTestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
-const testTableName = "operon_test_kv";
+const testTableName = "dbos_test_kv";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe("oaoo-tests", () => {
   let username: string;
-  let config: OperonConfig;
-  let testRuntime: OperonTestingRuntime;
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
+    config = generateDBOSTestConfig();
     username = config.poolConfig.user || "postgres";
-    await setupOperonTestDb(config);
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -40,12 +40,12 @@ describe("oaoo-tests", () => {
       return CommunicatorOAOO.#counter;
     }
     // eslint-disable-next-line @typescript-eslint/require-await
-    @OperonCommunicator()
+    @Communicator()
     static async testCommunicator(_commCtxt: CommunicatorContext) {
       return CommunicatorOAOO.#counter++;
     }
   
-    @OperonWorkflow()
+    @Workflow()
     static async testCommWorkflow(workflowCtxt: WorkflowContext) {
       const funcResult = await workflowCtxt.invoke(CommunicatorOAOO).testCommunicator();
       return funcResult ?? -1;
@@ -79,14 +79,14 @@ describe("oaoo-tests", () => {
    * Workflow OAOO tests.
    */
   class WorkflowOAOO {
-    @OperonTransaction()
+    @Transaction()
     static async testInsertTx(txnCtxt: TestTransactionContext, name: string) {
       expect(txnCtxt.getConfig<number>("counter")).toBe(3);
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return Number(rows[0].id);
     }
   
-    @OperonTransaction({ readOnly: true })
+    @Transaction({ readOnly: true })
     static async testReadTx(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
@@ -97,7 +97,7 @@ describe("oaoo-tests", () => {
       }
     }
   
-    @OperonWorkflow()
+    @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(wfCtxt.getConfig<number>("counter")).toBe(3);
@@ -107,7 +107,7 @@ describe("oaoo-tests", () => {
     }
   
     // eslint-disable-next-line @typescript-eslint/require-await
-    @OperonWorkflow()
+    @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
       return wfCtxt.childWorkflow(WorkflowOAOO.testTxWorkflow, name).then((x) => x.getResult());
     }
@@ -139,8 +139,8 @@ describe("oaoo-tests", () => {
   });
 
   test("nested-workflow-oaoo", async () => {
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
+    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    clearInterval(wfe.flushBufferID); // Don't flush the output buffer.
 
     const workflowUUID = uuidv1();
     await expect(
@@ -157,7 +157,7 @@ describe("oaoo-tests", () => {
     ).resolves.toBe(1);
 
     // Retrieve output of the child workflow.
-    await operon.flushWorkflowStatusBuffer();
+    await wfe.flushWorkflowStatusBuffer();
     const retrievedHandle = testRuntime.retrieveWorkflow(workflowUUID + "-0");
     await expect(retrievedHandle.getResult()).resolves.toBe(1);
   });
@@ -166,7 +166,7 @@ describe("oaoo-tests", () => {
    * Workflow notification OAOO tests.
    */
   class NotificationOAOO {
-    @OperonWorkflow()
+    @Workflow()
     static async receiveOaooWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
       // This returns true if and only if exactly one message is sent to it.
       const succeeds = await ctxt.recv<number>(topic, timeout);
@@ -197,14 +197,14 @@ describe("oaoo-tests", () => {
   class EventStatusOAOO {
     static wfCnt: number = 0;
 
-    @OperonWorkflow()
+    @Workflow()
     static async setEventWorkflow(ctxt: WorkflowContext) {
       await ctxt.setEvent("key1", "value1");
       await ctxt.setEvent("key2", "value2");
       return 0;
     }
 
-    @OperonWorkflow()
+    @Workflow()
     static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
       let res = "";
       const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
@@ -235,8 +235,8 @@ describe("oaoo-tests", () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const operon = (testRuntime as OperonTestingRuntimeImpl).getOperon();
-    clearInterval(operon.flushBufferID); // Don't flush the output buffer.
+    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    clearInterval(wfe.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
     const setUUID = getUUID + "-2";

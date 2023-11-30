@@ -4,7 +4,7 @@ import axios from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import fs from "fs";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
@@ -34,7 +34,7 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
     // Axios will throw an exception if the return status is 500
     // Trying and catching is the only way to debug issues in this test
     try {
-      const response = await axios.get(`http://127.0.0.1:${port}/greeting/operon`);
+      const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
     } catch (error) {
       console.error(error);
@@ -49,9 +49,9 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
 }
 
 async function dropHelloSystemDB() {
-  const config = generateOperonTestConfig();
+  const config = generateDBOSTestConfig();
   config.poolConfig.database = "hello";
-  await setupOperonTestDb(config);
+  await setUpDBOSTestDb(config);
   const pgSystemClient = new Client({
     user: config.poolConfig.user,
     port: config.poolConfig.port,
@@ -85,14 +85,14 @@ describe("runtime-entrypoint-tests", () => {
   });
 
   test("runtime-hello using entrypoint CLI option", async () => {
-    const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start", "--port", "1234", "--entrypoint", "dist/entrypoint.js"], {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "--entrypoint", "dist/entrypoint.js"], {
       env: process.env,
     });
     await waitForMessageTest(command, "1234");
   });
 
   test("runtime-hello using entrypoint runtimeConfig", async () => {
-    const mockOperonConfigYamlString = `
+    const mockDBOSConfigYamlString = `
 database:
   hostname: 'localhost'
   port: 5432
@@ -105,12 +105,12 @@ database:
 runtimeConfig:
   entrypoint: dist/entrypoint.js
 `;
-    const filePath = "operon-config.yaml";
+    const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
-    fs.writeFileSync(filePath, mockOperonConfigYamlString, "utf-8");
+    fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
 
     try {
-      const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start", "--port", "1234"], {
+      const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234"], {
         env: process.env,
       });
       await waitForMessageTest(command, "1234");
@@ -137,23 +137,23 @@ describe("runtime-tests", () => {
     execSync("npm run test", { env: process.env });  // Make sure the hello example passes its own tests.
   });
 
-  // Attention! this test relies on example/hello/operon-config.yaml not declaring a port!
+  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("runtime-hello using default runtime configuration", async () => {
-    const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start"], {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
     });
     await waitForMessageTest(command, "3000");
   });
 
   test("runtime hello with port provided as CLI parameter", async () => {
-    const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start", "--port", "1234"], {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234"], {
       env: process.env,
     });
     await waitForMessageTest(command, "1234");
   });
 
   test("runtime hello with port provided in configuration file", async () => {
-    const mockOperonConfigYamlString = `
+    const mockDBOSConfigYamlString = `
 database:
   hostname: 'localhost'
   port: 5432
@@ -166,12 +166,12 @@ database:
 runtimeConfig:
   port: 6666
 `;
-    const filePath = "operon-config.yaml";
+    const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
-    fs.writeFileSync(filePath, mockOperonConfigYamlString, "utf-8");
+    fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
 
     try {
-      const command = spawn("node_modules/@dbos-inc/operon/dist/src/operon-runtime/cli.js", ["start"], {
+      const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
         env: process.env,
       });
       await waitForMessageTest(command, "6666");

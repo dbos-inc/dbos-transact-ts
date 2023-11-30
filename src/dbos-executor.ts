@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  OperonError,
-  OperonInitializationError,
-  OperonWorkflowConflictUUIDError,
-  OperonNotRegisteredError,
+  DBOSError,
+  DBOSInitializationError,
+  DBOSWorkflowConflictUUIDError,
+  DBOSNotRegisteredError,
 } from './error';
 import {
   InvokedHandle,
-  OperonWorkflow,
+  Workflow,
   WorkflowConfig,
   WorkflowContext,
   WorkflowHandle,
@@ -17,8 +17,8 @@ import {
   WorkflowStatus,
 } from './workflow';
 
-import { OperonTransaction, TransactionConfig } from './transaction';
-import { CommunicatorConfig, OperonCommunicator } from './communicator';
+import { Transaction, TransactionConfig } from './transaction';
+import { CommunicatorConfig, Communicator } from './communicator';
 import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
@@ -35,17 +35,17 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { OperonMethodRegistrationBase, getRegisteredOperations, getOrCreateOperonClassRegistration, OperonMethodRegistration } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { OperonContextImpl, InitContext } from './context';
-import { OperonHandlerRegistration } from './httpServer/handler';
+import { DBOSContextImpl, InitContext } from './context';
+import { HandlerRegistration } from './httpServer/handler';
 
-export interface OperonNull { }
-export const operonNull: OperonNull = {};
+export interface DBOSNull { }
+export const dbosNull: DBOSNull = {};
 
-/* Interface for Operon configuration */
-export interface OperonConfig {
+/* Interface for DBOS configuration */
+export interface DBOSConfig {
   readonly poolConfig: PoolConfig;
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
@@ -56,19 +56,19 @@ export interface OperonConfig {
 }
 
 interface WorkflowInfo<T extends any[], R> {
-  workflow: OperonWorkflow<T, R>;
+  workflow: Workflow<T, R>;
   config: WorkflowConfig;
 }
 
-export class Operon {
+export class DBOSExecutor {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
   readonly systemDatabase: SystemDatabase;
 
-  // Temporary workflows are created by calling transaction/send/recv directly from the Operon class
-  readonly tempWorkflowName = "operon_temp_workflow";
+  // Temporary workflows are created by calling transaction/send/recv directly from the executor class
+  readonly tempWorkflowName = "temp_workflow";
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
     // We initialize the map with an entry for temporary workflows.
@@ -84,7 +84,7 @@ export class Operon {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
-  readonly registeredOperations: Array<OperonMethodRegistrationBase> = [];
+  readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly initialEpochTimeMs: number;
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
 
@@ -99,8 +99,8 @@ export class Operon {
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = []
 
-  /* OPERON LIFE CYCLE MANAGEMENT */
-  constructor(readonly config: OperonConfig, systemDatabase?: SystemDatabase) {
+  /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
+  constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
     if (systemDatabase) {
@@ -180,15 +180,15 @@ export class Operon {
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
-        const wf = ro.registeredFunction as OperonWorkflow<any, any>;
+        const wf = ro.registeredFunction as Workflow<any, any>;
         this.#registerWorkflow(wf, ro.workflowConfig);
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
-        const tx = ro.registeredFunction as OperonTransaction<any, any>;
+        const tx = ro.registeredFunction as Transaction<any, any>;
         this.#registerTransaction(tx, ro.txnConfig);
         this.logger.debug(`Registered transaction ${ro.name}`);
       } else if (ro.commConfig) {
-        const comm = ro.registeredFunction as OperonCommunicator<any, any>;
+        const comm = ro.registeredFunction as Communicator<any, any>;
         this.#registerCommunicator(comm, ro.commConfig);
         this.logger.debug(`Registered communicator ${ro.name}`);
       }
@@ -197,14 +197,14 @@ export class Operon {
 
   async init(...classes: object[]): Promise<void> {
     if (this.initialized) {
-      this.logger.error("Operon already initialized!");
+      this.logger.error("Workflow executor already initialized!");
       return;
     }
 
     try {
       type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
-        const reg = getOrCreateOperonClassRegistration(cls as AnyConstructor);
+        const reg = getOrCreateClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0) {
           this.entities = this.entities.concat(reg.ormEntities)
           this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
@@ -215,7 +215,7 @@ export class Operon {
 
       if (!this.userDatabase) {
         this.logger.error("No user database configured!");
-        throw new OperonInitializationError("No user database configured!");
+        throw new DBOSInitializationError("No user database configured!");
       }
 
       for (const cls of classes) {
@@ -227,15 +227,15 @@ export class Operon {
       await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof Error) {
-        this.logger.error(`failed to initialize Operon: ${err.message}`, err, err.stack);
-        throw new OperonInitializationError(err.message);
+        this.logger.error(`failed to initialize workflow executor: ${err.message}`, err, err.stack);
+        throw new DBOSInitializationError(err.message);
       }
     }
     await this.recoverPendingWorkflows();
     this.initialized = true;
 
     for (const v of this.registeredOperations) {
-      const m = v as OperonMethodRegistration<unknown, unknown[], unknown> ;
+      const m = v as MethodRegistration<unknown, unknown[], unknown> ;
       if (m.init === true) {
         this.logger.debug("Executing init method: " + m.name);
         await m.origFunction(new InitContext(this));
@@ -243,7 +243,7 @@ export class Operon {
 
     }
 
-    this.logger.info("Operon initialized");
+    this.logger.info("Workflow executor initialized");
   }
 
   async destroy() {
@@ -260,9 +260,9 @@ export class Operon {
 
   /* WORKFLOW OPERATIONS */
 
-  #registerWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, config: WorkflowConfig = {}) {
+  #registerWorkflow<T extends any[], R>(wf: Workflow<T, R>, config: WorkflowConfig = {}) {
     if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
-      throw new OperonError(`Repeated workflow name: ${wf.name}`);
+      throw new DBOSError(`Repeated workflow name: ${wf.name}`);
     }
     const workflowInfo: WorkflowInfo<T, R> = {
       workflow: wf,
@@ -271,31 +271,31 @@ export class Operon {
     this.workflowInfoMap.set(wf.name, workflowInfo);
   }
 
-  #registerTransaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: TransactionConfig = {}) {
+  #registerTransaction<T extends any[], R>(txn: Transaction<T, R>, params: TransactionConfig = {}) {
     if (this.transactionConfigMap.has(txn.name)) {
-      throw new OperonError(`Repeated Transaction name: ${txn.name}`);
+      throw new DBOSError(`Repeated Transaction name: ${txn.name}`);
     }
     this.transactionConfigMap.set(txn.name, params);
   }
 
-  #registerCommunicator<T extends any[], R>(comm: OperonCommunicator<T, R>, params: CommunicatorConfig = {}) {
+  #registerCommunicator<T extends any[], R>(comm: Communicator<T, R>, params: CommunicatorConfig = {}) {
     if (this.communicatorConfigMap.has(comm.name)) {
-      throw new OperonError(`Repeated Commmunicator name: ${comm.name}`);
+      throw new DBOSError(`Repeated Commmunicator name: ${comm.name}`);
     }
     this.communicatorConfigMap.set(comm.name, params);
   }
 
-  async workflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
-  async internalWorkflow<T extends any[], R>(wf: OperonWorkflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+  async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
-      throw new OperonNotRegisteredError(wf.name);
+      throw new DBOSNotRegisteredError(wf.name);
     }
     const wConfig = wInfo.config;
 
@@ -309,7 +309,7 @@ export class Operon {
     const runWorkflow = async () => {
       // Check if the workflow previously ran.
       const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
-      if (previousOutput !== operonNull) {
+      if (previousOutput !== dbosNull) {
         wCtxt.span.setAttribute("cached", true);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         this.tracer.endSpan(wCtxt.span);
@@ -322,7 +322,7 @@ export class Operon {
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
-        if (err instanceof OperonWorkflowConflictUUIDError) {
+        if (err instanceof DBOSWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
           result = await retrievedHandle.getResult();
@@ -359,37 +359,37 @@ export class Operon {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
-  async transaction<T extends any[], R>(txn: OperonTransaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.transaction(txn, ...args);
     };
-    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
+    return (await this.workflow(temp_workflow, params, ...args)).getResult();
   }
 
-  async external<T extends any[], R>(commFn: OperonCommunicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.external(commFn, ...args);
     };
-    return (await this.workflow(operon_temp_workflow, params, ...args)).getResult();
+    return (await this.workflow(temp_workflow, params, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const operon_temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
+    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
-    return (await this.workflow(operon_temp_workflow, { workflowUUID: workflowUUID }, destinationUUID, message, topic)).getResult();
+    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID }, destinationUUID, message, topic)).getResult();
   }
 
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -406,7 +406,7 @@ export class Operon {
   }
 
   /**
-   * A recovery process that by default runs during Operon init time.
+   * A recovery process that by default runs during executor init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
@@ -438,12 +438,12 @@ export class Operon {
     return handlerArray;
   }
 
-  #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): OperonContextImpl {
+  #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
     const span = this.tracer.startSpan(status.workflowName);
     span.setAttributes({
       operationName: status.workflowName,
     });
-    const oc = new OperonContextImpl(status.workflowName, span, this.logger);
+    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
@@ -465,7 +465,7 @@ export class Operon {
   logRegisteredHTTPUrls() {
     this.logger.info("HTTP endpoints supported:");
     this.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as OperonHandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
         const roles = ro.getRequiredRoles();

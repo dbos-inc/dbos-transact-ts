@@ -1,4 +1,4 @@
-name: Test Operon
+name: Test DBOS
 
 on:
   workflow_call:

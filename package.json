@@ -1,18 +1,18 @@
 {
-  "name": "@dbos-inc/operon",
+  "name": "@dbos-inc/dbos-sdk",
   "version": "0.0.0-placeholder",
   "description": "A Typescript framework built on the database",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbos-inc/operon"
+    "url": "https://github.com/dbos-inc/dbos-ts"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
-    "build": "tsc --project tsconfig.build.json && chmod +x ./dist/src/operon-runtime/cli.js",
-    "build-fdb": "tsc --project tsconfig.build-fdb.json && chmod +x ./dist/src/operon-runtime/cli.js",
+    "build": "tsc --project tsconfig.build.json && chmod +x ./dist/src/dbos-runtime/cli.js",
+    "build-fdb": "tsc --project tsconfig.build-fdb.json && chmod +x ./dist/src/dbos-runtime/cli.js",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
     "setversion": "grunt setversion",
@@ -20,8 +20,8 @@
     "test-fdb": "npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
   },
   "bin": {
-    "operon": "./dist/src/operon-runtime/cli.js",
-    "operon-cloud": "./dist/src/cloud-cli/cli.js"
+    "dbos-sdk": "./dist/src/dbos-runtime/cli.js",
+    "dbos-cloud": "./dist/src/cloud-cli/cli.js"
   },
   "devDependencies": {
     "@prisma/client": "^5.3.1",

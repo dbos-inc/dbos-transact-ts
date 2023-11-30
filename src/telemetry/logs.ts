@@ -1,6 +1,6 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
-import { getApplicationVersion } from "../operon-runtime/applicationVersion";
-import { OperonContext } from "../context";
+import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
+import { DBOSContext } from "../context";
 
 export interface LoggerConfig {
   logLevel?: string;
@@ -14,12 +14,12 @@ export interface WinstonLogger extends IWinstonLogger {
 }
 
 /* This is a wrapper around a global Winston logger. It holds a reference to the global logger.
- * This class is expected to be instantiated by new OperonContext such that they can share context information.
+ * This class is expected to be instantiated by new DBOSContext such that they can share context information.
  **/
 export class Logger {
   // Eventually this object will implement one of our TelemetrySignal interface
   readonly metadata: object = {};
-  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: OperonContext) {
+  constructor(private readonly globalLogger: WinstonLogger, private readonly ctx: DBOSContext) {
     if (this.globalLogger.addContextMetadata) {
       this.metadata = {
         workflowUUID: this.ctx.workflowUUID,

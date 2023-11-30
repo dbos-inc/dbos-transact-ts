@@ -1,20 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, OperonTestingRuntime, OperonWorkflow } from "../../src";
-import { generateOperonTestConfig, setupOperonTestDb } from "../helpers";
+import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, TestingRuntime, Workflow } from "../../src";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
-import { OperonConfig } from "../../src/operon";
+import { DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContext } from "../../src";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 describe("httpserver-datavalidation-tests", () => {
-  let testRuntime: OperonTestingRuntime;
-  let config: OperonConfig;
+  let testRuntime: TestingRuntime;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateOperonTestConfig();
-    await setupOperonTestDb(config);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
     testRuntime = await createInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
   });
 
@@ -571,7 +571,7 @@ describe("httpserver-datavalidation-tests", () => {
     }
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    @OperonWorkflow()
+    @Workflow()
     static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
     {
       return {message: v};

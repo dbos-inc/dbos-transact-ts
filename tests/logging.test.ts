@@ -7,13 +7,13 @@ import {
 } from "../src/decorators";
 
 import {
-  OperonContextImpl
+  DBOSContextImpl
 }
 from "../src/context"
 
 class TestFunctions {
   static foo(
-    _ctx: OperonContextImpl,
+    _ctx: DBOSContextImpl,
     @LogMask(LogMasks.HASH) arg1: string,
     /*@ArgDate()*/ arg2: Date,
     @SkipLogging arg3: boolean,
@@ -45,13 +45,13 @@ function quoteSqlString(value: string): string {
 }
 
 // FIXME: this test relies on manually reading the console log and the code doesn't check for correctness.
-describe("operon-logging", () => {
+describe("dbos-logging", () => {
   test("Decorators", async () => {
     const ops = getRegisteredOperations(TestFunctions);
     ops.forEach((m) => {
       // This is not how you build SQL obviously.  It is up to the collector to do it, schema evolution, etc.
       let cts = `CREATE PGTABLEISH ${quoteSqlIdentifier(
-        "operon_log_" + m.name
+        "dbos_log_" + m.name
       )} (\n`;
       // Method-specific fields
       m.args.forEach((element) => {
@@ -76,7 +76,7 @@ describe("operon-logging", () => {
       console.log(cts);
     });
 
-    await TestFunctions.foo(null as unknown as OperonContextImpl, "a", new Date(), false, 4);
+    await TestFunctions.foo(null as unknown as DBOSContextImpl, "a", new Date(), false, 4);
   });
 });
 

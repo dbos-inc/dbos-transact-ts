@@ -1,10 +1,10 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { WinstonLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
-import { OperonContext, OperonContextImpl } from "./context";
+import { DBOSContext, DBOSContextImpl } from "./context";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export type OperonCommunicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
+export type Communicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
 export interface CommunicatorConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)
@@ -13,13 +13,13 @@ export interface CommunicatorConfig {
   backoffRate?: number; // The multiplier by which the retry interval increases after every retry attempt (default 2).
 }
 
-export interface CommunicatorContext extends OperonContext {
+export interface CommunicatorContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
 }
 
-export class CommunicatorContextImpl extends OperonContextImpl implements CommunicatorContext
+export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext
 {
   readonly functionID: number;
   readonly retriesAllowed: boolean;

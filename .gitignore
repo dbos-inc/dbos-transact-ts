@@ -1,4 +1,4 @@
-.operon/
+.dbos/
 # Logs
 logs
 *.log

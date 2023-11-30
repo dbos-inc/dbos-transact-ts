@@ -5,9 +5,9 @@ import fs from "fs";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync } from "../../utils";
-import { ConfigFile, loadConfigFile, operonConfigFilePath } from "../../operon-runtime/config";
+import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
 
-const deployDirectoryName = "operon_deploy";
+const deployDirectoryName = "dbos_deploy";
 
 export async function deployAppCode(appName: string, host: string, port: string): Promise<number> {
   const logger = createGlobalLogger();
@@ -17,9 +17,9 @@ export async function deployAppCode(appName: string, host: string, port: string)
   try {
     createDirectory(deployDirectoryName);
 
-    const configFile: ConfigFile | undefined = loadConfigFile(operonConfigFilePath);
+    const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
-      logger.error(`failed to parse ${operonConfigFilePath}`);
+      logger.error(`failed to parse ${dbosConfigFilePath}`);
       return 1;
     }
 
@@ -28,14 +28,14 @@ export async function deployAppCode(appName: string, host: string, port: string)
     configFile.version = version;
 
     try {
-      fs.writeFileSync(`${deployDirectoryName}/${operonConfigFilePath}`, YAML.stringify(configFile));
+      fs.writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
-      logger.error(`failed to write ${operonConfigFilePath}: ${(e as Error).message}`);
+      logger.error(`failed to write ${dbosConfigFilePath}: ${(e as Error).message}`);
       return 1;
     }
 
-    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${operonConfigFilePath} > /dev/null`);
-    execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${operonConfigFilePath} > /dev/null`);
+    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${dbosConfigFilePath} > /dev/null`);
+    execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
     await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`,

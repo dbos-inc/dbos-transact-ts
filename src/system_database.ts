@@ -1,22 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from "serialize-error";
-import { Operon, operonNull, OperonNull } from "./operon";
+import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { OperonDuplicateWorkflowEventError, OperonWorkflowConflictUUIDError } from "./error";
+import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 import { HTTPRequest } from "./context";
 import { Logger } from "winston";
 
-export const OperonExecutorIDHeader = "operon-executor-id";
+export const DBOSExecutorIDHeader = "dbos-executor-id";
 
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
-  checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R>;
+  checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
   initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T>;
   bufferWorkflowOutput<R>(workflowUUID: string, output: R): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
@@ -25,7 +25,7 @@ export interface SystemDatabase {
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
-  checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R>;
+  checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
@@ -60,9 +60,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`);
     if (dbExists.rows.length === 0) {
-      // Create the Operon system database.
+      // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
-      // Load the Operon system schemas.
+      // Load the DBOS system schemas.
       await this.pool.query(systemDBSchema);
     }
     await this.listenForNotifications();
@@ -77,10 +77,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  async checkWorkflowOutput<R>(workflowUUID: string): Promise<OperonNull | R> {
+  async checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R> {
     const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
     if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
-      return operonNull;
+      return dbosNull;
     } else if (rows[0].status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(rows[0].error));
     } else {
@@ -90,8 +90,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(workflowUUID: string, name: string, authenticatedUser: string, assumedRole: string, authenticatedRoles: string[], request: HTTPRequest | null, args: T): Promise<T> {
     let executorID: string = "local"
-    if (request && request.headers && request.headers[OperonExecutorIDHeader]) {
-      executorID = request.headers[OperonExecutorIDHeader] as string
+    if (request && request.headers && request.headers[DBOSExecutorIDHeader]) {
+      executorID = request.headers[DBOSExecutorIDHeader] as string
     }
     await this.pool.query(
       `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,
@@ -166,10 +166,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return JSON.parse(rows[0].inputs) as T;
   }
 
-  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<OperonNull | R> {
+  async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R> {
     const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
     if (rows.length === 0) {
-      return operonNull;
+      return dbosNull;
     } else if (JSON.parse(rows[0].error) !== null) {
       throw deserializeError(JSON.parse(rows[0].error));
     } else {
@@ -185,7 +185,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
@@ -200,7 +200,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
@@ -219,7 +219,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
-        throw new OperonWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
       } else {
         throw err;
       }
@@ -248,7 +248,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = Operon.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
@@ -325,7 +325,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       await client.query("ROLLBACK");
       client.release();
-      throw new OperonDuplicateWorkflowEventError(workflowUUID, key);
+      throw new DuplicateWorkflowEventError(workflowUUID, key);
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
@@ -434,10 +434,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async listenForNotifications() {
     this.notificationsClient = await this.pool.connect();
-    await this.notificationsClient.query("LISTEN operon_notifications_channel;");
-    await this.notificationsClient.query("LISTEN operon_workflow_events_channel;");
+    await this.notificationsClient.query("LISTEN dbos_notifications_channel;");
+    await this.notificationsClient.query("LISTEN dbos_workflow_events_channel;");
     const handler = (msg: Notification) => {
-      if (msg.channel === 'operon_notifications_channel') {
+      if (msg.channel === 'dbos_notifications_channel') {
         if (msg.payload && msg.payload in this.notificationsMap) {
           this.notificationsMap[msg.payload]();
         }
