@@ -1,6 +1,6 @@
 import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
-import { DBOSWFE, DBOSConfig } from "../src/dbos-executor";
+import { DBOSExecutor, DBOSConfig } from "../src/dbos-executor";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSTransaction, DBOSWorkflow, RequiredRole } from "../src/decorators";
 import request from "supertest";
@@ -54,7 +54,7 @@ describe("dbos-telemetry", () => {
   test("DBOS init works with all exporters", async () => {
     const dbosConfig = generateDBOSTestConfig();
     await setUpDBOSTestDb(dbosConfig);
-    const wfe = new DBOSWFE(dbosConfig);
+    const wfe = new DBOSExecutor(dbosConfig);
     await wfe.init();
     await wfe.destroy();
   });
@@ -65,7 +65,7 @@ describe("dbos-telemetry", () => {
       dbosConfig.telemetry.traces.enabled = true;
     }
     await setUpDBOSTestDb(dbosConfig);
-    const wfe = new DBOSWFE(dbosConfig);
+    const wfe = new DBOSExecutor(dbosConfig);
     await wfe.init(TestClass);
 
     const collector = wfe.telemetryCollector.exporters[0] as JaegerExporter;
@@ -82,7 +82,7 @@ describe("dbos-telemetry", () => {
 
   /*
   describe("Postgres exporter", () => {
-    let wfe: DBOSWFE;
+    let wfe: DBOSExecutor;
     let dbosConfig: DBOSConfig;
     let testRuntime: TestingRuntime;
 
