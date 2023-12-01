@@ -85,8 +85,7 @@ export class DBOSExecutor {
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly initialEpochTimeMs: number;
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -97,7 +96,7 @@ export class DBOSExecutor {
   readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
-  entities: Function[] = []
+  entities: Function[] = [];
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
@@ -114,7 +113,7 @@ export class DBOSExecutor {
     this.flushBufferID = setInterval(() => {
       void this.flushWorkflowStatusBuffer();
     }, this.flushBufferIntervalMs);
-    this.logger.debug('Started workflow status buffer worker');
+    this.logger.debug("Started workflow status buffer worker");
 
     // Add Jaeger exporter if tracing is enabled
     const telemetryExporters = [];
@@ -132,13 +131,13 @@ export class DBOSExecutor {
     const userDbClient = this.config.userDbclient;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const { PrismaClient } = require('@prisma/client');
+      const { PrismaClient } = require("@prisma/client");
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       this.userDatabase = new PrismaUserDatabase(new PrismaClient());
       this.logger.debug("Loaded Prisma user database");
     } else if (userDbClient === UserDatabaseName.TYPEORM) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const DataSourceExports = require('typeorm');
+      const DataSourceExports = require("typeorm");
       try {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
@@ -157,7 +156,7 @@ export class DBOSExecutor {
       this.logger.debug("Loaded TypeORM user database");
     } else if (userDbClient === UserDatabaseName.KNEX) {
       const knexConfig: Knex.Config = {
-        client: 'postgres',
+        client: "postgres",
         connection: {
           host: this.config.poolConfig.host,
           port: this.config.poolConfig.port,
@@ -206,7 +205,7 @@ export class DBOSExecutor {
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0) {
-          this.entities = this.entities.concat(reg.ormEntities)
+          this.entities = this.entities.concat(reg.ormEntities);
           this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
         }
       }
@@ -286,6 +285,9 @@ export class DBOSExecutor {
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+    if (this.debugMode) {
+      return this.debugWorkflow(wf, params, undefined, undefined, ...args);
+    }
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
@@ -359,6 +361,14 @@ export class DBOSExecutor {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
+  /**
+   * DEBUG MODE
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+    throw new DBOSError("NOT IMPLEMENTED!");
+  }
+
   async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
@@ -412,8 +422,8 @@ export class DBOSExecutor {
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
-      this.logger.debug(`Recovering workflows of executor: ${execID}`)
-      const wIDs = await this.systemDatabase.getPendingWorkflows(execID)
+      this.logger.debug(`Recovering workflows of executor: ${execID}`);
+      const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
       pendingWorkflows.push(...wIDs);
     }
 
@@ -430,7 +440,7 @@ export class DBOSExecutor {
 
         const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs))
+        handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs));
       } catch (e) {
         this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
@@ -475,5 +485,4 @@ export class DBOSExecutor {
       }
     });
   }
-
 }
