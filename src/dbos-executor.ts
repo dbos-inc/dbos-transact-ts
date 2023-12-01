@@ -239,7 +239,6 @@ export class DBOSExecutor {
         this.logger.debug("Executing init method: " + m.name);
         await m.origFunction(new InitContext(this));
       }
-
     }
 
     this.logger.info("Workflow executor initialized");
@@ -285,9 +284,6 @@ export class DBOSExecutor {
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    if (this.debugMode) {
-      return this.debugWorkflow(wf, params, undefined, undefined, ...args);
-    }
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
@@ -359,14 +355,6 @@ export class DBOSExecutor {
 
     // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
-  }
-
-  /**
-   * DEBUG MODE
-   */
-  // eslint-disable-next-line @typescript-eslint/require-await
-  async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
-    throw new DBOSError("NOT IMPLEMENTED!");
   }
 
   async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
