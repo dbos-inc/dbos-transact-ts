@@ -1,8 +1,6 @@
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ValuesOf } from "../utils";
 
-export type DBOSSignal = TelemetrySignal | ProvenanceSignal;
-
 export const LogSeverity = {
   Debug: "DEBUG",
   Info: "INFO",
@@ -20,14 +18,4 @@ export interface TelemetrySignal {
   transactionID?: string;
   traceID?: string;
   traceSpan?: ReadableSpan;
-}
-
-export interface ProvenanceSignal {
-  provTransactionID: string;
-  kind: string;
-  schema: string;
-  table: string;
-  columnnames: string[];
-  columntypes: string[];
-  columnvalues: string[];
 }

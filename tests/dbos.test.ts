@@ -137,16 +137,16 @@ describe("dbos-tests", () => {
     await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
 
     // Check the transaction output table and make sure we record transaction information correctly.
-    const readProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
-    expect(readProv[0].txn_id).toBeFalsy();
-    expect(readProv[0].txn_snapshot).toBeTruthy();
+    const readRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
+    expect(readRec[0].txn_id).toBeFalsy();
+    expect(readRec[0].txn_snapshot).toBeTruthy();
 
-    const writeProv = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
-    expect(writeProv[0].txn_id).toBeTruthy();
-    expect(writeProv[0].txn_snapshot).toBeTruthy();
+    const writeRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
+    expect(writeRec[0].txn_id).toBeTruthy();
+    expect(writeRec[0].txn_snapshot).toBeTruthy();
 
     // Two snapshots must be different because we bumped transaction ID.
-    expect(readProv[0].txn_snapshot).not.toEqual(writeProv[0].txn_snapshot);
+    expect(readRec[0].txn_snapshot).not.toEqual(writeRec[0].txn_snapshot);
   });
 
   class RetrieveWorkflowStatus {
