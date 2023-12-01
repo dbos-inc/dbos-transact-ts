@@ -85,11 +85,7 @@ export class DBOSExecutor {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-<<<<<<< HEAD
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
-=======
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
->>>>>>> e6b2d26 (clean up code, add debug mode)
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
