@@ -84,9 +84,12 @@ export class DBOSExecutor {
   ]);
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
-  readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
+<<<<<<< HEAD
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
+=======
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map();  // Map from workflowUUID to workflow promise.
+>>>>>>> e6b2d26 (clean up code, add debug mode)
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -103,6 +106,7 @@ export class DBOSExecutor {
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
+    this.debugMode = config.debugProxy ? true : false;
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
     if (systemDatabase) {
@@ -114,13 +118,15 @@ export class DBOSExecutor {
     }
 
     this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowStatusBuffer();
+      if (!this.debugMode) {
+        void this.flushWorkflowStatusBuffer();
+      }
     }, this.flushBufferIntervalMs);
     this.logger.debug("Started workflow status buffer worker");
 
     // Add Jaeger exporter if tracing is enabled
     const telemetryExporters = [];
-    if (this.config.telemetry?.traces?.enabled) {
+    if (this.config.telemetry?.traces?.enabled && !this.debugMode) {
       telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
       this.logger.debug("Loaded Jaeger Telemetry Exporter");
     }
@@ -134,7 +140,7 @@ export class DBOSExecutor {
     const userDbClient = this.config.userDbclient;
     const localConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
     if (this.debugMode) {
-      // TODO: find a better way to represent the debug proxy.
+      // TODO: we currently use a single hostname:port string. Need to find a better way to configure the debug mode.
       const parts = this.config.debugProxy!.split(':');
       localConfig.host = parts[0];
       localConfig.port = parseInt(parts[1], 10);
@@ -233,9 +239,10 @@ export class DBOSExecutor {
         this.#registerClass(cls);
       }
 
-      await this.telemetryCollector.init(this.registeredOperations);
-      await this.systemDatabase.init();
+      // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
       if (!this.debugMode) {
+        await this.systemDatabase.init();
+        await this.telemetryCollector.init(this.registeredOperations);
         await this.userDatabase.init(); // Skip user DB init because we're using the proxy.
         await this.recoverPendingWorkflows();
       }
@@ -247,11 +254,14 @@ export class DBOSExecutor {
     }
     this.initialized = true;
 
-    for (const v of this.registeredOperations) {
-      const m = v as MethodRegistration<unknown, unknown[], unknown> ;
-      if (m.init === true) {
-        this.logger.debug("Executing init method: " + m.name);
-        await m.origFunction(new InitContext(this));
+    // Only execute init code if under non-debug mode
+    if (!this.debugMode) {
+      for (const v of this.registeredOperations) {
+        const m = v as MethodRegistration<unknown, unknown[], unknown> ;
+        if (m.init === true) {
+          this.logger.debug("Executing init method: " + m.name);
+          await m.origFunction(new InitContext(this));
+        }
       }
     }
 
