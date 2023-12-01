@@ -106,6 +106,10 @@ export class DBOSExecutor {
     this.debugMode = config.debugProxy ? true : false;
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
 
+    if (this.debugMode) {
+      this.logger.info("Running in debug mode!")
+    }
+
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
       this.systemDatabase = systemDatabase;
@@ -381,7 +385,7 @@ export class DBOSExecutor {
   }
 
   /**
-   * DEBUG MODE workflow execution
+   * DEBUG MODE workflow execution, skipping all the recording
    */
   // eslint-disable-next-line @typescript-eslint/require-await
   async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
@@ -398,6 +402,7 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
 
+    // TODO: maybe also check the input args against the recorded ones.
     const runWorkflow = async () => {
       // A non-temp debug workflow must have run before.
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
@@ -406,22 +411,9 @@ export class DBOSExecutor {
       }
 
       // Execute the workflow. We don't need to record anything.
-      const result = await wf(wCtxt, ...args);
-
-      return result;
+      return wf(wCtxt, ...args);
     };
     const workflowPromise: Promise<R> = runWorkflow();
-
-    // Need to await for the workflow and capture errors.
-    const awaitWorkflowPromise = workflowPromise
-      .catch((error) => {
-        this.logger.error("Captured error in awaitWorkflowPromise: " + error);
-      })
-      .finally(() => {
-        // Remove itself from pending workflow map.
-        this.pendingWorkflowMap.delete(workflowUUID);
-      });
-    this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
 
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
