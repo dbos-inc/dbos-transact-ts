@@ -1,15 +1,15 @@
 import { MethodRegistrationBase } from "../decorators";
 import { ITelemetryExporter } from "./exporters";
-import { DBOSSignal } from "./signals";
+import { TelemetrySignal } from "./signals";
 
 class SignalsQueue {
-  data: DBOSSignal[] = [];
+  data: TelemetrySignal[] = [];
 
-  push(signal: DBOSSignal): void {
+  push(signal: TelemetrySignal): void {
     this.data.push(signal);
   }
 
-  pop(): DBOSSignal | undefined {
+  pop(): TelemetrySignal | undefined {
     return this.data.shift();
   }
 
@@ -51,16 +51,16 @@ export class TelemetryCollector {
     }
   }
 
-  push(signal: DBOSSignal) {
+  push(signal: TelemetrySignal) {
     this.signals.push(signal);
   }
 
-  private pop(): DBOSSignal | undefined {
+  private pop(): TelemetrySignal | undefined {
     return this.signals.pop();
   }
 
   async processAndExportSignals(): Promise<void> {
-    const batch: DBOSSignal[] = [];
+    const batch: TelemetrySignal[] = [];
     while (this.signals.size() > 0 && batch.length < this.processAndExportSignalsMaxBatchSize) {
       const signal = this.pop();
       if (!signal) {

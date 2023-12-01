@@ -2,15 +2,15 @@ import { Client, QueryConfig, QueryArrayResult, PoolConfig } from "pg";
 import { groupBy } from "lodash";
 import { LogMasks, DBOSDataType, MethodRegistrationBase } from "./../decorators";
 import { DBOSPostgresExporterError } from "./../error";
-import { DBOSSignal, ProvenanceSignal, TelemetrySignal } from "./signals";
+import { TelemetrySignal } from "./signals";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 import { spanToString } from "./traces";
 
 export interface ITelemetryExporter<T, U> {
-  export(signal: DBOSSignal[]): Promise<T>;
-  process?(signal: DBOSSignal[]): U;
+  export(signal: TelemetrySignal[]): Promise<T>;
+  process?(signal: TelemetrySignal[]): U;
   init?(registeredOperations?: ReadonlyArray<MethodRegistrationBase>): Promise<void>;
   destroy?(): Promise<void>;
 }
@@ -24,9 +24,7 @@ export class JaegerExporter implements ITelemetryExporter<void, undefined> {
     });
   }
 
-  async export(rawSignals: DBOSSignal[]): Promise<void> {
-    // Note: it is not compatible with provenance signal.
-    const signals = rawSignals as TelemetrySignal[];
+  async export(signals: TelemetrySignal[]): Promise<void> {
     return await new Promise<void>((resolve) => {
       const exportSpans: ReadableSpan[] = [];
       signals.forEach((signal) => {
@@ -101,19 +99,7 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       // Trim last comma and line feed
       createSignalTableQuery = createSignalTableQuery.slice(0, -2).concat("\n);");
       await this.pgClient.query(createSignalTableQuery);
-
-      // Create a table for provenance logs.
-      // TODO: create a secondary index.
     }
-    await this.pgClient.query(`CREATE TABLE IF NOT EXISTS provenance_logs (
-      transaction_id TEXT NOT NULL,
-      kind TEXT,
-      schema_name TEXT,
-      table_name TEXT,
-      columnnames TEXT,
-      columntypes TEXT,
-      columnvalues TEXT
-    );`);
   }
 
   async destroy(): Promise<void> {
@@ -154,34 +140,9 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
     return queries;
   }
 
-  processProvenance(signals: ProvenanceSignal[]): QueryConfig {
-    const query = `
-      INSERT INTO provenance_logs
-      SELECT * FROM jsonb_to_recordset($1::jsonb) AS tmp (
-        transaction_id text, kind text, schema_name text, table_name text,
-        columnnames text, columntypes text, columnvalues text);
-    `;
-
-    const values: string = JSON.stringify(
-      signals.map((signal) => {
-        return {
-          transaction_id: signal.provTransactionID,
-          kind: signal.kind,
-          schema_name: signal.schema,
-          table_name: signal.table,
-          columnnames: signal.columnnames,
-          columntypes: signal.columntypes,
-          columnvalues: signal.columnvalues
-        };
-      })
-    );
-    return { name: `insert-provenance-log`, text: query, values: [values] };
-  }
-
-  async export(signals: DBOSSignal[]): Promise<QueryArrayResult[]> {
+  async export(telemetrySignals: TelemetrySignal[]): Promise<QueryArrayResult[]> {
     const results: Promise<QueryArrayResult>[] = [];
     // Find all telemetry signals and process.
-    const telemetrySignals = signals.filter(obj => (obj as TelemetrySignal).workflowUUID !== undefined) as TelemetrySignal[];
     if (telemetrySignals.length > 0) {
       const queries = this.process(telemetrySignals);
       for (const query of queries) {
@@ -189,12 +150,6 @@ export class PostgresExporter implements ITelemetryExporter<QueryArrayResult[], 
       }
     }
 
-    // Find all provenance signals and process.
-    const provenanceSignals = signals.filter((obj) => (obj as ProvenanceSignal).provTransactionID !== undefined) as ProvenanceSignal[];
-    if (provenanceSignals.length > 0) {
-      const provQuery = this.processProvenance(provenanceSignals);
-      results.push(this.pgClient.query(provQuery));
-    }
     try {
       // We do await here so we can catch and format PostgresExporter specific errors
       return await Promise.all<QueryArrayResult>(results);
