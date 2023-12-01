@@ -41,6 +41,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
+import { WorkflowContextDebug } from './debugger/debug_workflow';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -400,7 +401,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name);
 
     // TODO: maybe also check the input args against the recorded ones.
     const runWorkflow = async () => {
