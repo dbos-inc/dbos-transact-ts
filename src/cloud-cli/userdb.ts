@@ -2,6 +2,7 @@ import axios from "axios";
 import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils"
+import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -121,6 +122,37 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   const logger = createGlobalLogger();
 
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const res = await getDb(host, port, dbName)
+    logger.info(res)
+  } catch (e) {
+    if (axios.isAxiosError(e) && e.response) {
+      logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
+    } else {
+      logger.error(`Error getting database ${dbName}: ${(e as Error).message}`);
+    }
+  }
+}
+
+export async function migrate(host: string, port: string, dbName: string) {
+  const logger = createGlobalLogger();
+
+  // read the yaml file
+  const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
+  if (!configFile) {
+    logger.error(`failed to parse ${dbosConfigFilePath}`);
+    return;
+  }
+
+  
+
+
+  try {
+
+    
+
+
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await getDb(host, port, dbName)
     logger.info(res)

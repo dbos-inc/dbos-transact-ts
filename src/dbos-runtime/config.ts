@@ -25,6 +25,8 @@ export interface ConfigFile {
     observability_database: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
+    migrate?: string[];
+    rollback?: string[];
   };
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
