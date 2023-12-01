@@ -133,27 +133,6 @@ describe("foundationdb-dbos", () => {
     await expect(testRuntime.retrieveWorkflow(recvUUID).getResult()).resolves.toBe("hello");
   });
 
-  test("workflow-getevent-retrieve", async() => {
-    // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
-    // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
-    // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
-
-    const getUUID = uuidv1();
-    const setUUID = getUUID + "-2";
-
-    await expect(testRuntime.invoke(FdbTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
-    expect(FdbTestClass.wfCnt).toBe(2);
-    await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
-
-    // Run without UUID, should get the new result.
-    await expect(testRuntime.invoke(FdbTestClass).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-PENDING-0");
-
-    // Test OAOO for getEvent and getWorkflowStatus.
-    await expect(testRuntime.invoke(FdbTestClass, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-0");
-    expect(FdbTestClass.wfCnt).toBe(6);  // Should re-execute the workflow because we're not flushing the result buffer.
-  });
 });
 
 class FdbTestClass {
@@ -242,32 +221,6 @@ class FdbTestClass {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
     return 0;
-  }
-
-  @Workflow()
-  static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
-    let res = "";
-    const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
-    FdbTestClass.wfCnt++;
-    if (getValue === null) {
-      res = "valueNull";
-    } else {
-      res = getValue;
-    }
-
-    const handle = ctxt.retrieveWorkflow(targetUUID);
-    const status = await handle.getStatus();
-    FdbTestClass.wfCnt++;
-    if (status === null) {
-      res += "-statusNull";
-    } else {
-      res += "-" + status.status;
-    }
-
-    // Note: the targetUUID must match the child workflow UUID.
-    const value = await ctxt.childWorkflow(FdbTestClass.setEventWorkflow).then(x => x.getResult());
-    res += "-" + value;
-    return res;
   }
 
   @Workflow()
