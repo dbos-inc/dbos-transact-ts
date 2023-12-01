@@ -4,6 +4,7 @@ import {
   DBOSInitializationError,
   DBOSWorkflowConflictUUIDError,
   DBOSNotRegisteredError,
+  DBOSDebuggerError,
 } from './error';
 import {
   InvokedHandle,
@@ -129,7 +130,6 @@ export class DBOSExecutor {
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
-    this.debugMode = config.debugProxy ? true : false;
   }
 
   configureDbClient() {
@@ -304,6 +304,9 @@ export class DBOSExecutor {
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+    if (this.debugMode) {
+      return this.debugWorkflow(wf, params, undefined, undefined, ...args);
+    }
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
@@ -358,7 +361,7 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
-      return result!;
+      return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
 
@@ -376,6 +379,53 @@ export class DBOSExecutor {
     // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
+
+  /**
+   * DEBUG MODE workflow execution
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+    // In debug mode, we must have a specific workflow UUID.
+    if (!params.workflowUUID) {
+      throw new DBOSDebuggerError("Workflow UUID not found!");
+    }
+    const workflowUUID = params.workflowUUID;
+    const wInfo = this.workflowInfoMap.get(wf.name);
+    if (wInfo === undefined) {
+      throw new DBOSDebuggerError("Workflow unregistered! " + wf.name);
+    }
+    const wConfig = wInfo.config;
+
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+
+    const runWorkflow = async () => {
+      // A non-temp debug workflow must have run before.
+      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+      if(!wCtxt.isTempWorkflow && !wfStatus) {
+        throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
+      }
+
+      // Execute the workflow. We don't need to record anything.
+      const result = await wf(wCtxt, ...args);
+
+      return result;
+    };
+    const workflowPromise: Promise<R> = runWorkflow();
+
+    // Need to await for the workflow and capture errors.
+    const awaitWorkflowPromise = workflowPromise
+      .catch((error) => {
+        this.logger.error("Captured error in awaitWorkflowPromise: " + error);
+      })
+      .finally(() => {
+        // Remove itself from pending workflow map.
+        this.pendingWorkflowMap.delete(workflowUUID);
+      });
+    this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+
+    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+  }
+
 
   async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.

@@ -154,3 +154,9 @@ export class DBOSConfigKeyTypeError extends DBOSError {
   }
 }
 
+const DebuggerError = 15;
+export class DBOSDebuggerError extends DBOSError {
+  constructor(msg: string) {
+    super("DEBUGGER: " + msg, DebuggerError);
+  }
+}
