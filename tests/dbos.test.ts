@@ -23,8 +23,6 @@ describe("dbos-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime([DBOSTestClass, ReadRecording, RetrieveWorkflowStatus], config);
-    // await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    // await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     DBOSTestClass.cnt = 0;
   });
 
@@ -227,7 +225,6 @@ class DBOSTestClass {
   static initialized = false;
   static cnt: number = 0;
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @DBOSInitializer()
   static async init(_ctx: InitContext) { 
     DBOSTestClass.initialized = true;

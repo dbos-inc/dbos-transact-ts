@@ -8,6 +8,7 @@ import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from ".
 import { DBOSDebuggerError } from "../../src/error";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
+const testTableName = "debugger_test_kv";
 
 describe("debugger-test", () => {
   let username: string;
@@ -21,11 +22,16 @@ describe("debugger-test", () => {
   });
 
   class DebuggerTest {
+    @DBOSInitializer()
+    static async init(ctx: InitContext) {
+      await ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+      await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    }
+
     @Transaction()
     static async testFunction(txnCtxt: TestTransactionContext, name: string) {
-      const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
-      txnCtxt.logger.debug("Name: " + name);
-      return JSON.stringify(rows[0]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
+      return Number(rows[0].id);
     }
 
     @Workflow()
@@ -36,7 +42,6 @@ describe("debugger-test", () => {
   }
 
   test("debug-workflow", async () => {
-    process.env["SILENCE_LOGS"] = "false";
     const debugConfig = generateDBOSTestConfig(undefined, "127.0.0.1:5432");
     const debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
 
@@ -47,7 +52,7 @@ describe("debugger-test", () => {
       .invoke(DebuggerTest, wfUUID)
       .testWorkflow(username)
       .then((x) => x.getResult());
-    expect(JSON.parse(res)).toEqual({ current_user: username });
+    expect(res).toEqual(1);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
@@ -56,19 +61,15 @@ describe("debugger-test", () => {
       .invoke(DebuggerTest, wfUUID)
       .testWorkflow(username)
       .then((x) => x.getResult());
-    expect(JSON.parse(debugRes)).toEqual({ current_user: username });
+    expect(debugRes).toEqual(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    const nonExist = await debugRuntime
-    .invoke(DebuggerTest, wfUUID2)
-    .testWorkflow(username);
+    const nonExist = await debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username);
     await expect(nonExist.getResult()).rejects.toThrow("Workflow status not found!");
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime
-      .invoke(DebuggerTest)
-      .testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
 
     await debugRuntime.destroy();
   });
