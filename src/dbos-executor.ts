@@ -124,7 +124,6 @@ export class DBOSExecutor {
     this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
-    this.initialEpochTimeMs = Date.now();
   }
 
   configureDbClient() {

@@ -51,7 +51,7 @@ describe("foundationdb-oaoo", () => {
       } else {
         res = getValue;
       }
-  
+
       const handle = ctxt.retrieveWorkflow(targetUUID);
       const status = await handle.getStatus();
       EventStatusOAOO.wfCnt++;
@@ -60,14 +60,14 @@ describe("foundationdb-oaoo", () => {
       } else {
         res += "-" + status.status;
       }
-  
+
       // Note: the targetUUID must match the child workflow UUID.
       const invokedHandle = await ctxt.childWorkflow(EventStatusOAOO.setEventWorkflow);
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
         }
-      } catch(e) {
+      } catch (e) {
         // Ignore error.
         ctxt.logger.error(e);
       }
@@ -78,7 +78,7 @@ describe("foundationdb-oaoo", () => {
     }
   }
 
-  test("workflow-getevent-retrieve", async() => {
+  test("workflow-getevent-retrieve", async () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
@@ -88,17 +88,31 @@ describe("foundationdb-oaoo", () => {
     const getUUID = uuidv1();
     const setUUID = getUUID + "-2";
 
-    await expect(testRuntime.invoke(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-PENDING");
+    await expect(
+      testRuntime
+        .invoke(EventStatusOAOO, getUUID)
+        .getEventRetrieveWorkflow(setUUID)
+        .then((x) => x.getResult())
+    ).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(2);
     await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
 
     EventStatusOAOO.resolve();
     // Run without UUID, should get the new result.
-    await expect(testRuntime.invoke(EventStatusOAOO).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-ERROR-ERROR");
+    await expect(
+      testRuntime
+        .invoke(EventStatusOAOO)
+        .getEventRetrieveWorkflow(setUUID)
+        .then((x) => x.getResult())
+    ).resolves.toBe("value1-ERROR-ERROR");
 
     // Test OAOO for getEvent and getWorkflowStatus.
-    await expect(testRuntime.invoke(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-PENDING");
-    expect(EventStatusOAOO.wfCnt).toBe(6);  // Should re-execute the workflow because we're not flushing the result buffer.
+    await expect(
+      testRuntime
+        .invoke(EventStatusOAOO, getUUID)
+        .getEventRetrieveWorkflow(setUUID)
+        .then((x) => x.getResult())
+    ).resolves.toBe("valueNull-statusNull-PENDING");
+    expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we're not flushing the result buffer.
   });
-
 });
