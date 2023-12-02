@@ -4,7 +4,7 @@ import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "../transaction";
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "../communicator";
-import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "../error";
+import { DBOSDebuggerError, DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "../error";
 import { serializeError, deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
@@ -13,6 +13,12 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from '../context';
 import { getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle } from "../workflow";
+
+interface RecordedResult<R> {
+  output: R;
+  txn_snapshot: string;
+  txn_id: string;
+}
 
 /**
  * Context used for debugging a workflow
@@ -55,15 +61,78 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return proxy as WFInvokeFuncs<T>;
   }
 
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R>> {
+    // Note: we read the recorded snapshot and transaction ID!
+    const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
+
+    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(
+      client,
+      query,
+      this.workflowUUID,
+      funcID
+    );
+
+    if (rows.length === 0 || rows.length > 1) {
+      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString());
+      throw new DBOSDebuggerError(`This should never happen during debug. Returned ${rows.length} rows: ` + rows.toString());
+    }
+
+    if (JSON.parse(rows[0].error) != null) {
+      throw deserializeError(JSON.parse(rows[0].error)); // We don't replay errors.
+    }
+
+    const res: RecordedResult<R> = {
+      output: JSON.parse(rows[0].output) as R,
+      txn_snapshot: rows[0].txn_snapshot,
+      txn_id: rows[0].txn_id,
+    }
+
+    // Send a signal to the debug proxy.
+    // TODO: use the real one.
+    await this.#wfe.userDatabase.queryWithClient(client, `--proxy:${res.txn_id}`);
+
+    return res;
+  }
+
+  /**
+   * Execute a transactional function in debug mode.
+   * It connects to a debug proxy and everything should be read-only.
+   */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    throw new Error("Method not implemented");
+    const config = this.#wfe.transactionConfigMap.get(txn.name);
+    if (config === undefined) {
+      throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
+    }
+    // const readOnly = true; // TODO: eventually, this transaction must be read-only.
+    const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#wfe.tracer.startSpan(txn.name, {}, this.span);
+    let check: RecordedResult<R>;
+
+    const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
+      // Original result must exist during replay.
+      const tCtxt = new TransactionContextImpl(this.#wfe.userDatabase.getName(), client, this,
+      span, this.#wfe.logger, funcId, txn.name);
+      check = await this.checkExecution<R>(client, funcId);
+
+      // Execute the user's transaction.
+      const result = await txn(tCtxt, ...args);
+      return result;
+    };
+
+    const result = await this.#wfe.userDatabase.transaction(wrappedTransaction, config);
+
+    if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
+      this.logger.error(`Detected different transaction output than the original one!\n Expected: ${JSON.stringify(result)}\n Received: ${JSON.stringify(check!.output)}`);
+    }
+    return check!.output; // Always return the recorded result.
   }
 
   external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
     throw new Error("Method not implemented");
   }
 
-  childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  // Invoke the debugWorkflow() function instead.
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#wfe.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);

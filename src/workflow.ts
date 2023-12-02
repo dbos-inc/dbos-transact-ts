@@ -145,38 +145,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return res;
   }
 
-  async prepareDebugExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult & {txn_id: string}> {
-    // Note: we read the recorded snapshot and transaction ID!
-    const query = "SELECT output, error, txn_snapshot, txn_id FROM operon.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
-
-    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(
-      client,
-      query,
-      this.workflowUUID,
-      funcID
-    );
-
-    if (rows.length === 0 || rows.length > 1) {
-      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString());
-      throw new DBOSError("This should never happen during debug. Returned rows: " + rows.toString());
-    }
-
-    if (JSON.parse(rows[0].error) != null) {
-      throw deserializeError(JSON.parse(rows[0].error)); // We don't replay errors.
-    }
-
-    const res: BufferedResult & {txn_id: string}= {
-      output: rows[0].output as R,
-      txn_snapshot: rows[0].txn_snapshot,
-      txn_id: rows[0].txn_id,
-    }
-
-    // Send a signal to the debug proxy.
-    await this.#wfe.userDatabase.queryWithClient(client, `--proxy(${res.txn_snapshot},${res.txn_id})`);
-
-    return res;
-  }
-
   /**
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.

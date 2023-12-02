@@ -42,6 +42,7 @@ describe("debugger-test", () => {
   }
 
   test("debug-workflow", async () => {
+    // TODO: connect to the real proxy.
     const debugConfig = generateDBOSTestConfig(undefined, "127.0.0.1:5432");
     const debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
 
@@ -56,7 +57,6 @@ describe("debugger-test", () => {
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    // TODO: test with a real proxy.
     const debugRes = await debugRuntime
       .invoke(DebuggerTest, wfUUID)
       .testWorkflow(username)
