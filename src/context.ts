@@ -18,6 +18,7 @@ export interface HTTPRequest {
   readonly querystring?: string;           // Unparsed raw query string.
   readonly url?: string;                   // Request URL.
   readonly ip?: string;                    // Request remote address.
+  readonly requestID?: string;              // Request ID. Gathered from headers or generated if missing.
 }
 
 export interface DBOSContext {
