@@ -3,6 +3,7 @@ import { createGlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils"
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
+import { execSync } from "child_process";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -144,25 +145,29 @@ export async function migrate(host: string, port: string, dbName: string) {
     return;
   }
 
+  const dbType = configFile.database.user_dbclient
+  const migratecommands = configFile.database.migrate
+  const rollbackcommands = configFile.database.rollback
   
-
-
   try {
+    migratecommands?.forEach((cmd) => {
+        const command = dbType + " " + cmd 
+        logger.info("Executing " + command)
+        execSync(command)
+    })
+  } catch(e) {
+    const err: Error = e as Error;
+    logger.error(err);
 
-    
+    rollbackcommands?.forEach((cmd) => {
+      const command = dbType + " " + cmd 
+        logger.info("Executing " + command)
+        execSync(command)
+    })
 
 
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const res = await getDb(host, port, dbName)
-    logger.info(res)
-  } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
-    } else {
-      logger.error(`Error getting database ${dbName}: ${(e as Error).message}`);
-    }
   }
+
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any

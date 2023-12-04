@@ -12,7 +12,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb, migrate } from "./userdb";
 import { credentialsExist } from "./utils";
 
 const program = new Command();
@@ -172,6 +172,14 @@ userdb
   .action((async (dbname: string, options: { sync: boolean }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     await deleteUserDb(host, port, dbname, options.sync)
+  }))
+
+  userdb
+  .command('migrate')
+  .argument('<string>', 'database name')
+  .action((async (dbname: string, options: { sync: boolean }) => {
+    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    await migrate(host, port, dbname)
   }))
 
 program.parse(process.argv);

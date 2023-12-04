@@ -12,4 +12,6 @@ database:
   system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
+  migrate: ['command1','command2']
+  rollback: ['rollback1','rollback2']
 version: "1.0"
