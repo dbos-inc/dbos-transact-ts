@@ -141,11 +141,15 @@ export class DBOSExecutor {
     const userDbClient = this.config.userDbclient;
     const localConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
     if (this.debugMode) {
-      // TODO: we currently use a single hostname:port string. Need to find a better way to configure the debug mode.
-      const parts = this.config.debugProxy!.split(':');
-      localConfig.host = parts[0];
-      localConfig.port = parseInt(parts[1], 10);
-      this.logger.info("Debugging mode proxy: " + this.config.debugProxy);
+      try {
+        const url = new URL(this.config.debugProxy!);
+        localConfig.host = url.hostname;
+        localConfig.port = parseInt(url.port, 10);
+        this.logger.info(`Debugging mode proxy: ${localConfig.host}:${localConfig.port}`);
+      } catch (err) {
+        this.logger.error(err);
+        return;
+      }
     }
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
