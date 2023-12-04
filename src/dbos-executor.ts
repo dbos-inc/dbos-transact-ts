@@ -4,6 +4,7 @@ import {
   DBOSInitializationError,
   DBOSWorkflowConflictUUIDError,
   DBOSNotRegisteredError,
+  DBOSDebuggerError,
 } from './error';
 import {
   InvokedHandle,
@@ -40,6 +41,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
+import { WorkflowContextDebug } from './debugger/debug_workflow';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -53,6 +55,7 @@ export interface DBOSConfig {
   readonly observability_database?: string;
   readonly application?: any;
   readonly dbClientMetadata?: any;
+  readonly debugProxy?: string;
 }
 
 interface WorkflowInfo<T extends any[], R> {
@@ -83,7 +86,6 @@ export class DBOSExecutor {
   ]);
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
-  readonly topicConfigMap: Map<string, string[]> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
 
@@ -93,6 +95,8 @@ export class DBOSExecutor {
 
   static readonly defaultNotificationTimeoutSec = 60;
 
+  readonly debugMode: boolean;
+
   readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -100,7 +104,12 @@ export class DBOSExecutor {
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
+    this.debugMode = config.debugProxy ? true : false;
     this.logger = createGlobalLogger(this.config.telemetry?.logs);
+
+    if (this.debugMode) {
+      this.logger.info("Running in debug mode!")
+    }
 
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
@@ -111,13 +120,15 @@ export class DBOSExecutor {
     }
 
     this.flushBufferID = setInterval(() => {
-      void this.flushWorkflowStatusBuffer();
+      if (!this.debugMode) {
+        void this.flushWorkflowStatusBuffer();
+      }
     }, this.flushBufferIntervalMs);
     this.logger.debug("Started workflow status buffer worker");
 
     // Add Jaeger exporter if tracing is enabled
     const telemetryExporters = [];
-    if (this.config.telemetry?.traces?.enabled) {
+    if (this.config.telemetry?.traces?.enabled && !this.debugMode) {
       telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
       this.logger.debug("Loaded Jaeger Telemetry Exporter");
     }
@@ -128,7 +139,20 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
+    const userDBConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
+    if (this.debugMode) {
+      try {
+        const url = new URL(this.config.debugProxy!);
+        userDBConfig.host = url.hostname;
+        userDBConfig.port = parseInt(url.port, 10);
+        this.logger.info(`Debugging mode proxy: ${userDBConfig.host}:${userDBConfig.port}`);
+      } catch (err) {
+        this.logger.error(err);
+        return;
+      }
+    }
     if (userDbClient === UserDatabaseName.PRISMA) {
+      // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
       const { PrismaClient } = require("@prisma/client");
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
@@ -141,11 +165,11 @@ export class DBOSExecutor {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
-          host: this.config.poolConfig.host,
-          port: this.config.poolConfig.port,
-          username: this.config.poolConfig.user,
-          password: this.config.poolConfig.password,
-          database: this.config.poolConfig.database,
+          host: userDBConfig.host,
+          port: userDBConfig.port,
+          username: userDBConfig.user,
+          password: userDBConfig.password,
+          database: userDBConfig.database,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           entities: this.entities
         }))
@@ -157,18 +181,18 @@ export class DBOSExecutor {
       const knexConfig: Knex.Config = {
         client: "postgres",
         connection: {
-          host: this.config.poolConfig.host,
-          port: this.config.poolConfig.port,
-          user: this.config.poolConfig.user,
-          password: this.config.poolConfig.password,
-          database: this.config.poolConfig.database,
-          ssl: this.config.poolConfig.ssl,
+          host: userDBConfig.host,
+          port: userDBConfig.port,
+          user: userDBConfig.user,
+          password: userDBConfig.password,
+          database: userDBConfig.database,
+          ssl: userDBConfig.ssl,
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
     } else {
-      this.userDatabase = new PGNodeUserDatabase(this.config.poolConfig);
+      this.userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug("Loaded Postgres user database");
     }
   }
@@ -220,23 +244,29 @@ export class DBOSExecutor {
         this.#registerClass(cls);
       }
 
-      await this.telemetryCollector.init(this.registeredOperations);
-      await this.userDatabase.init();
-      await this.systemDatabase.init();
+      // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
+      if (!this.debugMode) {
+        await this.systemDatabase.init();
+        await this.telemetryCollector.init(this.registeredOperations);
+        await this.userDatabase.init(); // Skip user DB init because we're using the proxy.
+        await this.recoverPendingWorkflows();
+      }
     } catch (err) {
       if (err instanceof Error) {
         this.logger.error(`failed to initialize workflow executor: ${err.message}`, err, err.stack);
         throw new DBOSInitializationError(err.message);
       }
     }
-    await this.recoverPendingWorkflows();
     this.initialized = true;
 
-    for (const v of this.registeredOperations) {
-      const m = v as MethodRegistration<unknown, unknown[], unknown> ;
-      if (m.init === true) {
-        this.logger.debug("Executing init method: " + m.name);
-        await m.origFunction(new InitContext(this));
+    // Only execute init code if under non-debug mode
+    if (!this.debugMode) {
+      for (const v of this.registeredOperations) {
+        const m = v as MethodRegistration<unknown, unknown[], unknown> ;
+        if (m.init === true) {
+          this.logger.debug("Executing init method: " + m.name);
+          await m.origFunction(new InitContext(this));
+        }
       }
     }
 
@@ -283,6 +313,9 @@ export class DBOSExecutor {
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+    if (this.debugMode) {
+      return this.debugWorkflow(wf, params, undefined, undefined, ...args);
+    }
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
@@ -337,7 +370,7 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
-      return result!;
+      return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
 
@@ -355,6 +388,41 @@ export class DBOSExecutor {
     // Return the normal handle that doesn't capture errors.
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
+
+  /**
+   * DEBUG MODE workflow execution, skipping all the recording
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+    // In debug mode, we must have a specific workflow UUID.
+    if (!params.workflowUUID) {
+      throw new DBOSDebuggerError("Workflow UUID not found!");
+    }
+    const workflowUUID = params.workflowUUID;
+    const wInfo = this.workflowInfoMap.get(wf.name);
+    if (wInfo === undefined) {
+      throw new DBOSDebuggerError("Workflow unregistered! " + wf.name);
+    }
+    const wConfig = wInfo.config;
+
+    const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+
+    // TODO: maybe also check the input args against the recorded ones.
+    const runWorkflow = async () => {
+      // A non-temp debug workflow must have run before.
+      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+      if(!wCtxt.isTempWorkflow && !wfStatus) {
+        throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
+      }
+
+      // Execute the workflow. We don't need to record anything.
+      return wf(wCtxt, ...args);
+    };
+    const workflowPromise: Promise<R> = runWorkflow();
+
+    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+  }
+
 
   async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.

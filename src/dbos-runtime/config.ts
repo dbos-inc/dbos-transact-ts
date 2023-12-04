@@ -128,6 +128,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
+    debugProxy: cliOptions?.debug || undefined,
   };
 
   /*************************************/

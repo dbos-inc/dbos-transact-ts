@@ -110,7 +110,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
   /**
    * Check if an operation has already executed in a workflow.
-   * If it previously executed succesfully, return its output.
+   * If it previously executed successfully, return its output.
    * If it previously executed and threw an error, throw that error.
    * Otherwise, return DBOSNull.
    * Also return the transaction snapshot information of this current transaction.
@@ -135,7 +135,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     // recorded=false row will be first because we used ORDER BY.
     res.txn_snapshot = rows[0].txn_snapshot;
-    if (rows.length == 2) {
+    if (rows.length === 2) {
       if (JSON.parse(rows[1].error) !== null) {
         throw deserializeError(JSON.parse(rows[1].error));
       } else {
@@ -267,7 +267,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           this.#wfe.tracer.endSpan(tCtxt.span);
           return check.output as R;
         }
-        // TODO: record snapshot information in result buffer.
 
         // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
         this.guardOperation(funcId, check.txn_snapshot);
