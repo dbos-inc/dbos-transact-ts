@@ -88,7 +88,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
 
     // Send a signal to the debug proxy.
-    // TODO: use the real one.
+    // TODO: use the real command once the proxy is fully implemented.
     await this.#wfe.userDatabase.queryWithClient(client, `--proxy:${res.txn_id}`);
 
     return res;
@@ -104,15 +104,15 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
     }
     // const readOnly = true; // TODO: eventually, this transaction must be read-only.
-    const funcId = this.functionIDGetIncrement();
+    const funcID = this.functionIDGetIncrement();
     const span: Span = this.#wfe.tracer.startSpan(txn.name, {}, this.span);
     let check: RecordedResult<R>;
 
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
       const tCtxt = new TransactionContextImpl(this.#wfe.userDatabase.getName(), client, this,
-      span, this.#wfe.logger, funcId, txn.name);
-      check = await this.checkExecution<R>(client, funcId);
+      span, this.#wfe.logger, funcID, txn.name);
+      check = await this.checkExecution<R>(client, funcID);
 
       // Execute the user's transaction.
       const result = await txn(tCtxt, ...args);
@@ -127,8 +127,22 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check!.output; // Always return the recorded result.
   }
 
-  external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
-    throw new Error("Method not implemented");
+  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
+    const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
+    if (commConfig === undefined) {
+      throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
+    }
+    const funcID = this.functionIDGetIncrement();
+    const span: Span = this.#wfe.tracer.startSpan(commFn.name, {}, this.span);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#wfe.logger, commConfig, commFn.name);
+
+    // Original result must exist during replay.
+    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
+    if (check === dbosNull) {
+      throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
+    }
+    this.logger.debug("Use recorded communicator output.");
+    return check as R;
   }
 
   // Invoke the debugWorkflow() function instead.
