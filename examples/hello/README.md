@@ -24,7 +24,7 @@ Next, build and run the app:
 
 ```bash
 npm run build
-npx dbos start
+npx dbos-sdk start
 ```
 
 Finally, curl the server to see that it's working!
