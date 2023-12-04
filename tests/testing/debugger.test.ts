@@ -41,7 +41,7 @@ describe("debugger-test", () => {
 
   test("debug-workflow", async () => {
     // TODO: connect to the real proxy.
-    const debugConfig = generateDBOSTestConfig(undefined, "127.0.0.1:5432");
+    const debugConfig = generateDBOSTestConfig(undefined, "http://127.0.0.1:5432");
     const debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
 
     const wfUUID = uuidv1();

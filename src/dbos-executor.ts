@@ -139,13 +139,13 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
-    const localConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
+    const userDBConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
     if (this.debugMode) {
       try {
         const url = new URL(this.config.debugProxy!);
-        localConfig.host = url.hostname;
-        localConfig.port = parseInt(url.port, 10);
-        this.logger.info(`Debugging mode proxy: ${localConfig.host}:${localConfig.port}`);
+        userDBConfig.host = url.hostname;
+        userDBConfig.port = parseInt(url.port, 10);
+        this.logger.info(`Debugging mode proxy: ${userDBConfig.host}:${userDBConfig.port}`);
       } catch (err) {
         this.logger.error(err);
         return;
@@ -165,11 +165,11 @@ export class DBOSExecutor {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
           type: "postgres", // perhaps should move to config file
-          host: localConfig.host,
-          port: localConfig.port,
-          username: localConfig.user,
-          password: localConfig.password,
-          database: localConfig.database,
+          host: userDBConfig.host,
+          port: userDBConfig.port,
+          username: userDBConfig.user,
+          password: userDBConfig.password,
+          database: userDBConfig.database,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           entities: this.entities
         }))
@@ -181,18 +181,18 @@ export class DBOSExecutor {
       const knexConfig: Knex.Config = {
         client: "postgres",
         connection: {
-          host: localConfig.host,
-          port: localConfig.port,
-          user: localConfig.user,
-          password: localConfig.password,
-          database: localConfig.database,
-          ssl: localConfig.ssl,
+          host: userDBConfig.host,
+          port: userDBConfig.port,
+          user: userDBConfig.user,
+          password: userDBConfig.password,
+          database: userDBConfig.database,
+          ssl: userDBConfig.ssl,
         }
       }
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
     } else {
-      this.userDatabase = new PGNodeUserDatabase(localConfig);
+      this.userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug("Loaded Postgres user database");
     }
   }
