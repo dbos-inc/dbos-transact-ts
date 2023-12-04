@@ -151,7 +151,7 @@ export async function migrate(host: string, port: string, dbName: string) {
   
   try {
     migratecommands?.forEach((cmd) => {
-        const command = dbType + " " + cmd 
+        const command = "npx "+ dbType + " " + cmd 
         logger.info("Executing " + command)
         execSync(command)
     })
@@ -160,7 +160,7 @@ export async function migrate(host: string, port: string, dbName: string) {
     logger.error(err);
 
     rollbackcommands?.forEach((cmd) => {
-      const command = dbType + " " + cmd 
+      const command = "npx " + dbType + " " + cmd 
         logger.info("Executing " + command)
         execSync(command)
     })
