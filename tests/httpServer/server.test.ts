@@ -12,12 +12,13 @@ import {
   Communicator,
   CommunicatorContext,
 } from "../../src";
+import { RequestIDHeader } from "../../src/httpServer/handler";
 import { WorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, ArgSources, HandlerContext } from "../../src/httpServer/handler";
 import { Authentication } from "../../src/httpServer/middleware";
-import { v1 as uuidv1 } from "uuid";
+import { v1 as uuidv1, validate as uuidValidate } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { DBOSNotAuthorizedError, DBOSResponseError } from "../../src/error";
 import { PoolClient } from "pg";
@@ -49,12 +50,17 @@ describe("httpserver-tests", () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
+    // Expect uuidValidate to be true
+    const requestID: string = response.headers[RequestIDHeader] as string;
+    expect(uuidValidate(requestID)).toBe(true);
   });
 
   test("get-url", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/hello/alice");
+    const requestID = "my-request-id";
+    const response = await request(testRuntime.getHandlersCallback()).get("/hello/alice").set(RequestIDHeader, requestID);
     expect(response.statusCode).toBe(301);
     expect(response.text).toBe("wow alice");
+    expect(response.headers[RequestIDHeader]).toBe(requestID);
   });
 
   test("get-query", async () => {

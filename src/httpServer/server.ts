@@ -5,6 +5,7 @@ import cors from "@koa/cors";
 import {
   APITypes,
   ArgSources,
+  RequestIDHeader,
   HandlerContextImpl,
   HandlerRegistration,
 } from "./handler";
@@ -246,6 +247,8 @@ export class DBOSHttpServer {
               }
             );
             wfe.tracer.endSpan(oc.span);
+            // Add requestID to response headers.
+            koaCtxt.set(RequestIDHeader, oc.request.requestID as string);
             await koaNext();
           }
         };

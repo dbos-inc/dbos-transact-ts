@@ -8,6 +8,7 @@ import { Transaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
+import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
 
 // local type declarations for workflow functions
@@ -24,6 +25,17 @@ export interface HandlerContext extends DBOSContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+}
+
+export const RequestIDHeader = "x-request-id";
+function getOrGenerateRequestID(ctx: Koa.Context): string {
+  const reqID = ctx.get(RequestIDHeader);
+  if (reqID) {
+    return reqID;
+  }
+  const newID = uuidv4();
+  ctx.set(RequestIDHeader, newID);
+  return newID;
 }
 
 export class HandlerContextImpl extends DBOSContextImpl implements HandlerContext {
@@ -60,6 +72,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       querystring: koaContext.request.querystring,
       url: koaContext.request.url,
       ip: koaContext.request.ip,
+      requestID: getOrGenerateRequestID(koaContext),
     };
     if (wfe.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment

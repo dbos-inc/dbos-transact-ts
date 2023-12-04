@@ -67,7 +67,10 @@ async function dropHelloSystemDB() {
 function configureHelloExample() {
   execSync("npm i");
   execSync("npm run build");
-  execSync("npx knex migrate:up");
+  if (process.env.PGPASSWORD === undefined) {
+    process.env.PGPASSWORD = "dbos";
+  }
+  execSync("npx knex migrate:up", { env: process.env });
 }
 
 describe("runtime-entrypoint-tests", () => {
