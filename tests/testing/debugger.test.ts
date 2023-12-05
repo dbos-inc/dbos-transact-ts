@@ -64,7 +64,7 @@ describe("debugger-test", () => {
     static async receiveWorkflow(ctxt: WorkflowContext, debug?: boolean) {
       const message1 = await ctxt.recv<string>();
       const message2 = await ctxt.recv<string>();
-      const fail = await ctxt.recv("fail", 0);
+      const fail = await ctxt.recv("message3", 0);
       if (debug) {
         await ctxt.recv("shouldn't happen", 0);
       }
@@ -72,9 +72,12 @@ describe("debugger-test", () => {
     }
 
     @Workflow()
-    static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
+    static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string, debug?: boolean) {
       await ctxt.send(destinationUUID, "message1");
       await ctxt.send(destinationUUID, "message2");
+      if (debug) {
+        await ctxt.send(destinationUUID, "message3");
+      }
     }
   }
 
@@ -143,17 +146,16 @@ describe("debugger-test", () => {
     const sendUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     const handle = await testRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(false);
-    await expect(testRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
+    await expect(testRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, false).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(false).then((x) => x.getResult())).resolves.toBe(true);
-    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, false).then((x) => x.getResult())).resolves.toBeFalsy();
 
     // Execute a non-exist UUID should fail.
-    const wfUUID2 = uuidv1();
-    await expect(debugRuntime.send(recvUUID, "testmsg", "testtopic", wfUUID2)).rejects.toThrow("Cannot find recorded send");
+    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded send");
     await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded recv");
   });
 });
