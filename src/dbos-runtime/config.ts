@@ -25,6 +25,7 @@ export interface ConfigFile {
     observability_database: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
+    create_db: boolean;
     migrate?: string[];
     rollback?: string[];
   };

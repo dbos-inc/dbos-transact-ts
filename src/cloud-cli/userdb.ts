@@ -145,6 +145,24 @@ export function migrate() {
     return;
   }
 
+  let create_db = configFile.database.create_db;
+  if (create_db == undefined) {
+    create_db = false;
+  }
+
+  const userdbname = configFile.database.user_database
+
+  if (create_db) {
+    logger.info(`Creating database ${userdbname}`);
+    let cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
+    logger.info(cmd);
+    try {
+      execSync(cmd);
+    } catch(e) {
+      logger.error("Database already exists or could not be created.");
+    }
+  }
+
   let dbType = configFile.database.user_dbclient;
   if (dbType == undefined) {
     dbType = 'knex';
@@ -154,16 +172,13 @@ export function migrate() {
   const rollbackcommands = configFile.database.rollback;
   
   try {
-
     migratecommands?.forEach((cmd) => {
         const command = "npx "+ dbType + " " + cmd; 
         logger.info("Executing " + command);
         execSync(command);
     })
   } catch(e) {
-    const err: Error = e as Error;
-    logger.error(err);
-
+    logger.error("Error running migration");
     rollbackcommands?.forEach((cmd) => {
       const command = "npx " + dbType + " " + cmd; 
         logger.info("Executing " + command);
@@ -171,7 +186,6 @@ export function migrate() {
     })
 
   }
-
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
