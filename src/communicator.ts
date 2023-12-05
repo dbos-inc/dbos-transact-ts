@@ -2,6 +2,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { WinstonLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
+import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Communicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
@@ -19,8 +20,7 @@ export interface CommunicatorContext extends DBOSContext {
   readonly maxAttempts: number;
 }
 
-export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext
-{
+export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext {
   readonly functionID: number;
   readonly retriesAllowed: boolean;
   readonly intervalSeconds: number;
@@ -28,7 +28,7 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
   readonly backoffRate: number;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContextImpl, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
+  constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;
@@ -37,7 +37,7 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     this.backoffRate = params.backoffRate ?? 2;
     if (workflowContext.applicationConfig) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-       this.applicationConfig = workflowContext.applicationConfig;
+      this.applicationConfig = workflowContext.applicationConfig;
     }
   }
 }

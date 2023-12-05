@@ -261,6 +261,11 @@ describe("oaoo-tests", () => {
     await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
 
     EventStatusOAOO.resolve();
+
+    // Wait for the child workflow to finish.
+    const handle = testRuntime.retrieveWorkflow(setUUID);
+    await expect(handle.getResult()).rejects.toThrow("Failed workflow");
+
     // Run without UUID, should get the new result.
     await expect(testRuntime.invoke(EventStatusOAOO).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-ERROR-ERROR");
 

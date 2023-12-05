@@ -119,7 +119,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: we read the current snapshot, not the recorded one!
     const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
-      "(SELECT output, error, pg_current_snapshot()::text as txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
+      "(SELECT output, error, txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
       funcID
     );
