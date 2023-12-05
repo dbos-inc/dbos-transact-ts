@@ -18,7 +18,7 @@ import {
   WorkflowStatus,
 } from './workflow';
 
-import { Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
@@ -35,6 +35,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
+  UserDatabaseClient,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -372,6 +373,11 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
+      // // Asynchronously flush the result buffer.
+      // this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      //   await wCtxt.flushResultBuffer(client);
+      // }, { isolationLevel: IsolationLevel.ReadCommitted })
+      // .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error)})
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
