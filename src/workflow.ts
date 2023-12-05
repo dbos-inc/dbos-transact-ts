@@ -110,6 +110,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   /**
+   * Retrieve the transaction snapshot information of the current transaction
+   */
+  async retrieveSnapshot(client: UserDatabaseClient): Promise<string> {
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<{txn_snapshot: string}>(client, "SELECT pg_current_snapshot()::text as txn_snapshot;");
+    return rows[0].txn_snapshot;
+  }
+
+  /**
    * Check if an operation has already executed in a workflow.
    * If it previously executed successfully, return its output.
    * If it previously executed and threw an error, throw that error.
@@ -206,12 +214,30 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   /**
+   * Write an unguarded operation's output to the database.
+   */
+  async recordUnguardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
+    const serialOutput = JSON.stringify(output);
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text)) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput);
+    return rows[0].txn_id;
+  }
+
+  /**
    * Record an error in a guarded operation to the database.
    */
   async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
     await this.#dbosExec.userDatabase.queryWithClient(client, "UPDATE dbos.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
   }
+
+  /**
+   * Record an error in an unguarded operation to the database.
+   */
+    async recordUnguardedError(client: UserDatabaseClient, funcID: number, err: Error): Promise<string> {
+      const serialErr = JSON.stringify(serializeError(err));
+      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text)) RETURNING txn_id;", this.workflowUUID, funcID, serialErr);
+      return rows[0].txn_id;
+    }
 
   /**
    * Invoke another workflow as its child workflow and return a workflow handle.
@@ -255,22 +281,33 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
-        // Check if this execution previously happened, returning its original result if it did.
-
         const tCtxt = new TransactionContextImpl(
           this.#dbosExec.userDatabase.getName(), client, this,
           span, this.#dbosExec.logger, funcId, txn.name,
         );
-        const check: BufferedResult = await this.checkExecution<R>(client, funcId);
-        if (check.output !== dbosNull) {
-          tCtxt.span.setAttribute("cached", true);
-          tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-          this.#dbosExec.tracer.endSpan(tCtxt.span);
-          return check.output as R;
+
+        // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
+        let txn_snapshot: string;
+        if (this.presetUUID) {
+          const check: BufferedResult = await this.checkExecution<R>(client, funcId);
+          txn_snapshot = check.txn_snapshot;
+          if (check.output !== dbosNull) {
+            tCtxt.span.setAttribute("cached", true);
+            tCtxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.#dbosExec.tracer.endSpan(tCtxt.span);
+            return check.output as R;
+          }
+        } else if (readOnly) {
+          // Collect snapshot information for read-only transactions, if not already collected above
+          txn_snapshot = await this.retrieveSnapshot(client);
         }
 
-        // Flush the result buffer, setting a guard to block concurrent executions with the same UUID.
-        this.guardOperation(funcId, check.txn_snapshot);
+        // If the UUID is preset, set a guard to block concurrent executions with the same UUID.
+        if (this.presetUUID) {
+          this.guardOperation(funcId, txn_snapshot!);
+        }
+
+        // For non-read-only transactions, flush the result buffer, including the guard if present.
         if (!readOnly) {
           await this.flushResultBuffer(client);
         }
@@ -283,12 +320,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           // Buffer the output of read-only transactions instead of synchronously writing it.
           const guardOutput: BufferedResult = {
             output: result,
-            txn_snapshot: check.txn_snapshot,
+            txn_snapshot: txn_snapshot!,
           }
           this.resultBuffer.set(funcId, guardOutput);
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
-          const pg_txn_id = await this.recordGuardedOutput<R>(client, funcId, result);
+          const pg_txn_id = this.presetUUID ? await this.recordGuardedOutput<R>(client, funcId, result) : await this.recordUnguardedOutput<R>(client, funcId, result);
           tCtxt.span.setAttribute("transaction_id", pg_txn_id);
           this.resultBuffer.clear();
         }
@@ -314,7 +351,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         const e: Error = err as Error;
         await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
-          await this.recordGuardedError(client, funcId, e);
+          this.presetUUID ? await this.recordGuardedError(client, funcId, e) : await this.recordUnguardedError(client, funcId, e);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
