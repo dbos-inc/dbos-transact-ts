@@ -35,7 +35,7 @@ describe("concurrency-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workflowUUID = uuidv1();
-    let results = await Promise.allSettled([
+    const results = await Promise.allSettled([
       testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
       testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
     ]);
