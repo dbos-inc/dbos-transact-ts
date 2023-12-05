@@ -135,7 +135,7 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   }
 }
 
-export async function migrate(host: string, port: string, dbName: string) {
+export async function migrate() {
   const logger = createGlobalLogger();
 
   // read the yaml file
@@ -145,26 +145,30 @@ export async function migrate(host: string, port: string, dbName: string) {
     return;
   }
 
-  const dbType = configFile.database.user_dbclient
-  const migratecommands = configFile.database.migrate
-  const rollbackcommands = configFile.database.rollback
+  var dbType = configFile.database.user_dbclient;
+  if (dbType == undefined) {
+    dbType = 'knex';
+  }
+
+  const migratecommands = configFile.database.migrate;
+  const rollbackcommands = configFile.database.rollback;
   
   try {
+
     migratecommands?.forEach((cmd) => {
-        const command = "npx "+ dbType + " " + cmd 
-        logger.info("Executing " + command)
-        execSync(command)
+        const command = "npx "+ dbType + " " + cmd; 
+        logger.info("Executing " + command);
+        execSync(command);
     })
   } catch(e) {
     const err: Error = e as Error;
     logger.error(err);
 
     rollbackcommands?.forEach((cmd) => {
-      const command = "npx " + dbType + " " + cmd 
-        logger.info("Executing " + command)
-        execSync(command)
+      const command = "npx " + dbType + " " + cmd; 
+        logger.info("Executing " + command);
+        execSync(command);
     })
-
 
   }
 

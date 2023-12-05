@@ -176,10 +176,8 @@ userdb
 
   userdb
   .command('migrate')
-  .argument('<string>', 'database name')
-  .action((async (dbname: string, options: { sync: boolean }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await migrate(host, port, dbname)
+  .action((async () => {
+    await migrate()
   }))
 
 program.parse(process.argv);
