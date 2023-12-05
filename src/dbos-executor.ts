@@ -345,14 +345,6 @@ export class DBOSExecutor {
       args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
     }
     const runWorkflow = async () => {
-      // Check if the workflow previously ran.
-      const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
-      if (previousOutput !== dbosNull) {
-        wCtxt.span.setAttribute("cached", true);
-        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        this.tracer.endSpan(wCtxt.span);
-        return previousOutput as R;
-      }
       let result: R;
       // Execute the workflow.
       try {
