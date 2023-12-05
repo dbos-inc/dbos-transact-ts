@@ -330,6 +330,7 @@ export class DBOSExecutor {
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
   async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const presetUUID = params.workflowUUID !== undefined;
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
@@ -337,7 +338,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.

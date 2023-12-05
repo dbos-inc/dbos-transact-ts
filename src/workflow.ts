@@ -83,7 +83,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
-    workflowName: string
+    workflowName: string,
+    readonly presetUUID: boolean,
   ) {
     const span = dbosExec.tracer.startSpan(
       workflowName,
