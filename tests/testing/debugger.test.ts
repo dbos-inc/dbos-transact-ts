@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, CommunicatorContext, Communicator, Debug } from "../../src/";
+import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, CommunicatorContext, Communicator } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -79,6 +79,26 @@ describe("debugger-test", () => {
         await ctxt.send(destinationUUID, "message3");
       }
     }
+
+    @Workflow()
+    static async setEventWorkflow(ctxt: WorkflowContext, debug?: boolean) {
+      await ctxt.setEvent("key1", "value1");
+      await ctxt.setEvent("key2", "value2");
+      if (debug) {
+        await ctxt.setEvent("key3", "value3");
+      }
+      return 0;
+    }
+
+    @Workflow()
+    static async getEventWorkflow(ctxt: WorkflowContext, targetUUID: string, debug?: boolean) {
+      const val1 = await ctxt.getEvent<string>(targetUUID, "key1");
+      const val2 = await ctxt.getEvent<string>(targetUUID, "key2");
+      if (debug) {
+        await ctxt.getEvent(targetUUID, "key3");
+      }
+      return val1 + "-" + val2;
+    }
   }
 
   test("debug-workflow", async () => {
@@ -154,8 +174,25 @@ describe("debugger-test", () => {
     await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(false).then((x) => x.getResult())).resolves.toBe(true);
     await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, false).then((x) => x.getResult())).resolves.toBeFalsy();
 
-    // Execute a non-exist UUID should fail.
+    // Execute a non-exist function ID should fail.
     await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded send");
     await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded recv");
+  });
+
+  test("debug-workflow-events", async() => {
+    const getUUID = uuidv1();
+    const setUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    await expect(testRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(false).then((x) => x.getResult())).resolves.toBe(0);
+    await expect(testRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, false).then((x) => x.getResult())).resolves.toBe("value1-value2");
+    await testRuntime.destroy();
+
+    // Execute again in debug mode.
+    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(false).then((x) => x.getResult())).resolves.toBe(0);
+    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, false).then((x) => x.getResult())).resolves.toBe("value1-value2");
+
+    // Execute a non-exist function ID should fail.
+    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded setEvent");
+    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded getEvent");
   });
 });
