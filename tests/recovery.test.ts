@@ -56,11 +56,11 @@ describe("recovery-tests", () => {
 
   test("local-recovery", async () => {
     // Run a workflow until pending and start recovery.
-    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
-    const recoverHandles = await wfe.recoverPendingWorkflows();
+    const recoverHandles = await dbosExec.recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 
@@ -115,13 +115,13 @@ describe("recovery-tests", () => {
 
   test("selective-recovery", async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
-    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
     const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
 
-    const recoverHandles = await wfe.recoverPendingWorkflows(["fcvm123"]);
+    const recoverHandles = await dbosExec.recoverPendingWorkflows(["fcvm123"]);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
     ExecutorRecovery.localResolve();

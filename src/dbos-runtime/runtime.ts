@@ -17,12 +17,12 @@ export interface DBOSRuntimeConfig {
 }
 
 export class DBOSRuntime {
-  private wfe: DBOSExecutor;
+  private dbosExec: DBOSExecutor;
   private server: Server | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
-    this.wfe = new DBOSExecutor(dbosConfig);
+    this.dbosExec = new DBOSExecutor(dbosConfig);
   }
 
   /**
@@ -31,7 +31,7 @@ export class DBOSRuntime {
   async init() {
     const exports = await this.loadFunctions();
     if (exports === null) {
-      this.wfe.logger.error("operations not found");
+      this.dbosExec.logger.error("operations not found");
       throw new DBOSError("operations not found");
     }
 
@@ -39,11 +39,11 @@ export class DBOSRuntime {
     for (const key in exports) {
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
-        this.wfe.logger.debug(`Loaded class: ${key}`);
+        this.dbosExec.logger.debug(`Loaded class: ${key}`);
       }
     }
 
-    await this.wfe.init(...classes);
+    await this.dbosExec.init(...classes);
   }
 
   /**
@@ -56,7 +56,7 @@ export class DBOSRuntime {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       return import(operations) as Promise<ModuleExports>;
     } else {
-      this.wfe.logger.warn(`${entrypoint} not found`);
+      this.dbosExec.logger.warn(`${entrypoint} not found`);
       return null;
     }
   }
@@ -67,10 +67,10 @@ export class DBOSRuntime {
   startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
 
-    const server: DBOSHttpServer = new DBOSHttpServer(this.wfe)
+    const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
 
     this.server = server.listen(this.runtimeConfig.port);
-    this.wfe.logRegisteredHTTPUrls();
+    this.dbosExec.logRegisteredHTTPUrls();
   }
 
   /**
@@ -78,6 +78,6 @@ export class DBOSRuntime {
    */
   async destroy() {
     this.server?.close();
-    await this.wfe?.destroy();
+    await this.dbosExec?.destroy();
   }
 }

@@ -34,7 +34,7 @@ export class DBOSHttpServer {
   /**
    * Create a Koa app.
    * @param dbosExec User pass in an DBOS workflow executor instance.
-   * TODO: maybe call wfe.init() somewhere in this class?
+   * TODO: maybe call dbosExec.init() somewhere in this class?
    */
   constructor(readonly dbosExec: DBOSExecutor, config: { koa?: Koa; router?: Router } = {}) {
     if (!config.router) {
@@ -74,13 +74,13 @@ export class DBOSHttpServer {
    * Register workflow recovery endpoint.
    * Receives a list of executor IDs and returns a list of workflowUUIDs.
    */
-  static registerRecoveryEndpoint(wfe: DBOSExecutor, router: Router) {
+  static registerRecoveryEndpoint(dbosExec: DBOSExecutor, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const executorIDs = koaCtxt.request.body as string[];
-      wfe.logger.info("Recovering workflows for executors: " + executorIDs.toString());
-      const recoverHandles = await wfe.recoverPendingWorkflows(executorIDs);
+      dbosExec.logger.info("Recovering workflows for executors: " + executorIDs.toString());
+      const recoverHandles = await dbosExec.recoverPendingWorkflows(executorIDs);
 
       // Return a list of workflowUUIDs being recovered.
       koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.getWorkflowUUID())).then((results) =>
@@ -90,20 +90,20 @@ export class DBOSHttpServer {
     };
 
     router.post(WorkflowRecoveryUrl, recoveryHandler);
-    wfe.logger.debug(`DBOS Server Registered Recovery POST ${WorkflowRecoveryUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Recovery POST ${WorkflowRecoveryUrl}`);
   }
 
   /**
    * Register decorated functions as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(wfe: DBOSExecutor, router: Router) {
+  static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
-    wfe.registeredOperations.forEach((registeredOperation) => {
+    dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         // Ignore URL with "/dbos-workflow-recovery" prefix.
         if (ro.apiURL.startsWith(WorkflowRecoveryUrl)) {
-          wfe.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${WorkflowRecoveryUrl}!`);
+          dbosExec.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${WorkflowRecoveryUrl}!`);
           return;
         }
 
@@ -111,14 +111,14 @@ export class DBOSHttpServer {
         const defaults = ro.defaults as MiddlewareDefaults;
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            wfe.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
+            dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
           });
         }
 
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContextImpl = new HandlerContextImpl(wfe, koaCtxt);
+          const oc: HandlerContextImpl = new HandlerContextImpl(dbosExec, koaCtxt);
 
           try {
             // Check for auth first
@@ -133,7 +133,7 @@ export class DBOSHttpServer {
                   return oc.getConfig(key, def);
                 },
                 query: (query, ...args) => {
-                  return wfe.userDatabase.queryFunction(query, ...args);
+                  return dbosExec.userDatabase.queryFunction(query, ...args);
                 },
               });
               if (res) {
@@ -188,11 +188,11 @@ export class DBOSHttpServer {
             // - Otherwise, we return 500.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await wfe.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await wfe.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await wfe.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
@@ -246,7 +246,7 @@ export class DBOSHttpServer {
                 },
               }
             );
-            wfe.tracer.endSpan(oc.span);
+            dbosExec.tracer.endSpan(oc.span);
             // Add requestID to response headers.
             koaCtxt.set(RequestIDHeader, oc.request.requestID as string);
             await koaNext();
@@ -256,10 +256,10 @@ export class DBOSHttpServer {
         // Actually register the endpoint.
         if (ro.apiType === APITypes.GET) {
           router.get(ro.apiURL, wrappedHandler);
-          wfe.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
+          dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
         } else if (ro.apiType === APITypes.POST) {
           router.post(ro.apiURL, wrappedHandler);
-          wfe.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+          dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
         }
       }
     });

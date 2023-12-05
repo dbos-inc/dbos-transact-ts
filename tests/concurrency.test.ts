@@ -67,8 +67,8 @@ describe("concurrency-tests", () => {
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    await wfe.flushWorkflowStatusBuffer();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    await dbosExec.flushWorkflowStatusBuffer();
     ConcurrTestClass.resolve();
     await handle.getResult();
 
