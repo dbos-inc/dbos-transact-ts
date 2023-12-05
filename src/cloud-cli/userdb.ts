@@ -135,7 +135,7 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   }
 }
 
-export async function migrate() {
+export function migrate() {
   const logger = createGlobalLogger();
 
   // read the yaml file
@@ -145,7 +145,7 @@ export async function migrate() {
     return;
   }
 
-  var dbType = configFile.database.user_dbclient;
+  let dbType = configFile.database.user_dbclient;
   if (dbType == undefined) {
     dbType = 'knex';
   }

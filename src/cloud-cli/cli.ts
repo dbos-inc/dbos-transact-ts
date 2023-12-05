@@ -176,8 +176,8 @@ userdb
 
   userdb
   .command('migrate')
-  .action((async () => {
-    await migrate()
+  .action((() => {
+    migrate()
   }))
 
 program.parse(process.argv);
