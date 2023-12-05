@@ -23,18 +23,18 @@ interface RecordedResult<R> {
  */
 export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
-  readonly #wfe;
+  readonly #dbosExec;
   readonly isTempWorkflow: boolean;
 
-  constructor(wfe: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
-    const span = wfe.tracer.startSpan(workflowName, { workflowUUID: workflowUUID }, parentCtx?.span);
-    super(workflowName, span, wfe.logger, parentCtx);
+  constructor(dbosExec: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
+    const span = dbosExec.tracer.startSpan(workflowName, { workflowUUID: workflowUUID }, parentCtx?.span);
+    super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
-    this.#wfe = wfe;
-    this.isTempWorkflow = wfe.tempWorkflowName === workflowName;
-    if (wfe.config.application) {
+    this.#dbosExec = dbosExec;
+    this.isTempWorkflow = dbosExec.tempWorkflowName === workflowName;
+    if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = wfe.config.application;
+      this.applicationConfig = dbosExec.config.application;
     }
   }
 
@@ -63,7 +63,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     // Note: we read the recorded snapshot and transaction ID!
     const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
 
-    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
 
     if (rows.length === 0 || rows.length > 1) {
       this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString());
@@ -82,7 +82,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     // Send a signal to the debug proxy.
     // TODO: use the real command once the proxy is fully implemented.
-    await this.#wfe.userDatabase.queryWithClient(client, `--proxy:${res.txn_id}`);
+    await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id}`);
 
     return res;
   }
@@ -92,18 +92,18 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * It connects to a debug proxy and everything should be read-only.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#wfe.transactionConfigMap.get(txn.name);
+    const config = this.#dbosExec.transactionConfigMap.get(txn.name);
     if (config === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
     }
     // const readOnly = true; // TODO: eventually, this transaction must be read-only.
     const funcID = this.functionIDGetIncrement();
-    const span: Span = this.#wfe.tracer.startSpan(txn.name, {}, this.span);
+    const span: Span = this.#dbosExec.tracer.startSpan(txn.name, {}, this.span);
     let check: RecordedResult<R>;
 
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
-      const tCtxt = new TransactionContextImpl(this.#wfe.userDatabase.getName(), client, this, span, this.#wfe.logger, funcID, txn.name);
+      const tCtxt = new TransactionContextImpl(this.#dbosExec.userDatabase.getName(), client, this, span, this.#dbosExec.logger, funcID, txn.name);
       check = await this.checkExecution<R>(client, funcID);
 
       // Execute the user's transaction.
@@ -111,7 +111,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return result;
     };
 
-    const result = await this.#wfe.userDatabase.transaction(wrappedTransaction, config);
+    const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, config);
 
     if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
       this.logger.error(`Detected different transaction output than the original one!\n Expected: ${JSON.stringify(result)}\n Received: ${JSON.stringify(check!.output)}`);
@@ -120,14 +120,14 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
-    const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
+    const commConfig = this.#dbosExec.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
+    const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
     }
@@ -139,14 +139,14 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#wfe.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
   async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: undefined | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
+    const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded send. Shouldn't happen in debug mode!`);
     }
@@ -158,7 +158,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: T | null | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
+    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded recv. Shouldn't happen in debug mode!`);
     }
@@ -169,7 +169,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   async setEvent<T extends NonNullable<any>>(_key: string, _value: T): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
     // Original result must exist during replay.
-    const check: undefined | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
+    const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded setEvent. Shouldn't happen in debug mode!`);
     }
@@ -180,7 +180,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: T | null | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
+    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded getEvent. Shouldn't happen in debug mode!`);
     }
@@ -191,7 +191,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
     // TODO: write a proper test for this.
     const functionID: number = this.functionIDGetIncrement();
-    return new RetrievedHandleDebug(this.#wfe.systemDatabase, targetUUID, this.workflowUUID, functionID);
+    return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 }
 

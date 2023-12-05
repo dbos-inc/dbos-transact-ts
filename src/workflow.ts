@@ -74,18 +74,18 @@ export interface WorkflowContext extends DBOSContext {
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
-  readonly #wfe;
+  readonly #dbosExec;
   readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
 
   constructor(
-    wfe: DBOSExecutor,
+    dbosExec: DBOSExecutor,
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string
   ) {
-    const span = wfe.tracer.startSpan(
+    const span = dbosExec.tracer.startSpan(
       workflowName,
       {
         workflowUUID: workflowUUID,
@@ -94,13 +94,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       parentCtx?.span,
     );
-    super(workflowName, span, wfe.logger, parentCtx);
+    super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
-    this.#wfe = wfe;
-    this.isTempWorkflow = wfe.tempWorkflowName === workflowName;
-    if (wfe.config.application) {
+    this.#dbosExec = dbosExec;
+    this.isTempWorkflow = dbosExec.tempWorkflowName === workflowName;
+    if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = wfe.config.application;
+      this.applicationConfig = dbosExec.config.application;
     }
   }
 
@@ -117,7 +117,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
     // Note: we read the current snapshot, not the recorded one!
-    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
       client,
       "(SELECT output, error, txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
       this.workflowUUID,
@@ -173,9 +173,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
       this.logger.debug(sqlStmt);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await this.#wfe.userDatabase.queryWithClient(client, sqlStmt, ...values);
+      await this.#dbosExec.userDatabase.queryWithClient(client, sqlStmt, ...values);
     } catch (error) {
-      if (this.#wfe.userDatabase.isKeyConflictError(error)) {
+      if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
       } else {
@@ -200,7 +200,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordGuardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
     const serialOutput = JSON.stringify(output);
-    const rows = await this.#wfe.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE dbos.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "UPDATE dbos.transaction_outputs SET output=$1, txn_id=(select pg_current_xact_id_if_assigned()::text) WHERE workflow_uuid=$2 AND function_id=$3 RETURNING txn_id;", serialOutput, this.workflowUUID, funcID);
     return rows[0].txn_id;  // Must have a transaction ID because we inserted the guard before.
   }
 
@@ -209,7 +209,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordGuardedError(client: UserDatabaseClient, funcID: number, err: Error) {
     const serialErr = JSON.stringify(serializeError(err));
-    await this.#wfe.userDatabase.queryWithClient(client, "UPDATE dbos.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
+    await this.#dbosExec.userDatabase.queryWithClient(client, "UPDATE dbos.transaction_outputs SET error=$1 WHERE workflow_uuid=$2 AND function_id=$3;", serialErr, this.workflowUUID, funcID);
   }
 
   /**
@@ -222,7 +222,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#wfe.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
   /**
@@ -232,7 +232,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any other error, throw it.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#wfe.transactionConfigMap.get(txn.name);
+    const config = this.#dbosExec.transactionConfigMap.get(txn.name);
     if (config === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
     }
@@ -240,7 +240,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#wfe.tracer.startSpan(
+    const span: Span = this.#dbosExec.tracer.startSpan(
       txn.name,
       {
         workflowUUID: this.workflowUUID,
@@ -257,14 +257,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         // Check if this execution previously happened, returning its original result if it did.
 
         const tCtxt = new TransactionContextImpl(
-          this.#wfe.userDatabase.getName(), client, this,
-          span, this.#wfe.logger, funcId, txn.name,
+          this.#dbosExec.userDatabase.getName(), client, this,
+          span, this.#dbosExec.logger, funcId, txn.name,
         );
         const check: BufferedResult = await this.checkExecution<R>(client, funcId);
         if (check.output !== dbosNull) {
           tCtxt.span.setAttribute("cached", true);
           tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-          this.#wfe.tracer.endSpan(tCtxt.span);
+          this.#dbosExec.tracer.endSpan(tCtxt.span);
           return check.output as R;
         }
 
@@ -296,11 +296,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       };
 
       try {
-        const result = await this.#wfe.userDatabase.transaction(wrappedTransaction, config);
+        const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, config);
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (this.#wfe.userDatabase.isRetriableTransactionError(err)) {
+        if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
           // Retry serialization failures.
@@ -311,7 +311,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
         // Record and throw other errors.
         const e: Error = err as Error;
-        await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
+        await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
           await this.recordGuardedError(client, funcId, e);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
@@ -319,7 +319,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         throw err;
       } finally {
-        this.#wfe.tracer.endSpan(span);
+        this.#dbosExec.tracer.endSpan(span);
       }
     }
   }
@@ -330,14 +330,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
-    const commConfig = this.#wfe.communicatorConfigMap.get(commFn.name);
+    const commConfig = this.#dbosExec.communicatorConfigMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
     }
 
     const funcID = this.functionIDGetIncrement();
 
-    const span: Span = this.#wfe.tracer.startSpan(
+    const span: Span = this.#dbosExec.tracer.startSpan(
       commFn.name,
       {
         workflowUUID: this.workflowUUID,
@@ -350,19 +350,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#wfe.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commConfig, commFn.name);
 
-    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
+    const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
     if (check !== dbosNull) {
       ctxt.span.setAttribute("cached", true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#wfe.tracer.endSpan(ctxt.span);
+      this.#dbosExec.tracer.endSpan(ctxt.span);
       return check as R;
     }
 
@@ -383,7 +383,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
             intervalSeconds *= ctxt.backoffRate;
           }
           ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-          this.#wfe.tracer.endSpan(ctxt.span);
+          this.#dbosExec.tracer.endSpan(ctxt.span);
         }
       }
     } else {
@@ -392,7 +392,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       } catch (error) {
         err = error as Error;
         ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-        this.#wfe.tracer.endSpan(ctxt.span);
+        this.#dbosExec.tracer.endSpan(ctxt.span);
       }
     }
 
@@ -400,15 +400,15 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSError("Communicator reached maximum retries.", 1) : err;
-      await this.#wfe.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
+      await this.#dbosExec.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      this.#wfe.tracer.endSpan(ctxt.span);
+      this.#dbosExec.tracer.endSpan(ctxt.span);
       throw err;
     } else {
       // Record the execution and return.
-      await this.#wfe.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
+      await this.#dbosExec.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#wfe.tracer.endSpan(ctxt.span);
+      this.#dbosExec.tracer.endSpan(ctxt.span);
       return result as R;
     }
   }
@@ -420,12 +420,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    await this.#wfe.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
+    await this.#dbosExec.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
   /**
@@ -436,12 +436,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    return this.#wfe.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
+    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
   }
 
   /**
@@ -451,12 +451,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async setEvent<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
-    await this.#wfe.userDatabase.transaction(async (client: UserDatabaseClient) => {
+    await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    await this.#wfe.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
+    await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
   }
 
   /**
@@ -485,7 +485,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-    return this.#wfe.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
+    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
 
   /**
@@ -493,7 +493,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
     const functionID: number = this.functionIDGetIncrement();
-    return new RetrievedHandle(this.#wfe.systemDatabase, targetUUID, this.workflowUUID, functionID);
+    return new RetrievedHandle(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
 }

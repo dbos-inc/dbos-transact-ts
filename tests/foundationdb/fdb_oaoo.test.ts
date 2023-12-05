@@ -82,8 +82,8 @@ describe("foundationdb-oaoo", () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const wfe = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    clearInterval(wfe.flushBufferID); // Don't flush the output buffer.
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
     const setUUID = getUUID + "-2";

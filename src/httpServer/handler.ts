@@ -39,10 +39,10 @@ function getOrGenerateRequestID(ctx: Koa.Context): string {
 }
 
 export class HandlerContextImpl extends DBOSContextImpl implements HandlerContext {
-  readonly #wfe: DBOSExecutor;
+  readonly #dbosExec: DBOSExecutor;
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
-  constructor(wfe: DBOSExecutor, readonly koaContext: Koa.Context) {
+  constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
@@ -53,12 +53,12 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       operationName: koaContext.url,
     };
     if (extractedSpanContext === undefined) {
-      span = wfe.tracer.startSpan(koaContext.url, spanAttributes);
+      span = dbosExec.tracer.startSpan(koaContext.url, spanAttributes);
     } else {
       extractedSpanContext.isRemote = true;
-      span = wfe.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
+      span = dbosExec.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
     }
-    super(koaContext.url, span, wfe.logger);
+    super(koaContext.url, span, dbosExec.logger);
     this.W3CTraceContextPropagator = httpTracer;
     this.request = {
       headers: koaContext.request.headers,
@@ -74,11 +74,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       ip: koaContext.request.ip,
       requestID: getOrGenerateRequestID(koaContext),
     };
-    if (wfe.config.application) {
+    if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = wfe.config.application;
+      this.applicationConfig = dbosExec.config.application;
     }
-    this.#wfe = wfe;
+    this.#dbosExec = dbosExec;
   }
 
   ///////////////////////
@@ -86,15 +86,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   ///////////////////////
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
-    return this.#wfe.send(destinationUUID, message, topic, idempotencyKey);
+    return this.#dbosExec.send(destinationUUID, message, topic, idempotencyKey);
   }
 
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
-    return this.#wfe.getEvent(workflowUUID, key, timeoutSeconds);
+    return this.#dbosExec.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    return this.#wfe.retrieveWorkflow(workflowUUID);
+    return this.#dbosExec.retrieveWorkflow(workflowUUID);
   }
 
   /**
@@ -127,15 +127,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /////////////////////
 
   async #workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    return this.#wfe.workflow(wf, params, ...args);
+    return this.#dbosExec.workflow(wf, params, ...args);
   }
 
   async #transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    return this.#wfe.transaction(txn, params, ...args);
+    return this.#dbosExec.transaction(txn, params, ...args);
   }
 
   async #external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    return this.#wfe.external(commFn, params, ...args);
+    return this.#dbosExec.external(commFn, params, ...args);
   }
 }
 

@@ -92,11 +92,11 @@ export class InitContext {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private application: any;
 
-  constructor(readonly wfe: DBOSExecutor) {
-    this.logger = wfe.logger;
-    this.userDatabase = wfe.userDatabase;
+  constructor(readonly dbosExec: DBOSExecutor) {
+    this.logger = dbosExec.logger;
+    this.userDatabase = dbosExec.userDatabase;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    this.application = wfe.config.application;
+    this.application = dbosExec.config.application;
   }
 
   createUserSchema(): Promise<void> {
@@ -125,7 +125,7 @@ export class InitContext {
 
     // If the key is found and the default value is provided, check whether the value is of the same type.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const value = get(this.wfe.config.application, key);
+    const value = get(this.dbosExec.config.application, key);
     if (defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
