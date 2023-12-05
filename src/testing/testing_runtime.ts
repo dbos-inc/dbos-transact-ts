@@ -78,6 +78,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #applicationConfig: unknown = undefined;
+  #isInitialized = false;
 
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
@@ -89,13 +90,18 @@ export class TestingRuntimeImpl implements TestingRuntime {
     await dbosExec.init(...userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
     this.#applicationConfig = dbosExec.config.application;
+    this.#isInitialized = true;
   }
 
   /**
    * Release resources after tests.
    */
   async destroy() {
-    await this.#server?.dbosExec.destroy();
+    // Only release once.
+    if (this.#isInitialized) {
+      await this.#server?.dbosExec.destroy();
+      this.#isInitialized = false;
+    }
   }
 
   /**

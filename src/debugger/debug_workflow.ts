@@ -133,11 +133,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
-    const span: Span = this.#wfe.tracer.startSpan(commFn.name, {}, this.span);
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#wfe.logger, commConfig, commFn.name);
 
     // Original result must exist during replay.
-    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
+    const check: R | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
     }
@@ -152,12 +150,30 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.#wfe.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string | undefined): Promise<void> {
-    throw new Error("Method not implemented.");
+  async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
+    const functionID: number = this.functionIDGetIncrement();
+
+    // Original result must exist during replay.
+    const check: undefined | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
+    if (check === dbosNull) {
+      throw new DBOSDebuggerError(`Cannot find recorded send. Shouldn't happen in debug mode!`);
+    }
+    this.logger.debug("Use recorded send output.");
+    return;
   }
-  recv<T extends NonNullable<any>>(topic?: string | undefined, timeoutSeconds?: number | undefined): Promise<T | null> {
-    throw new Error("Method not implemented.");
+
+  async recv<T extends NonNullable<any>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+    const functionID: number = this.functionIDGetIncrement();
+
+    // Original result must exist during replay.
+    const check: T | null | DBOSNull = await this.#wfe.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
+    if (check === dbosNull) {
+      throw new DBOSDebuggerError(`Cannot find recorded recv. Shouldn't happen in debug mode!`);
+    }
+    this.logger.debug("Use recorded recv output.");
+    return check as T | null;
   }
+
   setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void> {
     throw new Error("Method not implemented.");
   }
