@@ -88,7 +88,8 @@ export class DBOSExecutor {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
+  readonly pendingBufferFlushes: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to result buffer flush promise
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -265,7 +266,7 @@ export class DBOSExecutor {
     // Only execute init code if under non-debug mode
     if (!this.debugMode) {
       for (const v of this.registeredOperations) {
-        const m = v as MethodRegistration<unknown, unknown[], unknown> ;
+        const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
           this.logger.debug("Executing init method: " + m.name);
           await m.origFunction(new InitContext(this));
@@ -280,6 +281,10 @@ export class DBOSExecutor {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
+    }
+    if (this.pendingBufferFlushes.size > 0) {
+      this.logger.info("Waiting for pending buffer flushes to finish");
+      await Promise.allSettled(this.pendingBufferFlushes.values());
     }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
@@ -373,11 +378,15 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
-      // // Asynchronously flush the result buffer.
-      // this.userDatabase.transaction(async (client: UserDatabaseClient) => {
-      //   await wCtxt.flushResultBuffer(client);
-      // }, { isolationLevel: IsolationLevel.ReadCommitted })
-      // .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error)})
+      // Asynchronously flush the result buffer.
+      const resultBufferFlush: Promise<void> = this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+        if (wCtxt.resultBuffer.size > 0) {
+          await wCtxt.flushResultBuffer(client);
+        }
+      }, { isolationLevel: IsolationLevel.ReadCommitted })
+        .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error) })
+        .finally(() => { this.pendingBufferFlushes.delete(workflowUUID) })
+      this.pendingBufferFlushes.set(workflowUUID, resultBufferFlush);
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
@@ -419,7 +428,7 @@ export class DBOSExecutor {
     const runWorkflow = async () => {
       // A non-temp debug workflow must have run before.
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-      if(!wCtxt.isTempWorkflow && !wfStatus) {
+      if (!wCtxt.isTempWorkflow && !wfStatus) {
         throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
       }
 

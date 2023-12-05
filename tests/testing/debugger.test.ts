@@ -42,7 +42,7 @@ describe("debugger-test", () => {
       await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     }
 
-    @Transaction()
+    @Transaction({readOnly: true})
     static async testReadOnlyFunction(txnCtxt: TestTransactionContext, number: number) {
       const { rows } = await txnCtxt.client.query<{one: number}>(`SELECT 1 AS one`);
       return Number(rows[0].one) + number;
