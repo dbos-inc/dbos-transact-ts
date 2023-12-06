@@ -55,6 +55,11 @@ describe("failures-tests", () => {
     // The error should be recorded in the database, so the function shouldn't run again.
     await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrowError(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(1);
+
+    // A run with a generated UUID should fail normally
+    await expect(testRuntime.invoke(FailureTestClass).testReadonlyError()).rejects.toThrowError(new Error("test error"));
+    expect(FailureTestClass.cnt).toBe(2);
+
   });
 
   test("simple-keyconflict", async () => {

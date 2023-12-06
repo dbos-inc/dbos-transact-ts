@@ -94,7 +94,7 @@ describe("dbos-tests", () => {
       }
       return rows[0].value;
     }
-  
+
     @Transaction()
     static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
@@ -103,7 +103,7 @@ describe("dbos-tests", () => {
       ]);
       return rows[0].value;
     }
-  
+
     @Workflow()
     static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
       await workflowCtxt.invoke(ReadRecording).testReadFunction(id);
@@ -122,10 +122,10 @@ describe("dbos-tests", () => {
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
 
-    // Invoke it again, should return the recorded same error without running it.
+    // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
     await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
-    expect(ReadRecording.wfCnt).toBe(2);
+    expect(ReadRecording.wfCnt).toBe(4);
   });
 
   test("txn-snapshot-recording", async () => {
@@ -226,7 +226,7 @@ class DBOSTestClass {
   static cnt: number = 0;
 
   @DBOSInitializer()
-  static async init(_ctx: InitContext) { 
+  static async init(_ctx: InitContext) {
     DBOSTestClass.initialized = true;
     expect(_ctx.getConfig("counter")).toBe(3);
     await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

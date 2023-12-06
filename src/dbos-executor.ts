@@ -18,7 +18,7 @@ import {
   WorkflowStatus,
 } from './workflow';
 
-import { Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
@@ -35,6 +35,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
+  UserDatabaseClient,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -87,7 +88,8 @@ export class DBOSExecutor {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
+  readonly pendingBufferFlushes: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to result buffer flush promise
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -264,7 +266,7 @@ export class DBOSExecutor {
     // Only execute init code if under non-debug mode
     if (!this.debugMode) {
       for (const v of this.registeredOperations) {
-        const m = v as MethodRegistration<unknown, unknown[], unknown> ;
+        const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
           this.logger.debug("Executing init method: " + m.name);
           await m.origFunction(new InitContext(this));
@@ -279,6 +281,10 @@ export class DBOSExecutor {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
+    }
+    if (this.pendingBufferFlushes.size > 0) {
+      this.logger.info("Waiting for pending buffer flushes to finish");
+      await Promise.allSettled(this.pendingBufferFlushes.values());
     }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
@@ -324,6 +330,7 @@ export class DBOSExecutor {
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
   async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const presetUUID: boolean = params.workflowUUID ? true : false;
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
@@ -331,7 +338,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
@@ -339,14 +346,6 @@ export class DBOSExecutor {
       args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
     }
     const runWorkflow = async () => {
-      // Check if the workflow previously ran.
-      const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
-      if (previousOutput !== dbosNull) {
-        wCtxt.span.setAttribute("cached", true);
-        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        this.tracer.endSpan(wCtxt.span);
-        return previousOutput as R;
-      }
       let result: R;
       // Execute the workflow.
       try {
@@ -372,6 +371,15 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
+      // Asynchronously flush the result buffer.
+      const resultBufferFlush: Promise<void> = this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+        if (wCtxt.resultBuffer.size > 0) {
+          await wCtxt.flushResultBuffer(client);
+        }
+      }, { isolationLevel: IsolationLevel.ReadCommitted })
+        .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error) })
+        .finally(() => { this.pendingBufferFlushes.delete(workflowUUID) })
+      this.pendingBufferFlushes.set(workflowUUID, resultBufferFlush);
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
@@ -413,7 +421,7 @@ export class DBOSExecutor {
     const runWorkflow = async () => {
       // A non-temp debug workflow must have run before.
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-      if(!wCtxt.isTempWorkflow && !wfStatus) {
+      if (!wCtxt.isTempWorkflow && !wfStatus) {
         throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
       }
 

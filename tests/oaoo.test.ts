@@ -44,7 +44,7 @@ describe("oaoo-tests", () => {
     static async testCommunicator(_commCtxt: CommunicatorContext) {
       return CommunicatorOAOO.#counter++;
     }
-  
+
     @Workflow()
     static async testCommWorkflow(workflowCtxt: WorkflowContext) {
       const funcResult = await workflowCtxt.invoke(CommunicatorOAOO).testCommunicator();
@@ -85,7 +85,7 @@ describe("oaoo-tests", () => {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
       return Number(rows[0].id);
     }
-  
+
     @Transaction({ readOnly: true })
     static async testReadTx(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
@@ -96,7 +96,7 @@ describe("oaoo-tests", () => {
         return -1;
       }
     }
-  
+
     @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -105,7 +105,7 @@ describe("oaoo-tests", () => {
       const checkResult: number = await wfCtxt.invoke(WorkflowOAOO).testReadTx(funcResult);
       return checkResult;
     }
-  
+
     // eslint-disable-next-line @typescript-eslint/require-await
     @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
@@ -118,12 +118,12 @@ describe("oaoo-tests", () => {
     const uuidArray: string[] = [];
 
     for (let i = 0; i < 10; i++) {
-      const workflowUUID: string = uuidv1();
+      const workflowHandle = await testRuntime
+        .invoke(WorkflowOAOO)
+        .testTxWorkflow(username);
+      const workflowUUID: string = workflowHandle.getWorkflowUUID()
       uuidArray.push(workflowUUID);
-      workflowResult = await testRuntime
-        .invoke(WorkflowOAOO, workflowUUID)
-        .testTxWorkflow(username)
-        .then((x) => x.getResult());
+      workflowResult = await workflowHandle.getResult();
       expect(workflowResult).toEqual(i + 1);
     }
 
@@ -219,7 +219,7 @@ describe("oaoo-tests", () => {
       } else {
         res = getValue;
       }
-  
+
       const handle = ctxt.retrieveWorkflow(targetUUID);
       const status = await handle.getStatus();
       EventStatusOAOO.wfCnt++;
@@ -228,7 +228,7 @@ describe("oaoo-tests", () => {
       } else {
         res += "-" + status.status;
       }
-  
+
       // Note: the targetUUID must match the child workflow UUID.
       const invokedHandle = await ctxt.childWorkflow(EventStatusOAOO.setEventWorkflow);
       try {
