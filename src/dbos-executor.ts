@@ -330,7 +330,7 @@ export class DBOSExecutor {
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
   async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
-    const presetUUID = params.workflowUUID !== undefined;
+    const presetUUID: boolean = params.workflowUUID ? true : false;
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
