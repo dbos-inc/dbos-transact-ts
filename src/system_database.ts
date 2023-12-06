@@ -39,6 +39,10 @@ export interface SystemDatabase {
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
 }
 
+interface ExistenceCheck {
+  exists: boolean;
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
 
@@ -58,10 +62,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const pgSystemClient = new Client(this.pgPoolConfig);
     await pgSystemClient.connect();
     // Create the system database and load tables.
-    const dbExists = await pgSystemClient.query(`SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}'`);
-    if (dbExists.rows.length === 0) {
+    const dbExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}')`);
+    if (!dbExists.rows[0].exists) {
       // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
+    }
+
+    // Check if the system schema exist.
+    const schemaExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_status')`);
+    if (!schemaExists.rows[0].exists) {
       // Load the DBOS system schemas.
       await this.pool.query(systemDBSchema);
     }
