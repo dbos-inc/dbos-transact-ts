@@ -178,13 +178,35 @@ export function migrate() {
         execSync(command);
     })
   } catch(e) {
-    logger.error("Error running migration");
+    logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+  }
+}
+
+export function rollbackmigration() {
+  const logger = createGlobalLogger();
+
+  // read the yaml file
+  const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
+  if (!configFile) {
+    logger.error(`failed to parse ${dbosConfigFilePath}`);
+    return;
+  }
+
+  let dbType = configFile.database.user_dbclient;
+  if (dbType == undefined) {
+    dbType = 'knex';
+  }
+
+  const rollbackcommands = configFile.database.rollback;
+  
+  try {
     rollbackcommands?.forEach((cmd) => {
-      const command = "npx " + dbType + " " + cmd; 
+        const command = "npx "+ dbType + " " + cmd; 
         logger.info("Executing " + command);
         execSync(command);
     })
-
+  } catch(e) {
+    logger.error("Error rolling back migration. ");
   }
 }
 

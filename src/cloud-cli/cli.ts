@@ -12,7 +12,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb, migrate } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackmigration } from "./userdb";
 import { credentialsExist } from "./utils";
 
 const program = new Command();
@@ -174,11 +174,17 @@ userdb
     await deleteUserDb(host, port, dbname, options.sync)
   }))
 
-  userdb
+userdb
   .command('migrate')
   .action((() => {
     migrate()
   }))
+
+userdb
+  .command('rollbackmigration')
+  .action((() => {
+    rollbackmigration()
+  }))  
 
 program.parse(process.argv);
 
