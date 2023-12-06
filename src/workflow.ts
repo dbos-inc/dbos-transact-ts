@@ -287,6 +287,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         );
 
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
+        // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
         let txn_snapshot: string;
         if (this.presetUUID) {
           const check: BufferedResult = await this.checkExecution<R>(client, funcId);
