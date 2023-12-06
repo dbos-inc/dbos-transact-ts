@@ -169,7 +169,6 @@ export function migrate() {
   }
 
   const migratecommands = configFile.database.migrate;
-  const rollbackcommands = configFile.database.rollback;
   
   try {
     migratecommands?.forEach((cmd) => {
