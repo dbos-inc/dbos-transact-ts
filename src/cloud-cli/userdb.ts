@@ -154,7 +154,7 @@ export function migrate() {
 
   if (create_db) {
     logger.info(`Creating database ${userdbname}`);
-    let cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
+    const cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
     logger.info(cmd);
     try {
       execSync(cmd);

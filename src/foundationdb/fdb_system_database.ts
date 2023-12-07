@@ -170,7 +170,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
-    this.dbRoot.doTransaction(async (txn) => {
+    await this.dbRoot.doTransaction(async (txn) => {
       const inputsDB = txn.at(this.workflowInputsDB);
       const inputs = await inputsDB.get(workflowUUID);
       if (inputs === undefined) {
