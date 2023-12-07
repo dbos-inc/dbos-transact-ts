@@ -9,6 +9,7 @@ import { generateOpenApi } from "./openApi";
 import YAML from 'yaml';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { debugWorkflow } from "./debug";
 
 const program = new Command();
 
@@ -21,7 +22,11 @@ export interface DBOSCLIStartOptions {
   loglevel?: string,
   configfile?: string,
   entrypoint?: string,
-  debug?: string,
+}
+
+interface DBOSDebugOptions extends DBOSCLIStartOptions {
+  proxy: string, // TODO: in the future, we provide the proxy URL
+  uuid: string, // Workflow UUID
 }
 
 program
@@ -43,12 +48,24 @@ program
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
-  .option('-d, --debug <string>', 'Specify the debugger proxy URL')
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
     await runtime.init();
     runtime.startServer();
+  });
+
+program
+  .command('debug')
+  .description('Debug a workflow')
+  .requiredOption('-x, --proxy <string>', 'Specify the debugger proxy URL')
+  .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to debug')
+  .option('-l, --loglevel <string>', 'Specify log level')
+  .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
+  .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
+  .action(async (options: DBOSDebugOptions) => {
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
+    await debugWorkflow(dbosConfig, runtimeConfig, options.proxy, options.uuid);
   });
 
 program
