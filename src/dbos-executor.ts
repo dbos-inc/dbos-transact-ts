@@ -111,6 +111,15 @@ export class DBOSExecutor {
 
     if (this.debugMode) {
       this.logger.info("Running in debug mode!")
+      try {
+        const url = new URL(this.config.debugProxy!);
+        this.config.poolConfig.host = url.hostname;
+        this.config.poolConfig.port = parseInt(url.port, 10);
+        this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
+      } catch (err) {
+        this.logger.error(err);
+        throw err;
+      }
     }
 
     if (systemDatabase) {
@@ -141,18 +150,7 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
-    const userDBConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
-    if (this.debugMode) {
-      try {
-        const url = new URL(this.config.debugProxy!);
-        userDBConfig.host = url.hostname;
-        userDBConfig.port = parseInt(url.port, 10);
-        this.logger.info(`Debugging mode proxy: ${userDBConfig.host}:${userDBConfig.port}`);
-      } catch (err) {
-        this.logger.error(err);
-        return;
-      }
-    }
+    const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires

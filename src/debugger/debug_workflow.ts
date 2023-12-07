@@ -66,7 +66,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
 
     if (rows.length === 0 || rows.length > 1) {
-      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString());
+      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString() + `. WorkflowUUID ${this.workflowUUID}, function ID ${funcID}`);
       throw new DBOSDebuggerError(`This should never happen during debug. Returned ${rows.length} rows: ` + rows.toString());
     }
 
