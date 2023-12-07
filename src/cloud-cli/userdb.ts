@@ -4,7 +4,6 @@ import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils"
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 import { execSync } from "child_process";
-import { promiseHooks } from "v8";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -136,14 +135,14 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   }
 }
 
-export function migrate() : Promise<number> {
+export function migrate() : number {
   const logger = createGlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`failed to parse ${dbosConfigFilePath}`);
-    return Promise.resolve(1);
+    return 1;
   }
 
   let create_db = configFile.database.create_db;
@@ -155,7 +154,7 @@ export function migrate() : Promise<number> {
 
   if (create_db) {
     logger.info(`Creating database ${userdbname}`);
-    let cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
+    const cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
     logger.info(cmd);
     try {
       execSync(cmd);
@@ -172,27 +171,27 @@ export function migrate() : Promise<number> {
   const migratecommands = configFile.database.migrate;
   
   try {
-    migratecommands?.forEach((cmd) => {
+     migratecommands?.forEach((cmd) => {
         const command = "npx "+ dbType + " " + cmd; 
         logger.info("Executing " + command);
         execSync(command);
     })
   } catch(e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
-    return Promise.resolve(1) ;
+    return 1 ;
   }
 
-  return Promise.resolve(0);
+  return 0;
 }
 
-export function rollbackmigration(): Promise<number> {
+export function rollbackmigration(): number {
   const logger = createGlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`failed to parse ${dbosConfigFilePath}`);
-    return Promise.resolve(1);
+    return 1;
   }
 
   let dbType = configFile.database.user_dbclient;
@@ -203,16 +202,16 @@ export function rollbackmigration(): Promise<number> {
   const rollbackcommands = configFile.database.rollback;
   
   try {
-    rollbackcommands?.forEach((cmd) => {
+        rollbackcommands?.forEach((cmd) => {
         const command = "npx "+ dbType + " " + cmd; 
         logger.info("Executing " + command);
         execSync(command);
     })
   } catch(e) {
     logger.error("Error rolling back migration. ");
-    return Promise.resolve(1);
+    return 1;
   }
-  return Promise.resolve(0);
+  return 0;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
