@@ -89,7 +89,7 @@ export class DBOSExecutor {
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
-  readonly pendingBufferFlushes: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to result buffer flush promise
+  readonly pendingAsyncWrites: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to asynchronous write promise
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -280,9 +280,9 @@ export class DBOSExecutor {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
     }
-    if (this.pendingBufferFlushes.size > 0) {
+    if (this.pendingAsyncWrites.size > 0) {
       this.logger.info("Waiting for pending buffer flushes to finish");
-      await Promise.allSettled(this.pendingBufferFlushes.values());
+      await Promise.allSettled(this.pendingAsyncWrites.values());
     }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
@@ -339,9 +339,15 @@ export class DBOSExecutor {
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
-    // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
+    // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
       args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
+    } else {
+      // For temporary workflows, instead asynchronously record inputs.
+      const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
+        .catch(error => { this.logger.error('Error asynchronously setting workflow inputs', error) })
+        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
     const runWorkflow = async () => {
       let result: R;
@@ -376,8 +382,8 @@ export class DBOSExecutor {
         }
       }, { isolationLevel: IsolationLevel.ReadCommitted })
         .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error) })
-        .finally(() => { this.pendingBufferFlushes.delete(workflowUUID) })
-      this.pendingBufferFlushes.set(workflowUUID, resultBufferFlush);
+        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();

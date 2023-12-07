@@ -23,6 +23,7 @@ export interface SystemDatabase {
   recordWorkflowError(workflowUUID: string, error: Error): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
+  setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : Promise<void>;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
@@ -162,6 +163,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [StatusString.PENDING, executorID]
     )
     return rows.map(i => i.workflow_uuid);
+  }
+
+  async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
+    await this.pool.query<workflow_inputs>(
+      `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      [workflowUUID, JSON.stringify(args)]
+    )
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {

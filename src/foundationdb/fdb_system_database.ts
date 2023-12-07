@@ -169,6 +169,16 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return workflows.filter((i) => i[1].status === StatusString.PENDING && i[1].executorID === executorID).map((i) => i[0]);
   }
 
+  async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
+    await this.dbRoot.doTransaction(async (txn) => {
+      const inputsDB = txn.at(this.workflowInputsDB);
+      const inputs = await inputsDB.get(workflowUUID);
+      if (inputs === undefined) {
+        inputsDB.set(workflowUUID, args);
+      }
+    });
+  }
+
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
     return ((await this.workflowInputsDB.get(workflowUUID)) as T) ?? null;
   }
