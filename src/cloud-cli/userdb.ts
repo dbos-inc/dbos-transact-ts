@@ -4,6 +4,7 @@ import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils"
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 import { execSync } from "child_process";
+import { promiseHooks } from "v8";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = createGlobalLogger();
@@ -135,14 +136,14 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   }
 }
 
-export function migrate() {
+export function migrate() : Promise<number> {
   const logger = createGlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`failed to parse ${dbosConfigFilePath}`);
-    return;
+    return Promise.resolve(1);
   }
 
   let create_db = configFile.database.create_db;
@@ -178,17 +179,20 @@ export function migrate() {
     })
   } catch(e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+    return Promise.resolve(1) ;
   }
+
+  return Promise.resolve(0);
 }
 
-export function rollbackmigration() {
+export function rollbackmigration(): Promise<number> {
   const logger = createGlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`failed to parse ${dbosConfigFilePath}`);
-    return;
+    return Promise.resolve(1);
   }
 
   let dbType = configFile.database.user_dbclient;
@@ -206,7 +210,9 @@ export function rollbackmigration() {
     })
   } catch(e) {
     logger.error("Error rolling back migration. ");
+    return Promise.resolve(1);
   }
+  return Promise.resolve(0);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
