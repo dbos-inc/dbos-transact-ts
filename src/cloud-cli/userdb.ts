@@ -159,15 +159,15 @@ export function migrate(): number {
     const cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
     logger.info(cmd);
     try {
-      execSync(cmd);
+      const createDBCommandOutput = execSync(cmd).toString();
+      logger.info(createDBCommandOutput);
     } catch (e) {
       logger.error("Database already exists or could not be created.");
-      return 1;
     }
   }
 
   let dbType = configFile.database.user_dbclient;
-  if (dbType == undefined) {
+  if (dbType === undefined) {
     dbType = "knex";
   }
 
@@ -177,10 +177,12 @@ export function migrate(): number {
     migratecommands?.forEach((cmd) => {
       const command = "npx " + dbType + " " + cmd;
       logger.info("Executing " + command);
-      execSync(command);
+      const migrateCommandOutput = execSync(command).toString();
+      logger.info(migrateCommandOutput);
     });
   } catch (e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+    logger.error(e);
     return 1;
   }
 
