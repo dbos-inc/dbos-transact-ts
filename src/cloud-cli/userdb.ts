@@ -156,7 +156,7 @@ export function migrate(): number {
 
   if (create_db) {
     logger.info(`Creating database ${userdbname}`);
-    const cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
+    const cmd = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -ew ${userdbname}`;
     logger.info(cmd);
     try {
       const createDBCommandOutput = execSync(cmd).toString();
