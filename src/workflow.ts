@@ -78,6 +78,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
 
+  // For temporary workflows
+  tempWfOperationType: string;  // "transaction", "external", or "send"
+  tempWfOperationName: string; // The name of that operation.
+
   constructor(
     dbosExec: DBOSExecutor,
     parentCtx: DBOSContextImpl | undefined,
@@ -99,6 +103,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
+    this.tempWfOperationType = "";
+    this.tempWfOperationName = "";
     if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = dbosExec.config.application;

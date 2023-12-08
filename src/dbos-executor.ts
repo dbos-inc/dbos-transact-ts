@@ -65,6 +65,12 @@ interface WorkflowInfo<T extends any[], R> {
   config: WorkflowConfig;
 }
 
+const TempWorkflowType = {
+  transaction: "transaction",
+  external: "external",
+  send: "send",
+} as const;
+
 export class DBOSExecutor {
   initialized: boolean;
   // User Database
@@ -344,7 +350,7 @@ export class DBOSExecutor {
     if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
       executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string
     }
-    const bufferedStatus: BufferedStatus = {
+    const bufStatus: BufferedStatus = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
       name: (wf.name),
@@ -357,8 +363,9 @@ export class DBOSExecutor {
       executorID: executorID,
     }
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
-    args = await this.systemDatabase.initWorkflowStatus(bufferedStatus, args);
-    if (wCtxt.isTempWorkflow) {
+    if (!wCtxt.isTempWorkflow) {
+      args = await this.systemDatabase.initWorkflowStatus(bufStatus, args);
+    } else {
       // For temporary workflows, instead asynchronously record inputs.
       const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
         .catch(error => { this.logger.error('Error asynchronously setting workflow inputs', error) })
@@ -371,7 +378,10 @@ export class DBOSExecutor {
       // Execute the workflow.
       try {
         result = await wf(wCtxt, ...args);
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result, bufferedStatus);
+        if (wCtxt.isTempWorkflow) {
+          bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+        }
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result, bufStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -384,7 +394,10 @@ export class DBOSExecutor {
           // Record the error.
           const e: Error = err as Error;
           this.logger.error(e);
-          await this.systemDatabase.recordWorkflowError(workflowUUID, e, bufferedStatus);
+          if (wCtxt.isTempWorkflow) {
+            bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+          }
+          await this.systemDatabase.recordWorkflowError(workflowUUID, e, bufStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
@@ -459,6 +472,8 @@ export class DBOSExecutor {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.transaction;
+      ctxtImpl.tempWfOperationName = txn.name;
       return await ctxtImpl.transaction(txn, ...args);
     };
     return (await this.workflow(temp_workflow, params, ...args)).getResult();
@@ -468,6 +483,8 @@ export class DBOSExecutor {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.external;
+      ctxtImpl.tempWfOperationName = commFn.name;
       return await ctxtImpl.external(commFn, ...args);
     };
     return (await this.workflow(temp_workflow, params, ...args)).getResult();
@@ -476,6 +493,8 @@ export class DBOSExecutor {
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.send;
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
