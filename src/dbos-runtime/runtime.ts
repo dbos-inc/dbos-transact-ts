@@ -54,7 +54,6 @@ export class DBOSRuntime {
     for (const key in exports) {
       if (isObject(exports[key])) {
         classes.push(exports[key] as object);
-        console.log(`Registering class ${key}`);
       }
     }
     return classes;
