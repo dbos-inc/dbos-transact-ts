@@ -182,7 +182,22 @@ export function migrate(): number {
     });
   } catch (e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
-    logger.error(e);
+    if (e instanceof Error) {
+      const stderr = (e as any).stderr;
+      if (stderr && Buffer.isBuffer(stderr)) {
+        logger.error(`Standard Error: ${stderr.toString()}`);
+      }
+      const stdout = (e as any).stdout;
+      if (stdout && Buffer.isBuffer(stdout)) {
+        logger.error(`Standard Output: ${stdout.toString()}`);
+      }
+      if (e.message) {
+        logger.error(e.message);
+      }
+    } else {
+      // If 'e' is not an Error object, log it as a generic error
+      logger.error('An unknown error occurred:', e);
+    }
     return 1;
   }
 
