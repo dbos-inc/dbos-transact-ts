@@ -16,6 +16,7 @@ import {
   RetrievedHandle,
   WorkflowContextImpl,
   WorkflowStatus,
+  StatusString,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
@@ -26,7 +27,7 @@ import { Tracer } from './telemetry/traces';
 import { createGlobalLogger, WinstonLogger as Logger } from './telemetry/logs';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
-import { SystemDatabase, PostgresSystemDatabase } from './system_database';
+import { SystemDatabase, PostgresSystemDatabase, BufferedStatus } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -72,12 +73,12 @@ export class DBOSExecutor {
   readonly systemDatabase: SystemDatabase;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
-  readonly tempWorkflowName = "temp_workflow";
+  static readonly tempWorkflowName = "temp_workflow";
 
   readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
     // We initialize the map with an entry for temporary workflows.
     [
-      this.tempWorkflowName,
+      DBOSExecutor.tempWorkflowName,
       {
         // eslint-disable-next-line @typescript-eslint/require-await
         workflow: async () => this.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
@@ -294,7 +295,7 @@ export class DBOSExecutor {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow<T extends any[], R>(wf: Workflow<T, R>, config: WorkflowConfig = {}) {
-    if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
+    if (wf.name === DBOSExecutor.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new DBOSError(`Repeated workflow name: ${wf.name}`);
     }
     const workflowInfo: WorkflowInfo<T, R> = {
@@ -339,22 +340,38 @@ export class DBOSExecutor {
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
+    let executorID: string = "local"
+    if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
+      executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string
+    }
+    const bufferedStatus: BufferedStatus = {
+      workflowUUID: workflowUUID,
+      status: StatusString.PENDING,
+      name: (wf.name),
+      authenticatedUser: wCtxt.authenticatedUser,
+      output: undefined,
+      error: "",
+      assumedRole: wCtxt.assumedRole,
+      authenticatedRoles: wCtxt.authenticatedRoles,
+      request: wCtxt.request,
+      executorID: executorID,
+    }
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
-    if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
-    } else {
+    args = await this.systemDatabase.initWorkflowStatus(bufferedStatus, args);
+    if (wCtxt.isTempWorkflow) {
       // For temporary workflows, instead asynchronously record inputs.
       const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
         .catch(error => { this.logger.error('Error asynchronously setting workflow inputs', error) })
         .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
       this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
+
     const runWorkflow = async () => {
       let result: R;
       // Execute the workflow.
       try {
         result = await wf(wCtxt, ...args);
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result, bufferedStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -367,7 +384,7 @@ export class DBOSExecutor {
           // Record the error.
           const e: Error = err as Error;
           this.logger.error(e);
-          await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          await this.systemDatabase.recordWorkflowError(workflowUUID, e, bufferedStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
@@ -564,3 +581,5 @@ export class DBOSExecutor {
     });
   }
 }
+export const DBOSExecutorIDHeader = "dbos-executor-id";
+

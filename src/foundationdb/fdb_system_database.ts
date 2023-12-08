@@ -2,24 +2,11 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
-import { DBOSExecutorIDHeader, SystemDatabase } from "../system_database";
+import { BufferedStatus, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
-import { HTTPRequest } from "../context";
-
-interface WorkflowOutput<R> {
-  status: string;
-  error: string;
-  output: R;
-  name: string;
-  authenticatedUser: string;
-  authenticatedRoles: Array<string>;
-  assumedRole: string;
-  request: HTTPRequest;
-  executorID: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
-}
 
 interface OperationOutput<R> {
   output: R;
@@ -42,7 +29,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   workflowEventsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   workflowInputsDB: fdb.Database<string, string, unknown, unknown>;
 
-  readonly workflowStatusBuffer: Map<string, unknown> = new Map();
+  readonly workflowStatusBuffer: Map<string, BufferedStatus> = new Map();
 
   constructor() {
     fdb.setAPIVersion(710, 710);
@@ -77,60 +64,48 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | DBOSNull> {
-    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<R> | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as BufferedStatus | undefined;
     if (output === undefined || output.status === StatusString.PENDING) {
       return dbosNull;
     } else if (output.status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
     } else {
-      return output.output;
+      return output.output as R;
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(
-    workflowUUID: string,
-    name: string,
-    authenticatedUser: string,
-    assumedRole: string,
-    authenticatedRoles: string[],
-    request: HTTPRequest | null,
-    args: T
-  ): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(bufStatus: BufferedStatus, args: T): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
-
-      let executorID: string = "local";
-      if (request && request.headers && request.headers[DBOSExecutorIDHeader]) {
-        executorID = request.headers[DBOSExecutorIDHeader] as string;
-      }
-
-      const present = await statusDB.get(workflowUUID);
+      const present = await statusDB.get(bufStatus.workflowUUID);
       if (present === undefined) {
-        statusDB.set(workflowUUID, {
-          status: StatusString.PENDING,
+        statusDB.set(bufStatus.workflowUUID, {
+          status: bufStatus.status,
           error: null,
           output: null,
-          name: name,
-          authenticatedUser: authenticatedUser,
-          assumedRole: assumedRole,
-          authenticatedRoles: authenticatedRoles,
-          request: request,
-          executorID: executorID,
+          name: bufStatus.name,
+          authenticatedUser: bufStatus.authenticatedUser,
+          assumedRole: bufStatus.assumedRole,
+          authenticatedRoles: bufStatus.authenticatedRoles,
+          request: bufStatus.request,
+          executorID: bufStatus.executorID,
         });
       }
 
-      const inputs = await inputsDB.get(workflowUUID);
+      const inputs = await inputsDB.get(bufStatus.workflowUUID);
       if (inputs === undefined) {
-        inputsDB.set(workflowUUID, args);
+        inputsDB.set(bufStatus.workflowUUID, args);
         return args;
       }
       return inputs as T;
     });
   }
 
-  bufferWorkflowOutput<R>(workflowUUID: string, output: R) {
-    this.workflowStatusBuffer.set(workflowUUID, output);
+  bufferWorkflowOutput<R>(workflowUUID: string, output: R, status: BufferedStatus) {
+    status.output = output;
+    status.status = StatusString.SUCCESS;
+    this.workflowStatusBuffer.set(workflowUUID, status);
   }
 
   async flushWorkflowStatusBuffer(): Promise<string[]> {
@@ -138,34 +113,38 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     this.workflowStatusBuffer.clear();
     // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowStatusDB.doTransaction(async (txn) => {
-      for (const [workflowUUID, output] of localBuffer) {
-        const currWf = (await txn.get(workflowUUID)) as WorkflowOutput<unknown>;
+      for (const [workflowUUID, status] of localBuffer) {
         txn.set(workflowUUID, {
-          status: StatusString.SUCCESS,
+          status: status.status,
           error: null,
-          output: output,
-          name: currWf?.name ?? null,
-          authenticatedUser: currWf?.authenticatedUser ?? null,
-          authenticatedRoles: currWf?.authenticatedRoles ?? null,
-          assumedRole: currWf?.assumedRole ?? null,
-          request: currWf?.request ?? null,
+          output: status.output,
+          name: status.name,
+          authenticatedUser: status.authenticatedUser,
+          authenticatedRoles: status.authenticatedRoles,
+          assumedRole: status.assumedRole,
+          request: status.request,
         });
       }
     });
     return Array.from(localBuffer.keys());
   }
 
-  async recordWorkflowError(workflowUUID: string, error: Error): Promise<void> {
+  async recordWorkflowError(workflowUUID: string, error: Error, status: BufferedStatus): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     await this.workflowStatusDB.set(workflowUUID, {
       status: StatusString.ERROR,
       error: serialErr,
       output: null,
+      name: status.name,
+      authenticatedUser: status.authenticatedUser,
+      authenticatedRoles: status.authenticatedRoles,
+      assumedRole: status.assumedRole,
+      request: status.request,
     });
   }
 
   async getPendingWorkflows(executorID: string): Promise<string[]> {
-    const workflows = (await this.workflowStatusDB.getRangeAll("", "\xff")) as Array<[string, WorkflowOutput<unknown>]>;
+    const workflows = (await this.workflowStatusDB.getRangeAll("", "\xff")) as Array<[string, BufferedStatus]>;
     return workflows.filter((i) => i[1].status === StatusString.PENDING && i[1].executorID === executorID).map((i) => i[0]);
   }
 
@@ -232,7 +211,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
     }
 
-    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowOutput<unknown> | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as BufferedStatus | undefined;
     let value = null;
     if (output !== undefined) {
       value = {
@@ -261,10 +240,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     } else {
       watch.cancel();
     }
-    const output = value as WorkflowOutput<R>;
+    const output = value as BufferedStatus;
     const status = output.status;
     if (status === StatusString.SUCCESS) {
-      return output.output;
+      return output.output as R;
     } else if (status === StatusString.ERROR) {
       throw deserializeError(JSON.parse(output.error));
     } else {

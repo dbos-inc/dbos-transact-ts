@@ -98,7 +98,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
-    this.isTempWorkflow = dbosExec.tempWorkflowName === workflowName;
+    this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = dbosExec.config.application;
