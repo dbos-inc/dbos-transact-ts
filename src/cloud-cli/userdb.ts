@@ -156,18 +156,20 @@ export function migrate(): number {
 
   if (create_db) {
     logger.info(`Creating database ${userdbname}`);
-    const cmd = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -w ${configFile.database.password} -e`;
+    const cmd = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -ew ${userdbname}`;
     logger.info(cmd);
     try {
-      execSync(cmd);
+      const createDBCommandOutput = execSync(cmd).toString();
+      logger.info(createDBCommandOutput);
     } catch (e) {
-      logger.error("Database already exists or could not be created.");
-      return 1;
+      if (e instanceof Error && !e.message.includes(`database "${userdbname}" already exists`)) {
+        logger.error(`Error creating database: ${e.message}`);
+      }
     }
   }
 
   let dbType = configFile.database.user_dbclient;
-  if (dbType == undefined) {
+  if (dbType === undefined) {
     dbType = "knex";
   }
 
@@ -177,10 +179,29 @@ export function migrate(): number {
     migratecommands?.forEach((cmd) => {
       const command = "npx " + dbType + " " + cmd;
       logger.info("Executing " + command);
-      execSync(command);
+      const migrateCommandOutput = execSync(command).toString();
+      logger.info(migrateCommandOutput);
     });
   } catch (e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+    if (e instanceof Error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      const stderr = (e as any).stderr;
+      if (stderr && Buffer.isBuffer(stderr) && stderr.length > 0) {
+        logger.error(`Standard Error: ${stderr.toString().trim()}`);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      const stdout = (e as any).stdout;
+      if (stdout && Buffer.isBuffer(stdout) && stdout.length > 0) {
+        logger.error(`Standard Output: ${stdout.toString().trim()}`);
+      }
+      if (e.message) {
+        logger.error(e.message);
+      }
+    } else {
+      // If 'e' is not an Error object, log it as a generic error
+      logger.error('An unknown error occurred:', e);
+    }
     return 1;
   }
 
