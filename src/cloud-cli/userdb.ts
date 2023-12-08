@@ -183,13 +183,15 @@ export function migrate(): number {
   } catch (e) {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
     if (e instanceof Error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       const stderr = (e as any).stderr;
       if (stderr && Buffer.isBuffer(stderr) && stderr.length > 0) {
-        logger.error(`Standard Error: ${stderr.toString()}`);
+        logger.error(`Standard Error: ${stderr.toString().trim()}`);
       }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       const stdout = (e as any).stdout;
       if (stdout && Buffer.isBuffer(stdout) && stdout.length > 0) {
-        logger.error(`Standard Output: ${stdout.toString()}`);
+        logger.error(`Standard Output: ${stdout.toString().trim()}`);
       }
       if (e.message) {
         logger.error(e.message);
