@@ -34,7 +34,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
       return 1;
     }
 
-    execSync(`npm prune --production node_modules/* `);
+    execSync(`npm prune --omit=dev node_modules/* `);
     execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${dbosConfigFilePath} > /dev/null`);
     execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
