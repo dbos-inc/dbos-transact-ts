@@ -35,7 +35,7 @@ program
   .requiredOption('-u, --username <string>', 'Username')
   .action(async (options: { username: string }) => {
     const exitCode = await login(options.username);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 program
@@ -48,11 +48,11 @@ program
     if (!credentialsExist()) {
       const exitCode = await login(options.username);
       if (exitCode !== 0) {
-        process.exit(exitCode)
+        process.exit(exitCode);
       }
     }
     const exitCode = await registerUser(options.username, options.host, options.port);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 /////////////////////////////
@@ -73,7 +73,7 @@ applicationCommands
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await registerApp(options.name, host, port, parseInt(options.machines));
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 applicationCommands
@@ -84,7 +84,7 @@ applicationCommands
   .action(async (options: { name: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await updateApp(options.name, host, port, parseInt(options.machines));
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 applicationCommands
@@ -94,7 +94,7 @@ applicationCommands
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await deployAppCode(options.name, host, port);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 applicationCommands
@@ -104,7 +104,7 @@ applicationCommands
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await deleteApp(options.name, host, port);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 applicationCommands
@@ -113,7 +113,7 @@ applicationCommands
   .action(async () => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await listApps(host, port);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 applicationCommands
@@ -123,7 +123,7 @@ applicationCommands
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await getAppLogs(options.name, host, port);
-    process.exit(exitCode)
+    process.exit(exitCode);
   });
 
 
@@ -140,51 +140,53 @@ applicationCommands
 /* USER DATABASE MANAGEMENT */
 //////////////////////////////
 
-const userdb = program
+const userdbCommands = program
   .command('userdb')
   .description('Manage your databases')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
 
-userdb
+userdbCommands
   .command('create')
   .argument('<string>', 'database name')
   .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
   .option('-W, --password <string>', 'Specify the admin password', 'postgres')
   .option('-s, --sync', 'make synchronous call', false)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = userdbCommands.opts()
     await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
   }))
 
-userdb
+userdbCommands
   .command('status')
   .argument('<string>', 'database name')
   .action((async (dbname: string) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = userdbCommands.opts()
     await getUserDb(host, port, dbname)
   }))
 
-userdb
+userdbCommands
   .command('delete')
   .argument('<string>', 'database name')
   .option('-s, --sync', 'make synchronous call', false)
   .action((async (dbname: string, options: { sync: boolean }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
+    const { host, port }: { host: string, port: string } = userdbCommands.opts()
     await deleteUserDb(host, port, dbname, options.sync)
   }))
 
-userdb
+userdbCommands
   .command('migrate')
   .action((() => {
-    migrate()
+    const exitCode = migrate();
+    process.exit(exitCode);
   }))
 
-userdb
+userdbCommands
   .command('rollbackmigration')
   .action((() => {
-    rollbackmigration()
-  }))  
+    const exitCode = rollbackmigration();
+    process.exit(exitCode);
+  }))
 
 program.parse(process.argv);
 
