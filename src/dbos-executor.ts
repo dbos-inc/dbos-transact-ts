@@ -499,22 +499,31 @@ export class DBOSExecutor {
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflowUUID of pendingWorkflows) {
       try {
-        const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-        const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
-        if (!inputs || !wfStatus) {
-          this.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
-          continue;
-        }
-        const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
-
-        const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs));
+        handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
       } catch (e) {
         this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
     }
     return handlerArray;
+  }
+
+  async executeWorkflowUUID(workflowUUID: string): Promise<WorkflowHandle<unknown>> {
+    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+    const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+    if (!inputs || !wfStatus) {
+      this.logger.error(`Failed to find inputs for workflowUUID: ${workflowUUID}`);
+      throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowUUID}`);
+    }
+    const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
+
+    // If wfInfo is undefined, then it means it's a temporary workflow.
+    // TODO: we need to find the name of that function and run it.
+    if (!wfInfo) {
+      throw new DBOSError(`Cannot find workflow info for UUID ${workflowUUID}`);
+    }
+    const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {

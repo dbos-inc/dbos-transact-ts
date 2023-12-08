@@ -29,36 +29,35 @@ export class DBOSRuntime {
    * Initialize the runtime by loading user functions and initializing the workflow executor object
    */
   async init() {
-    const exports = await this.loadFunctions();
-    if (exports === null) {
+    const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+    if (classes.length === 0) {
       this.dbosExec.logger.error("operations not found");
       throw new DBOSError("operations not found");
     }
-
-    const classes: object[] = [];
-    for (const key in exports) {
-      if (isObject(exports[key])) {
-        classes.push(exports[key] as object);
-        this.dbosExec.logger.debug(`Loaded class: ${key}`);
-      }
-    }
-
     await this.dbosExec.init(...classes);
   }
 
   /**
    * Load an application's workflow functions, assumed to be in src/operations.ts (which is compiled to dist/operations.js).
    */
-  private loadFunctions(): Promise<ModuleExports> | null {
-    const entrypoint = this.runtimeConfig.entrypoint;
+  static async loadClasses(entrypoint: string): Promise<object[]> {
     const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
+    let exports: ModuleExports;
     if (fs.existsSync(operations)) {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
-      return import(operations) as Promise<ModuleExports>;
+      exports = (await import(operations)) as Promise<ModuleExports>;
     } else {
-      this.dbosExec.logger.warn(`${entrypoint} not found`);
-      return null;
+      throw new DBOSError(`Failed to load operations from the entrypoint ${entrypoint}`);
     }
+
+    const classes: object[] = [];
+    for (const key in exports) {
+      if (isObject(exports[key])) {
+        classes.push(exports[key] as object);
+        console.log(`Registering class ${key}`);
+      }
+    }
+    return classes;
   }
 
   /**
