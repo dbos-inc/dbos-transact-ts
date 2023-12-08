@@ -64,6 +64,6 @@ export async function configureApp(host: string, port: string, dbName: string) {
       return;
     }
 
-    logger.info("Successfully configure user database at ${userdbHostname}:${userdbPort}.")
+    logger.info(`Successfully configured user database at ${userdbHostname}:${userdbPort}.`)
 
 }
