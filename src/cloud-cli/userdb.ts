@@ -162,7 +162,7 @@ export function migrate(): number {
       const createDBCommandOutput = execSync(cmd).toString();
       logger.info(createDBCommandOutput);
     } catch (e) {
-      if (e instanceof Error && !e.message.includes("database \"hello\" already exists")) {
+      if (e instanceof Error && !e.message.includes(`database "${userdbname}" already exists`)) {
         logger.error(`Error creating database: ${e.message}`);
       }
     }
