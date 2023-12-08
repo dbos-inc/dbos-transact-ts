@@ -184,11 +184,11 @@ export function migrate(): number {
     logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
     if (e instanceof Error) {
       const stderr = (e as any).stderr;
-      if (stderr && Buffer.isBuffer(stderr)) {
+      if (stderr && Buffer.isBuffer(stderr) && stderr.length > 0) {
         logger.error(`Standard Error: ${stderr.toString()}`);
       }
       const stdout = (e as any).stdout;
-      if (stdout && Buffer.isBuffer(stdout)) {
+      if (stdout && Buffer.isBuffer(stdout) && stdout.length > 0) {
         logger.error(`Standard Output: ${stdout.toString()}`);
       }
       if (e.message) {
