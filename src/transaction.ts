@@ -4,7 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
-import { WinstonLogger as Logger } from "./telemetry/logs";
+import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
 // Can we call it TransactionFunction

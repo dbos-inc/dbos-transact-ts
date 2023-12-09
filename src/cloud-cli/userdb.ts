@@ -1,12 +1,12 @@
 import axios from "axios";
-import { createGlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "../telemetry/logs";
 import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 import { execSync } from "child_process";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -66,7 +66,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
 }
 
 export async function deleteUserDb(host: string, port: string, dbName: string, sync: boolean) {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -122,7 +122,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string, s
 }
 
 export async function getUserDb(host: string, port: string, dbName: string) {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -138,7 +138,7 @@ export async function getUserDb(host: string, port: string, dbName: string) {
 }
 
 export function migrate(): number {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
@@ -199,8 +199,7 @@ export function migrate(): number {
         logger.error(e.message);
       }
     } else {
-      // If 'e' is not an Error object, log it as a generic error
-      logger.error('An unknown error occurred:', e);
+      logger.error(e);
     }
     return 1;
   }
@@ -209,7 +208,7 @@ export function migrate(): number {
 }
 
 export function rollbackmigration(): number {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
 
   // read the yaml file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);

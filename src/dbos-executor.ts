@@ -20,10 +20,9 @@ import {
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
-import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
-import { createGlobalLogger, WinstonLogger as Logger } from './telemetry/logs';
+import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
@@ -107,7 +106,9 @@ export class DBOSExecutor {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugProxy ? true : false;
-    this.logger = createGlobalLogger(this.config.telemetry?.logs);
+    this.telemetryCollector = new TelemetryCollector([]);
+    this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
+    this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.debugMode) {
       this.logger.info("Running in debug mode!")
@@ -137,14 +138,6 @@ export class DBOSExecutor {
     }, this.flushBufferIntervalMs);
     this.logger.debug("Started workflow status buffer worker");
 
-    // Add Jaeger exporter if tracing is enabled
-    const telemetryExporters = [];
-    if (this.config.telemetry?.traces?.enabled && !this.debugMode) {
-      telemetryExporters.push(new JaegerExporter(this.config.telemetry?.traces?.endpoint));
-      this.logger.debug("Loaded Jaeger Telemetry Exporter");
-    }
-    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
-    this.tracer = new Tracer(this.telemetryCollector);
     this.initialized = false;
   }
 
@@ -252,12 +245,8 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      if (err instanceof Error) {
-        this.logger.error(`failed to initialize workflow executor: ${err.message}`, err, err.stack);
-        throw new DBOSInitializationError(err.message);
-      } else {
-        throw err;
-      }
+      this.logger.error(new Error(`failed to initialize workflow executor: ${(err as Error).message}`));
+      throw new DBOSInitializationError(`failed to initialize workflow executor: ${(err as Error).message}`);
     }
     this.initialized = true;
 
@@ -501,7 +490,7 @@ export class DBOSExecutor {
       try {
         handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
       } catch (e) {
-        this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
+        this.logger.warn(`Recovery of workflow ${workflowUUID} failed: ${(e as Error).message}`);
       }
     }
     return handlerArray;

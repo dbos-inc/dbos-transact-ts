@@ -3,16 +3,17 @@ import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContext } from "../context";
 import { LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
+import { TelemetryCollector } from "./collector";
+import { TelemetrySignal } from "./signals";
+
+/*****************/
+/* GLOBAL LOGGER */
+/*****************/
 
 export interface LoggerConfig {
   logLevel?: string;
   silent?: boolean;
   addContextMetadata?: boolean;
-}
-
-// A simple extension of Winston adding a flag for the addition of context metadata to log entries.
-export interface WinstonLogger extends IWinstonLogger {
-  addContextMetadata: boolean;
 }
 
 type ContextualMetadata = {
@@ -24,13 +25,64 @@ type ContextualMetadata = {
   [key: string]: string | boolean | undefined;
 };
 
-/* This is a wrapper around a global Winston logger. It holds a reference to the global logger.
- * This class is expected to be instantiated by new DBOSContext such that they can share context information.
- **/
+// Wrap around the winston logger to support configuration and access to our telemetry collector
+export interface IGlobalLogger extends IWinstonLogger {
+  readonly addContextMetadata: boolean;
+  readonly logger: IWinstonLogger;
+  readonly telemetryCollector: TelemetryCollector;
+}
+
+export class GlobalLogger {
+  private readonly logger: IWinstonLogger;
+  readonly addContextMetadata: boolean;
+
+  constructor(
+    private readonly telemetryCollector?: TelemetryCollector,
+    config?: LoggerConfig
+  ) {
+    // TODO Buidl transports array selectively
+    // If config says logger should be silent, just don't add it
+    // It config asks for OTLP, add it
+    this.logger = createLogger({
+      transports: [
+        new transports.Console({
+          format: consoleFormat,
+          level: config?.logLevel || "info",
+          silent: config?.silent || false,
+        }),
+        new OTLPLogQueueTransport(this.telemetryCollector),
+      ],
+    }) as IWinstonLogger;
+
+    this.addContextMetadata = config?.addContextMetadata || false;
+  }
+
+  info(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+    this.logger.info(message, metadata);
+  }
+
+  debug(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+    this.logger.debug(message, metadata);
+  }
+
+  warn(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+    this.logger.warn(message, metadata);
+  }
+
+  error(inputError: any, metadata?: { [key: string]: string | boolean | undefined }): void {
+    this.logger.error(inputError, metadata);
+  }
+}
+
+/******************/
+/* CONTEXT LOGGER */
+/******************/
+
+// Wrapper around our global logger. Expected to be instantiated by a new contexts so they can inject contextual metadata
 export class Logger {
   readonly metadata: ContextualMetadata;
   constructor(
-    private readonly globalLogger: WinstonLogger,
+    private readonly globalLogger: GlobalLogger,
     private readonly ctx: DBOSContext
   ) {
     this.metadata = {
@@ -58,7 +110,7 @@ export class Logger {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
     if (inputError instanceof Error) {
-      this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack, cause: inputError.cause });
+      this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack });
     } else if (typeof inputError === "string") {
       const e = new Error();
       this.globalLogger.error(inputError, { ...this.metadata, stack: e.stack });
@@ -70,21 +122,9 @@ export class Logger {
   }
 }
 
-export function createGlobalLogger(config?: LoggerConfig): WinstonLogger {
-  const logger: WinstonLogger = createLogger({
-    transports: [
-      new transports.Console({
-        format: consoleFormat,
-        level: config?.logLevel || "info",
-        silent: config?.silent || false,
-      }),
-      new OTLPLogQueueTransport(
-      ),
-    ],
-  }) as WinstonLogger;
-  logger.addContextMetadata = config?.addContextMetadata || false;
-  return logger;
-}
+/***********************/
+/* FORMAT & TRANSPORTS */
+/***********************/
 
 const consoleFormat = format.combine(
   format.errors({ stack: true }),
@@ -113,6 +153,10 @@ const consoleFormat = format.combine(
 class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
 
+  constructor(private readonly telemetryCollector?: TelemetryCollector) {
+    super();
+  }
+
   log(info: any, callback: () => void): void {
     const { level, message, stack, workflowUUID, authenticatedUser, traceId, spanId } = info;
 
@@ -130,8 +174,16 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: new Date().getTime(),
       attributes: { workflowUUID, authenticatedUser, traceId, spanId, stack },
     };
-
     console.log(logRecord);
+
+    // TODO refactor TelemetrySignal types
+    const temporarySignal: TelemetrySignal = {
+      workflowUUID,
+      operationName: "log",
+      runAs: authenticatedUser,
+      timestamp: new Date().getTime(),
+    };
+    this.telemetryCollector?.push(temporarySignal);
 
     callback();
   }

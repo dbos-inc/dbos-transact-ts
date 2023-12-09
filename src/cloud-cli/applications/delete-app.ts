@@ -1,9 +1,9 @@
 import axios from "axios";
-import { createGlobalLogger } from "../../telemetry/logs";
+import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
 export async function deleteApp(appName: string, host: string, port: string): Promise<number> {
-  const logger = createGlobalLogger();
+  const logger =  new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 

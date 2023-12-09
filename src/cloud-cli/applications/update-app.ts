@@ -1,10 +1,10 @@
 import axios from "axios";
-import { createGlobalLogger } from "../../telemetry/logs";
+import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { Application } from "./types";
 
 export async function updateApp(appName: string, host: string, port: string, machines: number): Promise<number> {
-  const logger = createGlobalLogger();
+  const logger =  new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 

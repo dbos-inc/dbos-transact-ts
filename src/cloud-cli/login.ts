@@ -1,4 +1,4 @@
-import { createGlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "../telemetry/logs";
 import axios from "axios";
 import { sleep } from "../utils";
 import jwt, { JwtPayload } from 'jsonwebtoken';
@@ -60,7 +60,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 }
 
 export async function login(username: string): Promise<number> {
-  const logger = createGlobalLogger();
+  const logger = new GlobalLogger();
   logger.info(`Logging in!`);
 
   const deviceCodeRequest = {
@@ -74,7 +74,7 @@ export async function login(username: string): Promise<number> {
     const response = await axios.request(deviceCodeRequest);
     deviceCodeResponse = response.data as DeviceCodeResponse;
   } catch (e) {
-    logger.error(`failed to log in`, e);
+    logger.error(new Error(`failed to log in: ${(e as Error).message}`));
   }
   if (!deviceCodeResponse) {
     return 1;
@@ -112,7 +112,7 @@ export async function login(username: string): Promise<number> {
   const credentials: DBOSCloudCredentials = {
     token: tokenResponse.access_token,
     userName: username,
-  }
+  };
   execSync(`mkdir -p ${dbosEnvPath}`);
   fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
   logger.info(`Successfully logged in as user: ${credentials.userName}`);

@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { WinstonLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
+import { GlobalLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";

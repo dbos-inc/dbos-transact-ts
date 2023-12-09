@@ -2,7 +2,7 @@ import axios from "axios";
 import YAML from "yaml";
 import { execSync } from "child_process";
 import fs from "fs";
-import { createGlobalLogger } from "../../telemetry/logs";
+import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync } from "../../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
@@ -10,7 +10,7 @@ import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runti
 const deployDirectoryName = "dbos_deploy";
 
 export async function deployAppCode(appName: string, host: string, port: string): Promise<number> {
-  const logger = createGlobalLogger();
+  const logger =  new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
