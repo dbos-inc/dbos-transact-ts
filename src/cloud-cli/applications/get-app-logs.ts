@@ -3,7 +3,7 @@ import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
 export async function getAppLogs(appName: string, host: string, port: string): Promise<number> {
-  const logger =  new GlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -16,7 +16,8 @@ export async function getAppLogs(appName: string, host: string, port: string): P
     });
 
     logger.info(`Successfully retrieved logs of application: ${appName}`);
-    logger.info(res.data)
+    // FIXME: AxiosResponse is a generic type. We should generate our client using OpenAPI. Use string for now
+    logger.info(res.data as string)
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

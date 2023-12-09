@@ -1,32 +1,8 @@
 import { BasicTracerProvider, ReadableSpan, Span } from "@opentelemetry/sdk-trace-base";
 import { Resource } from "@opentelemetry/resources";
 import opentelemetry, { Attributes, SpanContext } from "@opentelemetry/api";
-import { hrTimeToMicroseconds } from "@opentelemetry/core";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { TelemetryCollector } from "./collector";
-import { TelemetrySignal } from "./signals";
-
-export interface TracerConfig {
-  enabled?: boolean;
-  endpoint?: string;
-}
-
-export function spanToString(span: ReadableSpan): string {
-  return JSON.stringify({
-    name: span.name,
-    kind: span.kind,
-    traceId: span.spanContext().traceId,
-    spanId: span.spanContext().spanId,
-    traceFlags: span.spanContext().traceFlags,
-    traceState: span.spanContext().traceState?.serialize(),
-    parentSpanId: span.parentSpanId,
-    start: hrTimeToMicroseconds(span.startTime),
-    duration: hrTimeToMicroseconds(span.duration),
-    attributes: span.attributes,
-    status: span.status,
-    events: span.events,
-  });
-}
 
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
@@ -57,22 +33,6 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(Date.now());
-    const workflowUUID = span.attributes.workflowUUID as string;
-    const operationName = span.attributes.operationName as string;
-    const runAs = span.attributes.runAs as string;
-    const transactionID = span.attributes.transaction_id as string;
-    const traceID = span.spanContext().traceId;
-
-    const signal: TelemetrySignal = {
-      workflowUUID,
-      operationName,
-      runAs,
-      timestamp: Date.now(),
-      traceID,
-      transactionID: transactionID,
-      traceSpan: span as ReadableSpan,
-    };
-
-    this.telemetryCollector.push(signal);
+    this.telemetryCollector.push(span as ReadableSpan);
   }
 }

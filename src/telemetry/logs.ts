@@ -2,9 +2,8 @@ import { transports, createLogger, format, Logger as IWinstonLogger } from "wins
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContext } from "../context";
-import { LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
+import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
 import { TelemetryCollector } from "./collector";
-import { TelemetrySignal } from "./signals";
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -17,12 +16,11 @@ export interface LoggerConfig {
 }
 
 type ContextualMetadata = {
-  includeContextMetadata: boolean;
+  includeContextMetadata?: boolean;
   workflowUUID: string;
   authenticatedUser: string;
   traceId: string;
   spanId: string;
-  [key: string]: string | boolean | undefined;
 };
 
 // Wrap around the winston logger to support configuration and access to our telemetry collector
@@ -40,20 +38,21 @@ export class GlobalLogger {
     private readonly telemetryCollector?: TelemetryCollector,
     config?: LoggerConfig
   ) {
-    // TODO Buidl transports array selectively
-    // If config says logger should be silent, just don't add it
-    // It config asks for OTLP, add it
-    this.logger = createLogger({
-      transports: [
+    const winstonTransports: TransportStream[] = [];
+    if (!config?.silent) {
+      winstonTransports.push(
         new transports.Console({
           format: consoleFormat,
           level: config?.logLevel || "info",
           silent: config?.silent || false,
-        }),
-        new OTLPLogQueueTransport(this.telemetryCollector),
-      ],
-    }) as IWinstonLogger;
-
+        })
+      );
+    }
+    // Only enable the OTLP transport if we have a telemetry collector and it has exporters
+    if (this.telemetryCollector && this.telemetryCollector.exporters.length > 0) {
+      new OTLPLogQueueTransport(this.telemetryCollector);
+    }
+    this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
   }
 
@@ -69,7 +68,9 @@ export class GlobalLogger {
     this.logger.warn(message, metadata);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any, metadata?: { [key: string]: string | boolean | undefined }): void {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     this.logger.error(inputError, metadata);
   }
 }
@@ -130,19 +131,23 @@ const consoleFormat = format.combine(
   format.errors({ stack: true }),
   format.timestamp(),
   format.colorize(),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { timestamp, level, message, stack, includeContextMetadata, workflowUUID, authenticatedUser, traceId, spanId } = info;
+    const { timestamp, level, message, stack } = info;
     const applicationVersion = getApplicationVersion();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
+    const contextualMetadata: ContextualMetadata = {
+      workflowUUID: info.workflowUUID as string,
+      authenticatedUser: info.authenticatedUser as string,
+      traceId: info.traceId as string,
+      spanId: info.spanId as string,
+    };
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const contextualMetadata = { workflowUUID, authenticatedUser, traceId, spanId };
-    const fullMessageString = `${messageString}${includeContextMetadata ? ` ${JSON.stringify(contextualMetadata)}` : ""}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(contextualMetadata)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -153,12 +158,25 @@ const consoleFormat = format.combine(
 class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
 
-  constructor(private readonly telemetryCollector?: TelemetryCollector) {
+  constructor(private readonly telemetryCollector: TelemetryCollector) {
     super();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(info: any, callback: () => void): void {
-    const { level, message, stack, workflowUUID, authenticatedUser, traceId, spanId } = info;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { level, message, stack } = info;
+
+    const contextualMetadata: ContextualMetadata = {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      workflowUUID: info.workflowUUID as string,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      authenticatedUser: info.authenticatedUser as string,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      traceId: info.traceId as string,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      spanId: info.spanId as string,
+    };
 
     const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
       error: SeverityNumber.ERROR,
@@ -168,22 +186,16 @@ class OTLPLogQueueTransport extends TransportStream {
     };
 
     const logRecord: LogRecord = {
-      severityNumber: levelToSeverityNumber[level],
-      severityText: level,
-      body: message,
-      timestamp: new Date().getTime(),
-      attributes: { workflowUUID, authenticatedUser, traceId, spanId, stack },
+      severityNumber: levelToSeverityNumber[level as string],
+      severityText: level as string,
+      body: message as string, // XXX unclear this works if the log is an error
+      timestamp: new Date().getTime() ,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      attributes: { ...contextualMetadata, stack } as LogAttributes, // XXX unclear we will have a stack with this implementation
     };
     console.log(logRecord);
 
-    // TODO refactor TelemetrySignal types
-    const temporarySignal: TelemetrySignal = {
-      workflowUUID,
-      operationName: "log",
-      runAs: authenticatedUser,
-      timestamp: new Date().getTime(),
-    };
-    this.telemetryCollector?.push(temporarySignal);
+    this.telemetryCollector.push(logRecord);
 
     callback();
   }

@@ -23,6 +23,7 @@ import { CommunicatorConfig, Communicator } from './communicator';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
+import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase } from './system_database';
@@ -106,7 +107,11 @@ export class DBOSExecutor {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugProxy ? true : false;
-    this.telemetryCollector = new TelemetryCollector([]);
+    const telemetryExporters: TelemetryExporter[] = [];
+    for (const exporterConfig of config.telemetry?.OTLPExporters ?? []) {
+      telemetryExporters.push(new TelemetryExporter(exporterConfig));
+    }
+    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
@@ -240,7 +245,6 @@ export class DBOSExecutor {
       // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
       if (!this.debugMode) {
         await this.systemDatabase.init();
-        await this.telemetryCollector.init(this.registeredOperations);
         await this.userDatabase.init(); // Skip user DB init because we're using the proxy.
         await this.recoverPendingWorkflows();
       }
@@ -334,7 +338,7 @@ export class DBOSExecutor {
     } else {
       // For temporary workflows, instead asynchronously record inputs.
       const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
-        .catch(error => { this.logger.error('Error asynchronously setting workflow inputs', error) })
+      .catch(error => { this.logger.error(new Error(`Error asynchronously setting workflow inputs: ${(error as Error).message}`)) })
         .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
       this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
@@ -370,7 +374,7 @@ export class DBOSExecutor {
           await wCtxt.flushResultBuffer(client);
         }
       }, { isolationLevel: IsolationLevel.ReadCommitted })
-        .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error) })
+      .catch(error => { this.logger.error(new Error(`'Error asynchronously flushing result buffer: ${error}`)) })
         .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
       this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
       return result;

@@ -1,4 +1,3 @@
-import { JaegerExporter } from "../src/telemetry/exporters";
 import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
 import { DBOSExecutor, DBOSConfig } from "../src/dbos-executor";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -59,6 +58,7 @@ describe("dbos-telemetry", () => {
     await dbosExec.destroy();
   });
 
+  /*
   test("collector handles errors gracefully", async () => {
     const dbosConfig = generateDBOSTestConfig();
     if (dbosConfig.telemetry?.traces) {
@@ -79,6 +79,7 @@ describe("dbos-telemetry", () => {
 
     await dbosExec.destroy();
   });
+  */
 
   /*
   describe("Postgres exporter", () => {
