@@ -265,11 +265,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any other error, throw it.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#dbosExec.transactionConfigMap.get(txn.name);
-    if (config === undefined) {
+    const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
+    if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
     }
-    const readOnly = config.readOnly ?? false;
+    const readOnly = txnInfo.config.readOnly ?? false;
     let retryWaitMillis = 1;
     const backoffFactor = 2;
     const funcId = this.functionIDGetIncrement();
@@ -280,7 +280,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         operationName: txn.name,
         runAs: this.authenticatedUser,
         readOnly: readOnly,
-        isolationLevel: config.isolationLevel,
+        isolationLevel: txnInfo.config.isolationLevel,
       },
       this.span,
     );
@@ -341,7 +341,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       };
 
       try {
-        const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, config);
+        const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
@@ -375,8 +375,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
-    const commConfig = this.#dbosExec.communicatorConfigMap.get(commFn.name);
-    if (commConfig === undefined) {
+    const commInfo = this.#dbosExec.communicatorInfoMap.get(commFn.name);
+    if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
     }
 
@@ -388,14 +388,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         workflowUUID: this.workflowUUID,
         operationName: commFn.name,
         runAs: this.authenticatedUser,
-        retriesAllowed: commConfig.retriesAllowed,
-        intervalSeconds: commConfig.intervalSeconds,
-        maxAttempts: commConfig.maxAttempts,
-        backoffRate: commConfig.backoffRate,
+        retriesAllowed: commInfo.config.retriesAllowed,
+        intervalSeconds: commInfo.config.intervalSeconds,
+        maxAttempts: commInfo.config.maxAttempts,
+        backoffRate: commInfo.config.backoffRate,
       },
       this.span,
     );
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commConfig, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name);
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
