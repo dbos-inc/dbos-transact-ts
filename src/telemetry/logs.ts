@@ -41,15 +41,13 @@ export class GlobalLogger {
     config?: LoggerConfig
   ) {
     const winstonTransports: TransportStream[] = [];
-    if (!config?.silent) {
-      winstonTransports.push(
-        new transports.Console({
-          format: consoleFormat,
-          level: config?.logLevel || "info",
-          silent: config?.silent || false,
-        })
-      );
-    }
+    winstonTransports.push(
+      new transports.Console({
+        format: consoleFormat,
+        level: config?.logLevel || "info",
+        silent: config?.silent || false,
+      })
+    );
     // Only enable the OTLP transport if we have a telemetry collector and it has exporters
     if (this.telemetryCollector && this.telemetryCollector.exporters.length > 0) {
       winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector));
