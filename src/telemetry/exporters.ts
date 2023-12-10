@@ -7,9 +7,8 @@ import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
 
 export interface OTLPExporterConfig {
-  endpoint: string;
-  exportTraces: boolean;
-  exportLogs: boolean;
+  logsEndpoint?: string;
+  tracesEndpoint?: string;
 }
 
 export interface ITelemetryExporter<T, U> {
@@ -21,15 +20,17 @@ export class TelemetryExporter implements ITelemetryExporter<void, undefined> {
   private readonly tracesExporter?: OTLPTraceExporter;
   private readonly logsExporter?: OTLPLogExporter;
   constructor(config: OTLPExporterConfig) {
-    if (config.exportTraces) {
+    if (config.tracesEndpoint) {
       this.tracesExporter = new OTLPTraceExporter({
-        url: config.endpoint,
+        url: config.tracesEndpoint,
       });
+      console.log(`Traces will be exported to ${config.tracesEndpoint}`);
     }
-    if (config.exportLogs) {
+    if (config.logsEndpoint) {
       this.logsExporter = new OTLPLogExporter({
-        url: config.endpoint,
+        url: config.logsEndpoint,
       });
+      console.log(`Logs will be exported to ${config.logsEndpoint}`);
     }
   }
 
@@ -50,8 +51,8 @@ export class TelemetryExporter implements ITelemetryExporter<void, undefined> {
       if (exportSpans.length > 0 && this.tracesExporter) {
         this.tracesExporter.export(exportSpans, (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
-            // TODO log a proper error
-            console.warn(`Trace export failed`);
+            console.warn(`Trace export failed: ${results.code}`);
+            console.warn(results);
           }
         });
       }
@@ -59,8 +60,8 @@ export class TelemetryExporter implements ITelemetryExporter<void, undefined> {
       if (exportLogs.length > 0 && this.logsExporter) {
         this.logsExporter.export(exportLogs, (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
-            // TODO log a proper error
-            console.warn(`Log export failed`);
+            console.warn(`Log export failed: ${results.code}`);
+            console.warn(results);
           }
         });
       }

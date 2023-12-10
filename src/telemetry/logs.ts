@@ -3,6 +3,7 @@ import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContext } from "../context";
 import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
+import { Logger as OTelLogger, LogRecord as OTelLogRecord, LoggerProvider as OTelLoggerProvider } from "@opentelemetry/sdk-logs";
 import { TelemetryCollector } from "./collector";
 
 /*****************/
@@ -50,7 +51,7 @@ export class GlobalLogger {
     }
     // Only enable the OTLP transport if we have a telemetry collector and it has exporters
     if (this.telemetryCollector && this.telemetryCollector.exporters.length > 0) {
-      new OTLPLogQueueTransport(this.telemetryCollector);
+      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector));
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
@@ -157,9 +158,11 @@ const consoleFormat = format.combine(
 
 class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
+  readonly otelLogger: OTelLogger;
 
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     super();
+    this.otelLogger = new OTelLoggerProvider().getLogger('default') as OTelLogger;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,15 +188,16 @@ class OTLPLogQueueTransport extends TransportStream {
       debug: SeverityNumber.DEBUG,
     };
 
-    const logRecord: LogRecord = {
+    const log: LogRecord = {
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
-      body: message as string, // XXX unclear this works if the log is an error
-      timestamp: new Date().getTime() ,
+      body: message as string,
+      timestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       attributes: { ...contextualMetadata, stack } as LogAttributes, // XXX unclear we will have a stack with this implementation
     };
-    console.log(logRecord);
+
+    const logRecord: OTelLogRecord = new OTelLogRecord(this.otelLogger, log);
 
     this.telemetryCollector.push(logRecord);
 
