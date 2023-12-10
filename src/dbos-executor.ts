@@ -179,8 +179,8 @@ export class DBOSExecutor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
       const DataSourceExports = require("typeorm");
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         this.userDatabase = new TypeORMDatabase(
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           new DataSourceExports.DataSource({
             type: "postgres", // perhaps should move to config file
             host: userDBConfig.host,
