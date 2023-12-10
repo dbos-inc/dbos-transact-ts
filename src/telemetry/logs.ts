@@ -2,6 +2,7 @@ import { transports, createLogger, format, Logger as IWinstonLogger } from "wins
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContext } from "../context";
+import { context } from "@opentelemetry/api";
 import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
 import { Logger as OTelLogger, LogRecord as OTelLogRecord, LoggerProvider as OTelLoggerProvider } from "@opentelemetry/sdk-logs";
 import { TelemetryCollector } from "./collector";
@@ -162,7 +163,7 @@ class OTLPLogQueueTransport extends TransportStream {
 
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     super();
-    this.otelLogger = new OTelLoggerProvider().getLogger('default') as OTelLogger;
+    this.otelLogger = new OTelLoggerProvider().getLogger("default") as OTelLogger;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -195,6 +196,9 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       attributes: { ...contextualMetadata, stack } as LogAttributes, // XXX unclear we will have a stack with this implementation
+      // TODO as a nice-to-have, we could retrieve the operation current context, if we use a context manager, and inject the traceId/spanId in the LogRecord
+      // See https://opentelemetry.io/docs/instrumentation/js/context/#active-context
+      context: context.active(),
     };
 
     const logRecord: OTelLogRecord = new OTelLogRecord(this.otelLogger, log);
