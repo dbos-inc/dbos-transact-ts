@@ -2,7 +2,7 @@ import { transports, createLogger, format, Logger as IWinstonLogger } from "wins
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContext } from "../context";
-import { context } from "@opentelemetry/api";
+import { context } from "@opentelemetry/api";
 import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
 import { Logger as OTelLogger, LogRecord as OTelLogRecord, LoggerProvider as OTelLoggerProvider } from "@opentelemetry/sdk-logs";
 import { TelemetryCollector } from "./collector";
