@@ -7,20 +7,6 @@ import { GetApi, HandlerContext, TestingRuntime, TransactionContext, WorkflowCon
 import { PoolClient } from "pg";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
-/*
-type TelemetrySignalDbFields = {
-  workflow_uuid: string;
-  function_name: string;
-  run_as: string;
-  timestamp: bigint;
-  transaction_id: string;
-  severity: string;
-  log_message: string;
-  trace_id: string;
-  trace_span: JSON;
-};
-*/
-
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 class TestClass {
@@ -50,165 +36,46 @@ describe("dbos-telemetry", () => {
     jest.restoreAllMocks();
   });
 
-  test("DBOS init works with all exporters", async () => {
+  test("DBOS init works with exporters", async () => {
     const dbosConfig = generateDBOSTestConfig();
+    expect(dbosConfig.telemetry).not.toBeUndefined();
+    if (dbosConfig.telemetry) {
+      dbosConfig.telemetry.OTLPExporters = [
+        {
+          tracesEndpoint: "http://localhost:4317/v1/traces",
+          logsEndpoint: "http://localhost:4317/v1/logs",
+        },
+        {
+          tracesEndpoint: "http://someotherother:4318/v1/traces",
+        },
+      ];
+    }
     await setUpDBOSTestDb(dbosConfig);
     const dbosExec = new DBOSExecutor(dbosConfig);
+    expect(dbosExec.telemetryCollector).not.toBeUndefined();
+    expect(dbosExec.telemetryCollector.exporters.length).toBe(2);
     await dbosExec.init();
     await dbosExec.destroy();
   });
 
+  // TODO find a way to intercept the HTTP requests and test span/logs payloads
   /*
-  test("collector handles errors gracefully", async () => {
+  test("Logs and Traces are correctly exported", async () => {
     const dbosConfig = generateDBOSTestConfig();
-    if (dbosConfig.telemetry?.traces) {
-      dbosConfig.telemetry.traces.enabled = true;
+    if (dbosConfig.telemetry) {
+      dbosConfig.telemetry.OTLPExporters = [
+        {
+          tracesEndpoint: "http://localhost:4317/v1/traces",
+        },
+      ];
     }
     await setUpDBOSTestDb(dbosConfig);
-    const dbosExec = new DBOSExecutor(dbosConfig);
-    await dbosExec.init(TestClass);
+    const testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
 
-    const collector = dbosExec.telemetryCollector.exporters[0] as JaegerExporter;
-    jest.spyOn(collector, "export").mockImplementation(() => {
-      throw new Error("exporter crashed");
-    });
-    // "mute" console.error
-    jest.spyOn(console, "error").mockImplementation(() => {});
-
-    await expect(dbosExec.telemetryCollector.processAndExportSignals()).resolves.not.toThrow();
-
-    await dbosExec.destroy();
-  });
+    await testRuntime.invoke(TestClass).test_workflow("test_user");
+    await testRuntime.destroy();
+  })
   */
-
-  /*
-  describe("Postgres exporter", () => {
-    let dbosExec: DBOSExecutor;
-    let dbosConfig: DBOSConfig;
-    let testRuntime: TestingRuntime;
-
-    beforeAll(async () => {
-      dbosConfig = generateDBOSTestConfig()
-      // This attempts to clear all our DBs, including the observability one
-      await setUpDBOSTestDb(dbosConfig);
-      testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
-      dbosExec = (testRuntime as TestingRuntimeImpl).getdbosExec();
-      expect(dbosExec.telemetryCollector.exporters.length).toBe(1);
-      expect(dbosExec.telemetryCollector.exporters[1]).toBeInstanceOf(PostgresExporter);
-    });
-
-    afterAll(async () => {
-      await testRuntime.destroy();
-    });
-
-    test("signal tables are correctly created", async () => {
-      const pgExporter = dbosExec.telemetryCollector.exporters[0] as PostgresExporter;
-      const pgExporterPgClient = pgExporter.pgClient;
-      const stfQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_function';`);
-      const expectedStfColumns = [
-        {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
-          column_name: "trace_span",
-          data_type: "jsonb",
-        },
-        {
-          column_name: "transaction_id",
-          data_type: "text",
-        },
-        {
-          column_name: "trace_id",
-          data_type: "text",
-        },
-        {
-          column_name: "workflow_uuid",
-          data_type: "text",
-        },
-        {
-          column_name: "name",
-          data_type: "text",
-        },
-        {
-          column_name: "function_name",
-          data_type: "text",
-        },
-        {
-          column_name: "run_as",
-          data_type: "text",
-        },
-      ];
-      expect(stfQueryResult.rows).toEqual(expect.arrayContaining(expectedStfColumns));
-
-      const stwQueryResult = await pgExporterPgClient.query(`SELECT column_name, data_type FROM information_schema.columns where table_name='signal_test_workflow';`);
-      const expectedStwColumns = [
-        {
-          column_name: "trace_span",
-          data_type: "jsonb",
-        },
-        {
-          column_name: "transaction_id",
-          data_type: "text",
-        },
-        {
-          column_name: "timestamp",
-          data_type: "bigint",
-        },
-        {
-          column_name: "trace_id",
-          data_type: "text",
-        },
-        {
-          column_name: "workflow_uuid",
-          data_type: "text",
-        },
-        {
-          column_name: "name",
-          data_type: "text",
-        },
-        {
-          column_name: "function_name",
-          data_type: "text",
-        },
-        {
-          column_name: "run_as",
-          data_type: "text",
-        },
-      ];
-      expect(stwQueryResult.rows).toEqual(expect.arrayContaining(expectedStwColumns));
-    });
-
-    test("correctly exports log entries with single workflow single operation", async () => {
-      jest.spyOn(console, "log").mockImplementation(); // "mute" console.log
-      const username = dbosConfig.poolConfig.user as string;
-      const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(TestClass, undefined, {authenticatedRoles: ["dbosAppAdmin"], authenticatedUser: "dbosAppAdmin"}).test_workflow(username);
-      const result: string = await workflowHandle.getResult();
-
-      // Workflow should have executed correctly
-      expect(JSON.parse(result)).toEqual({ current_user: username });
-
-      // Exporter should export the log entries
-      await dbosExec.telemetryCollector.processAndExportSignals();
-
-      const pgExporter = dbosExec.telemetryCollector.exporters[0] as PostgresExporter;
-      const pgExporterPgClient = pgExporter.pgClient;
-
-      // Exporter should export traces
-      const txnTraceQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_function WHERE trace_id IS NOT NULL`);
-      expect(txnTraceQueryResult.rows).toHaveLength(1);
-      const txnTraceEntry = txnTraceQueryResult.rows[0];
-      expect(txnTraceEntry.trace_id.length).toBe(32);
-      expect(txnTraceEntry.trace_span).not.toBe(null);
-
-      const wfTraceQueryResult = await pgExporterPgClient.query<TelemetrySignalDbFields>(`SELECT * FROM signal_test_workflow WHERE trace_id IS NOT NULL`);
-      expect(wfTraceQueryResult.rows).toHaveLength(1);
-      const wfTraceEntry = wfTraceQueryResult.rows[0];
-      expect(wfTraceEntry.trace_id.length).toBe(32);
-      expect(wfTraceEntry.trace_span).not.toBe(null);
-    });
-  });
- */
 
   describe("http Tracer", () => {
     let config: DBOSConfig;
