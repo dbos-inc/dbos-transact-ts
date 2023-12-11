@@ -18,7 +18,7 @@ import {
   isClientError,
 } from "../error";
 import { DBOSExecutor } from "../dbos-executor";
-import { Logger } from "winston";
+import { GlobalLogger as Logger } from "../telemetry/logs";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';

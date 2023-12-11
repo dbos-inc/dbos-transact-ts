@@ -8,7 +8,7 @@ import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep } from "./utils";
 import { HTTPRequest } from "./context";
-import { Logger } from "winston";
+import { GlobalLogger as Logger } from "./telemetry/logs";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -145,7 +145,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query("COMMIT");
       client.release();
     } catch (error) {
-      this.logger.error("Error flushing workflow buffer", error)
+      (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
+      this.logger.error(error);
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, output] of localBuffer) {
         if (!this.workflowStatusBuffer.has(workflowUUID)) {

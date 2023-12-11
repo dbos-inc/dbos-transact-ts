@@ -31,9 +31,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugProxy?:
       logs: {
         silent: silenceLogs,
       },
-      traces: {
-        enabled: false,
-      },
     },
     system_database: "dbostest_systemdb",
     // observability_database: "dbostest_observabilitydb",

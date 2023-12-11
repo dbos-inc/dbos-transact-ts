@@ -1,6 +1,8 @@
-import { MethodRegistrationBase } from "../decorators";
 import { ITelemetryExporter } from "./exporters";
-import { TelemetrySignal } from "./signals";
+import { Span } from "@opentelemetry/sdk-trace-base";
+import { LogRecord } from "@opentelemetry/api-logs";
+
+export type TelemetrySignal = LogRecord | Span;
 
 class SignalsQueue {
   data: TelemetrySignal[] = [];
@@ -27,28 +29,15 @@ export class TelemetryCollector {
   private readonly processAndExportSignalsMaxBatchSize = 10;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
+  constructor(readonly exporter?: ITelemetryExporter) {
     this.signalBufferID = setInterval(() => {
       void this.processAndExportSignals();
     }, this.processAndExportSignalsIntervalMs);
   }
 
-  async init(registeredOperations: Array<MethodRegistrationBase> = []) {
-    for (const exporter of this.exporters) {
-      if (exporter.init) {
-        await exporter.init(registeredOperations);
-      }
-    }
-  }
-
   async destroy() {
     clearInterval(this.signalBufferID);
     await this.processAndExportSignals();
-    for (const exporter of this.exporters) {
-      if (exporter.destroy) {
-        await exporter.destroy();
-      }
-    }
   }
 
   push(signal: TelemetrySignal) {
@@ -70,8 +59,8 @@ export class TelemetryCollector {
     }
     if (batch.length > 0) {
       const exports = [];
-      for (const exporter of this.exporters) {
-        exports.push(exporter.export(batch));
+      if (this.exporter) {
+        exports.push(this.exporter.export(batch));
       }
       try {
         await Promise.all(exports);

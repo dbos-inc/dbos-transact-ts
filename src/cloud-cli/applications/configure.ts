@@ -1,18 +1,18 @@
 import axios from "axios";
 import fs from "fs";
 import YAML from "yaml";
-import { createGlobalLogger } from "../../telemetry/logs";
+import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
 import { execSync } from "child_process";
 
 export async function configureApp(host: string, port: string, dbName: string) {
-    const logger = createGlobalLogger();
+    const logger = new GlobalLogger();
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
-    
+
     // call cloud and get hostname and port
-    const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, 
+    const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`,
     {
       headers: {
         "Content-Type": "application/json",

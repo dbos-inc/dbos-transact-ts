@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { WinstonLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
+import { GlobalLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
 import { has, get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
@@ -44,7 +44,6 @@ export class DBOSContextImpl implements DBOSContext {
   readonly logger: DBOSLogger;      // Wrapper around the global logger for this context.
 
   constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
-    this.logger = new DBOSLogger(logger, this);
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;
@@ -52,6 +51,7 @@ export class DBOSContextImpl implements DBOSContext {
       this.assumedRole = parentCtx.assumedRole;
       this.workflowUUID = parentCtx.workflowUUID;
     }
+    this.logger = new DBOSLogger(logger, this);
   }
 
   /*** Application configuration ***/
