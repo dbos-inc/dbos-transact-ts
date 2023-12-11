@@ -25,6 +25,10 @@ type ContextualMetadata = {
   spanId: string;
 };
 
+interface StackTrace {
+  stack?: string;
+}
+
 // Wrap around the winston logger to support configuration and access to our telemetry collector
 export interface IGlobalLogger extends IWinstonLogger {
   readonly addContextMetadata: boolean;
@@ -56,20 +60,21 @@ export class GlobalLogger {
     this.addContextMetadata = config?.addContextMetadata || false;
   }
 
-  info(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+  info(message: string, metadata?: ContextualMetadata): void {
     this.logger.info(message, metadata);
   }
 
-  debug(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+  debug(message: string, metadata?: ContextualMetadata): void {
     this.logger.debug(message, metadata);
   }
 
-  warn(message: string, metadata?: { [key: string]: string | boolean | undefined }): void {
+  warn(message: string, metadata?: ContextualMetadata): void {
     this.logger.warn(message, metadata);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error(inputError: any, metadata?: { [key: string]: string | boolean | undefined }): void {
+  // metadata can have both ContextualMetadata and the error stack trace
+  error(inputError: any, metadata?: ContextualMetadata & StackTrace): void {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     this.logger.error(inputError, metadata);
   }
