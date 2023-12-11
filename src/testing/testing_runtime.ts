@@ -73,7 +73,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 }
 
 /**
- * This class provides a runtime to test Opeorn functions in unit tests.
+ * This class provides a runtime to test DBOS functions in unit tests.
  */
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;

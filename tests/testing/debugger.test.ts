@@ -42,6 +42,12 @@ describe("debugger-test", () => {
       await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     }
 
+    @Transaction({readOnly: true})
+    static async testReadOnlyFunction(txnCtxt: TestTransactionContext, number: number) {
+      const { rows } = await txnCtxt.client.query<{one: number}>(`SELECT 1 AS one`);
+      return Number(rows[0].one) + number;
+    }
+
     @Transaction()
     static async testFunction(txnCtxt: TestTransactionContext, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
@@ -143,6 +149,24 @@ describe("debugger-test", () => {
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow("Workflow UUID not found!");
   });
+
+  test("debug-read-only-transaction", async () => {
+    const wfUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    await expect(testRuntime.invoke(DebuggerTest, wfUUID).testReadOnlyFunction(1)).resolves.toBe(2);
+    await testRuntime.destroy();
+
+    // Execute again in debug mode.
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testReadOnlyFunction(1)).resolves.toBe(2);
+
+    // Execute a non-exist UUID should fail.
+    const wfUUID2 = uuidv1();
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("This should never happen during debug.");
+
+    // Execute a workflow without specifying the UUID should fail.
+    await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow("Workflow UUID not found!");
+  });
+
 
   test("debug-communicator", async () => {
     const wfUUID = uuidv1();

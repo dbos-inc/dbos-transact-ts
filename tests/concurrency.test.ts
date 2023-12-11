@@ -35,25 +35,13 @@ describe("concurrency-tests", () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workflowUUID = uuidv1();
-    let results = await Promise.allSettled([
+    const results = await Promise.allSettled([
       testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
       testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
     expect(ConcurrTestClass.cnt).toBe(1);
-
-    // Read-only transactions would execute twice.
-    ConcurrTestClass.cnt = 0;
-
-    const readUUID = uuidv1();
-    results = await Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12),
-      testRuntime.invoke(ConcurrTestClass, readUUID).testReadOnlyFunction(12),
-    ]);
-    expect((results[0] as PromiseFulfilledResult<number>).value).toBe(12);
-    expect((results[1] as PromiseFulfilledResult<number>).value).toBe(12);
-    expect(ConcurrTestClass.cnt).toBe(2);
   });
 
   test("concurrent-workflow", async () => {
@@ -130,13 +118,6 @@ class ConcurrTestClass {
   @Transaction()
   static async testReadWriteFunction(_txnCtxt: TestTransactionContext, id: number) {
     ConcurrTestClass.cnt++;
-    return id;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/require-await
-  @Transaction({ readOnly: true })
-  static async testReadOnlyFunction(_txnCtxt: TestTransactionContext, id: number) {
-    ConcurrTestClass.cnt += 1;
     return id;
   }
 

@@ -25,6 +25,9 @@ export interface ConfigFile {
     observability_database: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user_dbclient?: UserDatabaseName;
+    create_db: boolean;
+    migrate?: string[];
+    rollback?: string[];
   };
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,7 +131,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,
     },
-    debugProxy: cliOptions?.debug || undefined,
   };
 
   /*************************************/

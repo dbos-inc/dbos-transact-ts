@@ -18,7 +18,7 @@ import {
   WorkflowStatus,
 } from './workflow';
 
-import { Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { JaegerExporter } from './telemetry/exporters';
 import { TelemetryCollector } from './telemetry/collector';
@@ -35,6 +35,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
+  UserDatabaseClient,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -87,7 +88,8 @@ export class DBOSExecutor {
   readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
   readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
+  readonly pendingAsyncWrites: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to asynchronous write promise
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -109,6 +111,15 @@ export class DBOSExecutor {
 
     if (this.debugMode) {
       this.logger.info("Running in debug mode!")
+      try {
+        const url = new URL(this.config.debugProxy!);
+        this.config.poolConfig.host = url.hostname;
+        this.config.poolConfig.port = parseInt(url.port, 10);
+        this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
+      } catch (err) {
+        this.logger.error(err);
+        throw err;
+      }
     }
 
     if (systemDatabase) {
@@ -139,18 +150,7 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
-    const userDBConfig = JSON.parse(JSON.stringify(this.config.poolConfig)) as PoolConfig; // Deep copy
-    if (this.debugMode) {
-      try {
-        const url = new URL(this.config.debugProxy!);
-        userDBConfig.host = url.hostname;
-        userDBConfig.port = parseInt(url.port, 10);
-        this.logger.info(`Debugging mode proxy: ${userDBConfig.host}:${userDBConfig.port}`);
-      } catch (err) {
-        this.logger.error(err);
-        return;
-      }
-    }
+    const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
@@ -264,7 +264,7 @@ export class DBOSExecutor {
     // Only execute init code if under non-debug mode
     if (!this.debugMode) {
       for (const v of this.registeredOperations) {
-        const m = v as MethodRegistration<unknown, unknown[], unknown> ;
+        const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
           this.logger.debug("Executing init method: " + m.name);
           await m.origFunction(new InitContext(this));
@@ -279,6 +279,10 @@ export class DBOSExecutor {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
+    }
+    if (this.pendingAsyncWrites.size > 0) {
+      this.logger.info("Waiting for pending buffer flushes to finish");
+      await Promise.allSettled(this.pendingAsyncWrites.values());
     }
     clearInterval(this.flushBufferID);
     await this.flushWorkflowStatusBuffer();
@@ -324,6 +328,7 @@ export class DBOSExecutor {
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
   async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const presetUUID: boolean = params.workflowUUID ? true : false;
 
     const wInfo = this.workflowInfoMap.get(wf.name);
     if (wInfo === undefined) {
@@ -331,22 +336,20 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name);
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
-    // Synchronously set the workflow's status to PENDING and record workflow inputs.  Not needed for temporary workflows.
+    // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
       args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
+    } else {
+      // For temporary workflows, instead asynchronously record inputs.
+      const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
+        .catch(error => { this.logger.error('Error asynchronously setting workflow inputs', error) })
+        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
     const runWorkflow = async () => {
-      // Check if the workflow previously ran.
-      const previousOutput = await this.systemDatabase.checkWorkflowOutput(workflowUUID);
-      if (previousOutput !== dbosNull) {
-        wCtxt.span.setAttribute("cached", true);
-        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        this.tracer.endSpan(wCtxt.span);
-        return previousOutput as R;
-      }
       let result: R;
       // Execute the workflow.
       try {
@@ -372,6 +375,15 @@ export class DBOSExecutor {
       } finally {
         this.tracer.endSpan(wCtxt.span);
       }
+      // Asynchronously flush the result buffer.
+      const resultBufferFlush: Promise<void> = this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+        if (wCtxt.resultBuffer.size > 0) {
+          await wCtxt.flushResultBuffer(client);
+        }
+      }, { isolationLevel: IsolationLevel.ReadCommitted })
+        .catch(error => { this.logger.error('Error asynchronously flushing result buffer', error) })
+        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
@@ -413,7 +425,7 @@ export class DBOSExecutor {
     const runWorkflow = async () => {
       // A non-temp debug workflow must have run before.
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-      if(!wCtxt.isTempWorkflow && !wfStatus) {
+      if (!wCtxt.isTempWorkflow && !wfStatus) {
         throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
       }
 
@@ -487,22 +499,31 @@ export class DBOSExecutor {
     const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflowUUID of pendingWorkflows) {
       try {
-        const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-        const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
-        if (!inputs || !wfStatus) {
-          this.logger.error(`Failed to find inputs during recover, workflow UUID: ${workflowUUID}`);
-          continue;
-        }
-        const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
-
-        const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        handlerArray.push(await this.workflow(wfInfo!.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs));
+        handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
       } catch (e) {
         this.logger.warn(`Recovery of workflow ${workflowUUID} failed:`, e);
       }
     }
     return handlerArray;
+  }
+
+  async executeWorkflowUUID(workflowUUID: string): Promise<WorkflowHandle<unknown>> {
+    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+    const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+    if (!inputs || !wfStatus) {
+      this.logger.error(`Failed to find inputs for workflowUUID: ${workflowUUID}`);
+      throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowUUID}`);
+    }
+    const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
+
+    // If wfInfo is undefined, then it means it's a temporary workflow.
+    // TODO: we need to find the name of that function and run it.
+    if (!wfInfo) {
+      throw new DBOSError(`Cannot find workflow info for UUID ${workflowUUID}`);
+    }
+    const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {

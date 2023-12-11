@@ -112,7 +112,7 @@ describe("dbos-config", () => {
     test("getConfig returns the expected values", async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext", true);
       // Config key exists
       expect(ctx.getConfig("payments_url")).toBe("http://somedomain.com/payment");
       // Config key does not exist, no default value
@@ -138,7 +138,7 @@ describe("dbos-config", () => {
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext", true);
       expect(ctx.getConfig<string>("payments_url", "default")).toBe("default");
       // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
@@ -148,7 +148,7 @@ describe("dbos-config", () => {
     test("getConfig throws when it finds a value of different type than the default", async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);
-      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext");
+      const ctx: WorkflowContextImpl = new WorkflowContextImpl(dbosExec, undefined, "testUUID", {}, "testContext", true);
       expect(() => ctx.getConfig<number>("payments_url", 1234)).toThrow(DBOSConfigKeyTypeError);
       // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
