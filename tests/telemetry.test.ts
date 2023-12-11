@@ -53,24 +53,7 @@ describe("dbos-telemetry", () => {
     await dbosExec.destroy();
   });
 
-  // TODO find a way to intercept the HTTP requests and test span/logs payloads
-  /*
-  test("Logs and Traces are correctly exported", async () => {
-    const dbosConfig = generateDBOSTestConfig();
-    if (dbosConfig.telemetry) {
-      dbosConfig.telemetry.OTLPExporters = [
-        {
-          tracesEndpoint: "http://localhost:4317/v1/traces",
-        },
-      ];
-    }
-    await setUpDBOSTestDb(dbosConfig);
-    const testRuntime = await createInternalTestRuntime([TestClass], dbosConfig);
-
-    await testRuntime.invoke(TestClass).test_workflow("test_user");
-    await testRuntime.destroy();
-  })
-  */
+  // TODO write a test intercepting OTLP over HTTP requests and test span/logs payloads
 
   describe("http Tracer", () => {
     let config: DBOSConfig;
