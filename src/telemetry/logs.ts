@@ -199,7 +199,7 @@ class OTLPLogQueueTransport extends TransportStream {
       body: message as string,
       timestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      attributes: { ...contextualMetadata, stack } as LogAttributes, // XXX unclear we will have a stack with this implementation
+      attributes: { ...contextualMetadata, stack } as LogAttributes,
       // TODO as a nice-to-have, we could retrieve the operation current context, if we use a context manager, and inject the traceId/spanId in the LogRecord
       // See https://opentelemetry.io/docs/instrumentation/js/context/#active-context
       context: context.active(),
