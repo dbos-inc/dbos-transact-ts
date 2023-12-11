@@ -1,6 +1,6 @@
 import ts from "typescript";
-import { TypeParser } from "../../src/dbos-runtime/TypeParser";
-import { OpenApiGenerator } from "../../src/dbos-runtime/openApi";
+import { TypeParser } from "../../src/staticAnalysis/TypeParser";
+import { OpenApiGenerator } from "../../src/staticAnalysis/openApi";
 import path from "node:path";
 import { makeTestTypescriptProgram } from "../makeProgram";
 

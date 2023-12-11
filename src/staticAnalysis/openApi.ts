@@ -1,10 +1,31 @@
 import ts from 'typescript';
-import { DecoratorInfo, MethodInfo, TypeParser, ClassInfo, ParameterInfo } from './TypeParser';
+import {
+  DecoratorInfo,
+  MethodInfo,
+  TypeParser,
+  ClassInfo,
+  ParameterInfo,
+  findPackageInfo,
+} from './TypeParser';
+
 import { APITypes, ArgSources } from '../httpServer/handler';
-import { createParser, createFormatter, SchemaGenerator, SubNodeParser, BaseType, Context, ReferenceType, Schema, PrimitiveType, SubTypeFormatter, Definition, Config } from 'ts-json-schema-generator';
+
+import {
+  createParser,
+  createFormatter,
+  SchemaGenerator,
+  SubNodeParser,
+  BaseType,
+  Context,
+  ReferenceType,
+  Schema,
+  PrimitiveType,
+  SubTypeFormatter,
+  Definition,
+  Config,
+} from 'ts-json-schema-generator';
+
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
-import path from 'node:path';
-import fs from 'node:fs/promises';
 import { diagResult, logDiagnostics, DiagnosticsCollector } from './tsDiagUtil';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
@@ -605,34 +626,6 @@ export class OpenApiGenerator {
 
 type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
 
-async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string }> {
-  let dirname = path.dirname(entrypoint);
-  while (dirname !== '/') {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const packageJson = JSON.parse(await fs.readFile(path.join(dirname, 'package.json'), { encoding: 'utf-8' }));
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const name = packageJson.name as string ?? "unknown";
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const version = packageJson.version as string | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const isPrivate = packageJson.private as boolean | undefined ?? false;
-
-      return {
-        name,
-        version: version
-          ? version
-          : isPrivate ? "private" : "unknown"
-      };
-    } catch (error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      if ((error as any).code !== 'ENOENT') throw error;
-    }
-    dirname = path.dirname(dirname);
-  }
-  return { name: "unknown", version: "unknown" };
-}
-
 export async function generateOpenApi(entrypoint: string): Promise<OpenApi3.Document | undefined> {
 
   const program = ts.createProgram([entrypoint], {});
@@ -642,7 +635,7 @@ export async function generateOpenApi(entrypoint: string): Promise<OpenApi3.Docu
   logDiagnostics(parser.diags);
   if (!classes || classes.length === 0) return undefined;
 
-  const { name, version } = await findPackageInfo(entrypoint);
+  const { name, version } = await findPackageInfo([entrypoint]);
   const generator = new OpenApiGenerator(program);
   const openapi = generator.generate(classes, name, version);
   logDiagnostics(generator.diags);
