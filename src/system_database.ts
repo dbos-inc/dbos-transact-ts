@@ -137,7 +137,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query("COMMIT");
       client.release();
     } catch (error) {
-      this.logger.error(new Error(`Error flushing workflow buffer: ${(error as Error).message}`));
+      (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
+      this.logger.error(error);
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, output] of localBuffer) {
         if (!this.workflowStatusBuffer.has(workflowUUID)) {

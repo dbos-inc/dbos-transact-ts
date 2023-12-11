@@ -74,7 +74,8 @@ export async function login(username: string): Promise<number> {
     const response = await axios.request(deviceCodeRequest);
     deviceCodeResponse = response.data as DeviceCodeResponse;
   } catch (e) {
-    logger.error(new Error(`failed to log in: ${(e as Error).message}`));
+    (e as Error).message = `failed to log in: ${(e as Error).message}`;
+    logger.error(e);
   }
   if (!deviceCodeResponse) {
     return 1;
