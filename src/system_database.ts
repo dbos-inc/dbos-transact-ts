@@ -100,7 +100,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R> {
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>(`SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
     if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
       return dbosNull;
     } else if (rows[0].status === StatusString.ERROR) {
@@ -112,11 +112,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query(
-      `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [initStatus.workflowUUID, initStatus.status, initStatus.name, initStatus.authenticatedUser, initStatus.assumedRole, JSON.stringify(initStatus.authenticatedRoles), JSON.stringify(initStatus.request), null, initStatus.executorID]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
-      `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, JSON.stringify(args)]
     )
     return JSON.parse(rows[0].inputs) as T;
@@ -137,7 +137,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query("BEGIN");
       for (const [workflowUUID, status] of localBuffer) {
         await client.query(
-          `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
+          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
           DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
           [workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID]
         );
@@ -159,7 +159,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query(
-      `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
       [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), status.error, status.executorID]
     );
@@ -167,7 +167,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getPendingWorkflows(executorID: string): Promise<Array<string>> {
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM workflow_status WHERE status=$1 AND executor_id=$2`,
+      `SELECT workflow_uuid FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
       [StatusString.PENDING, executorID]
     )
     return rows.map(i => i.workflow_uuid);
@@ -175,14 +175,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
     await this.pool.query<workflow_inputs>(
-      `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [workflowUUID, JSON.stringify(args)]
     )
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
-      `SELECT inputs FROM workflow_inputs WHERE workflow_uuid=$1`,
+      `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs WHERE workflow_uuid=$1`,
       [workflowUUID]
     )
     if (rows.length === 0) {
@@ -192,7 +192,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R> {
-    const { rows } = await this.pool.query<operation_outputs>("SELECT output, error FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    const { rows } = await this.pool.query<operation_outputs>(`SELECT output, error FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
     if (rows.length === 0) {
       return dbosNull;
     } else if (JSON.parse(rows[0].error) !== null) {
@@ -205,7 +205,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     const serialOutput = JSON.stringify(output);
     try {
-      await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialOutput]);
+      await this.pool.query(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`, [workflowUUID, functionID, serialOutput]);
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
@@ -220,7 +220,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = JSON.stringify(serializeError(error));
     try {
-      await this.pool.query("INSERT INTO operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);", [workflowUUID, functionID, serialErr]);
+      await this.pool.query(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);`, [workflowUUID, functionID, serialErr]);
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
@@ -237,7 +237,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async recordNotificationOutput<R>(client: PoolClient, workflowUUID: string, functionID: number, output: R) {
     try {
-      await client.query("INSERT INTO operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);", [workflowUUID, functionID, JSON.stringify(output)]);
+      await client.query(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`, [workflowUUID, functionID, JSON.stringify(output)]);
     } catch (error) {
       await client.query("ROLLBACK");
       client.release();
@@ -258,14 +258,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    const { rows } = await client.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    const { rows } = await client.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
       return;
     }
     await client.query(
-      `INSERT INTO notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
       [destinationUUID, topic, JSON.stringify(message)]
     );
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
@@ -276,7 +276,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
-    const checkRows = (await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID])).rows;
+    const checkRows = (await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
       return JSON.parse(checkRows[0].output) as T;
     }
@@ -297,7 +297,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([messagePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<notifications>("SELECT topic FROM notifications WHERE destination_uuid=$1 AND topic=$2;", [workflowUUID, topic])).rows;
+    const initRecvRows = (await this.pool.query<notifications>(`SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`, [workflowUUID, topic])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
@@ -309,14 +309,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const finalRecvRows = (await client.query<notifications>(
       `WITH oldest_entry AS (
         SELECT destination_uuid, topic, message, created_at_epoch_ms
-        FROM notifications
+        FROM ${DBOSExecutor.systemDBSchemaName}.notifications
         WHERE destination_uuid = $1
           AND topic = $2
         ORDER BY created_at_epoch_ms ASC
         LIMIT 1
       )
 
-      DELETE FROM notifications
+      DELETE FROM ${DBOSExecutor.systemDBSchemaName}.notifications
       USING oldest_entry
       WHERE notifications.destination_uuid = oldest_entry.destination_uuid
         AND notifications.topic = oldest_entry.topic
@@ -337,14 +337,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    let { rows } = await client.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [workflowUUID, functionID]);
+    let { rows } = await client.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
     if (rows.length > 0) {
       await client.query("ROLLBACK");
       client.release();
       return;
     }
     ({ rows } = await client.query(
-      `INSERT INTO workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
       [workflowUUID, key, JSON.stringify(message)]
     ));
     if (rows.length === 0) {
@@ -360,7 +360,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
-      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
+      const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [callerUUID, functionID]);
       if (rows.length > 0) {
         return JSON.parse(rows[0].output) as T;
       }
@@ -381,7 +381,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const received = Promise.race([valuePromise, timeoutPromise]);
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_events>("SELECT key, value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+    const initRecvRows = (await this.pool.query<workflow_events>(`SELECT key, value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
       await received;
     }
@@ -393,7 +393,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       value = JSON.parse(initRecvRows[0].value) as T;
     } else {
       // Read it again from the database.
-      const finalRecvRows = (await this.pool.query<workflow_events>("SELECT value FROM workflow_events WHERE workflow_uuid=$1 AND key=$2;", [workflowUUID, key])).rows;
+      const finalRecvRows = (await this.pool.query<workflow_events>(`SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
       if (finalRecvRows.length > 0) {
         value = JSON.parse(finalRecvRows[0].value) as T;
       }
@@ -409,13 +409,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
-      const { rows } = await this.pool.query<operation_outputs>("SELECT output FROM operation_outputs WHERE workflow_uuid=$1 AND function_id=$2", [callerUUID, functionID]);
+      const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [callerUUID, functionID]);
       if (rows.length > 0) {
         return JSON.parse(rows[0].output) as WorkflowStatus;
       }
     }
 
-    const { rows } = await this.pool.query<workflow_status>("SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>(`SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
     let value = null;
     if (rows.length > 0) {
       value = {
@@ -439,7 +439,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const pollingIntervalMs: number = 1000;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const { rows } = await this.pool.query<workflow_status>("SELECT status, output, error FROM workflow_status WHERE workflow_uuid=$1", [workflowUUID]);
+      const { rows } = await this.pool.query<workflow_status>(`SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
       if (rows.length > 0) {
         const status = rows[0].status;
         if (status === StatusString.SUCCESS) {
