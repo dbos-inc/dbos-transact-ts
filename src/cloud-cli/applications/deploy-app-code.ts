@@ -10,7 +10,7 @@ import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runti
 const deployDirectoryName = "dbos_deploy";
 
 export async function deployAppCode(appName: string, host: string, port: string): Promise<number> {
-  const logger =  new GlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 

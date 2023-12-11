@@ -4,7 +4,7 @@ import { getCloudCredentials } from "../utils";
 import { Application } from "./types";
 
 export async function listApps(host: string, port: string): Promise<number> {
-  const logger =  new GlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 

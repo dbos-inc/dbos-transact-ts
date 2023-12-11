@@ -3,7 +3,7 @@ import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
 export async function deleteApp(appName: string, host: string, port: string): Promise<number> {
-  const logger =  new GlobalLogger();
+  const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
