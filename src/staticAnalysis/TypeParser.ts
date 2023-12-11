@@ -1,5 +1,7 @@
 import ts from 'typescript';
 import { DiagnosticsCollector, diagResult } from './tsDiagUtil';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 
 export interface ClassInfo {
   readonly node: ts.ClassDeclaration;
@@ -137,4 +139,34 @@ export class TypeParser {
       return undefined;
     }
   }
+}
+
+export async function findPackageInfo(entrypoints: string[]): Promise<{ name: string, version: string }> {
+  for (const entrypoint of entrypoints) {
+    let dirname = path.dirname(entrypoint);
+    while (dirname !== '/') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const packageJson = JSON.parse(await fs.readFile(path.join(dirname, 'package.json'), { encoding: 'utf-8' }));
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const name = packageJson.name as string ?? "unknown";
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const version = packageJson.version as string | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const isPrivate = packageJson.private as boolean | undefined ?? false;
+
+        return {
+          name,
+          version: version
+            ? version
+            : isPrivate ? "private" : "unknown"
+        };
+      } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+        if ((error as any).code !== 'ENOENT') throw error;
+      }
+      dirname = path.dirname(dirname);
+    }
+  }
+  return { name: "unknown", version: "unknown" };
 }

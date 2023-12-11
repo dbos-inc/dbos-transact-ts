@@ -16,6 +16,7 @@ import {
   RetrievedHandle,
   WorkflowContextImpl,
   WorkflowStatus,
+  StatusString,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
@@ -26,7 +27,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
-import { SystemDatabase, PostgresSystemDatabase } from './system_database';
+import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -43,9 +44,11 @@ import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
+import { serializeError } from 'serialize-error';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
+export const DBOSExecutorIDHeader = "dbos-executor-id";
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -59,10 +62,26 @@ export interface DBOSConfig {
   readonly debugProxy?: string;
 }
 
-interface WorkflowInfo<T extends any[], R> {
-  workflow: Workflow<T, R>;
+interface WorkflowInfo {
+  workflow: Workflow<any, any>;
   config: WorkflowConfig;
 }
+
+interface TransactionInfo {
+  transaction: Transaction<any, any>;
+  config: TransactionConfig;
+}
+
+interface CommunicatorInfo {
+  communicator: Communicator<any, any>;
+  config: CommunicatorConfig;
+}
+
+const TempWorkflowType = {
+  transaction: "transaction",
+  external: "external",
+  send: "send",
+} as const;
 
 export class DBOSExecutor {
   initialized: boolean;
@@ -72,12 +91,12 @@ export class DBOSExecutor {
   readonly systemDatabase: SystemDatabase;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
-  readonly tempWorkflowName = "temp_workflow";
+  static readonly tempWorkflowName = "temp_workflow";
 
-  readonly workflowInfoMap: Map<string, WorkflowInfo<any, any>> = new Map([
+  readonly workflowInfoMap: Map<string, WorkflowInfo> = new Map([
     // We initialize the map with an entry for temporary workflows.
     [
-      this.tempWorkflowName,
+      DBOSExecutor.tempWorkflowName,
       {
         // eslint-disable-next-line @typescript-eslint/require-await
         workflow: async () => this.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
@@ -85,8 +104,8 @@ export class DBOSExecutor {
       },
     ],
   ]);
-  readonly transactionConfigMap: Map<string, TransactionConfig> = new Map();
-  readonly communicatorConfigMap: Map<string, CommunicatorConfig> = new Map();
+  readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
+  readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly pendingAsyncWrites: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to asynchronous write promise
@@ -118,7 +137,7 @@ export class DBOSExecutor {
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.debugMode) {
-      this.logger.info("Running in debug mode!")
+      this.logger.info("Running in debug mode!");
       try {
         const url = new URL(this.config.debugProxy!);
         this.config.poolConfig.host = url.hostname;
@@ -162,17 +181,19 @@ export class DBOSExecutor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
       const DataSourceExports = require("typeorm");
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-        this.userDatabase = new TypeORMDatabase(new DataSourceExports.DataSource({
-          type: "postgres", // perhaps should move to config file
-          host: userDBConfig.host,
-          port: userDBConfig.port,
-          username: userDBConfig.user,
-          password: userDBConfig.password,
-          database: userDBConfig.database,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-          entities: this.entities
-        }))
+        this.userDatabase = new TypeORMDatabase(
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+          new DataSourceExports.DataSource({
+            type: "postgres", // perhaps should move to config file
+            host: userDBConfig.host,
+            port: userDBConfig.port,
+            username: userDBConfig.user,
+            password: userDBConfig.password,
+            database: userDBConfig.database,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+            entities: this.entities,
+          })
+        );
       } catch (s) {
         (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
         this.logger.error(s);
@@ -188,8 +209,8 @@ export class DBOSExecutor {
           password: userDBConfig.password,
           database: userDBConfig.database,
           ssl: userDBConfig.ssl,
-        }
-      }
+        },
+      };
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
     } else {
@@ -291,10 +312,10 @@ export class DBOSExecutor {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow<T extends any[], R>(wf: Workflow<T, R>, config: WorkflowConfig = {}) {
-    if (wf.name === this.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
+    if (wf.name === DBOSExecutor.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
       throw new DBOSError(`Repeated workflow name: ${wf.name}`);
     }
-    const workflowInfo: WorkflowInfo<T, R> = {
+    const workflowInfo: WorkflowInfo = {
       workflow: wf,
       config: config,
     };
@@ -302,17 +323,25 @@ export class DBOSExecutor {
   }
 
   #registerTransaction<T extends any[], R>(txn: Transaction<T, R>, params: TransactionConfig = {}) {
-    if (this.transactionConfigMap.has(txn.name)) {
+    if (this.transactionInfoMap.has(txn.name)) {
       throw new DBOSError(`Repeated Transaction name: ${txn.name}`);
     }
-    this.transactionConfigMap.set(txn.name, params);
+    const txnInfo: TransactionInfo = {
+      transaction: txn,
+      config: params,
+    };
+    this.transactionInfoMap.set(txn.name, txnInfo);
   }
 
   #registerCommunicator<T extends any[], R>(comm: Communicator<T, R>, params: CommunicatorConfig = {}) {
-    if (this.communicatorConfigMap.has(comm.name)) {
+    if (this.communicatorInfoMap.has(comm.name)) {
       throw new DBOSError(`Repeated Commmunicator name: ${comm.name}`);
     }
-    this.communicatorConfigMap.set(comm.name, params);
+    const commInfo: CommunicatorInfo = {
+      communicator: comm,
+      config: params,
+    };
+    this.communicatorInfoMap.set(comm.name, commInfo);
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
@@ -336,24 +365,50 @@ export class DBOSExecutor {
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
     wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
+    let executorID: string = "local";
+    if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
+      executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
+    }
+    const internalStatus: WorkflowStatusInternal = {
+      workflowUUID: workflowUUID,
+      status: StatusString.PENDING,
+      name: wf.name,
+      authenticatedUser: wCtxt.authenticatedUser,
+      output: undefined,
+      error: "",
+      assumedRole: wCtxt.assumedRole,
+      authenticatedRoles: wCtxt.authenticatedRoles,
+      request: wCtxt.request,
+      executorID: executorID,
+    };
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(workflowUUID, wf.name, wCtxt.authenticatedUser, wCtxt.assumedRole, wCtxt.authenticatedRoles, wCtxt.request, args);
+      args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     } else {
       // For temporary workflows, instead asynchronously record inputs.
-      const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
-      .catch(error => {
+      const setWorkflowInputs: Promise<void> = this.systemDatabase
+        .setWorkflowInputs<T>(workflowUUID, args)
+        .catch((error) => {
         (error as Error).message = `Error asynchronously setting workflow inputs: ${(error as Error).message}`;
-        this.logger.error(error);
-      }).finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+          this.logger.error(error);
+        })
+        .finally(() => {
+          this.pendingAsyncWrites.delete(workflowUUID);
+        });
       this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
+
     const runWorkflow = async () => {
       let result: R;
       // Execute the workflow.
       try {
         result = await wf(wCtxt, ...args);
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result);
+        if (wCtxt.isTempWorkflow) {
+          internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+        }
+        internalStatus.output = result;
+        internalStatus.status = StatusString.SUCCESS;
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -366,7 +421,13 @@ export class DBOSExecutor {
           // Record the error.
           const e: Error = err as Error;
           this.logger.error(e);
-          await this.systemDatabase.recordWorkflowError(workflowUUID, e);
+          if (wCtxt.isTempWorkflow) {
+            internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+          }
+          internalStatus.error = JSON.stringify(serializeError(e));
+          internalStatus.status = StatusString.ERROR;
+          await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
+          // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -374,16 +435,22 @@ export class DBOSExecutor {
         this.tracer.endSpan(wCtxt.span);
       }
       // Asynchronously flush the result buffer.
-      const resultBufferFlush: Promise<void> = this.userDatabase.transaction(async (client: UserDatabaseClient) => {
-        if (wCtxt.resultBuffer.size > 0) {
-          await wCtxt.flushResultBuffer(client);
-        }
-      }, { isolationLevel: IsolationLevel.ReadCommitted })
-      .catch(error => {
-        (error as Error).message = `Error asynchronously flushing result buffer: ${(error as Error).message}`;
-        this.logger.error(error);
-      })
-      .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      const resultBufferFlush: Promise<void> = this.userDatabase
+        .transaction(
+          async (client: UserDatabaseClient) => {
+            if (wCtxt.resultBuffer.size > 0) {
+              await wCtxt.flushResultBuffer(client);
+            }
+          },
+          { isolationLevel: IsolationLevel.ReadCommitted }
+        )
+        .catch((error) => {
+          (error as Error).message = `Error asynchronously flushing result buffer: ${(error as Error).message}`;
+          this.logger.error(error);
+        })
+        .finally(() => {
+          this.pendingAsyncWrites.delete(workflowUUID);
+        });
       this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
       return result;
     };
@@ -438,11 +505,12 @@ export class DBOSExecutor {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
-
   async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.transaction;
+      ctxtImpl.tempWfOperationName = txn.name;
       return await ctxtImpl.transaction(txn, ...args);
     };
     return (await this.workflow(temp_workflow, params, ...args)).getResult();
@@ -452,6 +520,8 @@ export class DBOSExecutor {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.external;
+      ctxtImpl.tempWfOperationName = commFn.name;
       return await ctxtImpl.external(commFn, ...args);
     };
     return (await this.workflow(temp_workflow, params, ...args)).getResult();
@@ -460,6 +530,8 @@ export class DBOSExecutor {
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      ctxtImpl.tempWfOperationType = TempWorkflowType.send;
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
@@ -515,16 +587,53 @@ export class DBOSExecutor {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowUUID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowUUID}`);
     }
-    const wfInfo: WorkflowInfo<any, any> | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
-
-    // If wfInfo is undefined, then it means it's a temporary workflow.
-    // TODO: we need to find the name of that function and run it.
-    if (!wfInfo) {
-      throw new DBOSError(`Cannot find workflow info for UUID ${workflowUUID}`);
-    }
     const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
+
+    const wfInfo: WorkflowInfo | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
+
+    if (wfInfo) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
+    }
+
+    // Should be temporary workflows. Parse the name of the workflow.
+    const wfName = wfStatus.workflowName;
+    const nameArr = wfName.split("-");
+    if (!nameArr[0].startsWith(DBOSExecutor.tempWorkflowName)) {
+      throw new DBOSError(`This should never happen! Cannot find workflow info for a non-temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
+    }
+
+    let temp_workflow: Workflow<any, any>;
+    if (nameArr[1] === TempWorkflowType.transaction) {
+      const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(nameArr[2]);
+      if (!txnInfo) {
+        throw new DBOSError(`Cannot find transaction info for UUID ${workflowUUID}, name ${wfName}`);
+      }
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
+        const ctxtImpl = ctxt as WorkflowContextImpl;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument
+        return await ctxtImpl.transaction(txnInfo.transaction, ...args);
+      };
+    } else if (nameArr[1] === TempWorkflowType.external) {
+      const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(nameArr[2]);
+      if (!commInfo) {
+        throw new DBOSError(`Cannot find transaction info for UUID ${workflowUUID}, name ${wfName}`);
+      }
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
+        const ctxtImpl = ctxt as WorkflowContextImpl;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument
+        return await ctxtImpl.external(commInfo.communicator, ...args);
+      };
+    } else if (nameArr[1] === TempWorkflowType.send) {
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return await ctxt.send<any>(args[0], args[1], args[2]);
+      };
+    } else {
+      throw new DBOSError(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
+    }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {

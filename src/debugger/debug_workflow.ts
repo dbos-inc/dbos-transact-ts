@@ -31,7 +31,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
-    this.isTempWorkflow = dbosExec.tempWorkflowName === workflowName;
+    this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = dbosExec.config.application;
@@ -92,8 +92,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * It connects to a debug proxy and everything should be read-only.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    const config = this.#dbosExec.transactionConfigMap.get(txn.name);
-    if (config === undefined) {
+    const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
+    if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
     }
     // const readOnly = true; // TODO: eventually, this transaction must be read-only.
@@ -111,7 +111,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return result;
     };
 
-    const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, config);
+    const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
 
     if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
       this.logger.error(`Detected different transaction output than the original one!\n Expected: ${JSON.stringify(result)}\n Received: ${JSON.stringify(check!.output)}`);
@@ -120,7 +120,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.communicatorConfigMap.get(commFn.name);
+    const commConfig = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
