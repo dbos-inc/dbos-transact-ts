@@ -60,16 +60,32 @@ export class GlobalLogger {
     this.addContextMetadata = config?.addContextMetadata || false;
   }
 
-  info(message: string, metadata?: ContextualMetadata): void {
-    this.logger.info(message, metadata);
+  // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  info(logEntry: any, metadata?: ContextualMetadata): void {
+    if (typeof logEntry === "string") {
+      this.logger.info(logEntry, metadata);
+    } else {
+      this.logger.info(JSON.stringify(logEntry), metadata);
+    }
   }
 
-  debug(message: string, metadata?: ContextualMetadata): void {
-    this.logger.debug(message, metadata);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  debug(logEntry: any, metadata?: ContextualMetadata): void {
+    if (typeof logEntry === "string") {
+      this.logger.debug(logEntry, metadata);
+    } else {
+      this.logger.debug(JSON.stringify(logEntry), metadata);
+    }
   }
 
-  warn(message: string, metadata?: ContextualMetadata): void {
-    this.logger.warn(message, metadata);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  warn(logEntry: any, metadata?: ContextualMetadata): void {
+    if (typeof logEntry === "string") {
+      this.logger.warn(logEntry, metadata);
+    } else {
+      this.logger.warn(JSON.stringify(logEntry), metadata);
+    }
   }
 
   // metadata can have both ContextualMetadata and the error stack trace
@@ -100,16 +116,31 @@ export class Logger {
     };
   }
 
-  info(message: string): void {
-    this.globalLogger.info(message, this.metadata);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  info(logEntry: any): void {
+    if (typeof logEntry === "string") {
+      this.globalLogger.info(logEntry, this.metadata);
+    } else {
+      this.globalLogger.info(JSON.stringify(logEntry), this.metadata);
+    }
   }
 
-  debug(message: string): void {
-    this.globalLogger.debug(message, this.metadata);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  debug(logEntry: any): void {
+    if (typeof logEntry === "string") {
+      this.globalLogger.debug(logEntry, this.metadata);
+    } else {
+      this.globalLogger.debug(JSON.stringify(logEntry), this.metadata);
+    }
   }
 
-  warn(message: string): void {
-    this.globalLogger.warn(message, this.metadata);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  warn(logEntry: any): void {
+    if (typeof logEntry === "string") {
+      this.globalLogger.warn(logEntry, this.metadata);
+    } else {
+      this.globalLogger.warn(JSON.stringify(logEntry), this.metadata);
+    }
   }
 
   // We give users the same interface (message: string argument) but create an error to get a stack trace
@@ -121,9 +152,8 @@ export class Logger {
       const e = new Error();
       this.globalLogger.error(inputError, { ...this.metadata, stack: e.stack });
     } else {
-      // If this is neither a string nor an error, we just log it as is an ommit the context
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      this.globalLogger.error(inputError.toString());
+      this.globalLogger.error(inputError, this.metadata);
     }
   }
 }

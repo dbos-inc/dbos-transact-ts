@@ -32,7 +32,8 @@ export async function updateApp(appName: string, host: string, port: string, mac
       logger.error(`failed to update application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to update application ${appName}: ${(e as Error).message}`);
+      (e as Error).message = `failed to update application ${appName}: ${(e as Error).message}`;
+      logger.error(e);
       return 1;
     }
   }

@@ -16,8 +16,7 @@ export async function getAppLogs(appName: string, host: string, port: string): P
     });
 
     logger.info(`Successfully retrieved logs of application: ${appName}`);
-    // FIXME: AxiosResponse is a generic type. We should generate our client using OpenAPI. Use string for now
-    logger.info(res.data as string)
+    logger.info(res.data)
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

@@ -32,7 +32,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data = await getDb(host, port, dbName);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data as string);
+        logger.info(data);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         status = data.Status;
       }
@@ -94,7 +94,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string, s
           break;
         }
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data as string);
+        logger.info(data);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         status = data.Status;
       }
@@ -127,7 +127,7 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const res = await getDb(host, port, dbName);
-    logger.info(res as string);
+    logger.info(res);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
