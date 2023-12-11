@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { PoolClient } from "pg";
-import { TestingRuntime, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "debugger_test_kv";
@@ -124,6 +124,9 @@ describe("debugger-test", () => {
       .then((x) => x.getResult());
     expect(debugRes).toBe(1);
 
+    // Execute again with the provided UUID.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
     const nonExist = await debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username);
@@ -142,6 +145,9 @@ describe("debugger-test", () => {
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testFunction(username)).resolves.toBe(1);
 
+    // Execute again with the provided UUID.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("This should never happen during debug.");
@@ -158,6 +164,9 @@ describe("debugger-test", () => {
 
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testReadOnlyFunction(1)).resolves.toBe(2);
+
+    // Execute again with the provided UUID.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
@@ -176,6 +185,9 @@ describe("debugger-test", () => {
 
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testCommunicator()).resolves.toBe(1);
+
+    // Execute again with the provided UUID.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
