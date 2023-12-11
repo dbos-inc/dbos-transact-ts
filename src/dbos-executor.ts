@@ -172,7 +172,8 @@ export class DBOSExecutor {
           entities: this.entities
         }))
       } catch (s) {
-        this.logger.error("Error loading TypeORM user database");
+        (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
+        this.logger.error(s);
       }
       this.logger.debug("Loaded TypeORM user database");
     } else if (userDbClient === UserDatabaseName.KNEX) {
@@ -249,7 +250,8 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      this.logger.error(new Error(`failed to initialize workflow executor: ${(err as Error).message}`));
+      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
+      this.logger.error(err);
       throw new DBOSInitializationError(`failed to initialize workflow executor: ${(err as Error).message}`);
     }
     this.initialized = true;
@@ -338,8 +340,10 @@ export class DBOSExecutor {
     } else {
       // For temporary workflows, instead asynchronously record inputs.
       const setWorkflowInputs: Promise<void> = this.systemDatabase.setWorkflowInputs<T>(workflowUUID, args)
-      .catch(error => { this.logger.error(new Error(`Error asynchronously setting workflow inputs: ${(error as Error).message}`)) })
-        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      .catch(error => {
+        (error as Error).message = `Error asynchronously setting workflow inputs: ${(error as Error).message}`;
+        this.logger.error(error);
+      }).finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
       this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
     }
     const runWorkflow = async () => {
@@ -361,7 +365,6 @@ export class DBOSExecutor {
           const e: Error = err as Error;
           this.logger.error(e);
           await this.systemDatabase.recordWorkflowError(workflowUUID, e);
-          // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
@@ -374,8 +377,11 @@ export class DBOSExecutor {
           await wCtxt.flushResultBuffer(client);
         }
       }, { isolationLevel: IsolationLevel.ReadCommitted })
-      .catch(error => { this.logger.error(new Error(`'Error asynchronously flushing result buffer: ${error}`)) })
-        .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
+      .catch(error => {
+        (error as Error).message = `Error asynchronously flushing result buffer: ${(error as Error).message}`;
+        this.logger.error(error);
+      })
+      .finally(() => { this.pendingAsyncWrites.delete(workflowUUID) })
       this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
       return result;
     };
