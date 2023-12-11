@@ -166,6 +166,7 @@ class OTLPLogQueueTransport extends TransportStream {
 
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     super();
+    // not sure if we need a more explicit name here
     this.otelLogger = new OTelLoggerProvider().getLogger("default") as OTelLogger;
   }
 
