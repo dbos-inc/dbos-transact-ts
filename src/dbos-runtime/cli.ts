@@ -5,7 +5,7 @@ import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
 import { Command } from 'commander';
 import { DBOSConfig } from "../dbos-executor";
 import { init } from "./init";
-import { generateOpenApi } from "./openApi";
+import { generateOpenApi } from "../staticAnalysis/openApi";
 import YAML from 'yaml';
 import fs from 'node:fs/promises';
 import path from 'node:path';

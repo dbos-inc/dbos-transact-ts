@@ -605,7 +605,7 @@ export class OpenApiGenerator {
 
 type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
 
-async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string }> {
+export async function findPackageInfo(entrypoint: string): Promise<{ name: string, version: string }> {
   let dirname = path.dirname(entrypoint);
   while (dirname !== '/') {
     try {
