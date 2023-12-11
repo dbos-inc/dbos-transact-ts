@@ -149,11 +149,10 @@ export class Logger {
     if (inputError instanceof Error) {
       this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack });
     } else if (typeof inputError === "string") {
-      const e = new Error();
-      this.globalLogger.error(inputError, { ...this.metadata, stack: e.stack });
+      this.globalLogger.error(inputError, { ...this.metadata, stack: new Error().stack });
     } else {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      this.globalLogger.error(inputError, this.metadata);
+      this.globalLogger.error(JSON.stringify(inputError), {...this.metadata, stack: new Error().stack });
     }
   }
 }
