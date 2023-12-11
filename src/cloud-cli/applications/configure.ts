@@ -4,6 +4,7 @@ import YAML from "yaml";
 import { createGlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
+import { execSync } from "child_process";
 
 export async function configureApp(host: string, port: string, dbName: string) {
     const logger = createGlobalLogger();
@@ -42,9 +43,18 @@ export async function configureApp(host: string, port: string, dbName: string) {
       return;
     }
 
+    try {
+      // Should we just download and keep the file in the dir instead of downloading everytime ??
+      execSync("wget https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem -O us-east-1-bundle.pem")
+    } catch(e) {
+      logger.error((e as Error).message);
+      logger.error("Error downloading RDS certificate bundle. Try downloading it manually from AWS.");
+    }
+
     // update hostname and port
     configFile.database.hostname = userdbHostname
     configFile.database.port = userdbPort
+    configFile.database.ssl_ca = "us-east-1-bundle.pem"
 
     // save the file
     try {
@@ -54,6 +64,6 @@ export async function configureApp(host: string, port: string, dbName: string) {
       return;
     }
 
-    logger.info("Successfully configure user database at ${userdbHostname}:${userdbPort}.")
+    logger.info(`Successfully configured user database at ${userdbHostname}:${userdbPort}.`)
 
 }
