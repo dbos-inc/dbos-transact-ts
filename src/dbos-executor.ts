@@ -27,7 +27,7 @@ import { Tracer } from './telemetry/traces';
 import { createGlobalLogger, WinstonLogger as Logger } from './telemetry/logs';
 import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
-import { SystemDatabase, PostgresSystemDatabase, BufferedStatus } from './system_database';
+import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -44,9 +44,11 @@ import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
+import { serializeError } from 'serialize-error';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
+export const DBOSExecutorIDHeader = "dbos-executor-id";
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -370,7 +372,7 @@ export class DBOSExecutor {
     if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
       executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
     }
-    const bufStatus: BufferedStatus = {
+    const bufStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
       name: wf.name,
@@ -406,7 +408,9 @@ export class DBOSExecutor {
         if (wCtxt.isTempWorkflow) {
           bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
         }
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, result, bufStatus);
+        bufStatus.output = result;
+        bufStatus.status = StatusString.SUCCESS;
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, bufStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -422,7 +426,9 @@ export class DBOSExecutor {
           if (wCtxt.isTempWorkflow) {
             bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
           }
-          await this.systemDatabase.recordWorkflowError(workflowUUID, e, bufStatus);
+          bufStatus.error = JSON.stringify(serializeError(e));
+          bufStatus.status = StatusString.ERROR;
+          await this.systemDatabase.recordWorkflowError(workflowUUID, bufStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
@@ -595,7 +601,7 @@ export class DBOSExecutor {
     const wfName = wfStatus.workflowName;
     const nameArr = wfName.split("-");
     if (!nameArr[0].startsWith(DBOSExecutor.tempWorkflowName)) {
-      throw new DBOSError(`This should never happen! Cannot find workflow info for UUID ${workflowUUID}, name ${wfName}`);
+      throw new DBOSError(`This should never happen! Cannot find workflow info for a non-temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
     }
 
     let temp_workflow: Workflow<any, any>;
@@ -669,5 +675,3 @@ export class DBOSExecutor {
     });
   }
 }
-export const DBOSExecutorIDHeader = "dbos-executor-id";
-

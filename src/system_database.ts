@@ -15,10 +15,10 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
-  initWorkflowStatus<T extends any[]>(bufferedStatus: BufferedStatus, args: T): Promise<T>;
-  bufferWorkflowOutput<R>(workflowUUID: string, output: R, status: BufferedStatus): void;
+  initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
+  bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
   flushWorkflowStatusBuffer(): Promise<Array<string>>;
-  recordWorkflowError(workflowUUID: string, error: Error, status: BufferedStatus): Promise<void>;
+  recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
   setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : Promise<void>;
@@ -39,7 +39,7 @@ export interface SystemDatabase {
 }
 
 // For internal use, not serialized status.
-export interface BufferedStatus {
+export interface WorkflowStatusInternal {
   workflowUUID: string;
   status: string;
   name: string;
@@ -63,7 +63,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowEventsMap: Record<string, () => void> = {};
 
-  readonly workflowStatusBuffer: Map<string, BufferedStatus> = new Map();
+  readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
     const poolConfig = { ...pgPoolConfig };
@@ -110,7 +110,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(bufStatus: BufferedStatus, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(bufStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query(
       `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [bufStatus.workflowUUID, bufStatus.status, bufStatus.name, bufStatus.authenticatedUser, bufStatus.assumedRole, JSON.stringify(bufStatus.authenticatedRoles), JSON.stringify(bufStatus.request), null, bufStatus.executorID]
@@ -122,9 +122,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return JSON.parse(rows[0].inputs) as T;
   }
 
-  bufferWorkflowOutput<R>(workflowUUID: string, output: R, status: BufferedStatus) {
-    status.output = output;
-    status.status = StatusString.SUCCESS;
+  bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {
     this.workflowStatusBuffer.set(workflowUUID, status);
   }
 
@@ -158,12 +156,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return Array.from(localBuffer.keys());
   }
 
-  async recordWorkflowError(workflowUUID: string, error: Error, status: BufferedStatus): Promise<void> {
-    const serialErr = JSON.stringify(serializeError(error));
+  async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query(
       `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
-      [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), serialErr, status.executorID]
+      [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), status.error, status.executorID]
     );
   }
 

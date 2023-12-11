@@ -2,7 +2,7 @@
 
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
-import { BufferedStatus, SystemDatabase } from "../system_database";
+import { WorkflowStatusInternal, SystemDatabase } from "../system_database";
 import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
@@ -29,7 +29,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   workflowEventsDB: fdb.Database<fdb.TupleItem, fdb.TupleItem, unknown, unknown>;
   workflowInputsDB: fdb.Database<string, string, unknown, unknown>;
 
-  readonly workflowStatusBuffer: Map<string, BufferedStatus> = new Map();
+  readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
 
   constructor() {
     fdb.setAPIVersion(710, 710);
@@ -64,7 +64,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | DBOSNull> {
-    const output = (await this.workflowStatusDB.get(workflowUUID)) as BufferedStatus | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowStatusInternal | undefined;
     if (output === undefined || output.status === StatusString.PENDING) {
       return dbosNull;
     } else if (output.status === StatusString.ERROR) {
@@ -74,7 +74,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(bufStatus: BufferedStatus, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(bufStatus: WorkflowStatusInternal, args: T): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
@@ -102,9 +102,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  bufferWorkflowOutput<R>(workflowUUID: string, output: R, status: BufferedStatus) {
-    status.output = output;
-    status.status = StatusString.SUCCESS;
+  bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {
     this.workflowStatusBuffer.set(workflowUUID, status);
   }
 
@@ -129,11 +127,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return Array.from(localBuffer.keys());
   }
 
-  async recordWorkflowError(workflowUUID: string, error: Error, status: BufferedStatus): Promise<void> {
-    const serialErr = JSON.stringify(serializeError(error));
+  async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.workflowStatusDB.set(workflowUUID, {
       status: StatusString.ERROR,
-      error: serialErr,
+      error: status.error,
       output: null,
       name: status.name,
       authenticatedUser: status.authenticatedUser,
@@ -144,7 +141,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async getPendingWorkflows(executorID: string): Promise<string[]> {
-    const workflows = (await this.workflowStatusDB.getRangeAll("", "\xff")) as Array<[string, BufferedStatus]>;
+    const workflows = (await this.workflowStatusDB.getRangeAll("", "\xff")) as Array<[string, WorkflowStatusInternal]>;
     return workflows.filter((i) => i[1].status === StatusString.PENDING && i[1].executorID === executorID).map((i) => i[0]);
   }
 
@@ -211,7 +208,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
       }
     }
 
-    const output = (await this.workflowStatusDB.get(workflowUUID)) as BufferedStatus | undefined;
+    const output = (await this.workflowStatusDB.get(workflowUUID)) as WorkflowStatusInternal | undefined;
     let value = null;
     if (output !== undefined) {
       value = {
@@ -240,7 +237,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     } else {
       watch.cancel();
     }
-    const output = value as BufferedStatus;
+    const output = value as WorkflowStatusInternal;
     const status = output.status;
     if (status === StatusString.SUCCESS) {
       return output.output as R;
