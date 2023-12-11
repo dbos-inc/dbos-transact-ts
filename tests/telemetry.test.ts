@@ -40,20 +40,15 @@ describe("dbos-telemetry", () => {
     const dbosConfig = generateDBOSTestConfig();
     expect(dbosConfig.telemetry).not.toBeUndefined();
     if (dbosConfig.telemetry) {
-      dbosConfig.telemetry.OTLPExporters = [
-        {
-          tracesEndpoint: "http://localhost:4317/v1/traces",
-          logsEndpoint: "http://localhost:4317/v1/logs",
-        },
-        {
-          tracesEndpoint: "http://someotherother:4318/v1/traces",
-        },
-      ];
+      dbosConfig.telemetry.OTLPExporter = {
+        tracesEndpoint: "http://localhost:4317/v1/traces",
+        logsEndpoint: "http://localhost:4317/v1/logs",
+      };
     }
     await setUpDBOSTestDb(dbosConfig);
     const dbosExec = new DBOSExecutor(dbosConfig);
     expect(dbosExec.telemetryCollector).not.toBeUndefined();
-    expect(dbosExec.telemetryCollector.exporters.length).toBe(2);
+    expect(dbosExec.telemetryCollector.exporter).not.toBeUndefined();
     await dbosExec.init();
     await dbosExec.destroy();
   });

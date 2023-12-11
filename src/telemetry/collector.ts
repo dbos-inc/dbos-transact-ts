@@ -29,7 +29,7 @@ export class TelemetryCollector {
   private readonly processAndExportSignalsMaxBatchSize = 10;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(readonly exporters: ITelemetryExporter<any, any>[]) {
+  constructor(readonly exporter?: ITelemetryExporter) {
     this.signalBufferID = setInterval(() => {
       void this.processAndExportSignals();
     }, this.processAndExportSignalsIntervalMs);
@@ -59,8 +59,8 @@ export class TelemetryCollector {
     }
     if (batch.length > 0) {
       const exports = [];
-      for (const exporter of this.exporters) {
-        exports.push(exporter.export(batch));
+      if (this.exporter) {
+        exports.push(this.exporter.export(batch));
       }
       try {
         await Promise.all(exports);

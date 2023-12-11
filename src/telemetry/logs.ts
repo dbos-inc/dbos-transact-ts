@@ -52,8 +52,8 @@ export class GlobalLogger {
         silent: config?.silent || false,
       })
     );
-    // Only enable the OTLP transport if we have a telemetry collector and it has exporters
-    if (this.telemetryCollector && this.telemetryCollector.exporters.length > 0) {
+    // Only enable the OTLP transport if we have a telemetry collector and an exporter
+    if (this.telemetryCollector?.exporter) {
       winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector));
     }
     this.logger = createLogger({ transports: winstonTransports });

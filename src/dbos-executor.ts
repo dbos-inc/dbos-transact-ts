@@ -107,11 +107,13 @@ export class DBOSExecutor {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugProxy ? true : false;
-    const telemetryExporters: TelemetryExporter[] = [];
-    for (const exporterConfig of config.telemetry?.OTLPExporters ?? []) {
-      telemetryExporters.push(new TelemetryExporter(exporterConfig));
+    if (config.telemetry?.OTLPExporter) {
+      const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
+      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
+    } else {
+      // We always an collector to drain the signals queue, even if we don't have an exporter.
+      this.telemetryCollector = new TelemetryCollector();
     }
-    this.telemetryCollector = new TelemetryCollector(telemetryExporters);
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 

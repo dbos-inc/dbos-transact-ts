@@ -11,12 +11,11 @@ export interface OTLPExporterConfig {
   tracesEndpoint?: string;
 }
 
-export interface ITelemetryExporter<T, U> {
-  export(signal: TelemetrySignal[]): Promise<T>;
-  process?(signal: TelemetrySignal[]): U;
+export interface ITelemetryExporter {
+  export(signal: TelemetrySignal[]): Promise<void>;
 }
 
-export class TelemetryExporter implements ITelemetryExporter<void, undefined> {
+export class TelemetryExporter implements ITelemetryExporter {
   private readonly tracesExporter?: OTLPTraceExporter;
   private readonly logsExporter?: OTLPLogExporter;
   constructor(config: OTLPExporterConfig) {

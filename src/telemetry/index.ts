@@ -20,5 +20,5 @@ export function isLogSignal(signal: any): signal is LogRecord {
 
 export interface TelemetryConfig {
   logs?: LoggerConfig;
-  OTLPExporters?: OTLPExporterConfig[];
+  OTLPExporter?: OTLPExporterConfig;
 }
