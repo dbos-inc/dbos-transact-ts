@@ -372,7 +372,7 @@ export class DBOSExecutor {
     if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
       executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
     }
-    const bufStatus: WorkflowStatusInternal = {
+    const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
       name: wf.name,
@@ -386,7 +386,7 @@ export class DBOSExecutor {
     };
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
-      args = await this.systemDatabase.initWorkflowStatus(bufStatus, args);
+      args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     } else {
       // For temporary workflows, instead asynchronously record inputs.
       const setWorkflowInputs: Promise<void> = this.systemDatabase
@@ -406,11 +406,11 @@ export class DBOSExecutor {
       try {
         result = await wf(wCtxt, ...args);
         if (wCtxt.isTempWorkflow) {
-          bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+          internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
         }
-        bufStatus.output = result;
-        bufStatus.status = StatusString.SUCCESS;
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, bufStatus);
+        internalStatus.output = result;
+        internalStatus.status = StatusString.SUCCESS;
+        this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -424,11 +424,11 @@ export class DBOSExecutor {
           const e: Error = err as Error;
           this.logger.error(e);
           if (wCtxt.isTempWorkflow) {
-            bufStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+            internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
           }
-          bufStatus.error = JSON.stringify(serializeError(e));
-          bufStatus.status = StatusString.ERROR;
-          await this.systemDatabase.recordWorkflowError(workflowUUID, bufStatus);
+          internalStatus.error = JSON.stringify(serializeError(e));
+          internalStatus.status = StatusString.ERROR;
+          await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;

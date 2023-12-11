@@ -74,28 +74,28 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(bufStatus: WorkflowStatusInternal, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     return this.dbRoot.doTransaction(async (txn) => {
       const statusDB = txn.at(this.workflowStatusDB);
       const inputsDB = txn.at(this.workflowInputsDB);
-      const present = await statusDB.get(bufStatus.workflowUUID);
+      const present = await statusDB.get(initStatus.workflowUUID);
       if (present === undefined) {
-        statusDB.set(bufStatus.workflowUUID, {
-          status: bufStatus.status,
+        statusDB.set(initStatus.workflowUUID, {
+          status: initStatus.status,
           error: null,
           output: null,
-          name: bufStatus.name,
-          authenticatedUser: bufStatus.authenticatedUser,
-          assumedRole: bufStatus.assumedRole,
-          authenticatedRoles: bufStatus.authenticatedRoles,
-          request: bufStatus.request,
-          executorID: bufStatus.executorID,
+          name: initStatus.name,
+          authenticatedUser: initStatus.authenticatedUser,
+          assumedRole: initStatus.assumedRole,
+          authenticatedRoles: initStatus.authenticatedRoles,
+          request: initStatus.request,
+          executorID: initStatus.executorID,
         });
       }
 
-      const inputs = await inputsDB.get(bufStatus.workflowUUID);
+      const inputs = await inputsDB.get(initStatus.workflowUUID);
       if (inputs === undefined) {
-        inputsDB.set(bufStatus.workflowUUID, args);
+        inputsDB.set(initStatus.workflowUUID, args);
         return args;
       }
       return inputs as T;

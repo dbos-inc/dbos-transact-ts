@@ -110,14 +110,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(bufStatus: WorkflowStatusInternal, args: T): Promise<T> {
+  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query(
       `INSERT INTO workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid) DO NOTHING`,
-      [bufStatus.workflowUUID, bufStatus.status, bufStatus.name, bufStatus.authenticatedUser, bufStatus.assumedRole, JSON.stringify(bufStatus.authenticatedRoles), JSON.stringify(bufStatus.request), null, bufStatus.executorID]
+      [initStatus.workflowUUID, initStatus.status, initStatus.name, initStatus.authenticatedUser, initStatus.assumedRole, JSON.stringify(initStatus.authenticatedRoles), JSON.stringify(initStatus.request), null, initStatus.executorID]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
-      [bufStatus.workflowUUID, JSON.stringify(args)]
+      [initStatus.workflowUUID, JSON.stringify(args)]
     )
     return JSON.parse(rows[0].inputs) as T;
   }
