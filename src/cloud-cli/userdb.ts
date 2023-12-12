@@ -4,6 +4,7 @@ import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 import { execSync } from "child_process";
+import { UserDatabaseName } from "../user_database";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = new GlobalLogger();
@@ -168,17 +169,14 @@ export function migrate(): number {
     }
   }
 
-  let dbType = configFile.database.user_dbclient;
-  if (dbType === undefined) {
-    dbType = "knex";
-  }
-
-  const migratecommands = configFile.database.migrate;
+  const dbType = configFile.database.user_dbclient || UserDatabaseName.KNEX;
+  const migrationScript = `node_modules/.bin/${dbType}`
+  const migrationCommands = configFile.database.migrate;
 
   try {
-    migratecommands?.forEach((cmd) => {
-      const command = "npx " + dbType + " " + cmd;
-      logger.info("Executing " + command);
+    migrationCommands?.forEach((cmd) => {
+      const command = `node ${migrationScript} ${cmd}`
+      logger.info(`Executing migration command: ${command}`);
       const migrateCommandOutput = execSync(command).toString();
       logger.info(migrateCommandOutput);
     });
