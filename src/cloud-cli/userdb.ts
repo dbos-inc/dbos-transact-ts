@@ -37,25 +37,6 @@ export async function createUserDb(host: string, port: string, dbName: string, a
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         status = data.Status;
       }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const dbhostname = data.HostName;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const dbport = data.Port;
-
-      // Update the clouddb info record
-      logger.info("Saving db state to cloud db");
-      await axios.put(
-        `http://${host}:${port}/${userCredentials.userName}/databases/userdb/info`,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        { DBName: dbName, Status: status, HostName: dbhostname, Port: dbport },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-          },
-        }
-      );
     }
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
