@@ -169,20 +169,14 @@ export function migrate(): number {
     }
   }
 
-  const dbType = configFile.database.user_dbclient;
-  let migrationScript: string;
-  if (dbType === undefined || dbType === UserDatabaseName.KNEX) {
-    migrationScript = "node_modules/knex/bin/cli.js";
-  } else {
-    throw new Error("Migration only suppors knex");
-  }
-
-  const migratecommands = configFile.database.migrate;
+  const dbType = configFile.database.user_dbclient || UserDatabaseName.KNEX;
+  const migrationScript = `node_modules/.bin/${dbType}`
+  const migrationCommands = configFile.database.migrate;
 
   try {
-    migratecommands?.forEach((cmd) => {
-      const command = "node " + migrationScript + " " + cmd;
-      logger.info("Executing " + command);
+    migrationCommands?.forEach((cmd) => {
+      const command = `node ${migrationScript} ${cmd}`
+      logger.info(`Executing migration command: ${command}`);
       const migrateCommandOutput = execSync(command).toString();
       logger.info(migrateCommandOutput);
     });
