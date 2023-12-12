@@ -82,7 +82,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     // Send a signal to the debug proxy.
     // TODO: use the real command once the proxy is fully implemented.
-    await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id}`);
+    await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
 
     return res;
   }

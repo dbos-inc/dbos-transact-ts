@@ -2,7 +2,12 @@ import { DBOSConfig, DBOSExecutor } from "../dbos-executor";
 import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
 
 export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, proxy: string, workflowUUID: string) {
-  dbosConfig = {...dbosConfig, debugProxy: proxy};
+  const provDB = `${dbosConfig.poolConfig.database}_prov`;
+  dbosConfig = {...dbosConfig, debugProxy: proxy, system_database: provDB };
+  dbosConfig.poolConfig.database = provDB;
+
+  // Point to the correct system DB schema.
+  DBOSExecutor.systemDBSchemaName = "dbos";
 
   // Load classes
   const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoint);

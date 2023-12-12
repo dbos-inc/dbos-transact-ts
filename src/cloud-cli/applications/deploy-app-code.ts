@@ -27,6 +27,15 @@ export async function deployAppCode(appName: string, host: string, port: string)
     const version: string = configFile.version ?? Date.now().toString();
     configFile.version = version;
 
+    // Inject OTel export configuration
+    if (!configFile.telemetry) {
+      configFile.telemetry = {};
+    }
+    configFile.telemetry.OTLPExporter = {
+      logsEndpoint: "http://otel-collector:4318/v1/logs",
+      tracesEndpoint: "http://otel-collector:4318/v1/traces",
+    };
+
     try {
       fs.writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
@@ -39,10 +48,11 @@ export async function deployAppCode(appName: string, host: string, port: string)
     execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
-    await axios.post(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
+    await axios.post(
+      `http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
       {
         application_version: version,
-	application_archive: zipData,
+        application_archive: zipData,
       },
       {
         headers: {
