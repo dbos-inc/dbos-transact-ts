@@ -168,10 +168,9 @@ userdbCommands
 userdbCommands
   .command('delete')
   .argument('<string>', 'database name')
-  .option('-s, --sync', 'make synchronous call', false)
-  .action((async (dbname: string, options: { sync: boolean }) => {
+  .action((async (dbname: string) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()
-    await deleteUserDb(host, port, dbname, options.sync)
+    await deleteUserDb(host, port, dbname)
   }))
 
 userdbCommands

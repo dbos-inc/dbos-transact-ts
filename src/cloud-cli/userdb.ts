@@ -29,7 +29,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
       let status = "";
       let data;
       while (status != "available") {
-        await sleep(60000);
+        await sleep(30000);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data = await getDb(host, port, dbName);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -66,7 +66,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
   }
 }
 
-export async function deleteUserDb(host: string, port: string, dbName: string, sync: boolean) {
+export async function deleteUserDb(host: string, port: string, dbName: string) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -78,41 +78,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string, s
         Authorization: bearerToken,
       },
     });
-
-    logger.info(`Successfully started deleting database: ${dbName}`);
-    if (sync) {
-      let status = "deleting";
-      while (status == "deleting") {
-        await sleep(60000);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        let data;
-        try {
-          // HACK to exit gracefully because the get throws an exception on 500
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          data = await getDb(host, port, dbName);
-        } catch (e) {
-          logger.info(`Deleted database: ${dbName}`);
-          break;
-        }
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        status = data.Status;
-      }
-
-      // Update the clouddb info record
-      logger.info("Saving db state to cloud db");
-      await axios.put(
-        `http://${host}:${port}/${userCredentials.userName}/databases/userdb/info`,
-        { Name: dbName, Status: "deleted", HostName: "", Port: 0 },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-          },
-        }
-      );
-    }
+    logger.info(`Database deleted: ${dbName}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error deleting database ${dbName}: ${e.response?.data}`);
