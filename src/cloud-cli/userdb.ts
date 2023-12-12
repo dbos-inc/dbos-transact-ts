@@ -4,6 +4,7 @@ import { getCloudCredentials } from "./utils";
 import { sleep } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
 import { execSync } from "child_process";
+import { UserDatabaseName } from "../user_database";
 
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = new GlobalLogger();
@@ -168,16 +169,19 @@ export function migrate(): number {
     }
   }
 
-  let dbType = configFile.database.user_dbclient;
-  if (dbType === undefined) {
-    dbType = "knex";
+  const dbType = configFile.database.user_dbclient;
+  let migrationScript: string;
+  if (dbType === undefined || dbType === UserDatabaseName.KNEX) {
+    migrationScript = "node_modules/knex/bin/cli.js";
+  } else {
+    throw new Error("Migration only suppors knex");
   }
 
   const migratecommands = configFile.database.migrate;
 
   try {
     migratecommands?.forEach((cmd) => {
-      const command = "npx " + dbType + " " + cmd;
+      const command = "node " + migrationScript + " " + cmd;
       logger.info("Executing " + command);
       const migrateCommandOutput = execSync(command).toString();
       logger.info(migrateCommandOutput);
