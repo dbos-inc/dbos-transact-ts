@@ -141,31 +141,27 @@ export async function getUserDb(host: string, port: string, dbName: string) {
 export function migrate(): number {
   const logger = new GlobalLogger();
 
-  // read the yaml file
+  // Read the configuration YAML file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
-    logger.error(`failed to parse ${dbosConfigFilePath}`);
+    logger.error(`Failed to parse ${dbosConfigFilePath}`);
     return 1;
   }
 
-  let create_db = configFile.database.create_db;
-  if (create_db == undefined) {
-    create_db = false;
-  }
+  const userDBName = configFile.database.user_database;
 
-  const userdbname = configFile.database.user_database;
-
-  if (create_db) {
-    logger.info(`Creating database ${userdbname}`);
-    const cmd = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -ew ${userdbname}`;
-    logger.info(cmd);
-    try {
-      const createDBCommandOutput = execSync(cmd).toString();
-      logger.info(createDBCommandOutput);
-    } catch (e) {
-      if (e instanceof Error && !e.message.includes(`database "${userdbname}" already exists`)) {
-        logger.error(`Error creating database: ${e.message}`);
-      }
+  logger.info(`Creating database ${userDBName} if it does not already exist`);
+  const createDB = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
+  try {
+    const createDBOutput = execSync(createDB).toString();
+    if (createDBOutput.includes(`database "${userDBName}" already exists`)) {
+      logger.info(`Database ${userDBName} already exists`)
+    } else {
+      logger.info(createDBOutput)
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      logger.error(`Error creating database: ${e.message}`);
     }
   }
 
@@ -181,7 +177,7 @@ export function migrate(): number {
       logger.info(migrateCommandOutput);
     });
   } catch (e) {
-    logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+    logger.error("Error running migration");
     if (e instanceof Error) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       const stderr = (e as any).stderr;
