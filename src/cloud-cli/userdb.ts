@@ -183,7 +183,7 @@ async function getDb(host: string, port: string, dbName: string): Promise<any> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, {
+  const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,
