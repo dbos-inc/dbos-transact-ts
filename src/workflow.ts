@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, dbosNull, DBOSExecutorIDHeader } from "./dbos-executor";
+import { DBOSExecutor, DBOSNull, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
