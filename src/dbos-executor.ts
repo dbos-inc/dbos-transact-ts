@@ -276,7 +276,7 @@ export class DBOSExecutor {
     } catch (err) {
       (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
       this.logger.error(err);
-      throw new DBOSInitializationError(`failed to initialize workflow executor: ${(err as Error).message}`);
+      throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
 
