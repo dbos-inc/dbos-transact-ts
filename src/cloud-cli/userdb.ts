@@ -181,7 +181,7 @@ export function rollbackMigration(): number {
   return 0;
 }
 
-async function getUserDBInfo(host: string, port: string, dbName: string): Promise<UserDBInstance> {
+export async function getUserDBInfo(host: string, port: string, dbName: string): Promise<UserDBInstance> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 

@@ -2,68 +2,61 @@ import axios from "axios";
 import fs from "fs";
 import YAML from "yaml";
 import { GlobalLogger } from "../../telemetry/logs";
-import { getCloudCredentials } from "../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
-import { execSync } from "child_process";
+import { UserDBInstance, getUserDBInfo } from "../userdb";
 
-export async function configureApp(host: string, port: string, dbName: string) {
+export async function configureApp(host: string, port: string, dbName: string): Promise<number> {
     const logger = new GlobalLogger();
-    const userCredentials = getCloudCredentials();
-    const bearerToken = "Bearer " + userCredentials.token;
 
-    // call cloud and get hostname and port
-    const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`,
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: bearerToken,
-      },
-    });
-
-    // if status is not available or no hostname/port print error and exit
-    if (res.status != 200) {
-      logger.error("Error getting info for ${dbName} error: ${res.data}.")
-      return
+    let userDBInfo: UserDBInstance | undefined;
+    try {
+      userDBInfo = await getUserDBInfo(host, port, dbName);
+    } catch(e) {
+      logger.error(`error getting DB Info: ${(e as Error).message}`)
+      return 1
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const userdbHostname: string = res.data.HostName
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const userdbPort: number = res.data.Port
+    const userdbHostname: string = userDBInfo.HostName
+    const userdbPort: number = userDBInfo.Port
 
     if (userdbHostname == "" || userdbPort == 0) {
-      logger.error("HostName: ${userdbHostname} Port: ${userdbPort} not available.")
-      return
+      logger.error(`HostName: ${userdbHostname} Port: ${userdbPort} not available.`)
+      return 1
     }
 
-    // read the yaml file
+    // Parse the config file
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
       logger.error(`failed to parse ${dbosConfigFilePath}`);
-      return;
+      return 1;
     }
 
+    const certificateURL = "https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem"
+    const certificateFile = "us-east-1-bundle.pem"
     try {
-      // Should we just download and keep the file in the dir instead of downloading everytime ??
-      execSync("wget https://truststore.pki.rds.amazonaws.com/us-east-1/us-east-1-bundle.pem -O us-east-1-bundle.pem")
+      const certificate = await axios.get(certificateURL, {
+        responseType: 'arraybuffer'
+      });
+      fs.writeFileSync(certificateFile, certificate.data as string)
     } catch(e) {
-      logger.error((e as Error).message);
       logger.error("Error downloading RDS certificate bundle. Try downloading it manually from AWS.");
+      logger.error((e as Error).message);
+      return 1
     }
 
-    // update hostname and port
+    // Update database hostname and port
     configFile.database.hostname = userdbHostname
     configFile.database.port = userdbPort
-    configFile.database.ssl_ca = "us-east-1-bundle.pem"
+    configFile.database.ssl_ca = certificateFile
 
-    // save the file
+    // Save the updated config file
     try {
       fs.writeFileSync(`${dbosConfigFilePath}`, YAML.stringify(configFile));
     } catch (e) {
       logger.error(`failed to write ${dbosConfigFilePath}: ${(e as Error).message}`);
-      return;
+      return 1;
     }
 
     logger.info(`Successfully configured user database at ${userdbHostname}:${userdbPort}.`)
-
+    return 0
 }

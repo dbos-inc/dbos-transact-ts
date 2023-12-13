@@ -133,7 +133,8 @@ applicationCommands
   .option('-d, --dbname <string>', 'Specify the name of an already setup RDS user databases')
   .action(async (options: { dbname: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await configureApp(host, port, options.dbname);
+    const exitCode = await configureApp(host, port, options.dbname);
+    process.exit(exitCode);
   });
 
 //////////////////////////////
