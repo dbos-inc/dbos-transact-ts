@@ -27,7 +27,16 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   readonly isTempWorkflow: boolean;
 
   constructor(dbosExec: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
-    const span = dbosExec.tracer.startSpan(workflowName, { workflowUUID: workflowUUID }, parentCtx?.span);
+    const span = dbosExec.tracer.startSpan(
+      workflowName,
+      {
+        operationUUID: workflowUUID,
+        authenticatedUser: parentCtx?.authenticatedUser ?? "",
+        authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
+        assumedRole: parentCtx?.assumedRole ?? "",
+      },
+      parentCtx?.span,
+    );
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
@@ -98,7 +107,18 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
     // const readOnly = true; // TODO: eventually, this transaction must be read-only.
     const funcID = this.functionIDGetIncrement();
-    const span: Span = this.#dbosExec.tracer.startSpan(txn.name, {}, this.span);
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      txn.name,
+      {
+        operationUUID: this.workflowUUID,
+        authenticatedUser: this.authenticatedUser,
+        authenticatedRoles: this.authenticatedRoles,
+        assumedRole: this.assumedRole,
+        readOnly: txnInfo.config.readOnly ?? false, // For now doing as in src/workflow.ts:272
+        isolationLevel: txnInfo.config.isolationLevel,
+      },
+      this.span
+    );
     let check: RecordedResult<R>;
 
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {

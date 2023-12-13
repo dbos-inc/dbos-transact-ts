@@ -93,11 +93,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const span = dbosExec.tracer.startSpan(
       workflowName,
       {
-        workflowUUID: workflowUUID,
-        operationName: workflowName,
-        runAs: parentCtx?.authenticatedUser ?? "",
+        status: StatusString.PENDING,
+        operationUUID: workflowUUID,
+        authenticatedUser: parentCtx?.authenticatedUser ?? "",
+        authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
+        assumedRole: parentCtx?.assumedRole ?? "",
       },
-      parentCtx?.span,
     );
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
@@ -276,9 +277,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const span: Span = this.#dbosExec.tracer.startSpan(
       txn.name,
       {
-        workflowUUID: this.workflowUUID,
-        operationName: txn.name,
-        runAs: this.authenticatedUser,
+        operationUUID: this.workflowUUID,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
         readOnly: readOnly,
         isolationLevel: txnInfo.config.isolationLevel,
       },
@@ -333,7 +335,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
           const pg_txn_id = this.presetUUID ? await this.recordGuardedOutput<R>(client, funcId, result) : await this.recordUnguardedOutput<R>(client, funcId, result);
-          tCtxt.span.setAttribute("transaction_id", pg_txn_id);
+          tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
           this.resultBuffer.clear();
         }
 
@@ -385,9 +387,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const span: Span = this.#dbosExec.tracer.startSpan(
       commFn.name,
       {
-        workflowUUID: this.workflowUUID,
-        operationName: commFn.name,
-        runAs: this.authenticatedUser,
+        operationUUID: this.workflowUUID,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
         retriesAllowed: commInfo.config.retriesAllowed,
         intervalSeconds: commInfo.config.intervalSeconds,
         maxAttempts: commInfo.config.maxAttempts,

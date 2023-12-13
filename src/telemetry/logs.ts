@@ -19,8 +19,10 @@ export interface LoggerConfig {
 
 type ContextualMetadata = {
   includeContextMetadata?: boolean;
-  workflowUUID: string;
+  operationUUID: string;
   authenticatedUser: string;
+  authenticatedRoles: string[];
+  assumedRole: string;
   traceId: string;
   spanId: string;
 };
@@ -109,8 +111,10 @@ export class Logger {
   ) {
     this.metadata = {
       includeContextMetadata: this.globalLogger.addContextMetadata,
-      workflowUUID: this.ctx.workflowUUID,
+      operationUUID: this.ctx.workflowUUID,
       authenticatedUser: this.ctx.authenticatedUser,
+      authenticatedRoles: this.ctx.authenticatedRoles,
+      assumedRole: this.ctx.assumedRole,
       traceId: this.ctx.span.spanContext().traceId,
       spanId: this.ctx.span.spanContext().spanId,
     };
@@ -152,7 +156,7 @@ export class Logger {
       this.globalLogger.error(inputError, { ...this.metadata, stack: new Error().stack });
     } else {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      this.globalLogger.error(JSON.stringify(inputError), {...this.metadata, stack: new Error().stack });
+      this.globalLogger.error(JSON.stringify(inputError), { ...this.metadata, stack: new Error().stack });
     }
   }
 }
@@ -175,8 +179,10 @@ const consoleFormat = format.combine(
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
     const contextualMetadata: ContextualMetadata = {
-      workflowUUID: info.workflowUUID as string,
+      operationUUID: info.workflowUUID as string,
       authenticatedUser: info.authenticatedUser as string,
+      authenticatedRoles: info.authenticatedRoles as string[],
+      assumedRole: info.assumedRole as string,
       traceId: info.traceId as string,
       spanId: info.spanId as string,
     };
@@ -204,11 +210,16 @@ class OTLPLogQueueTransport extends TransportStream {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { level, message, stack } = info;
 
+    // These attributes are redundant because we can correlate with the Context property using the traceId and spanId
     const contextualMetadata: ContextualMetadata = {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      workflowUUID: info.workflowUUID as string,
+      operationUUID: info.workflowUUID as string,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       authenticatedUser: info.authenticatedUser as string,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      authenticatedRoles: info.authenticatedRoles as string[],
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      assumedRole: info.assumedRole as string,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       traceId: info.traceId as string,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

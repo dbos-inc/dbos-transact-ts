@@ -287,7 +287,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
           if (set.has(role)) {
             authorized = true;
             opCtx.assumedRole = role;
-            opCtx.span.setAttribute("assumedRole", role);
             break;
           }
         }

@@ -364,12 +364,12 @@ export class DBOSExecutor {
     const wConfig = wInfo.config;
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
-    wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
     let executorID: string = "local";
     if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
       executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
     }
+    wCtxt.span.setAttribute(executorID, executorID);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
@@ -638,10 +638,16 @@ export class DBOSExecutor {
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(status.workflowName);
-    span.setAttributes({
-      operationName: status.workflowName,
-    });
+    const span = this.tracer.startSpan(
+      status.workflowName,
+      {
+        operationUUID: workflowUUID,
+        status: status.status,
+        authenticatedUser: status.authenticatedUser,
+        assumedRole: status.assumedRole,
+        authenticatedRoles: status.authenticatedRoles,
+      },
+    );
     const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;

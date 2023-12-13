@@ -43,6 +43,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
   constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
+    const requestID = getOrGenerateRequestID(koaContext);
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
@@ -50,7 +51,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     )
     let span: Span;
     const spanAttributes = {
-      operationName: koaContext.url,
+      requestID: requestID,
+      requestIP: koaContext.request.ip,
+      requestURL: koaContext.request.url,
+      requestMethod: koaContext.request.method,
     };
     if (extractedSpanContext === undefined) {
       span = dbosExec.tracer.startSpan(koaContext.url, spanAttributes);
@@ -72,8 +76,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       querystring: koaContext.request.querystring,
       url: koaContext.request.url,
       ip: koaContext.request.ip,
-      requestID: getOrGenerateRequestID(koaContext),
+      requestID: requestID,
     };
+
     if (dbosExec.config.application) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       this.applicationConfig = dbosExec.config.application;
