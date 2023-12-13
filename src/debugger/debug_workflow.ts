@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
+import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
@@ -31,6 +31,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       workflowName,
       {
         operationUUID: workflowUUID,
+        operationType: OperationType.WORKFLOW,
         authenticatedUser: parentCtx?.authenticatedUser ?? "",
         authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
         assumedRole: parentCtx?.assumedRole ?? "",
@@ -111,6 +112,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       txn.name,
       {
         operationUUID: this.workflowUUID,
+        operationType: OperationType.TRANSACTION,
         authenticatedUser: this.authenticatedUser,
         authenticatedRoles: this.authenticatedRoles,
         assumedRole: this.assumedRole,
@@ -145,6 +147,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
+
+    // FIXME: we do not create a span for the replay communicator. Do we want to?
 
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);

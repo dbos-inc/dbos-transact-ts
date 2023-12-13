@@ -77,6 +77,13 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
+export const OperationType = {
+  HANDLER: "handler",
+  WORKFLOW: "workflow",
+  TRANSACTION: "transaction",
+  COMMUNICATOR: "communicator",
+} as const;
+
 const TempWorkflowType = {
   transaction: "transaction",
   external: "external",
@@ -638,6 +645,7 @@ export class DBOSExecutor {
       status.workflowName,
       {
         operationUUID: workflowUUID,
+        operationType: OperationType.WORKFLOW,
         status: status.status,
         authenticatedUser: status.authenticatedUser,
         assumedRole: status.assumedRole,

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { DBOSExecutor, DBOSExecutorIDHeader } from "../dbos-executor";
+import { DBOSExecutor, DBOSExecutorIDHeader, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
@@ -53,6 +53,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     )
     let span: Span;
     const spanAttributes = {
+      operationType: OperationType.HANDLER,
       requestID: requestID,
       requestIP: koaContext.request.ip,
       requestURL: koaContext.request.url,

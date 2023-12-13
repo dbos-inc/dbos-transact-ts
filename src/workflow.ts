@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, dbosNull } from "./dbos-executor";
+import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
@@ -95,6 +95,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       {
         status: StatusString.PENDING,
         operationUUID: workflowUUID,
+        operationType: OperationType.WORKFLOW,
         authenticatedUser: parentCtx?.authenticatedUser ?? "",
         authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
         assumedRole: parentCtx?.assumedRole ?? "",
@@ -279,6 +280,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       txn.name,
       {
         operationUUID: this.workflowUUID,
+        operationType: OperationType.TRANSACTION,
         authenticatedUser: this.authenticatedUser,
         assumedRole: this.assumedRole,
         authenticatedRoles: this.authenticatedRoles,
@@ -390,6 +392,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       commFn.name,
       {
         operationUUID: this.workflowUUID,
+        operationType: OperationType.COMMUNICATOR,
         authenticatedUser: this.authenticatedUser,
         assumedRole: this.assumedRole,
         authenticatedRoles: this.authenticatedRoles,
