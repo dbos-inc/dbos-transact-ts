@@ -365,11 +365,7 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
 
-    let executorID: string = "local";
-    if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
-      executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
-    }
-    wCtxt.span.setAttribute(executorID, executorID);
+    wCtxt.span.setAttribute("executorID", wCtxt.executorID);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
@@ -380,7 +376,7 @@ export class DBOSExecutor {
       assumedRole: wCtxt.assumedRole,
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
-      executorID: executorID,
+      executorID: wCtxt.executorID,
     };
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {

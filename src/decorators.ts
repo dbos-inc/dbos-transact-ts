@@ -280,6 +280,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
         opCtx = rawArgs[0] as DBOSContextImpl;
+        opCtx.span.setAttribute("requiredRoles", requiredRoles);
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         const set = new Set(curRoles);

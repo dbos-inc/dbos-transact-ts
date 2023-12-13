@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { DBOSExecutor } from "../dbos-executor";
+import { DBOSExecutor, DBOSExecutorIDHeader } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
@@ -43,7 +43,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
   constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
+    // Retrieve or generate the request ID
     const requestID = getOrGenerateRequestID(koaContext);
+
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
@@ -62,7 +64,13 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       extractedSpanContext.isRemote = true;
       span = dbosExec.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
     }
+
     super(koaContext.url, span, dbosExec.logger);
+
+    if (koaContext.request.headers && koaContext.request.headers[DBOSExecutorIDHeader]) {
+      this.executorID = koaContext.request.headers[DBOSExecutorIDHeader] as string;
+    }
+
     this.W3CTraceContextPropagator = httpTracer;
     this.request = {
       headers: koaContext.request.headers,
