@@ -12,7 +12,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackmigration } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackMigration } from "./userdb";
 import { credentialsExist } from "./utils";
 
 const program = new Command();
@@ -133,7 +133,8 @@ applicationCommands
   .option('-d, --dbname <string>', 'Specify the name of an already setup RDS user databases')
   .action(async (options: { dbname: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    await configureApp(host, port, options.dbname);
+    const exitCode = await configureApp(host, port, options.dbname);
+    process.exit(exitCode);
   });
 
 //////////////////////////////
@@ -151,7 +152,7 @@ userdbCommands
   .argument('<string>', 'database name')
   .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
   .option('-W, --password <string>', 'Specify the admin password', 'postgres')
-  .option('-s, --sync', 'make synchronous call', false)
+  .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()
     await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
@@ -168,10 +169,9 @@ userdbCommands
 userdbCommands
   .command('delete')
   .argument('<string>', 'database name')
-  .option('-s, --sync', 'make synchronous call', false)
-  .action((async (dbname: string, options: { sync: boolean }) => {
+  .action((async (dbname: string) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()
-    await deleteUserDb(host, port, dbname, options.sync)
+    await deleteUserDb(host, port, dbname)
   }))
 
 userdbCommands
@@ -184,7 +184,7 @@ userdbCommands
 userdbCommands
   .command('rollbackmigration')
   .action((() => {
-    const exitCode = rollbackmigration();
+    const exitCode = rollbackMigration();
     process.exit(exitCode);
   }))
 

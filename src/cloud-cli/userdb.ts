@@ -6,6 +6,14 @@ import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/
 import { execSync } from "child_process";
 import { UserDatabaseName } from "../user_database";
 
+export interface UserDBInstance {
+  readonly DBName: string,
+  readonly UserID: string,
+  readonly Status: string,
+  readonly HostName: string,
+  readonly Port: number,
+}
+
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
@@ -27,35 +35,12 @@ export async function createUserDb(host: string, port: string, dbName: string, a
 
     if (sync) {
       let status = "";
-      let data;
       while (status != "available") {
-        await sleep(60000);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        data = await getDb(host, port, dbName);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        status = data.Status;
+        await sleep(30000);
+        const userDBInfo = await getUserDBInfo(host, port, dbName);
+        logger.info(userDBInfo);
+        status = userDBInfo.Status;
       }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const dbhostname = data.HostName;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const dbport = data.Port;
-
-      // Update the clouddb info record
-      logger.info("Saving db state to cloud db");
-      await axios.put(
-        `http://${host}:${port}/${userCredentials.userName}/databases/userdb/info`,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        { DBName: dbName, Status: status, HostName: dbhostname, Port: dbport },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-          },
-        }
-      );
     }
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
@@ -66,7 +51,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
   }
 }
 
-export async function deleteUserDb(host: string, port: string, dbName: string, sync: boolean) {
+export async function deleteUserDb(host: string, port: string, dbName: string) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -78,41 +63,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string, s
         Authorization: bearerToken,
       },
     });
-
-    logger.info(`Successfully started deleting database: ${dbName}`);
-    if (sync) {
-      let status = "deleting";
-      while (status == "deleting") {
-        await sleep(60000);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        let data;
-        try {
-          // HACK to exit gracefully because the get throws an exception on 500
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          data = await getDb(host, port, dbName);
-        } catch (e) {
-          logger.info(`Deleted database: ${dbName}`);
-          break;
-        }
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        status = data.Status;
-      }
-
-      // Update the clouddb info record
-      logger.info("Saving db state to cloud db");
-      await axios.put(
-        `http://${host}:${port}/${userCredentials.userName}/databases/userdb/info`,
-        { Name: dbName, Status: "deleted", HostName: "", Port: 0 },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-          },
-        }
-      );
-    }
+    logger.info(`Database deleted: ${dbName}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error deleting database ${dbName}: ${e.response?.data}`);
@@ -126,9 +77,8 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   const logger = new GlobalLogger();
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const res = await getDb(host, port, dbName);
-    logger.info(res);
+    const userDBInfo = await getUserDBInfo(host, port, dbName);
+    logger.info(userDBInfo);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
@@ -141,31 +91,27 @@ export async function getUserDb(host: string, port: string, dbName: string) {
 export function migrate(): number {
   const logger = new GlobalLogger();
 
-  // read the yaml file
+  // Read the configuration YAML file
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
-    logger.error(`failed to parse ${dbosConfigFilePath}`);
+    logger.error(`Failed to parse ${dbosConfigFilePath}`);
     return 1;
   }
 
-  let create_db = configFile.database.create_db;
-  if (create_db == undefined) {
-    create_db = false;
-  }
+  const userDBName = configFile.database.user_database;
 
-  const userdbname = configFile.database.user_database;
-
-  if (create_db) {
-    logger.info(`Creating database ${userdbname}`);
-    const cmd = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userdbname} -U ${configFile.database.username} -ew ${userdbname}`;
-    logger.info(cmd);
-    try {
-      const createDBCommandOutput = execSync(cmd).toString();
-      logger.info(createDBCommandOutput);
-    } catch (e) {
-      if (e instanceof Error && !e.message.includes(`database "${userdbname}" already exists`)) {
-        logger.error(`Error creating database: ${e.message}`);
-      }
+  logger.info(`Creating database ${userDBName} if it does not already exist`);
+  const createDB = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
+  try {
+    const createDBOutput = execSync(createDB).toString();
+    if (createDBOutput.includes(`database "${userDBName}" already exists`)) {
+      logger.info(`Database ${userDBName} already exists`)
+    } else {
+      logger.info(createDBOutput)
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      logger.error(`Error creating database: ${e.message}`);
     }
   }
 
@@ -181,7 +127,7 @@ export function migrate(): number {
       logger.info(migrateCommandOutput);
     });
   } catch (e) {
-    logger.error("Error running migration. Check database and if necessary, run npx dbos-cloud userdb rollback.");
+    logger.error("Error running migration");
     if (e instanceof Error) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       const stderr = (e as any).stderr;
@@ -205,7 +151,7 @@ export function migrate(): number {
   return 0;
 }
 
-export function rollbackmigration(): number {
+export function rollbackMigration(): number {
   const logger = new GlobalLogger();
 
   // read the yaml file
@@ -235,23 +181,16 @@ export function rollbackmigration(): number {
   return 0;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
-async function getDb(host: string, port: string, dbName: string): Promise<any> {
+export async function getUserDBInfo(host: string, port: string, dbName: string): Promise<UserDBInstance> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, {
+  const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,
     },
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-enum-comparison
-  if (res.status == axios.HttpStatusCode.Ok) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return res.data;
-  } else {
-    return { Status: "notfound" };
-  }
+  return res.data as UserDBInstance;
 }
