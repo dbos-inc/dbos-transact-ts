@@ -1,7 +1,7 @@
 import { TelemetrySignal } from "./collector";
 import { isLogSignal, isTraceSignal } from "./";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
