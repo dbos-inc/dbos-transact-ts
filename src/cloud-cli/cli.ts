@@ -12,7 +12,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackmigration } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackMigration } from "./userdb";
 import { credentialsExist } from "./utils";
 
 const program = new Command();
@@ -151,7 +151,7 @@ userdbCommands
   .argument('<string>', 'database name')
   .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
   .option('-W, --password <string>', 'Specify the admin password', 'postgres')
-  .option('-s, --sync', 'make synchronous call', false)
+  .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()
     await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
@@ -183,7 +183,7 @@ userdbCommands
 userdbCommands
   .command('rollbackmigration')
   .action((() => {
-    const exitCode = rollbackmigration();
+    const exitCode = rollbackMigration();
     process.exit(exitCode);
   }))
 

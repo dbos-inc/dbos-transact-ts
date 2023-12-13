@@ -6,6 +6,14 @@ import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/
 import { execSync } from "child_process";
 import { UserDatabaseName } from "../user_database";
 
+export interface UserDBInstance {
+  readonly DBName: string,
+  readonly UserID: string,
+  readonly Status: string,
+  readonly HostName: string,
+  readonly Port: number,
+}
+
 export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
@@ -27,15 +35,11 @@ export async function createUserDb(host: string, port: string, dbName: string, a
 
     if (sync) {
       let status = "";
-      let data;
       while (status != "available") {
         await sleep(30000);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        data = await getDb(host, port, dbName);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        logger.info(data);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-        status = data.Status;
+        const userDBInfo = await getUserDBInfo(host, port, dbName);
+        logger.info(userDBInfo);
+        status = userDBInfo.Status;
       }
     }
   } catch (e) {
@@ -73,9 +77,8 @@ export async function getUserDb(host: string, port: string, dbName: string) {
   const logger = new GlobalLogger();
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const res = await getDb(host, port, dbName);
-    logger.info(res);
+    const userDBInfo = await getUserDBInfo(host, port, dbName);
+    logger.info(userDBInfo);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
@@ -148,7 +151,7 @@ export function migrate(): number {
   return 0;
 }
 
-export function rollbackmigration(): number {
+export function rollbackMigration(): number {
   const logger = new GlobalLogger();
 
   // read the yaml file
@@ -178,8 +181,7 @@ export function rollbackmigration(): number {
   return 0;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-explicit-any
-async function getDb(host: string, port: string, dbName: string): Promise<any> {
+async function getUserDBInfo(host: string, port: string, dbName: string): Promise<UserDBInstance> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -190,11 +192,5 @@ async function getDb(host: string, port: string, dbName: string): Promise<any> {
     },
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-enum-comparison
-  if (res.status == axios.HttpStatusCode.Ok) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return res.data;
-  } else {
-    return { Status: "notfound" };
-  }
+  return res.data as UserDBInstance;
 }
