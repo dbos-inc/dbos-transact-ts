@@ -372,7 +372,6 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
 
-    wCtxt.span.setAttribute("executorID", wCtxt.executorID);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,

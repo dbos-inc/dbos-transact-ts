@@ -230,7 +230,8 @@ class OTLPLogQueueTransport extends TransportStream {
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
       body: message as string,
-      timestamp: new Date().getTime(),
+      timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
+      observedTimestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       attributes: { ...span.attributes, stack } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
