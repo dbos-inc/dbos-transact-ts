@@ -113,10 +113,11 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
 
-    if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
+    if (result !== undefined && JSON.stringify(check!.output) !== JSON.stringify(result)) {
       this.logger.error(`Detected different transaction output than the original one!\n Expected: ${JSON.stringify(result)}\n Received: ${JSON.stringify(check!.output)}`);
+      return check!.output; // Always return the recorded result.
     }
-    return check!.output; // Always return the recorded result.
+    return result;
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {

@@ -105,6 +105,12 @@ describe("debugger-test", () => {
       }
       return val1 + "-" + val2;
     }
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @Transaction()
+    static async voidFunction(_txnCtxt: TestTransactionContext) {
+      return;
+    }
   }
 
   test("debug-workflow", async () => {
@@ -134,6 +140,19 @@ describe("debugger-test", () => {
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
+  });
+
+  test("debug-void-transaction", async () => {
+    const wfUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    await expect(testRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
+    await testRuntime.destroy();
+
+    // Execute again in debug mode.
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
+
+    // Execute again with the provided UUID.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeUndefined();
   });
 
   test("debug-transaction", async () => {
