@@ -69,10 +69,11 @@ applicationCommands
   .command('register')
   .description('Register a new application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
+  .requiredOption('-d, --database <string>', 'Specify the app database name')
   .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
-  .action(async (options: { name: string, machines: string }) => {
+  .action(async (options: { name: string, database: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.name, host, port, parseInt(options.machines));
+    const exitCode = await registerApp(options.name, options.database, host, port, parseInt(options.machines));
     process.exit(exitCode);
   });
 
@@ -130,7 +131,7 @@ applicationCommands
 applicationCommands
   .command('configure')
   .description('Configure an application to be deployed')
-  .option('-d, --dbname <string>', 'Specify the name of an already setup RDS user databases')
+  .option('-d, --dbname <string>', 'Specify the app database')
   .action(async (options: { dbname: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await configureApp(host, port, options.dbname);

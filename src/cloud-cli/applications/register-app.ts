@@ -2,7 +2,7 @@ import axios from "axios";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
-export async function registerApp(appName: string, host: string, port: string, machines: number): Promise<number> {
+export async function registerApp(appName: string, dbname: string, host: string,  port: string, machines: number): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -12,7 +12,8 @@ export async function registerApp(appName: string, host: string, port: string, m
       `http://${host}:${port}/${userCredentials.userName}/application`,
       {
         name: appName,
-        max_vms: machines
+        database: dbname,
+        max_vms: machines,
       },
       {
         headers: {
