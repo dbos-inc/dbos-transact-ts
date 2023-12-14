@@ -1,10 +1,11 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
-import { DBOSContext } from "../context";
+import { DBOSContextImpl } from "../context";
 import { context } from "@opentelemetry/api";
-import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
-import { Logger as OTelLogger, LogRecord as OTelLogRecord, LoggerProvider as OTelLoggerProvider } from "@opentelemetry/sdk-logs";
+import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
+import { LogRecord, LoggerProvider} from "@opentelemetry/sdk-logs";
+import { Span } from "@opentelemetry/sdk-trace-base";
 import { TelemetryCollector } from "./collector";
 
 /*****************/
@@ -17,14 +18,16 @@ export interface LoggerConfig {
   addContextMetadata?: boolean;
 }
 
+// This structure is mostly used to share contextual metadata with the console logger
+// The span field is used by the OTLP transport for injection in the LogRecord. It allows us to tightly link logs and traces
 type ContextualMetadata = {
   includeContextMetadata?: boolean;
-  operationUUID: string;
-  authenticatedUser: string;
-  authenticatedRoles: string[];
-  assumedRole: string;
-  traceId: string;
-  spanId: string;
+  executorID?: string;
+  operationUUID?: string;
+  authenticatedUser?: string;
+  authenticatedRoles?: string[];
+  assumedRole?: string;
+  span?: Span;
 };
 
 interface StackTrace {
@@ -107,16 +110,10 @@ export class Logger {
   readonly metadata: ContextualMetadata;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    private readonly ctx: DBOSContext
+    private readonly ctx: DBOSContextImpl,
   ) {
     this.metadata = {
-      includeContextMetadata: this.globalLogger.addContextMetadata,
-      operationUUID: this.ctx.workflowUUID,
-      authenticatedUser: this.ctx.authenticatedUser,
-      authenticatedRoles: this.ctx.authenticatedRoles,
-      assumedRole: this.ctx.assumedRole,
-      traceId: this.ctx.span.spanContext().traceId,
-      spanId: this.ctx.span.spanContext().spanId,
+      span: ctx.span,
     };
   }
 
@@ -179,12 +176,11 @@ const consoleFormat = format.combine(
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
     const contextualMetadata: ContextualMetadata = {
+      executorID: info.executorID as string,
       operationUUID: info.workflowUUID as string,
       authenticatedUser: info.authenticatedUser as string,
       authenticatedRoles: info.authenticatedRoles as string[],
       assumedRole: info.assumedRole as string,
-      traceId: info.traceId as string,
-      spanId: info.spanId as string,
     };
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
     const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(contextualMetadata)}` : ""}`;
@@ -199,32 +195,29 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
 
-  constructor(private readonly telemetryCollector: TelemetryCollector) {
+  constructor(readonly telemetryCollector: TelemetryCollector) {
     super();
     // not sure if we need a more explicit name here
-    this.otelLogger = new OTelLoggerProvider().getLogger("default") as OTelLogger;
+    const loggerProvider = new LoggerProvider();
+    this.otelLogger = loggerProvider.getLogger("default");
+    const logRecordProcessor = {
+      forceFlush: async () => {
+        // no-op
+      },
+      onEmit(logRecord: LogRecord) { // Use optionakl coàntext?
+        telemetryCollector.push(logRecord);
+      },
+      shutdown: async () => {
+        // no-op
+      }
+    };
+    loggerProvider.addLogRecordProcessor(logRecordProcessor);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(info: any, callback: () => void): void {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { level, message, stack } = info;
-
-    // These attributes are redundant because we can correlate with the Context property using the traceId and spanId
-    const contextualMetadata: ContextualMetadata = {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      operationUUID: info.workflowUUID as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      authenticatedUser: info.authenticatedUser as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      authenticatedRoles: info.authenticatedRoles as string[],
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      assumedRole: info.assumedRole as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      traceId: info.traceId as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      spanId: info.spanId as string,
-    };
+    const { level, message, stack, span } = info;
 
     const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
       error: SeverityNumber.ERROR,
@@ -233,21 +226,16 @@ class OTLPLogQueueTransport extends TransportStream {
       debug: SeverityNumber.DEBUG,
     };
 
-    const log: LogRecord = {
+    this.otelLogger.emit({
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
       body: message as string,
       timestamp: new Date().getTime(),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      attributes: { ...contextualMetadata, stack } as LogAttributes,
-      // TODO as a nice-to-have, we could retrieve the operation current context, if we use a context manager, and inject the traceId/spanId in the LogRecord
-      // See https://opentelemetry.io/docs/instrumentation/js/context/#active-context
-      context: context.active(),
-    };
-
-    const logRecord: OTelLogRecord = new OTelLogRecord(this.otelLogger, log);
-
-    this.telemetryCollector.push(logRecord);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+      attributes: { ...span.attributes, stack } as LogAttributes,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      context: span?.spanContext() || context.active(),
+    });
 
     callback();
   }

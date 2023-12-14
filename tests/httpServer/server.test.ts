@@ -51,7 +51,7 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
     // Expect uuidValidate to be true
-    const requestID: string = response.headers[RequestIDHeader] as string;
+    const requestID: string = response.headers[RequestIDHeader] ;
     expect(uuidValidate(requestID)).toBe(true);
   });
 
