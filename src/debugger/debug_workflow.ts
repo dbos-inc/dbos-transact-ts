@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
+import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
@@ -27,7 +27,17 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   readonly isTempWorkflow: boolean;
 
   constructor(dbosExec: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
-    const span = dbosExec.tracer.startSpan(workflowName, { workflowUUID: workflowUUID }, parentCtx?.span);
+    const span = dbosExec.tracer.startSpan(
+      workflowName,
+      {
+        operationUUID: workflowUUID,
+        operationType: OperationType.WORKFLOW,
+        authenticatedUser: parentCtx?.authenticatedUser ?? "",
+        authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
+        assumedRole: parentCtx?.assumedRole ?? "",
+      },
+      parentCtx?.span,
+    );
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
@@ -98,7 +108,19 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
     // const readOnly = true; // TODO: eventually, this transaction must be read-only.
     const funcID = this.functionIDGetIncrement();
-    const span: Span = this.#dbosExec.tracer.startSpan(txn.name, {}, this.span);
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      txn.name,
+      {
+        operationUUID: this.workflowUUID,
+        operationType: OperationType.TRANSACTION,
+        authenticatedUser: this.authenticatedUser,
+        authenticatedRoles: this.authenticatedRoles,
+        assumedRole: this.assumedRole,
+        readOnly: txnInfo.config.readOnly ?? false, // For now doing as in src/workflow.ts:272
+        isolationLevel: txnInfo.config.isolationLevel,
+      },
+      this.span
+    );
     let check: RecordedResult<R>;
 
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
@@ -130,6 +152,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
+
+    // FIXME: we do not create a span for the replay communicator. Do we want to?
 
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);

@@ -7,4 +7,3 @@ export function setApplicationVersion(version: string): void {
 }
 
 let applicationVersion: string | undefined = undefined;
-

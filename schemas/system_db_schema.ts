@@ -87,7 +87,7 @@ export const systemDBSchema = `
         RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
-    
+
     CREATE OR REPLACE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON notifications
     FOR EACH ROW EXECUTE FUNCTION notifications_function();

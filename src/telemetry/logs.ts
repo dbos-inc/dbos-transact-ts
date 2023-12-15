@@ -1,10 +1,10 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
-import { DBOSContext } from "../context";
-import { context } from "@opentelemetry/api";
-import { LogAttributes, LogRecord, SeverityNumber } from "@opentelemetry/api-logs";
-import { Logger as OTelLogger, LogRecord as OTelLogRecord, LoggerProvider as OTelLoggerProvider } from "@opentelemetry/sdk-logs";
+import { DBOSContextImpl } from "../context";
+import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
+import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
+import { Span } from "@opentelemetry/sdk-trace-base";
 import { TelemetryCollector } from "./collector";
 
 /*****************/
@@ -18,11 +18,8 @@ export interface LoggerConfig {
 }
 
 type ContextualMetadata = {
-  includeContextMetadata?: boolean;
-  workflowUUID: string;
-  authenticatedUser: string;
-  traceId: string;
-  spanId: string;
+  includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
+  span: Span; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {
@@ -105,14 +102,11 @@ export class Logger {
   readonly metadata: ContextualMetadata;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    private readonly ctx: DBOSContext
+    readonly ctx: DBOSContextImpl
   ) {
     this.metadata = {
+      span: ctx.span,
       includeContextMetadata: this.globalLogger.addContextMetadata,
-      workflowUUID: this.ctx.workflowUUID,
-      authenticatedUser: this.ctx.authenticatedUser,
-      traceId: this.ctx.span.spanContext().traceId,
-      spanId: this.ctx.span.spanContext().spanId,
     };
   }
 
@@ -152,7 +146,7 @@ export class Logger {
       this.globalLogger.error(inputError, { ...this.metadata, stack: new Error().stack });
     } else {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      this.globalLogger.error(JSON.stringify(inputError), {...this.metadata, stack: new Error().stack });
+      this.globalLogger.error(JSON.stringify(inputError), { ...this.metadata, stack: new Error().stack });
     }
   }
 }
@@ -174,14 +168,8 @@ const consoleFormat = format.combine(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
-    const contextualMetadata: ContextualMetadata = {
-      workflowUUID: info.workflowUUID as string,
-      authenticatedUser: info.authenticatedUser as string,
-      traceId: info.traceId as string,
-      spanId: info.spanId as string,
-    };
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(contextualMetadata)}` : ""}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -193,27 +181,29 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
 
-  constructor(private readonly telemetryCollector: TelemetryCollector) {
+  constructor(readonly telemetryCollector: TelemetryCollector) {
     super();
     // not sure if we need a more explicit name here
-    this.otelLogger = new OTelLoggerProvider().getLogger("default") as OTelLogger;
+    const loggerProvider = new LoggerProvider();
+    this.otelLogger = loggerProvider.getLogger("default");
+    const logRecordProcessor = {
+      forceFlush: async () => {
+        // no-op
+      },
+      onEmit(logRecord: LogRecord) {
+        telemetryCollector.push(logRecord);
+      },
+      shutdown: async () => {
+        // no-op
+      },
+    };
+    loggerProvider.addLogRecordProcessor(logRecordProcessor);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(info: any, callback: () => void): void {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { level, message, stack } = info;
-
-    const contextualMetadata: ContextualMetadata = {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      workflowUUID: info.workflowUUID as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      authenticatedUser: info.authenticatedUser as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      traceId: info.traceId as string,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      spanId: info.spanId as string,
-    };
+    const { level, message, stack, span } = info;
 
     const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
       error: SeverityNumber.ERROR,
@@ -222,21 +212,21 @@ class OTLPLogQueueTransport extends TransportStream {
       debug: SeverityNumber.DEBUG,
     };
 
-    const log: LogRecord = {
+    // Ideally we want to give the spanContext to the logRecord,
+    // But there seems to some dependency bugs in opentelemetry-js
+    // (span.getValue(SPAN_KEY) undefined when we pass the context, as commented bellow)
+    // So for now we get the traceId and spanId directly from the context and pass them through the logRecord attributes
+    this.otelLogger.emit({
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
       body: message as string,
-      timestamp: new Date().getTime(),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      attributes: { ...contextualMetadata, stack } as LogAttributes,
-      // TODO as a nice-to-have, we could retrieve the operation current context, if we use a context manager, and inject the traceId/spanId in the LogRecord
-      // See https://opentelemetry.io/docs/instrumentation/js/context/#active-context
-      context: context.active(),
-    };
-
-    const logRecord: OTelLogRecord = new OTelLogRecord(this.otelLogger, log);
-
-    this.telemetryCollector.push(logRecord);
+      timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
+      observedTimestamp: new Date().getTime(),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack } as LogAttributes,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      // context: span?.spanContext() || undefined,
+    });
 
     callback();
   }

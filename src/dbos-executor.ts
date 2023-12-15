@@ -77,6 +77,13 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
+export const OperationType = {
+  HANDLER: "handler",
+  WORKFLOW: "workflow",
+  TRANSACTION: "transaction",
+  COMMUNICATOR: "communicator",
+} as const;
+
 const TempWorkflowType = {
   transaction: "transaction",
   external: "external",
@@ -276,7 +283,7 @@ export class DBOSExecutor {
     } catch (err) {
       (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
       this.logger.error(err);
-      throw new DBOSInitializationError(`failed to initialize workflow executor: ${(err as Error).message}`);
+      throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
 
@@ -364,12 +371,13 @@ export class DBOSExecutor {
     const wConfig = wInfo.config;
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
-    wCtxt.span.setAttributes({ args: JSON.stringify(args) }); // TODO enforce skipLogging & request for hashing
 
-    let executorID: string = "local";
-    if (wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
-      executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
+    // This is to accomodate the testing runtime, that does not go through HTTP handlers to start workflows
+    // Ideally we would expose the executorID to the environment instead of propagating it through headers.
+    if (wCtxt.executorID === 'local' && wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
+      wCtxt.executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
     }
+
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
@@ -380,7 +388,7 @@ export class DBOSExecutor {
       assumedRole: wCtxt.assumedRole,
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
-      executorID: executorID,
+      executorID: wCtxt.executorID,
     };
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
@@ -638,10 +646,19 @@ export class DBOSExecutor {
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(status.workflowName);
-    span.setAttributes({
-      operationName: status.workflowName,
-    });
+    const executorID = status.request.headers && status.request.headers[DBOSExecutorIDHeader]? status.request.headers[DBOSExecutorIDHeader] : "local";
+    const span = this.tracer.startSpan(
+      status.workflowName,
+      {
+        operationUUID: workflowUUID,
+        operationType: OperationType.WORKFLOW,
+        status: status.status,
+        authenticatedUser: status.authenticatedUser,
+        assumedRole: status.assumedRole,
+        authenticatedRoles: status.authenticatedRoles,
+        executorID: executorID,
+      },
+    );
     const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;

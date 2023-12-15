@@ -146,7 +146,7 @@ describe("recovery-tests", () => {
       ExecutorRecovery.resolve2 = resolve;
     });
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123", executorID: "fcvm123" } } }).executorWorkflow(5);
 
     const response = await request(testRuntime.getHandlersCallback())
       .post(WorkflowRecoveryUrl)

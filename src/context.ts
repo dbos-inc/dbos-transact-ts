@@ -41,6 +41,7 @@ export class DBOSContextImpl implements DBOSContext {
   authenticatedRoles: string[] = [];  // All roles the user has according to authentication
   assumedRole: string = "";           // Role in use - that user has and provided authorization to current function
   workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
+  executorID: string = "local";       // Executor ID. Gathered from request headers and "local" otherwise
   readonly logger: DBOSLogger;      // Wrapper around the global logger for this context.
 
   constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
@@ -50,6 +51,7 @@ export class DBOSContextImpl implements DBOSContext {
       this.authenticatedRoles = parentCtx.authenticatedRoles;
       this.assumedRole = parentCtx.assumedRole;
       this.workflowUUID = parentCtx.workflowUUID;
+      this.executorID = parentCtx.executorID;
     }
     this.logger = new DBOSLogger(logger, this);
   }
