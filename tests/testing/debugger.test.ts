@@ -155,11 +155,11 @@ describe("debugger-test", () => {
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeFalsy();
     expect(DebuggerTest.cnt).toBe(1);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeUndefined();
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.cnt).toBe(1);
   });
 
