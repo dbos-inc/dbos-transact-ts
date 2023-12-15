@@ -2,7 +2,6 @@ import { transports, createLogger, format, Logger as IWinstonLogger } from "wins
 import TransportStream = require("winston-transport");
 import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContextImpl } from "../context";
-import { SpanContext } from "@opentelemetry/api";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { Span } from "@opentelemetry/sdk-trace-base";
@@ -224,7 +223,7 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      attributes: { ...span?.attributes, traceId: (span?.spanContext() as SpanContext).traceId, spanId: (span?.spanContext() as SpanContext).spanId, stack } as LogAttributes,
+      attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       // context: span?.spanContext() || undefined,
     });
