@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, CommunicatorContext, Communicator } from "../../src/";
+import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, CommunicatorContext, Communicator, Debug } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -26,6 +26,7 @@ describe("debugger-test", () => {
     // TODO: connect to the real proxy.
     debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
     testRuntime = await createInternalTestRuntime([DebuggerTest], config);
+    DebuggerTest.cnt = 0;
   });
 
   afterEach(async () => {
@@ -109,6 +110,10 @@ describe("debugger-test", () => {
     // eslint-disable-next-line @typescript-eslint/require-await
     @Transaction()
     static async voidFunction(_txnCtxt: TestTransactionContext) {
+      if (DebuggerTest.cnt > 0) {
+        return DebuggerTest.cnt;
+      }
+      DebuggerTest.cnt++;
       return;
     }
   }
@@ -146,13 +151,16 @@ describe("debugger-test", () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
+    expect(DebuggerTest.cnt).toBe(1);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
+    expect(DebuggerTest.cnt).toBe(1);
 
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeUndefined();
+    expect(DebuggerTest.cnt).toBe(1);
   });
 
   test("debug-transaction", async () => {
