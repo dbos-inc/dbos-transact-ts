@@ -119,11 +119,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
 
     if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
-      check!.output = check!.output ?? undefined as R;  // TODO: is it safe to coalesce null into undefined?
       this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check!.output)}`);
-      return check!.output; // Always return the recorded result.
     }
-    return result;
+    return check!.output; // Always return the recorded result.
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
