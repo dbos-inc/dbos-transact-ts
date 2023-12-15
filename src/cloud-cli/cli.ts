@@ -7,7 +7,6 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
-  configureApp,
 } from "./applications/";
 import { Command } from 'commander';
 import { login } from "./login";
@@ -124,19 +123,6 @@ applicationCommands
   .action(async (options: { name: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
     const exitCode = await getAppLogs(options.name, host, port);
-    process.exit(exitCode);
-  });
-
-
-applicationCommands
-  .command('configure')
-  .description('Configure an application to communicate with a database')
-  .requiredOption('-U, --username <string>', 'Database username')
-  .requiredOption('-W, --password <string>', 'Database password')
-  .requiredOption('-dh, --database_host <string>', 'Specify the database host')
-  .requiredOption('-dp, --database_port <string>', 'Specify the database port')
-  .action(async (options: { database_host: string, database_port: string, dbname: string, username: string, password: string }) => {
-    const exitCode = await configureApp(options.database_host, Number(options.database_port), options.username, options.password);
     process.exit(exitCode);
   });
 
