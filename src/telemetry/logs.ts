@@ -223,7 +223,7 @@ class OTLPLogQueueTransport extends TransportStream {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       attributes: { ...span?.attributes, stack } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      context: span?.spanContext() || context.active(),
+      context: span?.spanContext() || undefined,
     });
 
     callback();
