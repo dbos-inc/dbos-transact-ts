@@ -213,17 +213,20 @@ class OTLPLogQueueTransport extends TransportStream {
       debug: SeverityNumber.DEBUG,
     };
 
+    // Ideally we want to give the spanContext to the logRecord,
+    // But there seems to some dependency bugs in opentelemetry-js
+    // (span.getValue(SPAN_KEY) undefined when we pass the context, as commented bellow)
+    // So for now we get the traceId and spanId directly from the context and pass them through the logRecord attributes
     this.otelLogger.emit({
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
       body: message as string,
       timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: new Date().getTime(),
-      // TODO: eventually we want to see span defined, always
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      attributes: { ...span?.attributes, stack } as LogAttributes,
+      attributes: { ...span?.attributes, traceId: span?.spanContext().traceId, spanId: span?.spanContext().spanId, stack } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      context: span?.spanContext() || undefined,
+      // context: span?.spanContext() || undefined,
     });
 
     callback();
