@@ -18,12 +18,11 @@ export interface ConfigFile {
     port: number;
     username: string;
     password?: string;
-    connectionTimeoutMillis: number;
+    connectionTimeoutMillis?: number;
     user_database: string;
-    system_database: string;
+    system_database?: string;
     ssl_ca?: string;
-    observability_database: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    observability_database?: string;
     user_dbclient?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];

@@ -7,7 +7,6 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
-  configureApp,
 } from "./applications/";
 import { Command } from 'commander';
 import { login } from "./login";
@@ -69,10 +68,11 @@ applicationCommands
   .command('register')
   .description('Register a new application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
+  .requiredOption('-d, --database <string>', 'Specify the app database name')
   .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
-  .action(async (options: { name: string, machines: string }) => {
+  .action(async (options: { name: string, database: string, machines: string }) => {
     const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.name, host, port, parseInt(options.machines));
+    const exitCode = await registerApp(options.name, options.database, host, port, parseInt(options.machines));
     process.exit(exitCode);
   });
 
@@ -126,17 +126,6 @@ applicationCommands
     process.exit(exitCode);
   });
 
-
-applicationCommands
-  .command('configure')
-  .description('Configure an application to be deployed')
-  .option('-d, --dbname <string>', 'Specify the name of an already setup RDS user databases')
-  .action(async (options: { dbname: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await configureApp(host, port, options.dbname);
-    process.exit(exitCode);
-  });
-
 //////////////////////////////
 /* USER DATABASE MANAGEMENT */
 //////////////////////////////
@@ -150,8 +139,8 @@ const userdbCommands = program
 userdbCommands
   .command('create')
   .argument('<string>', 'database name')
-  .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
-  .option('-W, --password <string>', 'Specify the admin password', 'postgres')
+  .requiredOption('-a, --admin <string>', 'Specify the admin user')
+  .requiredOption('-W, --password <string>', 'Specify the admin password')
   .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()

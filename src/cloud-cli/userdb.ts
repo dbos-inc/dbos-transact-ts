@@ -8,7 +8,6 @@ import { UserDatabaseName } from "../user_database";
 
 export interface UserDBInstance {
   readonly DBName: string,
-  readonly UserID: string,
   readonly Status: string,
   readonly HostName: string,
   readonly Port: number,
