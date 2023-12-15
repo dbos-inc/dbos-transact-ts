@@ -130,11 +130,13 @@ applicationCommands
 
 applicationCommands
   .command('configure')
-  .description('Configure an application to be deployed')
-  .option('-d, --dbname <string>', 'Specify the app database')
-  .action(async (options: { dbname: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await configureApp(host, port, options.dbname);
+  .description('Configure an application to communicate with a database')
+  .requiredOption('-U, --username <string>', 'Database username')
+  .requiredOption('-W, --password <string>', 'Database password')
+  .requiredOption('-dh, --database_host <string>', 'Specify the database host')
+  .requiredOption('-dp, --database_port <string>', 'Specify the database port')
+  .action(async (options: { database_host: string, database_port: string, dbname: string, username: string, password: string }) => {
+    const exitCode = await configureApp(options.database_host, Number(options.database_port), options.username, options.password);
     process.exit(exitCode);
   });
 
@@ -151,8 +153,8 @@ const userdbCommands = program
 userdbCommands
   .command('create')
   .argument('<string>', 'database name')
-  .option('-a, --admin <string>', 'Specify the admin user', 'postgres')
-  .option('-W, --password <string>', 'Specify the admin password', 'postgres')
+  .requiredOption('-a, --admin <string>', 'Specify the admin user')
+  .requiredOption('-W, --password <string>', 'Specify the admin password')
   .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host, port }: { host: string, port: string } = userdbCommands.opts()

@@ -3,26 +3,9 @@ import fs from "fs";
 import YAML from "yaml";
 import { GlobalLogger } from "../../telemetry/logs";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
-import { UserDBInstance, getUserDBInfo } from "../userdb";
 
-export async function configureApp(host: string, port: string, dbName: string): Promise<number> {
+export async function configureApp(database_host: string, database_port: number, username: string, password: string): Promise<number> {
     const logger = new GlobalLogger();
-
-    let userDBInfo: UserDBInstance | undefined;
-    try {
-      userDBInfo = await getUserDBInfo(host, port, dbName);
-    } catch(e) {
-      logger.error(`error getting DB Info: ${(e as Error).message}`)
-      return 1
-    }
-
-    const userdbHostname: string = userDBInfo.HostName
-    const userdbPort: number = userDBInfo.Port
-
-    if (userdbHostname == "" || userdbPort == 0) {
-      logger.error(`HostName: ${userdbHostname} Port: ${userdbPort} not available.`)
-      return 1
-    }
 
     // Parse the config file
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
@@ -45,9 +28,11 @@ export async function configureApp(host: string, port: string, dbName: string): 
     }
 
     // Update database hostname and port
-    configFile.database.hostname = userdbHostname
-    configFile.database.port = userdbPort
+    configFile.database.hostname = database_host
+    configFile.database.port = database_port
     configFile.database.ssl_ca = certificateFile
+    configFile.database.username = username
+    configFile.database.password = password
 
     // Save the updated config file
     try {
@@ -57,6 +42,6 @@ export async function configureApp(host: string, port: string, dbName: string): 
       return 1;
     }
 
-    logger.info(`Successfully configured user database at ${userdbHostname}:${userdbPort}.`)
+    logger.info(`Successfully configured user database at ${database_host}:${database_port}.`)
     return 0
 }
