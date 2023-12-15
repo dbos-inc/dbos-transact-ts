@@ -4,7 +4,7 @@ import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContextImpl } from "../context";
 import { context } from "@opentelemetry/api";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
-import { LogRecord, LoggerProvider} from "@opentelemetry/sdk-logs";
+import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { TelemetryCollector } from "./collector";
 
@@ -18,16 +18,9 @@ export interface LoggerConfig {
   addContextMetadata?: boolean;
 }
 
-// This structure is mostly used to share contextual metadata with the console logger
-// The span field is used by the OTLP transport for injection in the LogRecord. It allows us to tightly link logs and traces
 type ContextualMetadata = {
-  includeContextMetadata?: boolean;
-  executorID?: string;
-  operationUUID?: string;
-  authenticatedUser?: string;
-  authenticatedRoles?: string[];
-  assumedRole?: string;
-  span?: Span;
+  includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
+  span: Span; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {
@@ -110,10 +103,11 @@ export class Logger {
   readonly metadata: ContextualMetadata;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    private readonly ctx: DBOSContextImpl,
+    readonly ctx: DBOSContextImpl
   ) {
     this.metadata = {
       span: ctx.span,
+      includeContextMetadata: this.globalLogger.addContextMetadata,
     };
   }
 
@@ -175,15 +169,8 @@ const consoleFormat = format.combine(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
-    const contextualMetadata: ContextualMetadata = {
-      executorID: info.executorID as string,
-      operationUUID: info.workflowUUID as string,
-      authenticatedUser: info.authenticatedUser as string,
-      authenticatedRoles: info.authenticatedRoles as string[],
-      assumedRole: info.assumedRole as string,
-    };
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(contextualMetadata)}` : ""}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(info.span.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -204,12 +191,12 @@ class OTLPLogQueueTransport extends TransportStream {
       forceFlush: async () => {
         // no-op
       },
-      onEmit(logRecord: LogRecord) { // Use optionakl coàntext?
+      onEmit(logRecord: LogRecord) {
         telemetryCollector.push(logRecord);
       },
       shutdown: async () => {
         // no-op
-      }
+      },
     };
     loggerProvider.addLogRecordProcessor(logRecordProcessor);
   }
