@@ -123,11 +123,12 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme RequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, Transaction, GetApi, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
+    import { TransactionContext, Transaction, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
+    import * as dbos from '@dbos-inc/dbos-sdk'
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     export class Hello {
-      @GetApi('/greeting/:user')
+      @dbos.GetApi('/greeting/:user')
       @RequiredRole(['user'])
       static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
         return "";
