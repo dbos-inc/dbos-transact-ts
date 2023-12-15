@@ -170,7 +170,7 @@ const consoleFormat = format.combine(
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify(info.span?.attributes)}` : ""}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
