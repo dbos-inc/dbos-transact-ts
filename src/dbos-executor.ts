@@ -275,9 +275,9 @@ export class DBOSExecutor {
       }
 
       // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
+      await this.userDatabase.init(this.debugMode);
       if (!this.debugMode) {
         await this.systemDatabase.init();
-        await this.userDatabase.init(); // Skip user DB init because we're using the proxy.
         await this.recoverPendingWorkflows();
       }
     } catch (err) {

@@ -6,7 +6,7 @@ import { ValuesOf } from "./utils";
 import { Knex } from "knex";
 
 export interface UserDatabase {
-  init(): Promise<void>;
+  init(debugMode?: boolean): Promise<void>;
   destroy(): Promise<void>;
   getName(): UserDatabaseName;
 
@@ -54,9 +54,11 @@ export class PGNodeUserDatabase implements UserDatabase {
     this.pool = new Pool(poolConfig);
   }
 
-  async init(): Promise<void> {
-    await this.pool.query(createUserDBSchema);
-    await this.pool.query(userDBSchema);
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      await this.pool.query(createUserDBSchema);
+      await this.pool.query(userDBSchema);
+    }
   }
 
   async destroy(): Promise<void> {
@@ -169,9 +171,11 @@ const PrismaIsolationLevel = {
 export class PrismaUserDatabase implements UserDatabase {
   constructor(readonly prisma: PrismaClient) { }
 
-  async init(): Promise<void> {
-    await this.prisma.$queryRawUnsafe(createUserDBSchema);
-    await this.prisma.$queryRawUnsafe(userDBSchema);
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      await this.prisma.$queryRawUnsafe(createUserDBSchema);
+      await this.prisma.$queryRawUnsafe(userDBSchema);
+    }
   }
 
   async destroy(): Promise<void> {
@@ -273,13 +277,15 @@ export class TypeORMDatabase implements UserDatabase {
     this.dataSource = ds;
   }
 
-  async init(): Promise<void> {
+  async init(debugMode: boolean = false): Promise<void> {
     if (!this.dataSource.isInitialized) {
-      await this.dataSource.initialize();
+      await this.dataSource.initialize(); // Need to initialize datasource even in debug mode.
     }
 
-    await this.dataSource.query(createUserDBSchema);
-    await this.dataSource.query(userDBSchema);
+    if (!debugMode) {
+      await this.dataSource.query(createUserDBSchema);
+      await this.dataSource.query(userDBSchema);
+    }
   }
 
   async destroy(): Promise<void> {
@@ -354,9 +360,11 @@ export class KnexUserDatabase implements UserDatabase {
 
   constructor(readonly knex: Knex) { }
 
-  async init(): Promise<void> {
-    await this.knex.raw(createUserDBSchema);
-    await this.knex.raw(userDBSchema);
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      await this.knex.raw(createUserDBSchema);
+      await this.knex.raw(userDBSchema);
+    }
   }
 
   async destroy(): Promise<void> {
