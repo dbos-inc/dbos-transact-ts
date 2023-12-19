@@ -10,7 +10,7 @@ export async function registerUser(username: string, host: string, port: string)
   try {
     // First, register the user.
     const register = await axios.put(
-      `http://${host}:${port}/user`,
+      `https://${host}:${port}/user`,
       {
         name: userName,
       },

@@ -20,7 +20,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
 
   try {
     await axios.post(
-      `http://${host}:${port}/${userCredentials.userName}/databases/userdb`,
+      `https://${host}:${port}/${userCredentials.userName}/databases/userdb`,
       { Name: dbName, AdminName: adminName, AdminPassword: adminPassword },
       {
         headers: {
@@ -56,7 +56,7 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, {
+    await axios.delete(`https://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -184,7 +184,7 @@ export async function getUserDBInfo(host: string, port: string, dbName: string):
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
+  const res = await axios.get(`https://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,

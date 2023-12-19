@@ -9,7 +9,7 @@ export async function registerApp(appName: string, dbname: string, host: string,
 
   try {
     const register = await axios.put(
-      `http://${host}:${port}/${userCredentials.userName}/application`,
+      `https://${host}:${port}/${userCredentials.userName}/application`,
       {
         name: appName,
         database: dbname,

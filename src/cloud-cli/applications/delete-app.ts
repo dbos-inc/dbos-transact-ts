@@ -8,7 +8,7 @@ export async function deleteApp(appName: string, host: string, port: string): Pr
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`http://${host}:${port}/${userCredentials.userName}/application/${appName}`, {
+    await axios.delete(`https://${host}:${port}/${userCredentials.userName}/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,

@@ -11,7 +11,7 @@ export async function updateApp(appName: string, host: string, port: string, mac
   try {
     logger.info(`Updating application ${appName} to ${machines} machines`);
     const update = await axios.patch(
-      `http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}:${port}/${userCredentials.userName}/application/${appName}`,
       {
         name: appName,
         max_vms: machines

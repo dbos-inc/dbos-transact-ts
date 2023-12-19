@@ -49,7 +49,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
     await axios.post(
-      `http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}:${port}/${userCredentials.userName}/application/${appName}`,
       {
         application_version: version,
         application_archive: zipData,

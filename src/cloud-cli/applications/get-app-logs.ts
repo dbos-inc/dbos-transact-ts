@@ -8,7 +8,7 @@ export async function getAppLogs(appName: string, host: string, port: string): P
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    const res = await axios.get(`http://${host}:${port}/${userCredentials.userName}/logs/application/${appName}`, {
+    const res = await axios.get(`https://${host}:${port}/${userCredentials.userName}/logs/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
