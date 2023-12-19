@@ -16,7 +16,7 @@ import { credentialsExist } from "./utils";
 
 const program = new Command();
 
-const DEFAULT_HOST = process.env.DBOS_DOMAIN; // TODO: Once we have a "production" cluster, hard-code its domain name here
+const DEFAULT_HOST = process.env.DBOS_DOMAIN; // TODO: Once we have a "production" cluster, hardcode its domain name here
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../../package.json') as { version: string };
