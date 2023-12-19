@@ -26,7 +26,6 @@ export interface ParameterInfo {
 
 export interface DecoratorInfo {
   node: ts.Decorator;
-  identifier: ts.Identifier;
   args: readonly ts.Expression[];
   name?: string;
   module?: string;
@@ -93,18 +92,62 @@ export class TypeParser {
     return { node, name, decorators, required };
   }
 
-  #getDecoratorIdentifier(node: ts.Decorator): { identifier: ts.Identifier; args: readonly ts.Expression[]; } | undefined {
+  #getImportSpecifierFromPAE(pae: ts.PropertyAccessExpression, checker: ts.TypeChecker): { name: string; module: string; } | undefined
+  {
+    const node = pae.expression;
+    const symbol = checker.getSymbolAtLocation(node);
+    const decls = symbol?.getDeclarations() ?? [];
+    for (const decl of decls) {
+      if (ts.isNamespaceImport(decl)) {
+        const name = pae.name;
+        const module = decl.parent.parent.moduleSpecifier as ts.StringLiteral;
+        return {name: name.getText(), module: module.text};
+      }
+    }
+    return undefined;
+  }
+
+  #getDecoratorIdentifier(node: ts.Decorator): { name: string | undefined; module: string | undefined; args: readonly ts.Expression[]; } | undefined {
     if (ts.isCallExpression(node.expression)) {
+      if (ts.isPropertyAccessExpression(node.expression.expression)) {
+        const pae: ts.PropertyAccessExpression = node.expression.expression;
+        // Let's imagine a module is the expression
+        const { name, module } = this.#getImportSpecifierFromPAE(pae, this.#checker) ?? {};
+        //console.log("PROPERTY ACCESS: "+printAst(pae) + " ---- "+`${mod?.module}.${mod?.name}`);
+        return { name, module, args: node.expression.arguments };
+      }
       if (ts.isIdentifier(node.expression.expression)) {
-        return { identifier: node.expression.expression, args: node.expression.arguments };
+        const { name, module} = this.#getImportSpecifier(node.expression.expression, this.#checker) ?? {};
+        return { name, module, args: node.expression.arguments };
       }
       this.#diags.raise(`Unexpected decorator CallExpression.expression type: ${ts.SyntaxKind[node.expression.expression.kind]}`, node);
     }
 
     if (ts.isIdentifier(node.expression)) {
-      return { identifier: node.expression, args: [] };
+      const {name, module} = this.#getImportSpecifier(node.expression, this.#checker) ?? {};
+      return { name, module, args: [] };
     }
     this.#diags.raise(`Unexpected decorator expression type: ${ts.SyntaxKind[node.expression.kind]}`, node);
+  }
+
+  #getImportSpecifier(node: ts.Node, checker: ts.TypeChecker): { name: string; module: string; } | undefined {
+    const symbol = checker.getSymbolAtLocation(node);
+    const decls = symbol?.getDeclarations() ?? [];
+    for (const decl of decls) {
+      if (ts.isImportSpecifier(decl)) {
+        // decl.name is the name for this type used in the local module.
+        // If the type name was overridden in the local module, the original type name is stored in decl.propertyName.
+        // Otherwise, decl.propertyName is undefined.
+        const name = (decl.propertyName ?? decl.name).getText();
+
+        // comment in TS AST declaration indicates moduleSpecifier *must* be a string literal
+        //    "If [ImportDeclaration.moduleSpecifier] is not a StringLiteral it will be a grammar error."
+        const module = decl.parent.parent.parent.moduleSpecifier as ts.StringLiteral;
+
+        return { name, module: module.text };
+      }
+    }
+    return undefined;
   }
 
   #getDecorators(node: ts.HasDecorators): DecoratorInfo[] {
@@ -113,31 +156,10 @@ export class TypeParser {
       .map(node => {
         const decoratorIdentifier = this.#getDecoratorIdentifier(node);
         if (!decoratorIdentifier) return undefined;
-        const { identifier, args } = decoratorIdentifier;
-        const { name, module } = getImportSpecifier(identifier, this.#checker) ?? {};
-        return { node, identifier, name, module, args } as DecoratorInfo;
+        const { name, module, args } = decoratorIdentifier;
+        return { node, name, module, args } as DecoratorInfo;
       })
       .filter((d): d is DecoratorInfo => !!d);
-
-    function getImportSpecifier(node: ts.Node, checker: ts.TypeChecker): { name: string; module: string; } | undefined {
-      const symbol = checker.getSymbolAtLocation(node);
-      const decls = symbol?.getDeclarations() ?? [];
-      for (const decl of decls) {
-        if (ts.isImportSpecifier(decl)) {
-          // decl.name is the name for this type used in the local module.
-          // If the type name was overridden in the local module, the original type name is stored in decl.propertyName.
-          // Otherwise, decl.propertyName is undefined.
-          const name = (decl.propertyName ?? decl.name).getText();
-
-          // comment in TS AST declaration indicates moduleSpecifier *must* be a string literal
-          //    "If [ImportDeclaration.moduleSpecifier] is not a StringLiteral it will be a grammar error."
-          const module = decl.parent.parent.parent.moduleSpecifier as ts.StringLiteral;
-
-          return { name, module: module.text };
-        }
-      }
-      return undefined;
-    }
   }
 }
 
