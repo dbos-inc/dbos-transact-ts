@@ -16,8 +16,7 @@ import { credentialsExist } from "./utils";
 
 const program = new Command();
 
-const DEFAULT_HOST = "localhost"
-const DEFAULT_PORT = "8080"
+const DEFAULT_HOST = process.env.DBOS_DOMAIN; // TODO: Once we have a "production" cluster, hardcode its domain name here
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../../package.json') as { version: string };
@@ -42,15 +41,14 @@ program
   .description('Register a user and log in to DBOS cloud')
   .requiredOption('-u, --username <string>', 'Username')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
-  .action(async (options: { username: string, host: string, port: string }) => {
+  .action(async (options: { username: string, host: string}) => {
     if (!credentialsExist()) {
       const exitCode = await login(options.username);
       if (exitCode !== 0) {
         process.exit(exitCode);
       }
     }
-    const exitCode = await registerUser(options.username, options.host, options.port);
+    const exitCode = await registerUser(options.username, options.host);
     process.exit(exitCode);
   });
 
@@ -62,7 +60,6 @@ const applicationCommands = program
   .command('applications')
   .description('Manage your DBOS applications')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
 
 applicationCommands
   .command('register')
@@ -71,8 +68,8 @@ applicationCommands
   .requiredOption('-d, --database <string>', 'Specify the app database name')
   .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
   .action(async (options: { name: string, database: string, machines: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.name, options.database, host, port, parseInt(options.machines));
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await registerApp(options.name, options.database, host, parseInt(options.machines));
     process.exit(exitCode);
   });
 
@@ -82,8 +79,8 @@ applicationCommands
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
   .action(async (options: { name: string, machines: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await updateApp(options.name, host, port, parseInt(options.machines));
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await updateApp(options.name, host, parseInt(options.machines));
     process.exit(exitCode);
   });
 
@@ -92,8 +89,8 @@ applicationCommands
   .description('Deploy an application code to the cloud')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await deployAppCode(options.name, host, port);
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await deployAppCode(options.name, host);
     process.exit(exitCode);
   });
 
@@ -102,8 +99,8 @@ applicationCommands
   .description('Delete a previously deployed application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await deleteApp(options.name, host, port);
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await deleteApp(options.name, host);
     process.exit(exitCode);
   });
 
@@ -111,8 +108,8 @@ applicationCommands
   .command('list')
   .description('List all deployed applications')
   .action(async () => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await listApps(host, port);
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await listApps(host);
     process.exit(exitCode);
   });
 
@@ -121,8 +118,8 @@ applicationCommands
   .description('Print the microVM logs of a deployed application')
   .requiredOption('-n, --name <string>', 'Specify the app name')
   .action(async (options: { name: string }) => {
-    const { host, port }: { host: string, port: string } = applicationCommands.opts()
-    const exitCode = await getAppLogs(options.name, host, port);
+    const { host }: { host: string } = applicationCommands.opts()
+    const exitCode = await getAppLogs(options.name, host);
     process.exit(exitCode);
   });
 
@@ -134,7 +131,6 @@ const userdbCommands = program
   .command('userdb')
   .description('Manage your databases')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
-  .option('-p, --port <string>', 'Specify the port', DEFAULT_PORT)
 
 userdbCommands
   .command('create')
@@ -143,24 +139,24 @@ userdbCommands
   .requiredOption('-W, --password <string>', 'Specify the admin password')
   .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
-    const { host, port }: { host: string, port: string } = userdbCommands.opts()
-    await createUserDb(host, port, dbname, options.admin, options.password, options.sync)
+    const { host }: { host: string } = userdbCommands.opts()
+    await createUserDb(host, dbname, options.admin, options.password, options.sync)
   }))
 
 userdbCommands
   .command('status')
   .argument('<string>', 'database name')
   .action((async (dbname: string) => {
-    const { host, port }: { host: string, port: string } = userdbCommands.opts()
-    await getUserDb(host, port, dbname)
+    const { host }: { host: string } = userdbCommands.opts()
+    await getUserDb(host, dbname)
   }))
 
 userdbCommands
   .command('delete')
   .argument('<string>', 'database name')
   .action((async (dbname: string) => {
-    const { host, port }: { host: string, port: string } = userdbCommands.opts()
-    await deleteUserDb(host, port, dbname)
+    const { host }: { host: string } = userdbCommands.opts()
+    await deleteUserDb(host, dbname)
   }))
 
 userdbCommands

@@ -3,14 +3,14 @@ import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { Application } from "./types";
 
-export async function listApps(host: string, port: string): Promise<number> {
+export async function listApps(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
     const list = await axios.get(
-      `http://${host}:${port}/${userCredentials.userName}/application`,
+      `https://${host}/${userCredentials.userName}/application`,
       {
         headers: {
           Authorization: bearerToken,

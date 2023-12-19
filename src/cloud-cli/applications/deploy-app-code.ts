@@ -9,7 +9,7 @@ import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runti
 
 const deployDirectoryName = "dbos_deploy";
 
-export async function deployAppCode(appName: string, host: string, port: string): Promise<number> {
+export async function deployAppCode(appName: string, host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -49,7 +49,7 @@ export async function deployAppCode(appName: string, host: string, port: string)
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
     await axios.post(
-      `http://${host}:${port}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
         application_version: version,
         application_archive: zipData,
