@@ -2,13 +2,13 @@ import axios from "axios";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
-export async function deleteApp(appName: string, host: string, port: string): Promise<number> {
+export async function deleteApp(appName: string, host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}:${port}/${userCredentials.userName}/application/${appName}`, {
+    await axios.delete(`https://${host}/${userCredentials.userName}/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,

@@ -13,14 +13,14 @@ export interface UserDBInstance {
   readonly Port: number,
 }
 
-export async function createUserDb(host: string, port: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
+export async function createUserDb(host: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
     await axios.post(
-      `https://${host}:${port}/${userCredentials.userName}/databases/userdb`,
+      `https://${host}/${userCredentials.userName}/databases/userdb`,
       { Name: dbName, AdminName: adminName, AdminPassword: adminPassword },
       {
         headers: {
@@ -36,7 +36,7 @@ export async function createUserDb(host: string, port: string, dbName: string, a
       let status = "";
       while (status != "available") {
         await sleep(30000);
-        const userDBInfo = await getUserDBInfo(host, port, dbName);
+        const userDBInfo = await getUserDBInfo(host, dbName);
         logger.info(userDBInfo);
         status = userDBInfo.Status;
       }
@@ -50,13 +50,13 @@ export async function createUserDb(host: string, port: string, dbName: string, a
   }
 }
 
-export async function deleteUserDb(host: string, port: string, dbName: string) {
+export async function deleteUserDb(host: string, dbName: string) {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}:${port}/${userCredentials.userName}/databases/userdb/${dbName}`, {
+    await axios.delete(`https://${host}/${userCredentials.userName}/databases/userdb/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -72,11 +72,11 @@ export async function deleteUserDb(host: string, port: string, dbName: string) {
   }
 }
 
-export async function getUserDb(host: string, port: string, dbName: string) {
+export async function getUserDb(host: string, dbName: string) {
   const logger = new GlobalLogger();
 
   try {
-    const userDBInfo = await getUserDBInfo(host, port, dbName);
+    const userDBInfo = await getUserDBInfo(host, dbName);
     logger.info(userDBInfo);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
@@ -180,11 +180,11 @@ export function rollbackMigration(): number {
   return 0;
 }
 
-export async function getUserDBInfo(host: string, port: string, dbName: string): Promise<UserDBInstance> {
+export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`https://${host}:${port}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
+  const res = await axios.get(`https://${host}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,

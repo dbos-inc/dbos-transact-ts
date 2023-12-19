@@ -2,14 +2,14 @@ import axios from "axios";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 
-export async function registerApp(appName: string, dbname: string, host: string,  port: string, machines: number): Promise<number> {
+export async function registerApp(appName: string, dbname: string, host: string, machines: number): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
     const register = await axios.put(
-      `https://${host}:${port}/${userCredentials.userName}/application`,
+      `https://${host}/${userCredentials.userName}/application`,
       {
         name: appName,
         database: dbname,
