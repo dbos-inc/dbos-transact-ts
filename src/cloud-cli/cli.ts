@@ -16,7 +16,7 @@ import { credentialsExist } from "./utils";
 
 const program = new Command();
 
-const DEFAULT_HOST = process.env.DBOS_DOMAIN || "localhost";
+const DEFAULT_HOST = process.env.DBOS_DOMAIN;
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson = require('../../../package.json') as { version: string };
