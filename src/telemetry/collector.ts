@@ -25,8 +25,9 @@ export class TelemetryCollector {
   // Signals buffer management
   private readonly signals: SignalsQueue = new SignalsQueue();
   private readonly signalBufferID: NodeJS.Timeout;
-  private readonly processAndExportSignalsIntervalMs = 1000;
-  private readonly processAndExportSignalsMaxBatchSize = 10;
+  
+  // We iterate on an interval and export whatever has accumulated so far 
+  private readonly processAndExportSignalsIntervalMs = 100;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(readonly exporter?: ITelemetryExporter) {
@@ -50,7 +51,7 @@ export class TelemetryCollector {
 
   async processAndExportSignals(): Promise<void> {
     const batch: TelemetrySignal[] = [];
-    while (this.signals.size() > 0 && batch.length < this.processAndExportSignalsMaxBatchSize) {
+    while (this.signals.size() > 0) {
       const signal = this.pop();
       if (!signal) {
         break;
