@@ -1,11 +1,18 @@
 import axios from "axios";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
+import path from "node:path";
 
-export async function registerApp(appName: string, dbname: string, host: string, machines: number): Promise<number> {
+export async function registerApp(dbname: string, host: string, machines: number): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  logger.info("Retrieving application name from package.json")
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const appName = packageJson.name;
+  logger.info(`Using application name: ${appName}`)
 
   try {
     const register = await axios.put(

@@ -6,13 +6,20 @@ import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync } from "../../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
+import path from "path";
 
 const deployDirectoryName = "dbos_deploy";
 
-export async function deployAppCode(appName: string, host: string): Promise<number> {
+export async function deployAppCode(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  logger.info("Retrieving application name from package.json")
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const appName = packageJson.name;
+  logger.info(`Using application name: ${appName}`)
 
   try {
     createDirectory(deployDirectoryName);
