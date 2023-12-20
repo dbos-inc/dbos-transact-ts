@@ -10,6 +10,11 @@ import path from "path";
 
 const deployDirectoryName = "dbos_deploy";
 
+type DeployOutput = {
+  ApplicationName: string;
+  ApplicationVersion: string;
+}
+
 export async function deployAppCode(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
@@ -50,7 +55,7 @@ export async function deployAppCode(host: string): Promise<number> {
     execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
-    await axios.post(
+    const response = await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
         application_archive: zipData,
@@ -62,7 +67,8 @@ export async function deployAppCode(host: string): Promise<number> {
         },
       }
     );
-    logger.info(`Successfully deployed ${appName}`);
+    const deployOutput = response.data as DeployOutput;
+    logger.info(`Successfully deployed ${appName} with version ${deployOutput.ApplicationVersion}`);
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
