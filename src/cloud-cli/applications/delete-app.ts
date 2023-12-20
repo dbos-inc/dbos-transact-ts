@@ -8,11 +8,10 @@ export async function deleteApp(host: string): Promise<number> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  logger.info("Retrieving application name from package.json")
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
-  logger.info(`Using application name: ${appName}`)
+  logger.info(`Deleting application: ${appName}`)
 
   try {
     await axios.delete(`https://${host}/${userCredentials.userName}/application/${appName}`, {
