@@ -103,6 +103,11 @@ export class TypeParser {
         const module = decl.parent.parent.moduleSpecifier as ts.StringLiteral;
         return {name: name.getText(), module: module.text};
       }
+      if (ts.isImportClause(decl)) {
+        const name = pae.name;
+        const module = decl.parent.moduleSpecifier as ts.StringLiteral;
+        return { name: name.getText(), module: module.text };
+      }
     }
     return undefined;
   }

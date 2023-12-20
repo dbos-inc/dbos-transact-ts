@@ -123,14 +123,15 @@ describe("OpenApiGenerator", () => {
 
   it("OpenApiSecurityScheme RequiredRole", () => {
     const source = /*javascript*/`
-    import { TransactionContext, Transaction, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk'
-    import * as dbos from '@dbos-inc/dbos-sdk'
+    import { TransactionContext, Transaction, ArgSource, ArgSources, OpenApiSecurityScheme, RequiredRole } from '@dbos-inc/dbos-sdk';
+    import * as dbos from '@dbos-inc/dbos-sdk';
+    import dbossdk from '@dbos-inc/dbos-sdk';
 
     @OpenApiSecurityScheme({ type: 'http', scheme: 'bearer' })
     export class Hello {
       @dbos.GetApi('/greeting/:user')
       @RequiredRole(['user'])
-      static async helloTransaction(ctxt: HandlerContext, @ArgSource(ArgSources.URL) user: string): Promise<string>  {
+      static async helloTransaction(ctxt: HandlerContext, @dbossdk.ArgSource(ArgSources.URL) user: string): Promise<string>  {
         return "";
       }
     }
@@ -388,6 +389,3 @@ describe("OpenApiGenerator", () => {
     expect(openApi).toMatchObject(expected);
   })
 });
-
-
-
