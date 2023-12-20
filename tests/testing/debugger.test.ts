@@ -68,42 +68,30 @@ describe("debugger-test", () => {
     }
 
     @Workflow()
-    static async receiveWorkflow(ctxt: WorkflowContext, debug?: boolean) {
+    static async receiveWorkflow(ctxt: WorkflowContext) {
       const message1 = await ctxt.recv<string>();
       const message2 = await ctxt.recv<string>();
       const fail = await ctxt.recv("message3", 0);
-      if (debug) {
-        await ctxt.recv("shouldn't happen", 0);
-      }
       return message1 === "message1" && message2 === "message2" && fail === null;
     }
 
     @Workflow()
-    static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string, debug?: boolean) {
+    static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
       await ctxt.send(destinationUUID, "message1");
       await ctxt.send(destinationUUID, "message2");
-      if (debug) {
-        await ctxt.send(destinationUUID, "message3");
-      }
     }
 
     @Workflow()
-    static async setEventWorkflow(ctxt: WorkflowContext, debug?: boolean) {
+    static async setEventWorkflow(ctxt: WorkflowContext) {
       await ctxt.setEvent("key1", "value1");
       await ctxt.setEvent("key2", "value2");
-      if (debug) {
-        await ctxt.setEvent("key3", "value3");
-      }
       return 0;
     }
 
     @Workflow()
-    static async getEventWorkflow(ctxt: WorkflowContext, targetUUID: string, debug?: boolean) {
+    static async getEventWorkflow(ctxt: WorkflowContext, targetUUID: string) {
       const val1 = await ctxt.getEvent<string>(targetUUID, "key1");
       const val2 = await ctxt.getEvent<string>(targetUUID, "key2");
-      if (debug) {
-        await ctxt.getEvent(targetUUID, "key3");
-      }
       return val1 + "-" + val2;
     }
 
@@ -115,6 +103,14 @@ describe("debugger-test", () => {
       }
       DebuggerTest.cnt++;
       return;
+    }
+
+    // Workflow with different results.
+    // eslint-disable-next-line @typescript-eslint/require-await
+    @Workflow()
+    static async diffWorkflow(_ctxt: WorkflowContext, num: number) {
+      DebuggerTest.cnt += num;
+      return DebuggerTest.cnt;
     }
   }
 
@@ -140,8 +136,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    const nonExist = await debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username);
-    await expect(nonExist.getResult()).rejects.toThrow("Workflow status not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow("Workflow status or inputs not found!");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
@@ -177,7 +172,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("This should never happen during debug.");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("Workflow status or inputs not found!");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow("Workflow UUID not found!");
@@ -197,12 +192,11 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("This should never happen during debug.");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("Workflow status or inputs not found!");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow("Workflow UUID not found!");
   });
-
 
   test("debug-communicator", async () => {
     const wfUUID = uuidv1();
@@ -218,7 +212,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testCommunicator()).rejects.toThrow("Cannot find recorded communicator");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testCommunicator()).rejects.toThrow("Workflow status or inputs not found!");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testCommunicator()).rejects.toThrow("Workflow UUID not found!");
@@ -228,34 +222,42 @@ describe("debugger-test", () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    const handle = await testRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(false);
-    await expect(testRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, false).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
+    const handle = await testRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow();
+    await expect(testRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(false).then((x) => x.getResult())).resolves.toBe(true);
-    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, false).then((x) => x.getResult())).resolves.toBeFalsy();
-
-    // Execute a non-exist function ID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded send");
-    await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow(true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded recv");
+    await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow().then((x) => x.getResult())).resolves.toBe(true);
+    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, ).then((x) => x.getResult())).resolves.toBeFalsy();
   });
 
   test("debug-workflow-events", async() => {
     const getUUID = uuidv1();
     const setUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(false).then((x) => x.getResult())).resolves.toBe(0);
-    await expect(testRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, false).then((x) => x.getResult())).resolves.toBe("value1-value2");
+    await expect(testRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
+    await expect(testRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, ).then((x) => x.getResult())).resolves.toBe("value1-value2");
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(false).then((x) => x.getResult())).resolves.toBe(0);
-    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, false).then((x) => x.getResult())).resolves.toBe("value1-value2");
-
-    // Execute a non-exist function ID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow(true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded setEvent");
-    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, true).then((x) => x.getResult())).rejects.toThrow("Cannot find recorded getEvent");
+    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
+    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID).then((x) => x.getResult())).resolves.toBe("value1-value2");
   });
+
+  test("debug-workflow-input-output", async() => {
+    const wfUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    const res = await testRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(1)
+      .then((x) => x.getResult());
+    expect(res).toBe(1);
+    await testRuntime.destroy();
+
+    // Execute again with the provided UUID, should still get the same output.
+    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    expect(DebuggerTest.cnt).toBe(2);
+
+    // Execute again with different input, should still get the same output.
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow("Detect different input for the workflow");
+  })
 });
