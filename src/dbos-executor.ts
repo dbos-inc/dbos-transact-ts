@@ -498,19 +498,30 @@ export class DBOSExecutor {
 
     const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name);
 
-    // TODO: maybe also check the input args against the recorded ones.
-    const runWorkflow = async () => {
-      // A non-temp debug workflow must have run before.
-      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-      if (!wCtxt.isTempWorkflow && !wfStatus) {
-        throw new DBOSDebuggerError("Workflow status not found! UUID: " + workflowUUID);
-      }
+    // A workflow must have run before.
+    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+    const recordedInputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
+    if (!wfStatus || !recordedInputs) {
+      throw new DBOSDebuggerError("Workflow status or inputs not found! UUID: " + workflowUUID);
+    }
 
-      // Execute the workflow. We don't need to record anything.
-      return wf(wCtxt, ...args);
-    };
-    const workflowPromise: Promise<R> = runWorkflow();
+    // Make sure we use the same input.
+    if (JSON.stringify(args) !== JSON.stringify(recordedInputs)) {
+      throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${JSON.stringify(args)}\n Original: ${JSON.stringify(recordedInputs)}`);
+    }
 
+    const workflowPromise: Promise<R> = wf(wCtxt, ...args)
+      .then(async (result) => {
+        // Check if the result is the same.
+        const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
+        if (result === undefined && !recordedResult) {
+          return result;
+        }
+        if (JSON.stringify(result) !== JSON.stringify(recordedResult)) {
+          this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${JSON.stringify(result)}\n Original: ${JSON.stringify(recordedResult)}`);
+        }
+        return recordedResult; // Always return the recorded result.
+      });
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
