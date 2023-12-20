@@ -29,10 +29,6 @@ export async function deployAppCode(host: string): Promise<number> {
       return 1;
     }
 
-    // Parse version from config file. If missing, use current epoch
-    const version: string = configFile.version ?? Date.now().toString();
-    configFile.version = version;
-
     // Inject OTel export configuration
     if (!configFile.telemetry) {
       configFile.telemetry = {};
@@ -57,7 +53,6 @@ export async function deployAppCode(host: string): Promise<number> {
     await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
-        application_version: version,
         application_archive: zipData,
       },
       {
@@ -67,7 +62,7 @@ export async function deployAppCode(host: string): Promise<number> {
         },
       }
     );
-    logger.info(`Successfully deployed ${appName} with version ${version}`);
+    logger.info(`Successfully deployed ${appName}`);
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
