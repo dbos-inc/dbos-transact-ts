@@ -24,8 +24,9 @@ export async function listApps(host: string): Promise<number> {
     }
     const formattedData: Application[] = []
     for (const application of data) {
-      formattedData.push({ "Name": application.Name, "ID": application.ID, "Version": application.Version, "DatabaseName": application.DatabaseName, "MaxVMs": application.MaxVMs });
+      formattedData.push({ "Name": application.Name, "ID": application.ID, "Version": application.Version, "DatabaseName": application.DatabaseName, "MaxVMs": application.MaxVMs, "Status": application.Status });
     }
+    logger.info(`Listing applications for ${userCredentials.userName}`)
     console.log(JSON.stringify(formattedData));
     return 0;
   } catch (e) {
