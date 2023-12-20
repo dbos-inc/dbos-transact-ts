@@ -85,7 +85,7 @@ applicationCommands
 applicationCommands
   .command('deploy')
   .description('Deploy an application code to the cloud')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
     const exitCode = await deployAppCode(host);
     process.exit(exitCode);
@@ -94,7 +94,7 @@ applicationCommands
 applicationCommands
   .command('delete')
   .description('Delete a previously deployed application')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
     const exitCode = await deleteApp(host);
     process.exit(exitCode);
@@ -112,10 +112,9 @@ applicationCommands
 applicationCommands
   .command('logs')
   .description('Print the microVM logs of a deployed application')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await getAppLogs(options.name, host);
+    const exitCode = await getAppLogs(host);
     process.exit(exitCode);
   });
 
