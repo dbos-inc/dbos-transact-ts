@@ -113,7 +113,6 @@ export class TypeParser {
         const pae: ts.PropertyAccessExpression = node.expression.expression;
         // Let's imagine a module is the expression
         const { name, module } = this.#getImportSpecifierFromPAE(pae, this.#checker) ?? {};
-        //console.log("PROPERTY ACCESS: "+printAst(pae) + " ---- "+`${mod?.module}.${mod?.name}`);
         return { name, module, args: node.expression.arguments };
       }
       if (ts.isIdentifier(node.expression.expression)) {
