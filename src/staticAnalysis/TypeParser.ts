@@ -103,6 +103,11 @@ export class TypeParser {
         const module = decl.parent.parent.moduleSpecifier as ts.StringLiteral;
         return {name: name.getText(), module: module.text};
       }
+      if (ts.isImportClause(decl)) {
+        const name = pae.name;
+        const module = decl.parent.moduleSpecifier as ts.StringLiteral;
+        return { name: name.getText(), module: module.text };
+      }
     }
     return undefined;
   }
@@ -113,7 +118,6 @@ export class TypeParser {
         const pae: ts.PropertyAccessExpression = node.expression.expression;
         // Let's imagine a module is the expression
         const { name, module } = this.#getImportSpecifierFromPAE(pae, this.#checker) ?? {};
-        //console.log("PROPERTY ACCESS: "+printAst(pae) + " ---- "+`${mod?.module}.${mod?.name}`);
         return { name, module, args: node.expression.arguments };
       }
       if (ts.isIdentifier(node.expression.expression)) {
