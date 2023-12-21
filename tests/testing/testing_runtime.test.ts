@@ -1,6 +1,7 @@
 import { PoolClient } from "pg";
 import { TransactionContext } from "../../src/transaction";
 import { TestingRuntime, Transaction, Workflow, WorkflowContext, createTestingRuntime } from "../../src";
+import { v1 as uuidv1 } from "uuid";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -18,11 +19,20 @@ describe("testruntime-test", () => {
   });
 
   test("simple-workflow", async () => {
-    const res = await testRuntime.invoke(TestClass).testWorkflow(username).then(x => x.getResult());
+    const uuid = uuidv1();
+    const res = await testRuntime
+      .invoke(TestClass, uuid)
+      .testWorkflow(username)
+      .then((x) => x.getResult());
     const expectName = testRuntime.getConfig<string>("testvalue"); // Read application config.
     expect(JSON.parse(res)).toEqual({ current_user: expectName });
-  });
 
+    // Create a new testing runtime but don't drop the system DB.
+    const newTestRuntime = await createTestingRuntime([TestClass], configFilePath, false);
+    const handle = newTestRuntime.retrieveWorkflow(uuid);
+    expect(JSON.parse((await handle.getResult()) as string)).toEqual({ current_user: expectName });
+    await newTestRuntime.destroy();
+  });
 });
 
 class TestClass {

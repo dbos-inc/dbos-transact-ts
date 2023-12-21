@@ -19,20 +19,22 @@ import { Client } from "pg";
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
-export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath): Promise<TestingRuntime> {
+export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
   const [ dbosConfig ] = parseConfigFile({configfile: configFilePath});
 
-  // Drop system database. Testing runtime always uses Postgres for local testing.
-  const pgSystemClient = new Client({
-    user: dbosConfig.poolConfig.user,
-    port: dbosConfig.poolConfig.port,
-    host: dbosConfig.poolConfig.host,
-    password: dbosConfig.poolConfig.password,
-    database: dbosConfig.poolConfig.database,
-  });
-  await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
-  await pgSystemClient.end();
+  if (dropSysDB) {
+    // Drop system database. Testing runtime always uses Postgres for local testing.
+    const pgSystemClient = new Client({
+      user: dbosConfig.poolConfig.user,
+      port: dbosConfig.poolConfig.port,
+      host: dbosConfig.poolConfig.host,
+      password: dbosConfig.poolConfig.password,
+      database: dbosConfig.poolConfig.database,
+    });
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
+    await pgSystemClient.end();
+  }
 
   const otr = createInternalTestRuntime(userClasses, dbosConfig, undefined)
   return otr;
