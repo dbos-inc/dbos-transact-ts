@@ -70,6 +70,7 @@ export async function deployAppCode(host: string): Promise<number> {
     );
     const deployOutput = response.data as DeployOutput;
     logger.info(`Successfully deployed ${appName} with version ${deployOutput.ApplicationVersion}`);
+    logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
