@@ -14,4 +14,3 @@ database:
   user_dbclient: 'knex'
   migrate: ['migrate:latest']
   rollback: ['migrate:rollback']
-version: "1.0"

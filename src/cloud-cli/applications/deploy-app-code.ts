@@ -6,13 +6,25 @@ import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync } from "../../utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
+import path from "path";
 
 const deployDirectoryName = "dbos_deploy";
 
-export async function deployAppCode(appName: string, host: string): Promise<number> {
+type DeployOutput = {
+  ApplicationName: string;
+  ApplicationVersion: string;
+}
+
+export async function deployAppCode(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const appName = packageJson.name;
+  logger.info(`Loaded application name from package.json: ${appName}`)
+  logger.info(`Deploying application: ${appName}`)
 
   try {
     createDirectory(deployDirectoryName);
@@ -22,10 +34,6 @@ export async function deployAppCode(appName: string, host: string): Promise<numb
       logger.error(`failed to parse ${dbosConfigFilePath}`);
       return 1;
     }
-
-    // Parse version from config file. If missing, use current epoch
-    const version: string = configFile.version ?? Date.now().toString();
-    configFile.version = version;
 
     // Inject OTel export configuration
     if (!configFile.telemetry) {
@@ -48,10 +56,9 @@ export async function deployAppCode(appName: string, host: string): Promise<numb
     execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
-    await axios.post(
+    const response = await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
-        application_version: version,
         application_archive: zipData,
       },
       {
@@ -61,7 +68,9 @@ export async function deployAppCode(appName: string, host: string): Promise<numb
         },
       }
     );
-    logger.info(`Successfully deployed ${appName} with version ${version}`);
+    const deployOutput = response.data as DeployOutput;
+    logger.info(`Successfully deployed ${appName} with version ${deployOutput.ApplicationVersion}`);
+    logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

@@ -64,43 +64,39 @@ const applicationCommands = program
 applicationCommands
   .command('register')
   .description('Register a new application')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
   .requiredOption('-d, --database <string>', 'Specify the app database name')
   .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
-  .action(async (options: { name: string, database: string, machines: string }) => {
+  .action(async (options: { database: string, machines: string }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.name, options.database, host, parseInt(options.machines));
+    const exitCode = await registerApp(options.database, host, parseInt(options.machines));
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('update')
   .description('Update an application')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
   .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
-  .action(async (options: { name: string, machines: string }) => {
+  .action(async (options: { machines: string }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await updateApp(options.name, host, parseInt(options.machines));
+    const exitCode = await updateApp(host, parseInt(options.machines));
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('deploy')
   .description('Deploy an application code to the cloud')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await deployAppCode(options.name, host);
+    const exitCode = await deployAppCode(host);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('delete')
   .description('Delete a previously deployed application')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await deleteApp(options.name, host);
+    const exitCode = await deleteApp(host);
     process.exit(exitCode);
   });
 
@@ -116,10 +112,9 @@ applicationCommands
 applicationCommands
   .command('logs')
   .description('Print the microVM logs of a deployed application')
-  .requiredOption('-n, --name <string>', 'Specify the app name')
-  .action(async (options: { name: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await getAppLogs(options.name, host);
+    const exitCode = await getAppLogs(host);
     process.exit(exitCode);
   });
 

@@ -1,11 +1,17 @@
 import axios from "axios";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
+import path from "node:path";
 
-export async function getAppLogs(appName: string, host: string): Promise<number> {
+export async function getAppLogs(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const appName = packageJson.name;
+  logger.info(`Retrieving logs for application: ${appName}`)
 
   try {
     const res = await axios.get(`https://${host}/${userCredentials.userName}/logs/application/${appName}`, {
