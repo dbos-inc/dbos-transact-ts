@@ -23,6 +23,7 @@ export async function deployAppCode(host: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
+  logger.info(`Loaded application name from package.json: ${appName}`)
   logger.info(`Deploying application: ${appName}`)
 
   try {
