@@ -27,10 +27,13 @@ export async function deployAppCode(host: string): Promise<number> {
   try {
     createDirectory(deployDirectoryName);
 
+    // Prune unnecessary dependencies
     execSync(`npm prune --omit=dev node_modules/* `);
+    // Package the application into a .zip file
     execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
-
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
+
+    // Submit the deploy request
     const response = await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
@@ -46,6 +49,7 @@ export async function deployAppCode(host: string): Promise<number> {
     const deployOutput = response.data as DeployOutput;
     logger.info(`Submitted deploy request for ${appName}. Assigned version: ${deployOutput.ApplicationVersion}`);
 
+    // Wait for the application to become available
     let count = 0
     let applicationAvailable = false
     while (!applicationAvailable) {
@@ -57,6 +61,7 @@ export async function deployAppCode(host: string): Promise<number> {
         }
       }
 
+      // Retrieve the application status, check if it is "AVAILABLE"
       const list = await axios.get(
         `https://${host}/${userCredentials.userName}/application`,
         {
