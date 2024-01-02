@@ -27,4 +27,4 @@ Our documentation has the following sections:
 
 ## Community
 
-Please join our community on [Discord](https://discord.gg/VrYtAZD5v)!  If you see a bug or have a feature request, don't hesitate to open an issue here on GitHub.
+Please join our community on [Discord](https://discord.gg/fMwQjeW5zg)!  If you see a bug or have a feature request, don't hesitate to open an issue here on GitHub.
