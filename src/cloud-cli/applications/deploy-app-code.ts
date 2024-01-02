@@ -29,31 +29,8 @@ export async function deployAppCode(host: string): Promise<number> {
   try {
     createDirectory(deployDirectoryName);
 
-    const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-    if (!configFile) {
-      logger.error(`failed to parse ${dbosConfigFilePath}`);
-      return 1;
-    }
-
-    // Inject OTel export configuration
-    if (!configFile.telemetry) {
-      configFile.telemetry = {};
-    }
-    configFile.telemetry.OTLPExporter = {
-      logsEndpoint: "http://otel-collector:4318/v1/logs",
-      tracesEndpoint: "http://otel-collector:4318/v1/traces",
-    };
-
-    try {
-      fs.writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, YAML.stringify(configFile));
-    } catch (e) {
-      logger.error(`failed to write ${dbosConfigFilePath}: ${(e as Error).message}`);
-      return 1;
-    }
-
     execSync(`npm prune --omit=dev node_modules/* `);
-    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${dbosConfigFilePath} > /dev/null`);
-    execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
+    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
 
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
     const response = await axios.post(
