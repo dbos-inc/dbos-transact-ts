@@ -1,12 +1,10 @@
 import axios from "axios";
-import YAML from "yaml";
 import { execSync } from "child_process";
-import fs from "fs";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
-import { createDirectory, readFileSync } from "../../utils";
-import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
+import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
+import { Application } from "./types";
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -24,7 +22,7 @@ export async function deployAppCode(host: string): Promise<number> {
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
   logger.info(`Loaded application name from package.json: ${appName}`)
-  logger.info(`Deploying application: ${appName}`)
+  logger.info(`Submitting deploy request for ${appName}`)
 
   try {
     createDirectory(deployDirectoryName);
@@ -46,7 +44,36 @@ export async function deployAppCode(host: string): Promise<number> {
       }
     );
     const deployOutput = response.data as DeployOutput;
-    logger.info(`Successfully deployed ${appName} with version ${deployOutput.ApplicationVersion}`);
+    logger.info(`Submitted deploy request for ${appName}. Assigned version: ${deployOutput.ApplicationVersion}`);
+
+    let count = 0
+    let applicationAvailable = false
+    while (!applicationAvailable) {
+      count += 1
+      if (count % 5 === 0) {
+        logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
+        if (count > 20) {
+          logger.info(`If ${appName} takes too long to become available, check its logs at...`);
+        }
+      }
+
+      const list = await axios.get(
+        `https://${host}/${userCredentials.userName}/application`,
+        {
+          headers: {
+            Authorization: bearerToken,
+          },
+        }
+      );
+      const applications: Application[] = list.data as Application[];
+      for (const application of applications) {
+        if (application.Name === appName && application.Status === "AVAILABLE") {
+          applicationAvailable = true
+        }
+      }
+      await sleep(1000)
+    }
+    logger.info(`Application ${appName} successfuly deployed`)
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
@@ -59,3 +86,4 @@ export async function deployAppCode(host: string): Promise<number> {
     }
   }
 }
+
