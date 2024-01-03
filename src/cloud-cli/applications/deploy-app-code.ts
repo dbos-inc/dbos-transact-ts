@@ -100,10 +100,13 @@ function buildAppInDocker(appName: string) {
     // Dockerfile content
     const dockerFileContent = `
 FROM node:lts-bookworm-slim
+RUN apt update
+RUN apt install -y zip
 WORKDIR /app
 COPY . .
 RUN npm run build
-RUN npm prune --omit=dev && zip -ry deploy.zip ./* -x "deploy.zip" -x "${deployDirectoryName}/*" > /dev/null
+RUN npm prune --omit=dev
+RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
 `;
 
     // Write the Dockerfile
@@ -113,7 +116,7 @@ RUN npm prune --omit=dev && zip -ry deploy.zip ./* -x "deploy.zip" -x "${deployD
     // Run the container
     execSync(`docker run -d --name ${containerName} ${appName}`);
     // Copy the archive from the container to the local deploy directory
-    execSync(`docker cp ${containerName}:/app/deploy.zip ${deployDirectoryName}/deploy.zip`);
+    execSync(`docker cp ${containerName}:/app/${appName}.zip ${deployDirectoryName}/${appName}.zip`);
     // Stop and remove the container
     execSync(`docker stop ${containerName}`);
     execSync(`docker rm ${containerName}`);
