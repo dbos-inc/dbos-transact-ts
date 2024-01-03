@@ -6,7 +6,6 @@ import { getCloudCredentials, runCommand } from "../utils";
 import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
 import { Application } from "./types";
-import { loggers } from "winston";
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -33,6 +32,7 @@ export async function deployAppCode(host: string): Promise<number> {
     return 1;
   }
 
+  // Build the application inside a Docker container using the same base image as our cloud setup
   logger.info(`Building ${appName} using Docker`)
   const dockerSuccess = await buildAppInDocker(appName);
   if (!dockerSuccess) {
@@ -104,6 +104,8 @@ export async function deployAppCode(host: string): Promise<number> {
 
 async function buildAppInDocker(appName: string): Promise<boolean> {
   const logger = new GlobalLogger();
+
+  // Verify Docker is running
   try {
     execSync(`docker > /dev/null 2>&1`)
   } catch (e) {
