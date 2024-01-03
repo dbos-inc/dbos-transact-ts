@@ -118,9 +118,8 @@ async function buildAppInDocker(appName: string): Promise<boolean> {
 
   // Dockerfile content
   const dockerFileContent = `
-FROM node:lts-bookworm-slim
-RUN apt update
-RUN apt install -y zip
+FROM node:18-alpine3.17
+RUN apk update && apk add zip
 WORKDIR /app
 COPY . .
 RUN npm clean-install
