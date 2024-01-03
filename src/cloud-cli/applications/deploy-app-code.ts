@@ -1,12 +1,10 @@
 import axios from "axios";
-import YAML from "yaml";
 import { execSync } from "child_process";
-import fs from "fs";
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
-import { createDirectory, readFileSync } from "../../utils";
-import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../dbos-runtime/config";
+import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
+import { Application } from "./types";
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -24,38 +22,18 @@ export async function deployAppCode(host: string): Promise<number> {
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
   logger.info(`Loaded application name from package.json: ${appName}`)
-  logger.info(`Deploying application: ${appName}`)
+  logger.info(`Submitting deploy request for ${appName}`)
 
   try {
     createDirectory(deployDirectoryName);
 
-    const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-    if (!configFile) {
-      logger.error(`failed to parse ${dbosConfigFilePath}`);
-      return 1;
-    }
-
-    // Inject OTel export configuration
-    if (!configFile.telemetry) {
-      configFile.telemetry = {};
-    }
-    configFile.telemetry.OTLPExporter = {
-      logsEndpoint: "http://otel-collector:4318/v1/logs",
-      tracesEndpoint: "http://otel-collector:4318/v1/traces",
-    };
-
-    try {
-      fs.writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, YAML.stringify(configFile));
-    } catch (e) {
-      logger.error(`failed to write ${dbosConfigFilePath}: ${(e as Error).message}`);
-      return 1;
-    }
-
+    // Prune unnecessary dependencies
     execSync(`npm prune --omit=dev node_modules/* `);
-    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* ${dbosConfigFilePath} > /dev/null`);
-    execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
-
+    // Package the application into a .zip file
+    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
+
+    // Submit the deploy request
     const response = await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
@@ -69,7 +47,38 @@ export async function deployAppCode(host: string): Promise<number> {
       }
     );
     const deployOutput = response.data as DeployOutput;
-    logger.info(`Successfully deployed ${appName} with version ${deployOutput.ApplicationVersion}`);
+    logger.info(`Submitted deploy request for ${appName}. Assigned version: ${deployOutput.ApplicationVersion}`);
+
+    // Wait for the application to become available
+    let count = 0
+    let applicationAvailable = false
+    while (!applicationAvailable) {
+      count += 1
+      if (count % 5 === 0) {
+        logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
+        if (count > 20) {
+          logger.info(`If ${appName} takes too long to become available, check its logs at...`);
+        }
+      }
+
+      // Retrieve the application status, check if it is "AVAILABLE"
+      const list = await axios.get(
+        `https://${host}/${userCredentials.userName}/application`,
+        {
+          headers: {
+            Authorization: bearerToken,
+          },
+        }
+      );
+      const applications: Application[] = list.data as Application[];
+      for (const application of applications) {
+        if (application.Name === appName && application.Status === "AVAILABLE") {
+          applicationAvailable = true
+        }
+      }
+      await sleep(1000)
+    }
+    logger.info(`Application ${appName} successfuly deployed`)
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
@@ -82,3 +91,4 @@ export async function deployAppCode(host: string): Promise<number> {
     }
   }
 }
+
