@@ -95,7 +95,7 @@ export async function deployAppCode(host: string): Promise<number> {
 
 function buildAppInDocker(appName: string) {
     const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
-    const containerName = 'dbos-builder';
+    const containerName = `dbos-builder-${appName}`;
 
     // Dockerfile content
     const dockerFileContent = `
