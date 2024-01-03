@@ -1,5 +1,6 @@
 import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import fs from "fs";
+import { spawn, SpawnOptionsWithoutStdio, StdioOptions } from 'child_process';
 
 export function getCloudCredentials(): DBOSCloudCredentials {
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
@@ -11,4 +12,25 @@ export function getCloudCredentials(): DBOSCloudCredentials {
 
 export function credentialsExist(): boolean {
   return fs.existsSync(`./${dbosEnvPath}/credentials`);
+}
+
+// Run a command, streaming its output to stdout
+export function runCommand(command: string, args: string[] = []): Promise<number> {
+  return new Promise((resolve, reject) => {
+      const stdio: StdioOptions = 'inherit';
+
+      const process = spawn(command, args, { stdio });
+
+      process.on('close', (code) => {
+          if (code === 0) {
+              resolve(code);
+          } else {
+              reject(new Error(`Command "${command}" exited with code ${code}`));
+          }
+      });
+
+      process.on('error', (error) => {
+          reject(error);
+      });
+  });
 }

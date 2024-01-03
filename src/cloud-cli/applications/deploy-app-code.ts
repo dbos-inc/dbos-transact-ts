@@ -2,10 +2,11 @@ import axios from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
 import { GlobalLogger } from "../../telemetry/logs";
-import { getCloudCredentials } from "../utils";
+import { getCloudCredentials, runCommand } from "../utils";
 import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
 import { Application } from "./types";
+import { loggers } from "winston";
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -33,7 +34,7 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 
   logger.info(`Building ${appName} using Docker`)
-  const dockerSuccess = buildAppInDocker(appName);
+  const dockerSuccess = await buildAppInDocker(appName);
   if (!dockerSuccess) {
     return 1;
   }
@@ -101,7 +102,15 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 }
 
-function buildAppInDocker(appName: string): boolean {
+async function buildAppInDocker(appName: string): Promise<boolean> {
+  const logger = new GlobalLogger();
+  try {
+    execSync(`docker > /dev/null 2>&1`)
+  } catch (e) {
+    logger.error("Docker not found.  To deploy, please start the Docker daemon and make the `docker` command runnable without sudo.")
+    return false
+  }
+
     const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
     const containerName = `dbos-builder-${appName}`;
 
@@ -120,8 +129,8 @@ RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*"
 
     // Write the Dockerfile
     writeFileSync(dockerFileName, dockerFileContent);
-    // Build the Docker image
-    execSync(`docker build -t ${appName} -f ${dockerFileName} .`);
+    // Build the Docker image.  As build takes a long time, use runCommand to stream its output to stdout.
+    await runCommand('docker', ['build', '-t', appName, '-f', dockerFileName, '.'])
     // Run the container
     execSync(`docker run -d --name ${containerName} ${appName}`);
     // Copy the archive from the container to the local deploy directory
