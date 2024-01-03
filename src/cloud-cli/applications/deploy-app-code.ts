@@ -1,13 +1,11 @@
 import axios from "axios";
 import { execSync } from "child_process";
-import { writeFileSync } from 'fs';
+import { writeFileSync, existsSync } from 'fs';
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
 import { Application } from "./types";
-
-
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -25,16 +23,26 @@ export async function deployAppCode(host: string): Promise<number> {
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
   logger.info(`Loaded application name from package.json: ${appName}`)
-  logger.info(`Submitting deploy request for ${appName}`)
+
+  createDirectory(deployDirectoryName);
+
+  // Verify that package-lock.json exists
+  if (!existsSync(path.join(process.cwd(), 'package-lock.json'))) {
+    logger.error("package-lock.json not found. Please run 'npm install' before deploying.")
+    return 1;
+  }
+
+  logger.info(`Building ${appName} using Docker`)
+  const dockerSuccess = buildAppInDocker(appName);
+  if (!dockerSuccess) {
+    return 1;
+  }
 
   try {
-    createDirectory(deployDirectoryName);
-
-    buildAppInDocker(appName);
-
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
 
     // Submit the deploy request
+    logger.info(`Submitting deploy request for ${appName}`)
     const response = await axios.post(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
@@ -93,7 +101,7 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 }
 
-function buildAppInDocker(appName: string) {
+function buildAppInDocker(appName: string): boolean {
     const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
     const containerName = `dbos-builder-${appName}`;
 
@@ -104,6 +112,7 @@ RUN apt update
 RUN apt install -y zip
 WORKDIR /app
 COPY . .
+RUN npm clean-install
 RUN npm run build
 RUN npm prune --omit=dev
 RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
@@ -120,4 +129,5 @@ RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*"
     // Stop and remove the container
     execSync(`docker stop ${containerName}`);
     execSync(`docker rm ${containerName}`);
+    return true;
 }
