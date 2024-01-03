@@ -1,10 +1,13 @@
 import axios from "axios";
 import { execSync } from "child_process";
+import { writeFileSync } from 'fs';
 import { GlobalLogger } from "../../telemetry/logs";
 import { getCloudCredentials } from "../utils";
 import { createDirectory, readFileSync, sleep } from "../../utils";
 import path from "path";
 import { Application } from "./types";
+
+
 
 const deployDirectoryName = "dbos_deploy";
 
@@ -27,10 +30,8 @@ export async function deployAppCode(host: string): Promise<number> {
   try {
     createDirectory(deployDirectoryName);
 
-    // Prune unnecessary dependencies
-    execSync(`npm prune --omit=dev node_modules/* `);
-    // Package the application into a .zip file
-    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
+    buildAppInDocker(appName);
+
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
 
     // Submit the deploy request
@@ -92,3 +93,28 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 }
 
+function buildAppInDocker(appName: string) {
+    const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
+    const containerName = 'dbos-builder';
+
+    // Dockerfile content
+    const dockerFileContent = `
+FROM node:lts-bookworm-slim
+WORKDIR /app
+COPY . .
+RUN npm run build
+RUN npm prune --omit=dev && zip -ry deploy.zip ./* -x "deploy.zip" -x "${deployDirectoryName}/*" > /dev/null
+`;
+
+    // Write the Dockerfile
+    writeFileSync(dockerFileName, dockerFileContent);
+    // Build the Docker image
+    execSync(`docker build -t ${appName} -f ${dockerFileName} .`);
+    // Run the container
+    execSync(`docker run -d --name ${containerName} ${appName}`);
+    // Copy the archive from the container to the local deploy directory
+    execSync(`docker cp ${containerName}:/app/deploy.zip ${deployDirectoryName}/deploy.zip`);
+    // Stop and remove the container
+    execSync(`docker stop ${containerName}`);
+    execSync(`docker rm ${containerName}`);
+}
