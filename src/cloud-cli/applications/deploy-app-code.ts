@@ -111,11 +111,11 @@ async function buildAppInDocker(appName: string): Promise<boolean> {
     return false
   }
 
-    const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
-    const containerName = `dbos-builder-${appName}`;
+  const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
+  const containerName = `dbos-builder-${appName}`;
 
-    // Dockerfile content
-    const dockerFileContent = `
+  // Dockerfile content
+  const dockerFileContent = `
 FROM node:lts-bookworm-slim
 RUN apt update
 RUN apt install -y zip
@@ -126,7 +126,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
 `;
-
+  try {
     // Write the Dockerfile
     writeFileSync(dockerFileName, dockerFileContent);
     // Build the Docker image.  As build takes a long time, use runCommand to stream its output to stdout.
@@ -139,4 +139,8 @@ RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*"
     execSync(`docker stop ${containerName}`);
     execSync(`docker rm ${containerName}`);
     return true;
+  } catch (e) {
+    logger.error(`failed to build application ${appName}: ${(e as Error).message}`);
+    return false;
+  }
 }
