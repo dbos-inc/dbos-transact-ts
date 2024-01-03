@@ -1,6 +1,6 @@
 import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import fs from "fs";
-import { spawn, SpawnOptionsWithoutStdio, StdioOptions } from 'child_process';
+import { spawn, StdioOptions } from 'child_process';
 
 export function getCloudCredentials(): DBOSCloudCredentials {
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
