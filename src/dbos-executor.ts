@@ -167,7 +167,7 @@ export class DBOSExecutor {
 
     this.flushBufferID = setInterval(() => {
       if (!this.debugMode) {
-        void this.flushWorkflowStatusBuffer();
+        void this.flushWorkflowBuffers();
       }
     }, this.flushBufferIntervalMs);
     this.logger.debug("Started workflow status buffer worker");
@@ -311,7 +311,7 @@ export class DBOSExecutor {
       await Promise.allSettled(this.pendingAsyncWrites.values());
     }
     clearInterval(this.flushBufferID);
-    await this.flushWorkflowStatusBuffer();
+    await this.flushWorkflowBuffers();
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
@@ -395,16 +395,7 @@ export class DBOSExecutor {
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     } else {
       // For temporary workflows, instead asynchronously record inputs.
-      const setWorkflowInputs: Promise<void> = this.systemDatabase
-        .setWorkflowInputs<T>(workflowUUID, args)
-        .catch((error) => {
-        (error as Error).message = `Error asynchronously setting workflow inputs: ${(error as Error).message}`;
-          this.logger.error(error);
-        })
-        .finally(() => {
-          this.pendingAsyncWrites.delete(workflowUUID);
-        });
-      this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
+      this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
     }
 
     const runWorkflow = async () => {
@@ -683,8 +674,9 @@ export class DBOSExecutor {
   /**
    * Periodically flush the workflow output buffer to the system database.
    */
-  async flushWorkflowStatusBuffer() {
+  async flushWorkflowBuffers() {
     if (this.initialized) {
+      await this.systemDatabase.flushWorkflowInputsBuffer();
       await this.systemDatabase.flushWorkflowStatusBuffer();
     }
   }

@@ -17,12 +17,13 @@ export interface SystemDatabase {
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
   initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
-  flushWorkflowStatusBuffer(): Promise<Array<string>>;
+  flushWorkflowStatusBuffer(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
-  setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : Promise<void>;
+  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+  flushWorkflowInputsBuffer(): Promise<void>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
@@ -64,6 +65,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowEventsMap: Record<string, () => void> = {};
 
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
+  readonly workflowInputsBuffer: Map<string, any[]> = new Map();
   readonly flushBatchSize = 100;
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
@@ -130,7 +132,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   /**
    * Flush the workflow output buffer to the database.
    */
-  async flushWorkflowStatusBuffer() {
+  async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
     const totalSize = localBuffer.size;
@@ -173,7 +175,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
       }
     }
-    return Array.from(localBuffer.keys());
+    return;
   }
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
@@ -192,11 +194,54 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(i => i.workflow_uuid);
   }
 
-  async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
-    await this.pool.query<workflow_inputs>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO NOTHING`,
-      [workflowUUID, JSON.stringify(args)]
-    )
+  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
+    this.workflowInputsBuffer.set(workflowUUID, args);
+  }
+
+  async flushWorkflowInputsBuffer(): Promise<void> {
+    const localBuffer = new Map(this.workflowInputsBuffer);
+    this.workflowInputsBuffer.clear();
+    const totalSize = localBuffer.size;
+    try {
+      let finishedCnt = 0;
+      while (finishedCnt < totalSize) {
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES `;
+        let paramCnt = 1;
+        const values: any[] = [];
+        const batchUUIDs: string[] = [];
+        for (const [workflowUUID, args] of localBuffer) {
+          if (paramCnt > 1) {
+            sqlStmt += ", ";
+          }
+          sqlStmt += `($${paramCnt++}, $${paramCnt++})`;
+          values.push(workflowUUID, JSON.stringify(args));
+          batchUUIDs.push(workflowUUID);
+          finishedCnt++;
+
+          if (batchUUIDs.length >= this.flushBatchSize) {
+            // Cap at the batch size.
+            break;
+          }
+        }
+        sqlStmt += " ON CONFLICT (workflow_uuid) DO NOTHING;";
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        await this.pool.query(sqlStmt, values);
+
+        // Clean up after each batch succeeds
+        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+      }
+    } catch (error) {
+      (error as Error).message = `Error flushing workflow inputs buffer: ${(error as Error).message}`;
+      this.logger.error(error);
+      // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
+      for (const [workflowUUID, args] of localBuffer) {
+        if (!this.workflowInputsBuffer.has(workflowUUID)) {
+          this.workflowInputsBuffer.set(workflowUUID, args)
+        }
+      }
+    }
+    return;
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
