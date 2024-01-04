@@ -159,7 +159,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         sqlStmt += " ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;";
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         await this.pool.query(sqlStmt, values);
 
         // Clean up after each batch succeeds
@@ -225,7 +224,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         sqlStmt += " ON CONFLICT (workflow_uuid) DO NOTHING;";
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         await this.pool.query(sqlStmt, values);
 
         // Clean up after each batch succeeds
