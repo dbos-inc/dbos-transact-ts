@@ -205,7 +205,7 @@ export class DBOSHttpServer {
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             if (e instanceof Error) {
-              oc.logger.error(e.message);
+              oc.logger.error(e);
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = (e as DBOSResponseError)?.status || 500;
               const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
