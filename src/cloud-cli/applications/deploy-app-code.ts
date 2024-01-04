@@ -109,7 +109,7 @@ async function buildAppInDocker(appName: string): Promise<boolean> {
   try {
     execSync(`docker > /dev/null 2>&1`)
   } catch (e) {
-    logger.error("Docker not found.  To deploy, please start the Docker daemon and make the `docker` command runnable without sudo.")
+    logger.error("Docker not available.  To deploy, please start the Docker daemon and make the `docker` command runnable without sudo.")
     return false
   }
 
