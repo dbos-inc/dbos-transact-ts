@@ -64,6 +64,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowEventsMap: Record<string, () => void> = {};
 
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
+  readonly flushBatchSize = 100;
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
     const poolConfig = { ...pgPoolConfig };
@@ -132,18 +133,36 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async flushWorkflowStatusBuffer() {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
+    const totalSize = localBuffer.size;
     try {
-      const client: PoolClient = await this.pool.connect();
-      await client.query("BEGIN");
-      for (const [workflowUUID, status] of localBuffer) {
-        await client.query(
-          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
-          DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;`,
-          [workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID]
-        );
+      let finishedCnt = 0;
+      while (finishedCnt < totalSize) {
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES `;
+        let paramCnt = 1;
+        const values: any[] = [];
+        const batchUUIDs: string[] = [];
+        for (const [workflowUUID, status] of localBuffer) {
+          if (paramCnt > 1) {
+            sqlStmt += ", ";
+          }
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          values.push(workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID);
+          batchUUIDs.push(workflowUUID);
+          finishedCnt++;
+
+          if (batchUUIDs.length >= this.flushBatchSize) {
+            // Cap at the batch size.
+            break;
+          }
+        }
+        sqlStmt += " ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;";
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        await this.pool.query(sqlStmt, values);
+
+        // Clean up after each batch succeeds
+        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
       }
-      await client.query("COMMIT");
-      client.release();
     } catch (error) {
       (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
       this.logger.error(error);
