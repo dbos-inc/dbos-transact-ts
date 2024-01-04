@@ -30,6 +30,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   workflowInputsDB: fdb.Database<string, string, unknown, unknown>;
 
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
+  readonly workflowInputsBuffer: Map<string, any[]> = new Map();
 
   constructor() {
     fdb.setAPIVersion(710, 710);
@@ -106,7 +107,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     this.workflowStatusBuffer.set(workflowUUID, status);
   }
 
-  async flushWorkflowStatusBuffer(): Promise<string[]> {
+  // TODO: support batching
+  async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -124,7 +126,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
         });
       }
     });
-    return Array.from(localBuffer.keys());
+    return;
   }
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
@@ -145,14 +147,24 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return workflows.filter((i) => i[1].status === StatusString.PENDING && i[1].executorID === executorID).map((i) => i[0]);
   }
 
-  async setWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): Promise<void> {
-    await this.dbRoot.doTransaction(async (txn) => {
-      const inputsDB = txn.at(this.workflowInputsDB);
-      const inputs = await inputsDB.get(workflowUUID);
-      if (inputs === undefined) {
-        inputsDB.set(workflowUUID, args);
+  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
+    this.workflowInputsBuffer.set(workflowUUID, args);
+  }
+
+  // TODO: support batching
+  async flushWorkflowInputsBuffer(): Promise<void> {
+    const localBuffer = new Map(this.workflowInputsBuffer);
+    this.workflowInputsBuffer.clear();
+    // eslint-disable-next-line @typescript-eslint/require-await
+    await this.workflowInputsDB.doTransaction(async (txn) => {
+      for (const [workflowUUID, args] of localBuffer) {
+        const inputs = await txn.get(workflowUUID);
+        if (inputs === undefined) {
+          txn.set(workflowUUID, args);
+        }
       }
     });
+    return;
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {

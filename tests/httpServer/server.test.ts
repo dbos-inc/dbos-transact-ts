@@ -157,7 +157,7 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
 
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    await dbosExec.flushWorkflowStatusBuffer();
+    await dbosExec.flushWorkflowBuffers();
 
     // Retrieve the workflow with UUID.
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);

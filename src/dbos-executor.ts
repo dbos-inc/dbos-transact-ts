@@ -17,9 +17,10 @@ import {
   WorkflowContextImpl,
   WorkflowStatus,
   StatusString,
+  BufferedResult,
 } from './workflow';
 
-import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
+import { Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
@@ -36,7 +37,6 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
-  UserDatabaseClient,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -115,7 +115,7 @@ export class DBOSExecutor {
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
-  readonly pendingAsyncWrites: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to asynchronous write promise
+  readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -167,7 +167,7 @@ export class DBOSExecutor {
 
     this.flushBufferID = setInterval(() => {
       if (!this.debugMode) {
-        void this.flushWorkflowStatusBuffer();
+        void this.flushWorkflowBuffers();
       }
     }, this.flushBufferIntervalMs);
     this.logger.debug("Started workflow status buffer worker");
@@ -306,12 +306,8 @@ export class DBOSExecutor {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
     }
-    if (this.pendingAsyncWrites.size > 0) {
-      this.logger.info("Waiting for pending buffer flushes to finish");
-      await Promise.allSettled(this.pendingAsyncWrites.values());
-    }
     clearInterval(this.flushBufferID);
-    await this.flushWorkflowStatusBuffer();
+    await this.flushWorkflowBuffers();
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.telemetryCollector.destroy();
@@ -395,16 +391,7 @@ export class DBOSExecutor {
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     } else {
       // For temporary workflows, instead asynchronously record inputs.
-      const setWorkflowInputs: Promise<void> = this.systemDatabase
-        .setWorkflowInputs<T>(workflowUUID, args)
-        .catch((error) => {
-        (error as Error).message = `Error asynchronously setting workflow inputs: ${(error as Error).message}`;
-          this.logger.error(error);
-        })
-        .finally(() => {
-          this.pendingAsyncWrites.delete(workflowUUID);
-        });
-      this.pendingAsyncWrites.set(workflowUUID, setWorkflowInputs);
+      this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
     }
 
     const runWorkflow = async () => {
@@ -444,23 +431,9 @@ export class DBOSExecutor {
         this.tracer.endSpan(wCtxt.span);
       }
       // Asynchronously flush the result buffer.
-      const resultBufferFlush: Promise<void> = this.userDatabase
-        .transaction(
-          async (client: UserDatabaseClient) => {
-            if (wCtxt.resultBuffer.size > 0) {
-              await wCtxt.flushResultBuffer(client);
-            }
-          },
-          { isolationLevel: IsolationLevel.ReadCommitted }
-        )
-        .catch((error) => {
-          (error as Error).message = `Error asynchronously flushing result buffer: ${(error as Error).message}`;
-          this.logger.error(error);
-        })
-        .finally(() => {
-          this.pendingAsyncWrites.delete(workflowUUID);
-        });
-      this.pendingAsyncWrites.set(workflowUUID, resultBufferFlush);
+      if (wCtxt.resultBuffer.size > 0) {
+        this.workflowResultBuffer.set(wCtxt.workflowUUID, wCtxt.resultBuffer);
+      }
       return result;
     };
     const workflowPromise: Promise<R> = runWorkflow();
@@ -683,9 +656,59 @@ export class DBOSExecutor {
   /**
    * Periodically flush the workflow output buffer to the system database.
    */
-  async flushWorkflowStatusBuffer() {
+  async flushWorkflowBuffers() {
     if (this.initialized) {
+      await this.systemDatabase.flushWorkflowInputsBuffer();
+      await this.flushWorkflowResultBuffer();
       await this.systemDatabase.flushWorkflowStatusBuffer();
+    }
+  }
+
+  async flushWorkflowResultBuffer(): Promise<void> {
+    const localBuffer = new Map(this.workflowResultBuffer);
+    this.workflowResultBuffer.clear();
+    const totalSize = localBuffer.size;
+    const flushBatchSize = 50;
+    try {
+      let finishedCnt = 0;
+      while (finishedCnt < totalSize) {
+        let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+        let paramCnt = 1;
+        const values: any[] = [];
+        const batchUUIDs: string[] = [];
+        for (const [workflowUUID, wfBuffer] of localBuffer) {
+          for (const [funcID, recorded] of wfBuffer) {
+            const output = recorded.output;
+            const txnSnapshot = recorded.txn_snapshot;
+            if (paramCnt > 1) {
+              sqlStmt += ", ";
+            }
+            sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++})`;
+            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot);
+          }
+          batchUUIDs.push(workflowUUID);
+          finishedCnt++;
+          if (batchUUIDs.length >= flushBatchSize) {
+            // Cap at the batch size.
+            break;
+          }
+        }
+        this.logger.debug(sqlStmt);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        await this.userDatabase.query(sqlStmt, ...values);
+
+        // Clean up after each batch succeeds
+        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+      }
+    } catch (error) {
+      (error as Error).message = `Error flushing workflow result buffer: ${(error as Error).message}`;
+      this.logger.error(error);
+      // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
+      for (const [workflowUUID, wfBuffer] of localBuffer) {
+        if (!this.workflowResultBuffer.has(workflowUUID)) {
+          this.workflowResultBuffer.set(workflowUUID, wfBuffer)
+        }
+      }
     }
   }
 

@@ -49,7 +49,7 @@ export interface PgTransactionId {
   txid: string;
 }
 
-interface BufferedResult {
+export interface BufferedResult {
   output: unknown;
   txn_snapshot: string;
 }

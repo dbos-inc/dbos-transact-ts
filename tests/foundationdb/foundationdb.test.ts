@@ -73,7 +73,7 @@ describe("foundationdb-dbos", () => {
     await expect(invokedHandle.then((x) => x.getResult())).resolves.toBe(3);
 
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    await dbosExec.flushWorkflowStatusBuffer();
+    await dbosExec.flushWorkflowBuffers();
     await expect(retrievedHandle.getResult()).resolves.toBe(3);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,

@@ -157,7 +157,7 @@ describe("oaoo-tests", () => {
     ).resolves.toBe(1);
 
     // Retrieve output of the child workflow.
-    await dbosExec.flushWorkflowStatusBuffer();
+    await dbosExec.flushWorkflowBuffers();
     const retrievedHandle = testRuntime.retrieveWorkflow(workflowUUID + "-0");
     await expect(retrievedHandle.getResult()).resolves.toBe(1);
   });
