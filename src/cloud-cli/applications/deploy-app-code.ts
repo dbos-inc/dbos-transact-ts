@@ -128,9 +128,15 @@ RUN npm run build
 RUN npm prune --omit=dev
 RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
 `;
+  const dockerIgnoreContent = `
+node_modules/
+${deployDirectoryName}/
+dist/
+`;
   try {
-    // Write the Dockerfile
+    // Write the Dockerfile and .dockerignore
     writeFileSync(dockerFileName, dockerFileContent);
+    writeFileSync(`${deployDirectoryName}/Dockerfile.dbos.dockerignore`, dockerIgnoreContent);
     // Build the Docker image.  As build takes a long time, use runCommand to stream its output to stdout.
     await runCommand('docker', ['build', '-t', appName, '-f', dockerFileName, '.'])
     // Run the container

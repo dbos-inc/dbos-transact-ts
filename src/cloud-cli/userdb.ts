@@ -100,9 +100,10 @@ export function migrate(): number {
   const userDBName = configFile.database.user_database;
 
   logger.info(`Creating database ${userDBName} if it does not already exist`);
-  const createDB = `PGPASSWORD=${configFile.database.password} createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
+  const createDB = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
   try {
-    const createDBOutput = execSync(createDB).toString();
+    process.env.PGPASSWORD = configFile.database.password;
+    const createDBOutput = execSync(createDB, { env: process.env }).toString();
     if (createDBOutput.includes(`database "${userDBName}" already exists`)) {
       logger.info(`Database ${userDBName} already exists`)
     } else {
