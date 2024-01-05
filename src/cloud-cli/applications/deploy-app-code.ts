@@ -136,7 +136,7 @@ dist/
   try {
     // Write the Dockerfile and .dockerignore
     writeFileSync(dockerFileName, dockerFileContent);
-    writeFileSync(`${deployDirectoryName}/${dockerFileName}.dockerignore`, dockerIgnoreContent);
+    writeFileSync(`${deployDirectoryName}/Dockerfile.dbos.dockerignore`, dockerIgnoreContent);
     // Build the Docker image.  As build takes a long time, use runCommand to stream its output to stdout.
     await runCommand('docker', ['build', '-t', appName, '-f', dockerFileName, '.'])
     // Run the container
