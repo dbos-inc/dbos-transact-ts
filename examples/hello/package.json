@@ -4,8 +4,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npx knex migrate:rollback && npx knex migrate:up && jest",
-    "lint": "eslint .",
-    "lint-fix": "eslint --fix ."
+    "lint": "eslint src",
+    "lint-fix": "eslint --fix src"
   },
   "devDependencies": {
     "@dbos-inc/eslint-plugin": "^0.0.4",
