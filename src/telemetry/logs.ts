@@ -227,12 +227,7 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      attributes: { ...span?.attributes,
-        traceId: span?.spanContext()?.traceId,
-        spanId: span?.spanContext()?.spanId,
-        stack,
-        applicationID: this.applicationID,
-        executorID: this.executorID } as LogAttributes,
+      attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack, applicationID: this.applicationID, executorID: this.executorID } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       // context: span?.spanContext() || undefined,
     });
