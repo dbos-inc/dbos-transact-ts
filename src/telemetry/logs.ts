@@ -180,12 +180,16 @@ const consoleFormat = format.combine(
 class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
+  readonly applicationId: string;
+  readonly vmId: string;
 
   constructor(readonly telemetryCollector: TelemetryCollector) {
     super();
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
+    this.applicationId = process.env.APPID || "APP_ID_NOT_DEFINED";
+    this.vmId = process.env.VMID || "VM_ID_NOT_DEFINED";
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
@@ -223,7 +227,12 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: new Date().getTime(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack } as LogAttributes,
+      attributes: { ...span?.attributes,
+        traceId: span?.spanContext()?.traceId,
+        spanId: span?.spanContext()?.spanId,
+        stack,
+        applicationId: this.applicationId,
+        vmId: this.vmId } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       // context: span?.spanContext() || undefined,
     });
