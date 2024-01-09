@@ -7,6 +7,7 @@ import { TelemetryCollector } from "./collector";
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;
+  readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.tracer = new BasicTracerProvider({
       resource: new Resource({
@@ -15,6 +16,7 @@ export class Tracer {
     });
     this.tracer.register();
     this.applicationID = process.env.APPID || "APP_ID_NOT_DEFINED";
+    this.executorID = process.env.VMID || "VM_ID_NOT_DEFINED";
   }
 
   startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {
@@ -36,6 +38,9 @@ export class Tracer {
   endSpan(span: Span) {
     span.end(Date.now());
     span.attributes.applicationID = this.applicationID;
+    if ( !("executorID" in span.attributes)) {
+      span.attributes.executorID = this.executorID;
+    }
     this.telemetryCollector.push(span as ReadableSpan);
   }
 }

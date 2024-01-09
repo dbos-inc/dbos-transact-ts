@@ -231,7 +231,7 @@ class OTLPLogQueueTransport extends TransportStream {
         traceId: span?.spanContext()?.traceId,
         spanId: span?.spanContext()?.spanId,
         stack,
-        applicationId: this.applicationID,
+        applicationID: this.applicationID,
         executorID: this.executorID } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       // context: span?.spanContext() || undefined,
