@@ -156,8 +156,8 @@ userdbCommands
 
 userdbCommands
   .command('migrate')
-  .action((() => {
-    const exitCode = migrate();
+  .action((async () => {
+    const exitCode = await migrate();
     process.exit(exitCode);
   }))
 
