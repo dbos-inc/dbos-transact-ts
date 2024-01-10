@@ -53,7 +53,7 @@ export interface WorkflowStatusInternal {
   executorID: string;
 }
 
-interface ExistenceCheck {
+export interface ExistenceCheck {
   exists: boolean;
 }
 
