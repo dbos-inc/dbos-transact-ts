@@ -118,7 +118,7 @@ export class DBOSExecutor {
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
 
   readonly telemetryCollector: TelemetryCollector;
-  readonly flushBufferIntervalMs: number = 1000;
+  readonly flushBufferIntervalMs: number = 10000;
   readonly flushBufferID: NodeJS.Timeout;
 
   static readonly defaultNotificationTimeoutSec = 60;
@@ -658,9 +658,11 @@ export class DBOSExecutor {
    */
   async flushWorkflowBuffers() {
     if (this.initialized) {
+      this.logger.info("Flush buffers begin");
       await this.systemDatabase.flushWorkflowInputsBuffer();
       await this.flushWorkflowResultBuffer();
       await this.systemDatabase.flushWorkflowStatusBuffer();
+      this.logger.info("Flush buffers end");
     }
   }
 
