@@ -11,10 +11,10 @@ import { systemDBSchema } from "../../schemas/system_db_schema";
 import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
 
 export interface UserDBInstance {
-  readonly DBName: string,
-  readonly Status: string,
-  readonly HostName: string,
-  readonly Port: number,
+  readonly DBName: string;
+  readonly Status: string;
+  readonly HostName: string;
+  readonly Port: number;
 }
 
 export async function createUserDb(host: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
@@ -160,43 +160,9 @@ export async function migrate(): Promise<number> {
     return 1;
   }
 
-  // Create DBOS system DB and tables.
-  // TODO: replace this with knex to manage schema.
-  const userPoolConfig: PoolConfig = {
-    host: configFile.database.hostname,
-    port: configFile.database.port,
-    user: configFile.database.username,
-    password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.user_database,
-  };
-
+  logger.info("Creating DBOS tables and system database.");
   try {
-    if (configFile.database.ssl_ca) {
-      userPoolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-    }
-
-    const systemPoolConfig = { ...userPoolConfig };
-    systemPoolConfig.database = "dbos_systemdb"; // We enforce it to be the dbos_systemdb.
-
-    const pgUserClient = new Client(userPoolConfig);
-    await pgUserClient.connect();
-
-    // Create DBOS table/schema in user DB.
-    logger.info("Creating DBOS tables and system database.")
-    await pgUserClient.query(createUserDBSchema);
-    await pgUserClient.query(userDBSchema);
-
-    // Create the DBOS system database.
-    const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
-    if (!dbExists.rows[0].exists) {
-      await pgUserClient.query(`CREATE DATABASE ${systemPoolConfig.database}`);
-    }
-
-    // Load the DBOS system schema.
-    const pgSystemClient = new Client(systemPoolConfig);
-    await pgSystemClient.connect();
-    await pgSystemClient.query(systemDBSchema);
+    await createDBOSTables(configFile);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -205,7 +171,6 @@ export async function migrate(): Promise<number> {
     }
     return 1;
   }
-
   return 0;
 }
 
@@ -251,4 +216,42 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
   });
 
   return res.data as UserDBInstance;
+}
+
+// Create DBOS system DB and tables.
+// TODO: replace this with knex to manage schema.
+async function createDBOSTables(configFile: ConfigFile) {
+  const userPoolConfig: PoolConfig = {
+    host: configFile.database.hostname,
+    port: configFile.database.port,
+    user: configFile.database.username,
+    password: configFile.database.password,
+    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
+    database: configFile.database.user_database,
+  };
+
+  if (configFile.database.ssl_ca) {
+    userPoolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+  }
+
+  const systemPoolConfig = { ...userPoolConfig };
+  systemPoolConfig.database = "dbos_systemdb"; // We enforce it to be the dbos_systemdb.
+
+  const pgUserClient = new Client(userPoolConfig);
+  await pgUserClient.connect();
+
+  // Create DBOS table/schema in user DB.
+  await pgUserClient.query(createUserDBSchema);
+  await pgUserClient.query(userDBSchema);
+
+  // Create the DBOS system database.
+  const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
+  if (!dbExists.rows[0].exists) {
+    await pgUserClient.query(`CREATE DATABASE ${systemPoolConfig.database}`);
+  }
+
+  // Load the DBOS system schema.
+  const pgSystemClient = new Client(systemPoolConfig);
+  await pgSystemClient.connect();
+  await pgSystemClient.query(systemDBSchema);
 }
