@@ -260,14 +260,11 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgSystemClient.connect();
 
   try {
-    await pgSystemClient.query("BEGIN");
     const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
     if (!tableExists.rows[0].exists) {
       await pgSystemClient.query(systemDBSchema);
     }
-    await pgSystemClient.query("COMMIT");
   } catch (e) {
-    await pgSystemClient.query("ROLLBACK");
     const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
     if (tableExists.rows[0].exists) {
       // If the table has been created by someone else. Ignore the error.
