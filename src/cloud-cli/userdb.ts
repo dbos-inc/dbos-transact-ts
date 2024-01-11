@@ -221,6 +221,8 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
 // Create DBOS system DB and tables.
 // TODO: replace this with knex to manage schema.
 async function createDBOSTables(configFile: ConfigFile) {
+  const logger = new GlobalLogger();
+
   const userPoolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
@@ -256,10 +258,25 @@ async function createDBOSTables(configFile: ConfigFile) {
   // Load the DBOS system schema.
   const pgSystemClient = new Client(systemPoolConfig);
   await pgSystemClient.connect();
-  await pgSystemClient.query("BEGIN");
-  const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
-  if (!tableExists.rows[0].exists) {
-    await pgSystemClient.query(systemDBSchema);
+
+  try {
+    await pgSystemClient.query("BEGIN");
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    if (!tableExists.rows[0].exists) {
+      await pgSystemClient.query(systemDBSchema);
+    }
+    await pgSystemClient.query("COMMIT");
+  } catch (e) {
+    await pgSystemClient.query("ROLLBACK");
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    if (tableExists.rows[0].exists) {
+      // If the table has been created by someone else. Ignore the error.
+      logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
+    } else {
+      throw e;
+    }
+  } finally {
+    await pgSystemClient.end();
+    await pgUserClient.end();
   }
-  await pgSystemClient.query("COMMIT");
 }
