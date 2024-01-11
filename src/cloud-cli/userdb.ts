@@ -221,6 +221,8 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
 // Create DBOS system DB and tables.
 // TODO: replace this with knex to manage schema.
 async function createDBOSTables(configFile: ConfigFile) {
+  const logger = new GlobalLogger();
+
   const userPoolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
@@ -241,8 +243,11 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgUserClient.connect();
 
   // Create DBOS table/schema in user DB.
-  await pgUserClient.query(createUserDBSchema);
-  await pgUserClient.query(userDBSchema);
+  const schemaExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
+  if (!schemaExists.rows[0].exists) {
+    await pgUserClient.query(createUserDBSchema);
+    await pgUserClient.query(userDBSchema);
+  }
 
   // Create the DBOS system database.
   const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
@@ -253,5 +258,22 @@ async function createDBOSTables(configFile: ConfigFile) {
   // Load the DBOS system schema.
   const pgSystemClient = new Client(systemPoolConfig);
   await pgSystemClient.connect();
-  await pgSystemClient.query(systemDBSchema);
+
+  try {
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    if (!tableExists.rows[0].exists) {
+      await pgSystemClient.query(systemDBSchema);
+    }
+  } catch (e) {
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    if (tableExists.rows[0].exists) {
+      // If the table has been created by someone else. Ignore the error.
+      logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
+    } else {
+      throw e;
+    }
+  } finally {
+    await pgSystemClient.end();
+    await pgUserClient.end();
+  }
 }
