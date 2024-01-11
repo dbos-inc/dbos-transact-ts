@@ -256,8 +256,10 @@ async function createDBOSTables(configFile: ConfigFile) {
   // Load the DBOS system schema.
   const pgSystemClient = new Client(systemPoolConfig);
   await pgSystemClient.connect();
+  await pgSystemClient.query("BEGIN");
   const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
   if (!tableExists.rows[0].exists) {
     await pgSystemClient.query(systemDBSchema);
   }
+  await pgSystemClient.query("COMMIT");
 }
