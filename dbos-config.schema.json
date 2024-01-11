@@ -32,10 +32,6 @@
           "type": "string",
           "description": "The name of the application database"
         },
-        "system_database": {
-          "type": "string",
-          "description": "The name of a database to which DBOS can write system data. Defaults to `dbos_systemdb`"
-        },
         "ssl_ca": {
           "type": "string",
           "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file"
@@ -52,6 +48,14 @@
             "typeorm",
             "knex"
           ]
+        },
+        "migrate": {
+          "type": "array",
+          "description": "Specify a list of user DB migration commands to run"
+        },
+        "rollback": {
+          "type": "array",
+          "description": "Specify a list of user DB rollback commands to run"
         }
       },
       "required": [
