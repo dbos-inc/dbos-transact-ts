@@ -1,7 +1,6 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
-import logger from "koa-logger";
 import cors from "@koa/cors";
 import {
   APITypes,
@@ -51,7 +50,6 @@ export class DBOSHttpServer {
       // For cors(), it doesn't work if we use it in a router, and thus we have to use it in app.
       config.koa.use(bodyParser());
       config.koa.use(cors());
-      config.koa.use(logger());
     }
     this.app = config.koa;
 
