@@ -20,7 +20,6 @@ export interface ConfigFile {
     password?: string;
     connectionTimeoutMillis?: number;
     user_database: string;
-    system_database?: string;
     ssl_ca?: string;
     observability_database?: string;
     user_dbclient?: UserDatabaseName;
@@ -121,7 +120,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
     poolConfig: poolConfig,
     userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
-    system_database: configFile.database.system_database ?? "dbos_systemdb",
+    system_database: `${poolConfig.database}_dbos_sys`,
     observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,

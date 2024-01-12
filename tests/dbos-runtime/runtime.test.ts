@@ -60,7 +60,7 @@ async function dropHelloSystemDB() {
     database: "hello",
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_systemdb;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_dbos_sys;`);
   await pgSystemClient.end();
 }
 
@@ -102,7 +102,6 @@ database:
   username: 'postgres'
   password: \${PGPASSWORD}
   user_database: 'hello'
-  system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
 runtimeConfig:
@@ -163,7 +162,6 @@ database:
   username: 'postgres'
   password: \${PGPASSWORD}
   user_database: 'hello'
-  system_database: 'hello_systemdb'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
 runtimeConfig:
