@@ -124,7 +124,7 @@ export class DBOSExecutor {
   static readonly defaultNotificationTimeoutSec = 60;
 
   readonly debugMode: boolean;
-  static systemDBSchemaName = "public";
+  static systemDBSchemaName = "dbos";
 
   readonly logger: Logger;
   readonly tracer: Tracer;
