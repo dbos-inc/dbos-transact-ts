@@ -36,7 +36,9 @@ export interface workflow_inputs {
 }
 
 export const systemDBSchema = `
-  CREATE TABLE IF NOT EXISTS operation_outputs (
+  CREATE SCHEMA IF NOT EXISTS dbos;
+
+  CREATE TABLE IF NOT EXISTS dbos.operation_outputs (
     workflow_uuid TEXT NOT NULL,
     function_id INT NOT NULL,
     output TEXT,
@@ -44,12 +46,12 @@ export const systemDBSchema = `
     PRIMARY KEY (workflow_uuid, function_id)
   );
 
-  CREATE TABLE IF NOT EXISTS workflow_inputs (
+  CREATE TABLE IF NOT EXISTS dbos.workflow_inputs (
     workflow_uuid TEXT PRIMARY KEY NOT NULL,
     inputs TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS workflow_status (
+  CREATE TABLE IF NOT EXISTS dbos.workflow_status (
     workflow_uuid TEXT PRIMARY KEY,
     status TEXT,
     name TEXT,
@@ -62,21 +64,21 @@ export const systemDBSchema = `
     executor_id TEXT
   );
 
-  CREATE TABLE IF NOT EXISTS notifications (
+  CREATE TABLE IF NOT EXISTS dbos.notifications (
     destination_uuid TEXT NOT NULL,
     topic TEXT,
     message TEXT NOT NULL,
     created_at_epoch_ms BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint
   );
 
-  CREATE TABLE IF NOT EXISTS workflow_events (
+  CREATE TABLE IF NOT EXISTS dbos.workflow_events (
     workflow_uuid TEXT NOT NULL,
     key TEXT NOT NULL,
     value TEXT NOT NULL,
     PRIMARY KEY (workflow_uuid, key)
   );
 
-  CREATE INDEX IF NOT EXISTS idx_workflow_topic ON notifications (destination_uuid, topic);
+  CREATE INDEX IF NOT EXISTS idx_workflow_topic ON dbos.notifications (destination_uuid, topic);
 
   CREATE OR REPLACE FUNCTION notifications_function() RETURNS TRIGGER AS $$
     DECLARE
@@ -89,7 +91,7 @@ export const systemDBSchema = `
     $$ LANGUAGE plpgsql;
 
     CREATE OR REPLACE TRIGGER dbos_notifications_trigger
-    AFTER INSERT ON notifications
+    AFTER INSERT ON dbos.notifications
     FOR EACH ROW EXECUTE FUNCTION notifications_function();
 
     CREATE OR REPLACE FUNCTION workflow_events_function() RETURNS TRIGGER AS $$
@@ -103,6 +105,6 @@ export const systemDBSchema = `
     $$ LANGUAGE plpgsql;
 
     CREATE OR REPLACE TRIGGER dbos_workflow_events_trigger
-    AFTER INSERT ON workflow_events
+    AFTER INSERT ON dbos.workflow_events
     FOR EACH ROW EXECUTE FUNCTION workflow_events_function();
 `;

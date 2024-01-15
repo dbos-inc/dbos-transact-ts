@@ -85,7 +85,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Check if the system schema exist.
-    const schemaExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'workflow_status')`);
+    const schemaExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${DBOSExecutor.systemDBSchemaName}')`);
     if (!schemaExists.rows[0].exists) {
       // Load the DBOS system schemas.
       await this.pool.query(systemDBSchema);

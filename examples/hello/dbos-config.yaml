@@ -1,7 +1,3 @@
-# To enable auto-completion and validation for this file in VSCode, install the RedHat YAML extension 
-# https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml
-
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dbos-inc/dbos-sdk/main/dbos-config.schema.json
 
 database:
   hostname: 'localhost'
@@ -11,5 +7,5 @@ database:
   user_database: 'hello'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
-  migrate: ['migrate:latest']
-  rollback: ['migrate:rollback']
+runtimeConfig:
+  entrypoint: dist/entrypoint.js

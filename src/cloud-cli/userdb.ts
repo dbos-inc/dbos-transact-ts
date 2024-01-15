@@ -260,12 +260,12 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgSystemClient.connect();
 
   try {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
     if (!tableExists.rows[0].exists) {
       await pgSystemClient.query(systemDBSchema);
     }
   } catch (e) {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'operation_outputs')`);
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
     if (tableExists.rows[0].exists) {
       // If the table has been created by someone else. Ignore the error.
       logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
