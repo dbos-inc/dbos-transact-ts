@@ -80,7 +80,7 @@ export const systemDBSchema = `
 
   CREATE INDEX IF NOT EXISTS idx_workflow_topic ON dbos.notifications (destination_uuid, topic);
 
-  CREATE OR REPLACE FUNCTION notifications_function() RETURNS TRIGGER AS $$
+  CREATE OR REPLACE FUNCTION dbos.notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
@@ -92,9 +92,9 @@ export const systemDBSchema = `
 
     CREATE OR REPLACE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON dbos.notifications
-    FOR EACH ROW EXECUTE FUNCTION notifications_function();
+    FOR EACH ROW EXECUTE FUNCTION dbos.notifications_function();
 
-    CREATE OR REPLACE FUNCTION workflow_events_function() RETURNS TRIGGER AS $$
+    CREATE OR REPLACE FUNCTION dbos.workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
@@ -106,5 +106,5 @@ export const systemDBSchema = `
 
     CREATE OR REPLACE TRIGGER dbos_workflow_events_trigger
     AFTER INSERT ON dbos.workflow_events
-    FOR EACH ROW EXECUTE FUNCTION workflow_events_function();
+    FOR EACH ROW EXECUTE FUNCTION dbos.workflow_events_function();
 `;
