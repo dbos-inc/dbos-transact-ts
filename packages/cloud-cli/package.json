@@ -1,0 +1,38 @@
+{
+  "name": "@dbos-inc/cloud-cli",
+  "version": "0.0.0-placeholder",
+  "description": "Tool for performing application deployment to DBOS cloud",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-ts",
+    "directory": "packages/cloud-cli"
+  },
+  "main": "cli.ts",
+  "homepage": "https://docs.dbos.dev/",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && chmod +x ./dist/src/dbos-runtime/cli.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setversion": "grunt setversion"
+  },
+  "devDependencies": {
+    "jest": "^29.6.1",
+    "@types/jest": "^29.5.3",
+    "@types/node": "^20.6.3",
+    "@types/supertest": "^2.0.12",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1",
+    "eslint": "^8.49.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.2",
+    "@typescript-eslint/parser": "^6.7.2",
+    "grunt": "^1.6.1",
+    "nerdbank-gitversioning": "^3.6.133"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "fast-glob": "^3.3.1"
+  },
+  "optionalDependencies": {
+    "foundationdb": "^2.0.1"
+  }
+}

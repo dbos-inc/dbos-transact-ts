@@ -1,5 +1,5 @@
 import axios from "axios";
-import { GlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "telemetry/logs";
 import { getCloudCredentials } from "./utils";
 
 export async function registerUser(username: string, host: string): Promise<number> {

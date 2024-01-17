@@ -1,6 +1,6 @@
-import { GlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "telemetry/logs";
 import axios from "axios";
-import { sleep } from "../utils";
+import { sleep } from "utils";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";

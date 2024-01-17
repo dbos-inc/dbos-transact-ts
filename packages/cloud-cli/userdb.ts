@@ -1,12 +1,12 @@
 import axios from "axios";
-import { GlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "telemetry/logs";
 import { getCloudCredentials } from "./utils";
-import { readFileSync, sleep } from "../utils";
-import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../dbos-runtime/config";
+import { readFileSync, sleep } from "utils";
+import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "dbos-runtime/config";
 import { execSync } from "child_process";
-import { UserDatabaseName } from "../user_database";
+import { UserDatabaseName } from "user_database";
 import { Client, PoolConfig } from "pg";
-import { ExistenceCheck } from "../system_database";
+import { ExistenceCheck } from "system_database";
 import { systemDBSchema } from "../../schemas/system_db_schema";
 import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
 
