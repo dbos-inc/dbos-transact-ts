@@ -14,7 +14,7 @@ type DeployOutput = {
   ApplicationVersion: string;
 }
 
-export async function deployAppCode(host: string): Promise<number> {
+export async function deployAppCode(host: string, noDocker: boolean): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -32,11 +32,16 @@ export async function deployAppCode(host: string): Promise<number> {
     return 1;
   }
 
-  // Build the application inside a Docker container using the same base image as our cloud setup
-  logger.info(`Building ${appName} using Docker`)
-  const dockerSuccess = await buildAppInDocker(appName);
-  if (!dockerSuccess) {
-    return 1;
+  if (noDocker) {
+    // Zip the current directory and deploy from there. Requires app to have already been built. Only for testing.
+    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
+  } else {
+    // Build the application inside a Docker container using the same base image as our cloud setup
+    logger.info(`Building ${appName} using Docker`)
+    const dockerSuccess = await buildAppInDocker(appName);
+    if (!dockerSuccess) {
+      return 1;
+    }
   }
 
   try {
