@@ -12,7 +12,7 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json && chmod +x ./dist/src/dbos-runtime/cli.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"+1 Funny\"",
     "setversion": "grunt setversion"
   },
   "devDependencies": {

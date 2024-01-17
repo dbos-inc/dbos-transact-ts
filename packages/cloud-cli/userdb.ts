@@ -1,6 +1,6 @@
 import axios from "axios";
 import { GlobalLogger } from "telemetry/logs";
-import { getCloudCredentials } from "./utils";
+import { getCloudCredentials } from "./cloudutils";
 import { readFileSync, sleep } from "utils";
 import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "dbos-runtime/config";
 import { execSync } from "child_process";

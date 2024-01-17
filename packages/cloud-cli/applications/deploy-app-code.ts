@@ -2,7 +2,7 @@ import axios from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
 import { GlobalLogger } from "telemetry/logs";
-import { getCloudCredentials, runCommand } from "../utils";
+import { getCloudCredentials, runCommand } from "../cloudutils";
 import { createDirectory, readFileSync, sleep } from "utils";
 import path from "path";
 import { Application } from "./types";
