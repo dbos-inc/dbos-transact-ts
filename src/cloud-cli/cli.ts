@@ -86,9 +86,9 @@ applicationCommands
   .command('deploy')
   .description('Deploy an application code to the cloud')
   .option('--no-docker', 'Build the code locally without using Docker')
-  .action(async (options: { noDocker: boolean }) => {
+  .action(async (options: { docker: boolean }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await deployAppCode(host, options.noDocker);
+    const exitCode = await deployAppCode(host, options.docker);
     process.exit(exitCode);
   });
 
