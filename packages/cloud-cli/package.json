@@ -34,7 +34,8 @@
   "dependencies": {
     "axios": "^1.6.5",
     "commander": "^11.0.0",
-    "fast-glob": "^3.3.1"
+    "fast-glob": "^3.3.1",
+    "winston": "^3.11.0"
   },
   "optionalDependencies": {
     "foundationdb": "^2.0.1"
