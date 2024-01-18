@@ -32,10 +32,19 @@
     "ts-jest": "^29.1.1"
   },
   "dependencies": {
+    "@opentelemetry/api-logs": "^0.47.0",
+    "@opentelemetry/core": "^1.20.0",
+    "@opentelemetry/sdk-logs": "^0.47.0",
+    "@opentelemetry/sdk-trace-base": "^1.20.0",
     "axios": "^1.6.5",
     "commander": "^11.0.0",
     "fast-glob": "^3.3.1",
-    "winston": "^3.11.0"
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "knex": "^3.1.0",
+    "pg": "^8.11.3",
+    "winston": "^3.11.0",
+    "winston-transport": "^4.6.0"
   },
   "optionalDependencies": {
     "foundationdb": "^2.0.1"
