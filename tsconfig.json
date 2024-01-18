@@ -20,6 +20,7 @@
     "src",
     "schemas",
     "tests",
-    "jest.setup.ts"
+    "jest.setup.ts",
+    "packages",
   ]
 }

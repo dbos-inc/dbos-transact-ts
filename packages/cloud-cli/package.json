@@ -11,9 +11,12 @@
   "main": "cli.ts",
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
-    "build": "tsc --project tsconfig.json && chmod +x ./dist/src/dbos-runtime/cli.js",
+    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/cloud-cli/cli.js",
     "test": "echo \"+1 Funny\"",
     "setversion": "grunt setversion"
+  },
+  "bin": {
+    "dbos-cloud": "./dist/packages/cloud-cli/cli.js"
   },
   "devDependencies": {
     "jest": "^29.6.1",

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { GlobalLogger } from "telemetry/logs";
+import { GlobalLogger } from "../../../src/telemetry/logs";
 import { getCloudCredentials } from "../cloudutils";
 import { Application } from "./types";
 import path from "node:path";

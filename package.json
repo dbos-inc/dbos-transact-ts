@@ -14,8 +14,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run --workspaces build && tsc --project tsconfig.build.json",
-    "build-fdb": "npm run --workspaces build && tsc --project tsconfig.build-fdb.json",
+    "build": "npm run --workspaces build && tsc --project tsconfig.build.json && chmod +x dist/packages/cloud-cli/cli.js",
+    "build-fdb": "npm run --workspaces build && tsc --project tsconfig.build-fdb.json && chmod +x dist/packages/cloud-cli/cli.js",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
     "setversion": "grunt setversion",
@@ -24,7 +24,7 @@
   },
   "bin": {
     "dbos-sdk": "./dist/src/dbos-runtime/cli.js",
-    "dbos-cloud": "./dist/src/cloud-cli/cli.js"
+    "dbos-cloud": "./dist/packages/cloud-cli/cli.js"
   },
   "devDependencies": {
     "@prisma/client": "^5.3.1",
