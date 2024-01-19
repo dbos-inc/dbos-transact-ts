@@ -93,7 +93,6 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       }
       await sleep(1000)
     }
-    await sleep(1000) // Sleep to allow application to fully initialize
     logger.info(`Application ${appName} successfuly deployed`)
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
