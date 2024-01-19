@@ -13,7 +13,7 @@ const program = new Command();
 ////////////////////////
 
 program
-  .command("openapi")
+  .command("generate")
   .argument('<entrypoint>', 'Specify the entrypoint file path')
   .action(async (entrypoint: string) => {
     const openapi = await generateOpenApi(entrypoint);
