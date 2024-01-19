@@ -1,22 +1,22 @@
 {
-  "name": "@dbos-inc/cloud-cli",
+  "name": "@dbos-inc/dbos-cloud",
   "version": "0.0.0-placeholder",
   "description": "Tool for performing application deployment to DBOS cloud",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-ts",
-    "directory": "packages/cloud-cli"
+    "directory": "packages/dbos-cloud"
   },
   "main": "cli.ts",
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
-    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/cloud-cli/cli.js",
+    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/dbos-cloud/cli.js",
     "test": "echo \"+1 Funny\"",
     "setversion": "grunt setversion"
   },
   "bin": {
-    "dbos-cloud": "./dist/packages/cloud-cli/cli.js"
+    "dbos-cloud": "./dist/packages/dbos-cloud/cli.js"
   },
   "devDependencies": {
     "@types/jest": "^29.5.3",

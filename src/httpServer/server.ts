@@ -3,12 +3,12 @@ import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
 import {
-  APITypes,
-  ArgSources,
   RequestIDHeader,
   HandlerContextImpl,
   HandlerRegistration,
 } from "./handler";
+import { ArgSources } from "./handlerTypes";
+import { APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import {

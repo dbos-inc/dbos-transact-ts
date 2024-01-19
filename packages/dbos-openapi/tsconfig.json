@@ -19,7 +19,8 @@
       "../../src/utils": ["../../src/utils"],
       "../../src/user_database": ["../../src/user_database"],
       "../../src/system_database": ["../../src/system_database"],
-      "../../src/dbos-runtime/*": ["../../src/dbos-runtime/*"]
+      "../../src/dbos-runtime/*": ["../../src/dbos-runtime/*"],
+      "../../src/httpServer/*": ["../../src/httpServer/*"]
     }
   },
   "include": [                                         /* Specifies an array of filenames or patterns to include in the program. */
