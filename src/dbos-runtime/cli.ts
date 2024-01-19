@@ -2,13 +2,10 @@
 
 import { dbosConfigFilePath, parseConfigFile } from "./config";
 import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
+
 import { Command } from 'commander';
 import { DBOSConfig } from "../dbos-executor";
 import { init } from "./init";
-import { generateOpenApi } from "../staticAnalysis/openApi";
-import YAML from 'yaml';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { debugWorkflow } from "./debug";
 
 const program = new Command();
@@ -28,18 +25,6 @@ interface DBOSDebugOptions extends DBOSCLIStartOptions {
   proxy: string, // TODO: in the future, we provide the proxy URL
   uuid: string, // Workflow UUID
 }
-
-program
-  .command("openapi")
-  .argument('<entrypoint>', 'Specify the entrypoint file path')
-  .action(async (entrypoint: string) => {
-    const openapi = await generateOpenApi(entrypoint);
-    if (openapi) {
-      const filename = path.join(path.dirname(entrypoint), "openapi.yaml");
-      const yaml = `# OpenApi specification generated for application\n\n` + YAML.stringify(openapi, { aliasDuplicateObjects: false });
-      await fs.writeFile(filename, yaml, { encoding: 'utf-8' });
-    }
-  });
 
 program
   .command('start')

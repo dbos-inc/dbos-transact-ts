@@ -1,0 +1,48 @@
+{
+  "name": "@dbos-inc/dbos-openapi",
+  "version": "0.0.0-placeholder",
+  "description": "Tool for integrating DBOS functions via OpenAPI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-ts",
+    "directory": "packages/openapi-gen"
+  },
+  "main": "cli.ts",
+  "homepage": "https://docs.dbos.dev/",
+  "scripts": {
+    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/dbos-openapi/cli.js",
+    "test": "echo \"+1 Funny\"",
+    "setversion": "grunt setversion"
+  },
+  "bin": {
+    "dbos-openapi": "./dist/packages/dbos-openapi/cli.js"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.3",
+    "@types/node": "^20.6.3",
+    "@types/supertest": "^2.0.12",
+    "@typescript-eslint/eslint-plugin": "^6.7.2",
+    "@typescript-eslint/parser": "^6.7.2",
+    "eslint": "^8.49.0",
+    "grunt": "^1.6.1",
+    "jest": "^29.6.1",
+    "nerdbank-gitversioning": "^3.6.133",
+    "supertest": "^6.3.3",
+    "ts-jest": "^29.1.1"
+  },
+  "dependencies": {
+    "@opentelemetry/api-logs": "^0.47.0",
+    "@opentelemetry/core": "^1.20.0",
+    "@opentelemetry/sdk-logs": "^0.47.0",
+    "@opentelemetry/sdk-trace-base": "^1.20.0",
+    "axios": "^1.6.5",
+    "commander": "^11.0.0",
+    "fast-glob": "^3.3.1",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "winston": "^3.11.0",
+    "winston-transport": "^4.6.0",
+    "yaml": "^2.3.4"
+  }
+}

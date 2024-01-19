@@ -7,7 +7,7 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
-} from "./applications/";
+} from "./applications";
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";

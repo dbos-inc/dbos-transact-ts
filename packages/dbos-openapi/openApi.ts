@@ -8,7 +8,7 @@ import {
   findPackageInfo,
 } from './TypeParser';
 
-import { APITypes, ArgSources } from '../httpServer/handler';
+import { APITypes, ArgSources } from '../../src/httpServer/handler';
 
 import {
   createParser,
