@@ -25,6 +25,7 @@ import { Communicator } from '../communicator';
 
 export const WorkflowUUIDHeader = "dbos-workflowuuid";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
+export const HealthUrl = "/dbos-healthz"
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -54,6 +55,7 @@ export class DBOSHttpServer {
     this.app = config.koa;
 
     // Register HTTP endpoints.
+    DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.router);
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.router);
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.router);
     this.app.use(this.router.routes()).use(this.router.allowedMethods());
@@ -69,6 +71,20 @@ export class DBOSHttpServer {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
   }
+
+  /**
+   * Health check endpoint.
+   */
+    static registerHealthEndpoint(dbosExec: DBOSExecutor, router: Router) {
+      // Handler function that parses request for recovery.
+      const healthHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+        koaCtxt.body = "healthy";
+        await koaNext();
+      };
+
+      router.get(HealthUrl, healthHandler);
+      dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
+    }
 
   /**
    * Register workflow recovery endpoint.
@@ -104,6 +120,12 @@ export class DBOSHttpServer {
         // Ignore URL with "/dbos-workflow-recovery" prefix.
         if (ro.apiURL.startsWith(WorkflowRecoveryUrl)) {
           dbosExec.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${WorkflowRecoveryUrl}!`);
+          return;
+        }
+
+        // Ignore URL with "/dbos-healthz" prefix.
+        if (ro.apiURL.startsWith(HealthUrl)) {
+          dbosExec.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${HealthUrl}!`);
           return;
         }
 
