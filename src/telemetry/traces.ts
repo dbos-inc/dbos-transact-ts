@@ -16,7 +16,7 @@ export class Tracer {
     });
     this.tracer.register();
     this.applicationID = process.env.DBOS__APPID  || process.env.APPID || "APP_ID_NOT_DEFINED"; // TODO: Remove APPID
-    this.executorID = process.env.DBOS_VMID || process.env.VMID || "VM_ID_NOT_DEFINED"; // TODO: Remove VMID
+    this.executorID = process.env.DBOS__VMID || process.env.VMID || "VM_ID_NOT_DEFINED"; // TODO: Remove VMID
   }
 
   startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {

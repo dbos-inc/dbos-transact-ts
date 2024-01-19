@@ -189,7 +189,7 @@ class OTLPLogQueueTransport extends TransportStream {
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
     this.applicationID = process.env.DBOS__APPID  || process.env.APPID || "APP_ID_NOT_DEFINED"; // TODO: Remove APPID
-    this.executorID = process.env.DBOS_VMID || process.env.VMID || "VM_ID_NOT_DEFINED"; // TODO: Remove VMID
+    this.executorID = process.env.DBOS__VMID || process.env.VMID || "VM_ID_NOT_DEFINED"; // TODO: Remove VMID
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
