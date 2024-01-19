@@ -10,8 +10,7 @@ import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
-import { APITypes } from "./handlerTypes";
-import { ArgSources } from "./handlerTypes";
+import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;

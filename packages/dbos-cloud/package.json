@@ -12,7 +12,7 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/dbos-cloud/cli.js",
-    "test": "echo \"+1 Funny\"",
+    "test": "echo \"No tests\"",
     "setversion": "grunt setversion"
   },
   "bin": {
