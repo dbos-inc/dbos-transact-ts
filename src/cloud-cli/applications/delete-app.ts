@@ -26,10 +26,10 @@ export async function deleteApp(host: string): Promise<number> {
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to delete application ${appName}: ${e.response?.data}`);
+      logger.error(`Failed to delete application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to delete application ${appName}: ${(e as Error).message}`);
+      logger.error(`Failed to delete application ${appName}: ${(e as Error).message}`);
       return 1;
     }
   }
