@@ -6,7 +6,8 @@
 export enum APITypes {
   GET = "GET",
   POST = "POST"
-}export enum ArgSources {
+}
+export enum ArgSources {
   DEFAULT = "DEFAULT",
   BODY = "BODY",
   QUERY = "QUERY",
