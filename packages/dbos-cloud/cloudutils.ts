@@ -1,8 +1,14 @@
 import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import fs from "fs";
 import { spawn, StdioOptions } from 'child_process';
+import { GlobalLogger } from "../telemetry/logs";
 
 export function getCloudCredentials(): DBOSCloudCredentials {
+  const logger = new GlobalLogger();
+  if (!credentialsExist()) {
+    logger.error("Error: not logged in")
+    process.exit(1)
+  }
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
   return {
     userName: userCredentials.userName,

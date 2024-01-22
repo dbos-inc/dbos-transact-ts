@@ -25,9 +25,9 @@ export async function registerUser(username: string, host: string): Promise<numb
     logger.info(`Registered user ${userName}, UUID: ${userUUID}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to register user ${userName}: ${e.response.data}`);
+      logger.error(`Failed to register user ${userName}: ${e.response.data}`);
     } else {
-      logger.error(`failed to register user ${userName}: ${(e as Error).message}`);
+      logger.error(`Failed to register user ${userName}: ${(e as Error).message}`);
     }
     return 1;
   }
