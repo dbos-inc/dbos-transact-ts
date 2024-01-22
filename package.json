@@ -14,8 +14,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run --workspaces build && tsc --project tsconfig.build.json && chmod +x dist/packages/dbos-cloud/cli.js",
-    "build-fdb": "npm run --workspaces build && tsc --project tsconfig.build-fdb.json && chmod +x dist/packages/dbos-cloud/cli.js",
+    "build": "npm run --workspaces build && tsc --project tsconfig.build.json",
+    "build-fdb": "npm run --workspaces build && tsc --project tsconfig.build-fdb.json",
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ .",
     "lint-fdb": "eslint --fix --ext .ts .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
