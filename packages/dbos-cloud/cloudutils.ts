@@ -1,7 +1,7 @@
 import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import fs from "fs";
 import { spawn, StdioOptions } from 'child_process';
-import { GlobalLogger } from "../telemetry/logs";
+import { GlobalLogger } from "../../src/telemetry/logs";
 
 export function getCloudCredentials(): DBOSCloudCredentials {
   const logger = new GlobalLogger();
