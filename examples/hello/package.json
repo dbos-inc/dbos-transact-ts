@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@dbos-inc/eslint-plugin": "^0.0.4",
-    "@dbos-inc/dbos-cloud": "../../packages/dbos-cloud",
+    "@dbos-inc/dbos-cloud": "^0.8.41-preview",
     "@types/jest": "^29.5.5",
     "@types/supertest": "^2.0.14",
     "eslint": "^8.56.0",
