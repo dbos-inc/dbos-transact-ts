@@ -292,7 +292,7 @@ export class DBOSExecutor {
       function delay (ms: number) {
         return new Promise( resolve => setTimeout(resolve,ms));
       }
-      delay(5000);
+      await delay(5000);
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
