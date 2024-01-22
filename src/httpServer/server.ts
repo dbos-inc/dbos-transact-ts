@@ -7,8 +7,7 @@ import {
   HandlerContextImpl,
   HandlerRegistration,
 } from "./handler";
-import { ArgSources } from "./handlerTypes";
-import { APITypes } from "./handlerTypes";
+import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import {
