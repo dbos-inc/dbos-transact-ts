@@ -1,6 +1,6 @@
 import axios from "axios";
-import { GlobalLogger } from "../../telemetry/logs";
-import { getCloudCredentials } from "../utils";
+import { GlobalLogger } from "../../../src/telemetry/logs";
+import { getCloudCredentials } from "../cloudutils";
 import { Application } from "./types";
 
 export async function listApps(host: string): Promise<number> {

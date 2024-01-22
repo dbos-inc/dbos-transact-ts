@@ -7,12 +7,12 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
-} from "./applications/";
+} from "./applications";
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackMigration } from "./userdb";
-import { credentialsExist } from "./utils";
+import { credentialsExist } from "./cloudutils";
 
 const program = new Command();
 
