@@ -35,10 +35,10 @@ export async function registerApp(dbname: string, host: string, machines: number
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to register application ${appName}: ${e.response?.data}`);
+      logger.error(`Failed to register application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to register application ${appName}: ${(e as Error).message}`);
+      logger.error(`Failed to register application ${appName}: ${(e as Error).message}`);
       return 1;
     }
   }

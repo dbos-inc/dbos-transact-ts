@@ -36,10 +36,10 @@ export async function updateApp(host: string, machines: number): Promise<number>
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to update application ${appName}: ${e.response?.data}`);
+      logger.error(`Failed to update application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      (e as Error).message = `failed to update application ${appName}: ${(e as Error).message}`;
+      (e as Error).message = `Failed to update application ${appName}: ${(e as Error).message}`;
       logger.error(e);
       return 1;
     }

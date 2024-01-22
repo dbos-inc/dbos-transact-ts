@@ -19,7 +19,7 @@ export async function listApps(host: string): Promise<number> {
     );
     const data: Application[] = list.data as Application[];
     if (data.length === 0) {
-      logger.info("no application found");
+      logger.info("No applications found");
       return 1;
     }
     const formattedData: Application[] = []
@@ -31,10 +31,10 @@ export async function listApps(host: string): Promise<number> {
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to list applications: ${e.response?.data}`);
+      logger.error(`Failed to list applications: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to list applications: ${(e as Error).message}`);
+      logger.error(`Failed to list applications: ${(e as Error).message}`);
       return 1;
     }
   }
