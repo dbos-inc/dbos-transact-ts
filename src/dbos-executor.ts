@@ -143,7 +143,8 @@ export class DBOSExecutor {
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
-
+    //this.logger.info("POLIAKOV: Starting constructor");
+  
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
       try {
@@ -173,6 +174,7 @@ export class DBOSExecutor {
     this.logger.debug("Started workflow status buffer worker");
 
     this.initialized = false;
+    //this.logger.info("POLIAKOV: Exiting Constructor");
   }
 
   configureDbClient() {
@@ -254,6 +256,8 @@ export class DBOSExecutor {
     }
 
     try {
+      this.logger.info("POLIAKOV: trying init");
+
       type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
@@ -281,8 +285,14 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
+      this.logger.info("POLIAKOV: failed to initialize workflow executor");  //this goes to journalctl but not to the log at all (no empty line)
+      this.logger.error("POLIAKOV: failed to initialize workflow executor"); //this goes to journalctl but not to the log at all (no empty line)
+      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}` //this goes to journalctl but not to the log at all (no empty line)
       this.logger.error(err);
+      function delay (ms: number) {
+        return new Promise( resolve => setTimeout(resolve,ms));
+      }
+      delay(5000);
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;

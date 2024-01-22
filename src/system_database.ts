@@ -165,6 +165,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         batchUUIDs.forEach((value) => { localBuffer.delete(value); });
       }
     } catch (error) {
+      this.logger.error("POLIAKOV: error flushing workflow buffer");
       (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
       this.logger.error(error);
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
@@ -230,6 +231,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         batchUUIDs.forEach((value) => { localBuffer.delete(value); });
       }
     } catch (error) {
+      this.logger.error("POLIAKOV: error flushing workflow inputs buffer");
       (error as Error).message = `Error flushing workflow inputs buffer: ${(error as Error).message}`;
       this.logger.error(error);
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
