@@ -11,7 +11,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb, migrate, rollbackMigration } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
 import { credentialsExist } from "./cloudutils";
 
 const program = new Command();
@@ -153,20 +153,6 @@ userdbCommands
   .action((async (dbname: string) => {
     const { host }: { host: string } = userdbCommands.opts()
     await deleteUserDb(host, dbname)
-  }))
-
-userdbCommands
-  .command('migrate')
-  .action((async () => {
-    const exitCode = await migrate();
-    process.exit(exitCode);
-  }))
-
-userdbCommands
-  .command('rollbackmigration')
-  .action((() => {
-    const exitCode = rollbackMigration();
-    process.exit(exitCode);
   }))
 
 program.parse(process.argv);
