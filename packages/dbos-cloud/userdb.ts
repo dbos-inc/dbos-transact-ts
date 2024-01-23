@@ -7,7 +7,6 @@ import { execSync } from "child_process";
 import { UserDatabaseName } from "../../src/user_database";
 import { Client, PoolConfig } from "pg";
 import { ExistenceCheck, migrateSystemDatabase } from "../../src/system_database";
-import { systemDBSchema } from "../../schemas/system_db_schema";
 import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
 
 export interface UserDBInstance {
@@ -260,7 +259,7 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgSystemClient.connect();
 
   try {
-    migrateSystemDatabase(systemPoolConfig)
+    await migrateSystemDatabase(systemPoolConfig)
   } catch (e) {
     const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
     if (tableExists.rows[0].exists) {
