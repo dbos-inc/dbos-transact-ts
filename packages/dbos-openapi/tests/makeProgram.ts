@@ -2,7 +2,7 @@ import ts from "typescript";
 import path from "node:path";
 import fs from "node:fs";
 
-const sdkRepoRoot = path.join(__dirname, "..");
+const sdkRepoRoot = path.join(__dirname, "../../..");
 const dbosSDKModule = "node_modules/@dbos-inc/dbos-sdk/";
 
 function readFile(fileName: string) {

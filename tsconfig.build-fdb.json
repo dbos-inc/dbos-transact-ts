@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "src/**/*",
-    "schemas/**/*"
+    "schemas/**/*",
+    "packages/**/*"
   ]
 }

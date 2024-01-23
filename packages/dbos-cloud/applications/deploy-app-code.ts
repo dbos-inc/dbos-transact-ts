@@ -1,9 +1,9 @@
 import axios from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { GlobalLogger } from "../../telemetry/logs";
-import { getCloudCredentials, runCommand } from "../utils";
-import { createDirectory, readFileSync, sleep } from "../../utils";
+import { GlobalLogger } from "../../../src/telemetry/logs";
+import { getCloudCredentials, runCommand } from "../cloudutils";
+import { createDirectory, readFileSync, sleep } from "../../../src/utils";
 import path from "path";
 import { Application } from "./types";
 
@@ -98,10 +98,10 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to deploy application ${appName}: ${e.response?.data}`);
+      logger.error(`Failed to deploy application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to deploy application ${appName}: ${(e as Error).message}`);
+      logger.error(`Failed to deploy application ${appName}: ${(e as Error).message}`);
       return 1;
     }
   }
@@ -153,7 +153,7 @@ dist/
     execSync(`docker rm ${containerName}`);
     return true;
   } catch (e) {
-    logger.error(`failed to build application ${appName}: ${(e as Error).message}`);
+    logger.error(`Failed to build application ${appName}: ${(e as Error).message}`);
     return false;
   }
 }

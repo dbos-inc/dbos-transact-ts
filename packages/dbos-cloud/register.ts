@@ -1,6 +1,6 @@
 import axios from "axios";
-import { GlobalLogger } from "../telemetry/logs";
-import { getCloudCredentials } from "./utils";
+import { GlobalLogger } from "../../src/telemetry/logs";
+import { getCloudCredentials } from "./cloudutils";
 
 export async function registerUser(username: string, host: string): Promise<number> {
   const userCredentials = getCloudCredentials();
@@ -25,9 +25,9 @@ export async function registerUser(username: string, host: string): Promise<numb
     logger.info(`Registered user ${userName}, UUID: ${userUUID}`);
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to register user ${userName}: ${e.response.data}`);
+      logger.error(`Failed to register user ${userName}: ${e.response.data}`);
     } else {
-      logger.error(`failed to register user ${userName}: ${(e as Error).message}`);
+      logger.error(`Failed to register user ${userName}: ${(e as Error).message}`);
     }
     return 1;
   }

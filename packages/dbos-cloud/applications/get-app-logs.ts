@@ -1,9 +1,9 @@
 import axios from "axios";
-import { GlobalLogger } from "../../telemetry/logs";
-import { getCloudCredentials } from "../utils";
+import { GlobalLogger } from "../../../src/telemetry/logs";
+import { getCloudCredentials } from "../cloudutils";
 import path from "node:path";
 
-export async function deleteApp(host: string): Promise<number> {
+export async function getAppLogs(host: string): Promise<number> {
   const logger = new GlobalLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -11,25 +11,25 @@ export async function deleteApp(host: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
-  logger.info(`Loaded application name from package.json: ${appName}`)
-  logger.info(`Deleting application: ${appName}`)
+  logger.info(`Retrieving logs for application: ${appName}`)
 
   try {
-    await axios.delete(`https://${host}/${userCredentials.userName}/application/${appName}`, {
+    const res = await axios.get(`https://${host}/${userCredentials.userName}/logs/application/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
       },
     });
 
-    logger.info(`Successfully deleted application: ${appName}`);
+    logger.info(`Successfully retrieved logs of application: ${appName}`);
+    logger.info(res.data)
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
-      logger.error(`failed to delete application ${appName}: ${e.response?.data}`);
+      logger.error(`Failed to retrieve logs of application ${appName}: ${e.response?.data}`);
       return 1;
     } else {
-      logger.error(`failed to delete application ${appName}: ${(e as Error).message}`);
+      logger.error(`Failed to retrieve logs of application ${appName}: ${(e as Error).message}`);
       return 1;
     }
   }

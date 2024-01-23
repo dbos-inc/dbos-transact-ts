@@ -10,6 +10,7 @@ import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
+import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
@@ -151,22 +152,6 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   async #external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
   }
-}
-
-//////////////////////////
-/* REGISTRATION OBJECTS */
-//////////////////////////
-
-export enum APITypes {
-  GET = "GET",
-  POST = "POST",
-}
-
-export enum ArgSources {
-  DEFAULT = "DEFAULT",
-  BODY = "BODY",
-  QUERY = "QUERY",
-  URL = "URL",
 }
 
 export interface HandlerRegistrationBase extends MethodRegistrationBase {
