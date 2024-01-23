@@ -11,7 +11,7 @@ jobs:
     services:
       # Label used to access the service container.
       postgres:
-        image: postgres:15.4
+        image: postgres:16.1
         env:
           # Specify the password for Postgres superuser.
           POSTGRES_PASSWORD: dbos
@@ -29,7 +29,6 @@ jobs:
       - name: "Setup postgres config"
         run: |
           docker exec -i ${{ job.services.postgres.id }} apt update
-          docker exec -i ${{ job.services.postgres.id }} apt install -y postgresql-15-wal2json
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v3
