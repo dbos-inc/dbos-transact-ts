@@ -74,6 +74,26 @@ jobs:
           registry: https://registry.npmjs.org/
           tag: 'test'
           access: public
+      - name: Publish 'dbos-cloud' test package to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmtest-dbos-cloud
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'False'}}
+        with:
+          package: packages/dbos-cloud
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: 'test'
+          access: public
+      - name: Publish 'dbos-openapi' test package to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmtest-dbos-openapi
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'False'}}
+        with:
+          package: packages/dbos-openapi
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: 'test'
+          access: public
       - if: ${{ steps.npmrelease.outputs.type }}
         run: echo "Published a new release package!"
       - if: ${{ steps.npmtest.outputs.type }}
