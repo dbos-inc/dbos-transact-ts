@@ -143,7 +143,6 @@ export class DBOSExecutor {
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
-    //this.logger.info("POLIAKOV: Starting constructor");
   
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
@@ -174,7 +173,6 @@ export class DBOSExecutor {
     this.logger.debug("Started workflow status buffer worker");
 
     this.initialized = false;
-    //this.logger.info("POLIAKOV: Exiting Constructor");
   }
 
   configureDbClient() {
@@ -256,8 +254,6 @@ export class DBOSExecutor {
     }
 
     try {
-      this.logger.info("POLIAKOV: trying init");
-
       type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
