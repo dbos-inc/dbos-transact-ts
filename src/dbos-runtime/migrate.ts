@@ -6,7 +6,7 @@ import { readFileSync } from "../utils";
 import { PoolConfig, Client } from "pg";
 import { systemDBSchema } from "../../schemas/system_db_schema";
 import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
-import { ExistenceCheck } from "../system_database";
+import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
 export async function migrate(): Promise<number> {
   const logger = new GlobalLogger();
@@ -163,10 +163,7 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgSystemClient.connect();
 
   try {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
-    if (!tableExists.rows[0].exists) {
-      await pgSystemClient.query(systemDBSchema);
-    }
+    migrateSystemDatabase(systemPoolConfig)
   } catch (e) {
     const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
     if (tableExists.rows[0].exists) {
