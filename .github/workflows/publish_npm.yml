@@ -22,6 +22,16 @@ jobs:
         uses: dotnet/nbgv@v0.4.1
         with:
           stamp: package.json
+      - name: Nerdbank.GitVersioning
+        id: nbgv-dbos-cloud
+        uses: dotnet/nbgv@v0.4.1
+        with:
+          stamp: packages/dbos-cloud/package.json
+      - name: Nerdbank.GitVersioning
+        id: nbgv-dbos-openapi
+        uses: dotnet/nbgv@v0.4.1
+        with:
+          stamp: packages/dbos-openapi/package.json
       - run: npm ci
       - run: npm run build
       - name: Publish release to npm
@@ -31,6 +41,26 @@ jobs:
         # so explicitly string compare PublicRelease output value
         if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
         with:
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
+          access: public
+      - name: Publish 'dbos-cloud' release to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmrelease-dbos-cloud
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
+        with:
+          package: packages/dbos-cloud
+          token: ${{ secrets.NPM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
+          access: public
+      - name: Publish 'dbos-openapi' release to npm
+        uses: JS-DevTools/npm-publish@v3
+        id: npmrelease-dbos-openapi
+        if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
+        with:
+          package: packages/dbos-openapi
           token: ${{ secrets.NPM_PUBLISH }}
           registry: https://registry.npmjs.org/
           tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }}  # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
