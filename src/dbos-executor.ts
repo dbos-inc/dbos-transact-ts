@@ -143,7 +143,6 @@ export class DBOSExecutor {
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
-  
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
       try {
@@ -281,8 +280,8 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}` //this goes to journalctl but not to the log at all (no empty line)
-      this.logger.error((err as Error));
+      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
+      this.logger.error(err);
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;

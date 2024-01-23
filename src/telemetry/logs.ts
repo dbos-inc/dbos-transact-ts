@@ -92,7 +92,6 @@ export class GlobalLogger {
     } else if (typeof inputError === "string") {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
   }
