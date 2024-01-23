@@ -1,14 +1,7 @@
 import axios from "axios";
 import { GlobalLogger } from "../../src/telemetry/logs";
 import { getCloudCredentials } from "./cloudutils";
-import { readFileSync, sleep } from "../../src/utils";
-import { ConfigFile, loadConfigFile, dbosConfigFilePath } from "../../src/dbos-runtime/config";
-import { execSync } from "child_process";
-import { UserDatabaseName } from "../../src/user_database";
-import { Client, PoolConfig } from "pg";
-import { ExistenceCheck } from "../../src/system_database";
-import { systemDBSchema } from "../../schemas/system_db_schema";
-import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
+import { sleep } from "../../src/utils";
 
 export interface UserDBInstance {
   readonly DBName: string;
