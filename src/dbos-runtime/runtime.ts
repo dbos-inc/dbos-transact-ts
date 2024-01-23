@@ -31,17 +31,12 @@ export class DBOSRuntime {
    * Initialize the runtime by loading user functions and initializing the workflow executor object
    */
   async init() {
-    try{
-      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
-      if (classes.length === 0) {
-        this.dbosExec.logger.error("operations not found");
-        throw new DBOSError("operations not found");
-      }
-      await this.dbosExec.init(...classes);
-    } catch (err) {
-      await this.dbosExec.destroy();
-      throw err;
-    } 
+    const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+    if (classes.length === 0) {
+      this.dbosExec.logger.error("operations not found");
+      throw new DBOSError("operations not found");
+    }
+    await this.dbosExec.init(...classes);
     this.onSigterm = this.onSigterm.bind(this);
     process.on('SIGTERM', this.onSigterm);
     process.on('SIGQUIT', this.onSigterm);
@@ -71,9 +66,7 @@ export class DBOSRuntime {
   onSigterm(): void {
     let err = new DBOSError("Received a termination signal. Exiting.");
     this.dbosExec.logger.error(err); //Is it really an error? What if we're autoscaling or something?
-    this.dbosExec.destroy().finally(() => {
-      throw err;
-    })
+    throw err;
   }
 
   /**
@@ -81,22 +74,16 @@ export class DBOSRuntime {
    */
   startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
-    try {
-      const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
-      this.server = server.listen(this.runtimeConfig.port);
-      this.dbosExec.logRegisteredHTTPUrls();
-    } catch (err) {
-      this.dbosExec.destroy().finally(() => {
-        throw err;
-      })
-    }
+    const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
+    this.server = server.listen(this.runtimeConfig.port);
+    this.dbosExec.logRegisteredHTTPUrls();
   }
 
   /**
    * Shut down the HTTP server and destroy workflow executor.
    */
-  async destroy() {
+  async [Symbol.asyncDispose]() {
     this.server?.close();
-    await this.dbosExec?.destroy();
+    await this.dbosExec[Symbol.asyncDispose]();
   }
 }

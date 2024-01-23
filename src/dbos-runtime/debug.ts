@@ -8,13 +8,12 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
 
   // Load classes
   const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoint);
-  const dbosExec = new DBOSExecutor(dbosConfig);
-  await dbosExec.init(...classes);
+  await using dbosExec = new DBOSExecutor(dbosConfig); 
+  {
+    await dbosExec.init(...classes);
 
-  // Invoke the workflow in debug mode.
-  const handle = await dbosExec.executeWorkflowUUID(workflowUUID);
-  await handle.getResult();
-
-  // Destroy testing runtime.
-  await dbosExec.destroy();
+    // Invoke the workflow in debug mode.
+    const handle = await dbosExec.executeWorkflowUUID(workflowUUID);
+    await handle.getResult();
+  }
 }
