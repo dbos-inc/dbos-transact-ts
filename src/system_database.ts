@@ -6,9 +6,11 @@ import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } fro
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
-import { sleep } from "./utils";
+import { sleep, findPackageRoot } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
+import knex, { Knex } from 'knex';
+import path from "path";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -59,6 +61,7 @@ export interface ExistenceCheck {
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
+  readonly knexDB: Knex
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
@@ -72,6 +75,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const poolConfig = { ...pgPoolConfig };
     poolConfig.database = systemDatabaseName;
     this.pool = new Pool(poolConfig);
+    const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+    const knexConfig = {
+      client: 'pg',
+      connection: poolConfig,
+      migrations: {
+          directory: migrationsDirectory,
+          tableName: 'knex_migrations'
+      }
+  };
+  this.knexDB = knex(knexConfig)
   }
 
   async init() {
@@ -85,13 +98,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Check if the system schema exist.
-    const schemaExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${DBOSExecutor.systemDBSchemaName}')`);
-    if (!schemaExists.rows[0].exists) {
-      // Load the DBOS system schemas.
-      await this.pool.query(systemDBSchema);
-    }
+    await this.knexDB.migrate.latest()
     await this.listenForNotifications();
     await pgSystemClient.end();
+    await this.knexDB.destroy()
   }
 
   async destroy() {
