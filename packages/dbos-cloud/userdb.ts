@@ -2,6 +2,7 @@ import axios from "axios";
 import { GlobalLogger } from "../../src/telemetry/logs";
 import { getCloudCredentials } from "./cloudutils";
 import { sleep } from "../../src/utils";
+import * as _ from "../../src/dbos-runtime/config";
 
 export interface UserDBInstance {
   readonly DBName: string;
