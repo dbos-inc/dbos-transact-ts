@@ -59,9 +59,24 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
+  const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+  const knexConfig = {
+    client: 'pg',
+    connection: systemPoolConfig,
+    migrations: {
+        directory: migrationsDirectory,
+        tableName: 'knex_migrations'
+    }
+};
+  const knexDB = knex(knexConfig)
+  await knexDB.migrate.latest()
+  await knexDB.destroy()
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
-  readonly knexDB: Knex
+  readonly systemPoolConfig: PoolConfig
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
@@ -72,19 +87,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly flushBatchSize = 100;
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
-    const poolConfig = { ...pgPoolConfig };
-    poolConfig.database = systemDatabaseName;
-    this.pool = new Pool(poolConfig);
-    const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
-    const knexConfig = {
-      client: 'pg',
-      connection: poolConfig,
-      migrations: {
-          directory: migrationsDirectory,
-          tableName: 'knex_migrations'
-      }
-  };
-  this.knexDB = knex(knexConfig)
+    this.systemPoolConfig = { ...pgPoolConfig };
+    this.systemPoolConfig.database = systemDatabaseName;
+    this.pool = new Pool(this.systemPoolConfig);
   }
 
   async init() {
@@ -96,12 +101,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
     }
-
-    // Check if the system schema exist.
-    await this.knexDB.migrate.latest()
+    await migrateSystemDatabase(this.systemPoolConfig)
     await this.listenForNotifications();
     await pgSystemClient.end();
-    await this.knexDB.destroy()
   }
 
   async destroy() {
