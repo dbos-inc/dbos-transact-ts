@@ -32,9 +32,15 @@ export class DBOSRuntime {
     const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
     if (classes.length === 0) {
       this.dbosExec.logger.error("operations not found");
+      await this.dbosExec.destroy();
       throw new DBOSError("operations not found");
     }
-    await this.dbosExec.init(...classes);
+    try {
+      await this.dbosExec.init(...classes);
+    } catch (err) {
+      await this.dbosExec.destroy();
+      throw err;
+    }
   }
 
   /**

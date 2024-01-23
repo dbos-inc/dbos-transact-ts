@@ -285,14 +285,8 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      this.logger.info("POLIAKOV: failed to initialize workflow executor");  //this goes to journalctl but not to the log at all (no empty line)
-      this.logger.error("POLIAKOV: failed to initialize workflow executor"); //this goes to journalctl but not to the log at all (no empty line)
       (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}` //this goes to journalctl but not to the log at all (no empty line)
-      this.logger.error((err as Error).message);
-      function delay (ms: number) {
-        return new Promise( resolve => setTimeout(resolve,ms));
-      }
-      await delay(10000);
+      this.logger.error((err as Error));
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
