@@ -5,6 +5,8 @@ import { isObject } from 'lodash';
 import { Server } from 'http';
 import { DBOSError } from '../error';
 import path from 'node:path';
+import { exit } from 'process';
+
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,18 +31,20 @@ export class DBOSRuntime {
    * Initialize the runtime by loading user functions and initializing the workflow executor object
    */
   async init() {
-    const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
-    if (classes.length === 0) {
-      this.dbosExec.logger.error("operations not found");
-      await this.dbosExec.destroy();
-      throw new DBOSError("operations not found");
-    }
-    try {
+    try{
+      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+      if (classes.length === 0) {
+        this.dbosExec.logger.error("operations not found");
+        throw new DBOSError("operations not found");
+      }
       await this.dbosExec.init(...classes);
     } catch (err) {
       await this.dbosExec.destroy();
       throw err;
-    }
+    } 
+    this.onSigterm = this.onSigterm.bind(this);
+    process.on('SIGTERM', this.onSigterm);
+    process.on('SIGQUIT', this.onSigterm);
   }
 
   /**
@@ -55,7 +59,6 @@ export class DBOSRuntime {
     } else {
       throw new DBOSError(`Failed to load operations from the entrypoint ${entrypoint}`);
     }
-
     const classes: object[] = [];
     for (const key in exports) {
       if (isObject(exports[key])) {
@@ -65,16 +68,28 @@ export class DBOSRuntime {
     return classes;
   }
 
+  onSigterm(): void {
+    let err = new DBOSError("Received a termination signal. Exiting.");
+    this.dbosExec.logger.error(err); //Is it really an error? What if we're autoscaling or something?
+    this.dbosExec.destroy().finally(() => {
+      throw err;
+    })
+  }
+
   /**
    * Start an HTTP server hosting an application's functions.
    */
   startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
-
-    const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
-
-    this.server = server.listen(this.runtimeConfig.port);
-    this.dbosExec.logRegisteredHTTPUrls();
+    try {
+      const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
+      this.server = server.listen(this.runtimeConfig.port);
+      this.dbosExec.logRegisteredHTTPUrls();
+    } catch (err) {
+      this.dbosExec.destroy().finally(() => {
+        throw err;
+      })
+    }
   }
 
   /**
