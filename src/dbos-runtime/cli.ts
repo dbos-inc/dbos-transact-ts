@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import { DBOSConfig } from "../dbos-executor";
 import { init } from "./init";
 import { debugWorkflow } from "./debug";
+import { migrate, rollbackMigration } from "./migrate";
 
 const program = new Command();
 
@@ -60,6 +61,21 @@ program
   .action(async (options: { appName: string }) => {
     await init(options.appName);
   });
+
+program
+  .command('migrate')
+  .description("Perform a database migration")
+  .action((async () => {
+    const exitCode = await migrate();
+    process.exit(exitCode);
+  }))
+
+program
+  .command('rollback')
+  .action((() => {
+    const exitCode = rollbackMigration();
+    process.exit(exitCode);
+  }))
 
 program.parse(process.argv);
 
