@@ -5,9 +5,6 @@ import { isObject } from 'lodash';
 import { Server } from 'http';
 import { DBOSError } from '../error';
 import path from 'node:path';
-import { exit } from 'process';
-import { systemDBSchema } from '../../schemas/system_db_schema';
-
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
