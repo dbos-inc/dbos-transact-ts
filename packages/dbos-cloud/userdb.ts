@@ -30,7 +30,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
 
     if (sync) {
       let status = "";
-      while (status != "available") {
+      while (status != "available" && status != "backing-up") {
         await sleep(30000);
         const userDBInfo = await getUserDBInfo(host, dbName);
         logger.info(userDBInfo);
