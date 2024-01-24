@@ -191,8 +191,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (workflow_uuid)
-    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error;`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, (EXTRACT(EPOCH FROM now())*1000)::bigint) ON CONFLICT (workflow_uuid)
+    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
       [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), status.error, status.executorID]
     );
   }
