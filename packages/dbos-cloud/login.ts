@@ -1,10 +1,10 @@
-import { GlobalLogger } from "../../src/telemetry/logs";
 import axios from "axios";
 import { sleep } from "../../src/utils";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";
 import fs from "fs";
+import { getLogger } from "./cloudutils";
 
 export const dbosEnvPath = ".dbos";
 export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
@@ -60,7 +60,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 }
 
 export async function login(username: string): Promise<number> {
-  const logger = new GlobalLogger();
+  const logger = getLogger();
   logger.info(`Logging in!`);
 
   const deviceCodeRequest = {

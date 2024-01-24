@@ -26,11 +26,6 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
 
-
-export function createDirectory(path: string): string | undefined {
-  return fs.mkdirSync(path, { recursive: true });
-}
-
 // Adapated and translated from from: https://github.com/junosuarez/find-root
 export function findPackageRoot(start: string | string[]): string {
     if (typeof start === 'string') {
@@ -47,12 +42,8 @@ export function findPackageRoot(start: string | string[]): string {
     start.pop();
     const dir = start.join(path.sep);
 
-    try {
-        if (fs.existsSync(path.join(dir, 'package.json'))) {
-            return dir;
-        }
-    } catch (e) {
-        // Error handling can be implemented here if necessary
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+        return dir;
     }
 
     return findPackageRoot(start);

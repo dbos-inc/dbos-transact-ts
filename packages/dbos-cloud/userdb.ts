@@ -1,8 +1,6 @@
 import axios from "axios";
-import { GlobalLogger } from "../../src/telemetry/logs";
-import { getCloudCredentials } from "./cloudutils";
+import { getCloudCredentials, getLogger } from "./cloudutils";
 import { sleep } from "../../src/utils";
-import * as _ from "../../src/dbos-runtime/config";
 
 export interface UserDBInstance {
   readonly DBName: string;
@@ -12,7 +10,7 @@ export interface UserDBInstance {
 }
 
 export async function createUserDb(host: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
-  const logger = new GlobalLogger();
+  const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -49,7 +47,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
 }
 
 export async function deleteUserDb(host: string, dbName: string) {
-  const logger = new GlobalLogger();
+  const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -71,7 +69,7 @@ export async function deleteUserDb(host: string, dbName: string) {
 }
 
 export async function getUserDb(host: string, dbName: string) {
-  const logger = new GlobalLogger();
+  const logger = getLogger();
 
   try {
     const userDBInfo = await getUserDBInfo(host, dbName);
