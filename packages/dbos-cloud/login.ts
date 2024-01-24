@@ -1,10 +1,9 @@
 import axios from "axios";
-import { sleep } from "../../src/utils";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";
 import fs from "fs";
-import { getLogger } from "./cloudutils";
+import { getLogger, sleep } from "./cloudutils";
 
 export const dbosEnvPath = ".dbos";
 export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
