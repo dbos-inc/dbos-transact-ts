@@ -101,7 +101,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
-      await this.#server?.dbosExec[Symbol.asyncDispose]();
+      await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;
     }
   }

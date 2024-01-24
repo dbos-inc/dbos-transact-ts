@@ -143,6 +143,7 @@ export class DBOSExecutor {
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
+
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
       try {
@@ -300,8 +301,8 @@ export class DBOSExecutor {
     this.logger.info("Workflow executor initialized");
   }
 
-  async [Symbol.asyncDispose]() {
-    this.logger.info("Shutting down executor");
+  async destroy() {
+    this.logger.info("Workflow executor shutting down");
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());

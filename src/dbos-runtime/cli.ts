@@ -36,11 +36,8 @@ program
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    await using runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
-    {
-      await runtime.init();
-      runtime.startServer();
-    }
+    const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
+    await runtime.initAndStart();
   }
   );
 

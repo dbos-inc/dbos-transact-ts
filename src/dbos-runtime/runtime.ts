@@ -19,24 +19,34 @@ export interface DBOSRuntimeConfig {
 }
 
 export class DBOSRuntime {
-  private dbosExec: DBOSExecutor;
+  private dbosConfig: DBOSConfig;
+  private dbosExec: DBOSExecutor | null = null;
   private server: Server | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
-    this.dbosExec = new DBOSExecutor(dbosConfig);
+    this.dbosConfig = dbosConfig;
   }
 
   /**
-   * Initialize the runtime by loading user functions and initializing the workflow executor object
+   * Initialize the runtime and start the server
    */
-  async init() {
-    const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
-    if (classes.length === 0) {
-      this.dbosExec.logger.error("operations not found");
-      throw new DBOSError("operations not found");
+  async initAndStart() {
+    try {
+      this.dbosExec = new DBOSExecutor(this.dbosConfig);
+      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+      if (classes.length === 0) {
+        throw new DBOSError("operations not found");
+      }
+      await this.dbosExec.init(...classes);    
+      const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
+      this.server = server.listen(this.runtimeConfig.port);
+      this.dbosExec.logRegisteredHTTPUrls();
+    } catch (error) {
+      this.dbosExec?.logger.error(error);
+      await this.destroy(); //ensures log contents get flushed to OpenTelemetry exporters
+      throw error;
     }
-    await this.dbosExec.init(...classes);
     this.onSigterm = this.onSigterm.bind(this);
     process.on('SIGTERM', this.onSigterm);
     process.on('SIGQUIT', this.onSigterm);
@@ -64,26 +74,18 @@ export class DBOSRuntime {
   }
 
   onSigterm(): void {
-    let err = new DBOSError("Received a termination signal. Exiting.");
-    this.dbosExec.logger.error(err); //Is it really an error? What if we're autoscaling or something?
-    throw err;
-  }
-
-  /**
-   * Start an HTTP server hosting an application's functions.
-   */
-  startServer() {
-    // CLI takes precedence over config file, which takes precedence over default config.
-    const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
-    this.server = server.listen(this.runtimeConfig.port);
-    this.dbosExec.logRegisteredHTTPUrls();
+    let err = new DBOSError("Received a termination signal; exiting.");
+    this.dbosExec?.logger.error(err); 
+    this.destroy().finally(() => {
+      throw err;
+    })
   }
 
   /**
    * Shut down the HTTP server and destroy workflow executor.
    */
-  async [Symbol.asyncDispose]() {
+  async destroy() {
     this.server?.close();
-    await this.dbosExec[Symbol.asyncDispose]();
+    await this.dbosExec?.destroy();
   }
 }
