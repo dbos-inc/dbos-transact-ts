@@ -74,10 +74,9 @@ applicationCommands
 applicationCommands
   .command('update')
   .description('Update an application')
-  .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
-  .action(async (options: { machines: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await updateApp(host, parseInt(options.machines));
+    const exitCode = await updateApp(host);
     process.exit(exitCode);
   });
 
