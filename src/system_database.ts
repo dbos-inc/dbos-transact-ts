@@ -5,10 +5,12 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { systemDBSchema, notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
-import { sleep } from "./utils";
+import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
+import { sleep, findPackageRoot } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
+import knex from 'knex';
+import path from "path";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -57,8 +59,24 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
+  const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+  const knexConfig = {
+    client: 'pg',
+    connection: systemPoolConfig,
+    migrations: {
+        directory: migrationsDirectory,
+        tableName: 'knex_migrations'
+    }
+};
+  const knexDB = knex(knexConfig)
+  await knexDB.migrate.latest()
+  await knexDB.destroy()
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
+  readonly systemPoolConfig: PoolConfig
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
@@ -69,9 +87,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly flushBatchSize = 100;
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
-    const poolConfig = { ...pgPoolConfig };
-    poolConfig.database = systemDatabaseName;
-    this.pool = new Pool(poolConfig);
+    this.systemPoolConfig = { ...pgPoolConfig };
+    this.systemPoolConfig.database = systemDatabaseName;
+    this.pool = new Pool(this.systemPoolConfig);
   }
 
   async init() {
@@ -83,13 +101,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
     }
-
-    // Check if the system schema exist.
-    const schemaExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${DBOSExecutor.systemDBSchemaName}')`);
-    if (!schemaExists.rows[0].exists) {
-      // Load the DBOS system schemas.
-      await this.pool.query(systemDBSchema);
-    }
+    await migrateSystemDatabase(this.systemPoolConfig)
     await this.listenForNotifications();
     await pgSystemClient.end();
   }
