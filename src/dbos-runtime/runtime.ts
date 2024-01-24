@@ -6,6 +6,7 @@ import { Server } from 'http';
 import { DBOSError } from '../error';
 import path from 'node:path';
 import { exit } from 'process';
+import { systemDBSchema } from '../../schemas/system_db_schema';
 
 
 interface ModuleExports {
@@ -44,7 +45,7 @@ export class DBOSRuntime {
       this.dbosExec.logRegisteredHTTPUrls();
     } catch (error) {
       this.dbosExec?.logger.error(error);
-      await this.destroy(); //ensures log contents get flushed to OpenTelemetry exporters
+      await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
       throw error;
     }
     this.onSigterm = this.onSigterm.bind(this);
