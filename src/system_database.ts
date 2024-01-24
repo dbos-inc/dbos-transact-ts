@@ -151,7 +151,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id) VALUES `;
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, updated_at) VALUES `;
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -159,7 +159,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, (EXTRACT(EPOCH FROM now())*1000)::bigint)`;
           values.push(workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID);
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
@@ -169,7 +169,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             break;
           }
         }
-        sqlStmt += " ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output;";
+        sqlStmt += " ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;";
 
         await this.pool.query(sqlStmt, values);
 
