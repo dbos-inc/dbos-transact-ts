@@ -1,12 +1,11 @@
 import axios from "axios";
-import { GlobalLogger } from "../../src/telemetry/logs";
-import { getCloudCredentials } from "./cloudutils";
+import { getCloudCredentials, getLogger } from "./cloudutils";
 
 export async function registerUser(username: string, host: string): Promise<number> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   const userName = userCredentials.userName;
-  const logger = new GlobalLogger();
+  const logger = getLogger();
   try {
     // First, register the user.
     const register = await axios.put(
