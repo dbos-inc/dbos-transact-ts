@@ -39,6 +39,7 @@ export class TelemetryCollector {
   async destroy() {
     clearInterval(this.signalBufferID);
     await this.processAndExportSignals();
+    await this.exporter?.flush();
   }
 
   push(signal: TelemetrySignal) {

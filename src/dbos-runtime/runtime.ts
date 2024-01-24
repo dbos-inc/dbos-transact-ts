@@ -75,8 +75,7 @@ export class DBOSRuntime {
   }
 
   onSigterm(): void {
-    let err = new DBOSError("Received a termination signal; exiting.");
-    this.dbosExec?.logger.error(err); 
+    this.dbosExec?.logger.info("Received a termination signal; exiting");
     this.destroy().finally(() => {
       process.exit(1);
     })

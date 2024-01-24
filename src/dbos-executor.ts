@@ -302,7 +302,6 @@ export class DBOSExecutor {
   }
 
   async destroy() {
-    this.logger.info("Workflow executor shutting down");
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
       await Promise.allSettled(this.pendingWorkflowMap.values());
