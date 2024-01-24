@@ -13,6 +13,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
+    "test": "echo 'No tests'",
     "setversion": "grunt setversion"
   },
   "devDependencies": {
