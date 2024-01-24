@@ -85,8 +85,6 @@ export async function getUserDb(host: string, dbName: string) {
   }
 }
 
-
-
 export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
