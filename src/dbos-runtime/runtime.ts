@@ -2,7 +2,6 @@ import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
-import { Server } from 'http';
 import { DBOSError } from '../error';
 import path from 'node:path';
 
