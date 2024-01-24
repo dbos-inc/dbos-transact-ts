@@ -117,18 +117,6 @@ export class DBOSHttpServer {
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        // Ignore URL with "/dbos-workflow-recovery" prefix.
-        if (ro.apiURL.startsWith(WorkflowRecoveryUrl)) {
-          dbosExec.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${WorkflowRecoveryUrl}!`);
-          return;
-        }
-
-        // Ignore URL with "/dbos-healthz" prefix.
-        if (ro.apiURL.startsWith(HealthUrl)) {
-          dbosExec.logger.error(`Invalid URL: ${ro.apiURL} -- should not start with ${HealthUrl}!`);
-          return;
-        }
-
         // Check if we need to apply any Koa middleware.
         const defaults = ro.defaults as MiddlewareDefaults;
         if (defaults?.koaMiddlewares) {

@@ -154,7 +154,7 @@ describe("foundationdb-recovery", () => {
     process.env.DBOS__VMID = "fcvm123"
     const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
 
-    const response = await request(testRuntime.getHandlersCallback())
+    const response = await request(testRuntime.getAdminCallback())
       .post(WorkflowRecoveryUrl)
       .send(["fcvm123"]);
     expect(response.statusCode).toBe(200);

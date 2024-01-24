@@ -53,6 +53,7 @@ export interface TestingRuntime {
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
+  getAdminCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
 
   getConfig<T>(key: string): T | undefined; // Get application configuration.
   getConfig<T>(key: string, defaultValue: T): T;
@@ -169,6 +170,13 @@ export class TestingRuntimeImpl implements TestingRuntime {
       throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
     }
     return this.#server.app.callback();
+  }
+
+  getAdminCallback() {
+    if (!this.#server) {
+      throw new DBOSError("Uninitialized testing runtime! Did you forget to call init() first?");
+    }
+    return this.#server.adminApp.callback();
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
