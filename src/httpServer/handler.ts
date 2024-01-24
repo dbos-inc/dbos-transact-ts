@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
-import { DBOSExecutor, DBOSExecutorIDHeader, OperationType } from "../dbos-executor";
+import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs } from "../workflow";
@@ -69,8 +69,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
     super(koaContext.url, span, dbosExec.logger);
 
-    if (koaContext.request.headers && koaContext.request.headers[DBOSExecutorIDHeader]) {
-      this.executorID = koaContext.request.headers[DBOSExecutorIDHeader] as string;
+    // If running in DBOS Cloud, set the executor ID
+    if (process.env.DBOS__VMID) {
+      this.executorID = process.env.DBOS__VMID
     }
 
     this.W3CTraceContextPropagator = httpTracer;
