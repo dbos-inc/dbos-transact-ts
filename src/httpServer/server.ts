@@ -52,7 +52,7 @@ export class DBOSHttpServer {
     // Register HTTP endpoints.
     DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
-    this.app.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
+    this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
   }
