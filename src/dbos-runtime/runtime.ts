@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { isObject } from 'lodash';
 import { DBOSError } from '../error';
 import path from 'node:path';
+import { Server } from 'http';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,6 +18,7 @@ export interface DBOSRuntimeConfig {
 
 export class DBOSRuntime {
   private dbosExec: DBOSExecutor;
+  private servers: { appServer: Server, adminServer: Server } | undefined
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -64,8 +66,18 @@ export class DBOSRuntime {
     // CLI takes precedence over config file, which takes precedence over default config.
 
     const server = new DBOSHttpServer(this.dbosExec)
-
-    server.listen(this.runtimeConfig.port);
+    this.servers = server.listen(this.runtimeConfig.port);
     this.dbosExec.logRegisteredHTTPUrls();
+  }
+
+  /**
+    * Shut down the HTTP server and destroy workflow executor.
+    */
+  async destroy() {
+    if (this.servers) {
+      this.servers.appServer.close()
+      this.servers.adminServer.close()
+    }
+    await this.dbosExec?.destroy();
   }
 }
