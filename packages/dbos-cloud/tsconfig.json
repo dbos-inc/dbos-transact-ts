@@ -14,17 +14,9 @@
     "forceConsistentCasingInFileNames": true,            /* Ensure that casing is correct in imports. */
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                /* Skip type checking all .d.ts files. */
-    "paths": {
-      "../../src/telemetry/*": ["../../src/telemetry/*"],
-      "../../src/utils": ["../../src/utils"],
-      "../../src/user_database": ["../../src/user_database"],
-      "../../src/system_database": ["../../src/system_database"],
-      "../../src/dbos-runtime/*": ["../../src/dbos-runtime/*"]
-    }
   },
   "include": [                                         /* Specifies an array of filenames or patterns to include in the program. */
     ".",
     "applications"
   ],
- /* "references": [{"path": "../.."}]*/
 }

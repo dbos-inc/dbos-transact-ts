@@ -1,9 +1,7 @@
 import axios from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { GlobalLogger } from "../../../src/telemetry/logs";
-import { getCloudCredentials, runCommand } from "../cloudutils";
-import { createDirectory, readFileSync, sleep } from "../../../src/utils";
+import { createDirectory, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -15,7 +13,7 @@ type DeployOutput = {
 }
 
 export async function deployAppCode(host: string, docker: boolean): Promise<number> {
-  const logger = new GlobalLogger();
+  const logger = getLogger()
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
@@ -108,7 +106,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
 }
 
 async function buildAppInDocker(appName: string): Promise<boolean> {
-  const logger = new GlobalLogger();
+  const logger = getLogger();
 
   // Verify Docker is running
   try {
