@@ -1,0 +1,26 @@
+{
+  "name": "@dbos-inc/communicator-datetime",
+  "version": "0.0.0-placeholder",
+  "description": "Communicator library",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-ts",
+    "directory": "packages/communicator-datetime"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "setversion": "grunt setversion"
+  },
+  "devDependencies": {
+    "grunt": "^1.6.1",
+    "nerdbank-gitversioning": "^3.6.133",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "^0.8.41-preview"
+  }
+}
