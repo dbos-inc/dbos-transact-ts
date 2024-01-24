@@ -73,7 +73,7 @@ export class DBOSRuntime {
   }
 
   onSigterm(): void {
-    this.dbosExec?.logger.info("Stopping executor: received a termination signal");
+    this.dbosExec?.logger.info("Stopping application: received a termination signal");
     void this.destroy().finally(() => {
       process.exit(1);
     })

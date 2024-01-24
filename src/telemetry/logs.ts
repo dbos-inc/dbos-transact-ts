@@ -130,7 +130,6 @@ export class Logger {
     this.globalLogger.warn(logEntry, this.metadata);
   }
 
-  // We give users the same interface (message: string argument) but create an error to get a stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
     this.globalLogger.error(inputError, this.metadata);
