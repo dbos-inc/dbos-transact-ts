@@ -86,6 +86,7 @@ export class GlobalLogger {
   }
 
   // metadata can have both ContextualMetadata and the error stack trace
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any, metadata?: ContextualMetadata & StackTrace): void {
     if (inputError instanceof Error) {
       this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
