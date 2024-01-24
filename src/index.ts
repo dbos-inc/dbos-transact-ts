@@ -76,10 +76,6 @@ export {
 } from "./httpServer/handler";
 
 export {
-  DBOSHttpServer, // TODO: Remove
-} from "./httpServer/server";
-
-export {
   DBOSHttpAuthMiddleware,
   DBOSHttpAuthReturn,
   MiddlewareContext,

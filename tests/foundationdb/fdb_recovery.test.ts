@@ -18,6 +18,7 @@ describe("foundationdb-recovery", () => {
   beforeEach(async () => {
     const systemDB = await createInternalTestFDB();
     testRuntime = await createInternalTestRuntime([LocalRecovery, ExecutorRecovery], config, systemDB);
+    process.env.DBOS__VMID = ""
   });
 
   afterEach(async () => {
@@ -122,7 +123,8 @@ describe("foundationdb-recovery", () => {
 
     const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
+    process.env.DBOS__VMID = "fcvm123"
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
 
     const recoverHandles = await dbosExec.recoverPendingWorkflows(["fcvm123"]);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
@@ -149,9 +151,10 @@ describe("foundationdb-recovery", () => {
       ExecutorRecovery.resolve2 = resolve;
     });
 
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user", request: { headers: { "dbos-executor-id": "fcvm123" } } }).executorWorkflow(5);
+    process.env.DBOS__VMID = "fcvm123"
+    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
 
-    const response = await request(testRuntime.getHandlersCallback())
+    const response = await request(testRuntime.getAdminCallback())
       .post(WorkflowRecoveryUrl)
       .send(["fcvm123"]);
     expect(response.statusCode).toBe(200);

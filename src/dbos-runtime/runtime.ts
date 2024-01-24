@@ -2,9 +2,9 @@ import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
-import { Server } from 'http';
 import { DBOSError } from '../error';
 import path from 'node:path';
+import { Server } from 'http';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,7 +19,8 @@ export interface DBOSRuntimeConfig {
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
-  private server: Server | null = null;
+  private servers: { appServer: Server, adminServer: Server } | undefined
+
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -37,8 +38,8 @@ export class DBOSRuntime {
         throw new DBOSError("operations not found");
       }
       await this.dbosExec.init(...classes);    
-      const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
-      this.server = server.listen(this.runtimeConfig.port);
+      const server = new DBOSHttpServer(this.dbosExec)
+      this.servers = server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
     } catch (error) {
       this.dbosExec?.logger.error(error);
@@ -79,10 +80,13 @@ export class DBOSRuntime {
   }
 
   /**
-   * Shut down the HTTP server and destroy workflow executor.
-   */
+    * Shut down the HTTP server and destroy workflow executor.
+    */
   async destroy() {
-    this.server?.close();
+    if (this.servers) {
+      this.servers.appServer.close()
+      this.servers.adminServer.close()
+    }
     await this.dbosExec?.destroy();
   }
 }

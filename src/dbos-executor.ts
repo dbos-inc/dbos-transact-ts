@@ -48,7 +48,6 @@ import { serializeError } from 'serialize-error';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
-export const DBOSExecutorIDHeader = "dbos-executor-id";
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -368,10 +367,9 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
 
-    // This is to accomodate the testing runtime, that does not go through HTTP handlers to start workflows
-    // Ideally we would expose the executorID to the environment instead of propagating it through headers.
-    if (wCtxt.executorID === 'local' && wCtxt.request.headers && wCtxt.request.headers[DBOSExecutorIDHeader]) {
-      wCtxt.executorID = wCtxt.request.headers[DBOSExecutorIDHeader] as string;
+    // If running in DBOS Cloud, set the executor ID
+    if (process.env.DBOS__VMID) {
+      wCtxt.executorID = process.env.DBOS__VMID
     }
 
     const internalStatus: WorkflowStatusInternal = {
@@ -630,7 +628,6 @@ export class DBOSExecutor {
   }
 
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const executorID = status.request.headers && status.request.headers[DBOSExecutorIDHeader]? status.request.headers[DBOSExecutorIDHeader] : "local";
     const span = this.tracer.startSpan(
       status.workflowName,
       {
@@ -640,7 +637,6 @@ export class DBOSExecutor {
         authenticatedUser: status.authenticatedUser,
         assumedRole: status.assumedRole,
         authenticatedRoles: status.authenticatedRoles,
-        executorID: executorID,
       },
     );
     const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
