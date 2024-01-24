@@ -17,24 +17,38 @@ export interface DBOSRuntimeConfig {
 }
 
 export class DBOSRuntime {
-  private dbosExec: DBOSExecutor;
+  private dbosConfig: DBOSConfig;
+  private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server, adminServer: Server } | undefined
+
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
-    this.dbosExec = new DBOSExecutor(dbosConfig);
+    this.dbosConfig = dbosConfig;
   }
 
   /**
-   * Initialize the runtime by loading user functions and initializing the workflow executor object
+   * Initialize the runtime and start the server
    */
-  async init() {
-    const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
-    if (classes.length === 0) {
-      this.dbosExec.logger.error("operations not found");
-      throw new DBOSError("operations not found");
+  async initAndStart() {
+    try {
+      this.dbosExec = new DBOSExecutor(this.dbosConfig);
+      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+      if (classes.length === 0) {
+        throw new DBOSError("operations not found");
+      }
+      await this.dbosExec.init(...classes);    
+      const server = new DBOSHttpServer(this.dbosExec)
+      this.servers = server.listen(this.runtimeConfig.port);
+      this.dbosExec.logRegisteredHTTPUrls();
+    } catch (error) {
+      this.dbosExec?.logger.error(error);
+      await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
+      throw error;
     }
-    await this.dbosExec.init(...classes);
+    const onSigterm = this.onSigterm.bind(this);
+    process.on('SIGTERM', onSigterm);
+    process.on('SIGQUIT', onSigterm);
   }
 
   /**
@@ -49,7 +63,6 @@ export class DBOSRuntime {
     } else {
       throw new DBOSError(`Failed to load operations from the entrypoint ${entrypoint}`);
     }
-
     const classes: object[] = [];
     for (const key in exports) {
       if (isObject(exports[key])) {
@@ -59,15 +72,11 @@ export class DBOSRuntime {
     return classes;
   }
 
-  /**
-   * Start an HTTP server hosting an application's functions.
-   */
-  startServer() {
-    // CLI takes precedence over config file, which takes precedence over default config.
-
-    const server = new DBOSHttpServer(this.dbosExec)
-    this.servers = server.listen(this.runtimeConfig.port);
-    this.dbosExec.logRegisteredHTTPUrls();
+  onSigterm(): void {
+    this.dbosExec?.logger.info("Stopping application: received a termination signal");
+    void this.destroy().finally(() => {
+      process.exit(1);
+    })
   }
 
   /**

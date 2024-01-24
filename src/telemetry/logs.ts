@@ -88,8 +88,13 @@ export class GlobalLogger {
   // metadata can have both ContextualMetadata and the error stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any, metadata?: ContextualMetadata & StackTrace): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    this.logger.error(inputError, metadata);
+    if (inputError instanceof Error) {
+      this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
+    } else if (typeof inputError === "string") {
+      this.logger.error(inputError, { ...metadata, stack: new Error().stack });
+    } else {
+      this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
+    }
   }
 }
 
@@ -112,42 +117,22 @@ export class Logger {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   info(logEntry: any): void {
-    if (typeof logEntry === "string") {
-      this.globalLogger.info(logEntry, this.metadata);
-    } else {
-      this.globalLogger.info(JSON.stringify(logEntry), this.metadata);
-    }
+    this.globalLogger.info(logEntry, this.metadata);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   debug(logEntry: any): void {
-    if (typeof logEntry === "string") {
-      this.globalLogger.debug(logEntry, this.metadata);
-    } else {
-      this.globalLogger.debug(JSON.stringify(logEntry), this.metadata);
-    }
+    this.globalLogger.debug(logEntry, this.metadata);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   warn(logEntry: any): void {
-    if (typeof logEntry === "string") {
-      this.globalLogger.warn(logEntry, this.metadata);
-    } else {
-      this.globalLogger.warn(JSON.stringify(logEntry), this.metadata);
-    }
+    this.globalLogger.warn(logEntry, this.metadata);
   }
 
-  // We give users the same interface (message: string argument) but create an error to get a stack trace
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   error(inputError: any): void {
-    if (inputError instanceof Error) {
-      this.globalLogger.error(inputError.message, { ...this.metadata, stack: inputError.stack });
-    } else if (typeof inputError === "string") {
-      this.globalLogger.error(inputError, { ...this.metadata, stack: new Error().stack });
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      this.globalLogger.error(JSON.stringify(inputError), { ...this.metadata, stack: new Error().stack });
-    }
+    this.globalLogger.error(inputError, this.metadata);
   }
 }
 

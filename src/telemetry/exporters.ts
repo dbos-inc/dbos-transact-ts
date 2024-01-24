@@ -13,6 +13,7 @@ export interface OTLPExporterConfig {
 
 export interface ITelemetryExporter {
   export(signal: TelemetrySignal[]): Promise<void>;
+  flush(): Promise<void>;
 }
 
 export class TelemetryExporter implements ITelemetryExporter {
@@ -67,6 +68,11 @@ export class TelemetryExporter implements ITelemetryExporter {
 
       resolve();
     });
+  }
+
+  async flush() {
+    await this.logsExporter?.forceFlush();
+    await this.tracesExporter?.forceFlush();
   }
 }
 

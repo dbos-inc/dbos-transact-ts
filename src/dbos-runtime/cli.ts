@@ -37,8 +37,7 @@ program
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
-    await runtime.init();
-    runtime.startServer();
+    await runtime.initAndStart();
   });
 
 program
