@@ -1,7 +1,7 @@
 import axios from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { createDirectory, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
+import { createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -41,6 +41,10 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     // Zip the current directory and deploy from there. Requires app to have already been built. Only for testing.
     execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
   }
+
+  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+  writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
+  execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
 
   try {
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
@@ -103,6 +107,14 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       return 1;
     }
   }
+}
+
+function readInterpolatedConfig(configFilePath: string): string {
+  const configFileContent = readFileSync(configFilePath) as string;
+  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
+  return configFileContent.replace(regex, (_, g1: string) => {
+    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+});
 }
 
 async function buildAppInDocker(appName: string): Promise<boolean> {
