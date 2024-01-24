@@ -18,7 +18,6 @@ export interface DBOSRuntimeConfig {
 
 export class DBOSRuntime {
   private dbosExec: DBOSExecutor;
-  private server: Server | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -65,17 +64,9 @@ export class DBOSRuntime {
   startServer() {
     // CLI takes precedence over config file, which takes precedence over default config.
 
-    const server: DBOSHttpServer = new DBOSHttpServer(this.dbosExec)
+    const server = new DBOSHttpServer(this.dbosExec)
 
-    this.server = server.listen(this.runtimeConfig.port);
+    server.listen(this.runtimeConfig.port);
     this.dbosExec.logRegisteredHTTPUrls();
-  }
-
-  /**
-   * Shut down the HTTP server and destroy workflow executor.
-   */
-  async destroy() {
-    this.server?.close();
-    await this.dbosExec?.destroy();
   }
 }

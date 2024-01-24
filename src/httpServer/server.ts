@@ -28,7 +28,9 @@ export const HealthUrl = "/dbos-healthz"
 
 export class DBOSHttpServer {
   readonly app: Koa;
-  readonly router: Router;
+  readonly adminApp: Koa;
+  readonly applicationRouter: Router;
+  readonly adminRouter: Router;
   readonly logger: Logger;
 
   /**
@@ -36,28 +38,23 @@ export class DBOSHttpServer {
    * @param dbosExec User pass in an DBOS workflow executor instance.
    * TODO: maybe call dbosExec.init() somewhere in this class?
    */
-  constructor(readonly dbosExec: DBOSExecutor, config: { koa?: Koa; router?: Router } = {}) {
-    if (!config.router) {
-      config.router = new Router();
-    }
-    this.router = config.router;
+  constructor(readonly dbosExec: DBOSExecutor) {
+    this.applicationRouter = new Router();
+    this.adminRouter = new Router();
     this.logger = dbosExec.logger;
-
-    if (!config.koa) {
-      config.koa = new Koa();
-
-      // Note: we definitely need bodyParser.
-      // For cors(), it doesn't work if we use it in a router, and thus we have to use it in app.
-      config.koa.use(bodyParser());
-      config.koa.use(cors());
-    }
-    this.app = config.koa;
+    this.app = new Koa();
+    this.app.use(bodyParser());
+    this.app.use(cors());
+    this.adminApp = new Koa();
+    this.adminApp.use(bodyParser());
+    this.adminApp.use(cors());
 
     // Register HTTP endpoints.
-    DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.router);
-    DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.router);
-    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.router);
-    this.app.use(this.router.routes()).use(this.router.allowedMethods());
+    DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
+    DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
+    this.app.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
+    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter);
+    this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
   }
 
   /**
@@ -66,8 +63,12 @@ export class DBOSHttpServer {
    */
   listen(port: number) {
     // Start the HTTP server.
-    return this.app.listen(port, () => {
+    this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
+    });
+    const adminPort = port + 1
+    this.adminApp.listen(adminPort, () => {
+      this.logger.info(`DBOS Server is running at http://localhost:${adminPort}`);
     });
   }
 
