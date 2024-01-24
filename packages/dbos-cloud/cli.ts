@@ -65,10 +65,9 @@ applicationCommands
   .command('register')
   .description('Register a new application')
   .requiredOption('-d, --database <string>', 'Specify the app database name')
-  .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
-  .action(async (options: { database: string, machines: string }) => {
+  .action(async (options: { database: string }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.database, host, parseInt(options.machines));
+    const exitCode = await registerApp(options.database, host);
     process.exit(exitCode);
   });
 
