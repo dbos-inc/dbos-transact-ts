@@ -38,8 +38,7 @@ program
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
     await runtime.initAndStart();
-  }
-  );
+  });
 
 program
   .command('debug')

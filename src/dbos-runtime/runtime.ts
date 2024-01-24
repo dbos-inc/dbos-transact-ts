@@ -77,7 +77,7 @@ export class DBOSRuntime {
     let err = new DBOSError("Received a termination signal; exiting.");
     this.dbosExec?.logger.error(err); 
     this.destroy().finally(() => {
-      throw err;
+      process.exit(1);
     })
   }
 
