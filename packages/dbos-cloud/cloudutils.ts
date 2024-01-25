@@ -97,3 +97,10 @@ export type ValuesOf<T> = T[keyof T];
 export function createDirectory(path: string): string | undefined {
   return fs.mkdirSync(path, { recursive: true });
 }
+
+export interface CloudAPIErrorResponse {
+  message: string,
+  statusCode: number,
+  requestID: string,
+}
+
