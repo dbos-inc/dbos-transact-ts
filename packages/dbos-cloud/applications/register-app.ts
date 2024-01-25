@@ -1,5 +1,5 @@
-import axios from "axios";
-import { CloudAPIErrorResponse, getCloudCredentials, getLogger } from "../cloudutils";
+import axios, { AxiosError } from "axios";
+import { handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
 import path from "node:path";
 
 export async function registerApp(dbname: string, host: string): Promise<number> {
@@ -32,13 +32,11 @@ export async function registerApp(dbname: string, host: string): Promise<number>
     logger.info(`${appName} ID: ${uuid}`);
     return 0;
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      const resp: CloudAPIErrorResponse = e.response?.data as CloudAPIErrorResponse;
-      logger.error(`Failed to register application ${appName}: ${resp.message}. Request ID: ${resp.requestID}`);
-      return 1;
+    if (axios.isAxiosError(e) && (e as AxiosError).response) {
+      handleAPIErrors(`Failed to register application ${appName}`, e);
     } else {
       logger.error(`Failed to register application ${appName}: ${(e as Error).message}`);
-      return 1;
     }
+    return 1;
   }
 }
