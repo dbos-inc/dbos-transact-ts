@@ -32,10 +32,11 @@ export async function registerApp(dbname: string, host: string): Promise<number>
     logger.info(`${appName} ID: ${uuid}`);
     return 0;
   } catch (e) {
+    const errorLabel = `Failed to register application ${appName}`;
     if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(`Failed to register application ${appName}`, e);
+      handleAPIErrors(errorLabel, e);
     } else {
-      logger.error(`Failed to register application ${appName}: ${(e as Error).message}`);
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
     return 1;
   }
