@@ -141,9 +141,10 @@ userdbCommands
 userdbCommands
   .command('status')
   .argument('<string>', 'database name')
-  .action((async (dbname: string) => {
+  .option('--json', 'Emit JSON output')
+  .action((async (dbname: string, options: { json: boolean}) => {
     const { host }: { host: string } = userdbCommands.opts()
-    await getUserDb(host, dbname)
+    await getUserDb(host, dbname, options.json)
   }))
 
 userdbCommands
