@@ -4,6 +4,8 @@ import fs from "fs";
 import { spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 
+export const dbosConfigFilePath = "dbos-config.yaml";
+
 export function getLogger(): Logger {
   const winstonTransports: TransportStream[] = [];
   winstonTransports.push(

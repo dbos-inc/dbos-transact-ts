@@ -2,7 +2,7 @@ import axios from "axios";
 import { getCloudCredentials, getLogger } from "../cloudutils";
 import path from "node:path";
 
-export async function registerApp(dbname: string, host: string, machines: number): Promise<number> {
+export async function registerApp(dbname: string, host: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -19,7 +19,6 @@ export async function registerApp(dbname: string, host: string, machines: number
       {
         name: appName,
         database: dbname,
-        max_vms: machines,
       },
       {
         headers: {

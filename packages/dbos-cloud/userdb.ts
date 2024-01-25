@@ -30,7 +30,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
 
     if (sync) {
       let status = "";
-      while (status != "available") {
+      while (status != "available" && status != "backing-up") {
         await sleep(30000);
         const userDBInfo = await getUserDBInfo(host, dbName);
         logger.info(userDBInfo);
@@ -68,12 +68,20 @@ export async function deleteUserDb(host: string, dbName: string) {
   }
 }
 
-export async function getUserDb(host: string, dbName: string) {
+export async function getUserDb(host: string, dbName: string, json: boolean) {
   const logger = getLogger();
 
   try {
     const userDBInfo = await getUserDBInfo(host, dbName);
-    logger.info(userDBInfo);
+    if (json) {
+      console.log(JSON.stringify(userDBInfo));
+    } else {
+      logger.info(`Retrieving status of: ${dbName}`);
+      console.log(`DB Name: ${userDBInfo.DBName}`);
+      console.log(`Status: ${userDBInfo.Status}`);
+      console.log(`Host Name: ${userDBInfo.HostName}`);
+      console.log(`Port: ${userDBInfo.Port}`);
+    }
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {
       logger.error(`Error getting database ${dbName}: ${e.response?.data}`);

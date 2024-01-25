@@ -65,20 +65,18 @@ applicationCommands
   .command('register')
   .description('Register a new application')
   .requiredOption('-d, --database <string>', 'Specify the app database name')
-  .option('-m, --machines <string>', 'Number of VMs to deploy', '1')
-  .action(async (options: { database: string, machines: string }) => {
+  .action(async (options: { database: string }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await registerApp(options.database, host, parseInt(options.machines));
+    const exitCode = await registerApp(options.database, host);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('update')
   .description('Update an application')
-  .requiredOption('-m, --machines <string>', 'Number of VMs to deploy')
-  .action(async (options: { machines: string }) => {
+  .action(async () => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await updateApp(host, parseInt(options.machines));
+    const exitCode = await updateApp(host);
     process.exit(exitCode);
   });
 
@@ -104,9 +102,10 @@ applicationCommands
 applicationCommands
   .command('list')
   .description('List all deployed applications')
-  .action(async () => {
+  .option('--json', 'Emit JSON output')
+  .action(async (options: { json: boolean }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await listApps(host);
+    const exitCode = await listApps(host, options.json);
     process.exit(exitCode);
   });
 
@@ -142,9 +141,10 @@ userdbCommands
 userdbCommands
   .command('status')
   .argument('<string>', 'database name')
-  .action((async (dbname: string) => {
+  .option('--json', 'Emit JSON output')
+  .action((async (dbname: string, options: { json: boolean}) => {
     const { host }: { host: string } = userdbCommands.opts()
-    await getUserDb(host, dbname)
+    await getUserDb(host, dbname, options.json)
   }))
 
 userdbCommands
