@@ -109,6 +109,6 @@ interface CloudAPIErrorResponse {
 export function handleAPIErrors(label: string, e: AxiosError) {
   const logger = getLogger();
   const resp: CloudAPIErrorResponse = e.response?.data as CloudAPIErrorResponse;
-  logger.error(`${label}: ${resp.message}. Request ID: ${resp.requestID}`);
+  logger.error(`[${resp.requestID}] ${label}: ${resp.message}.`);
 }
 
