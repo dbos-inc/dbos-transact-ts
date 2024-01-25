@@ -2,7 +2,7 @@ import axios from "axios";
 import { getCloudCredentials, getLogger } from "../cloudutils";
 import { Application } from "./types";
 
-export async function listApps(host: string): Promise<number> {
+export async function listApps(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -16,17 +16,24 @@ export async function listApps(host: string): Promise<number> {
         },
       }
     );
-    const data: Application[] = list.data as Application[];
-    if (data.length === 0) {
+    const applications: Application[] = list.data as Application[];
+    if (applications.length === 0) {
       logger.info("No applications found");
       return 1;
     }
-    const formattedData: Application[] = []
-    for (const application of data) {
-      formattedData.push({ "Name": application.Name, "ID": application.ID, "Version": application.Version, "DatabaseName": application.DatabaseName, "MaxVMs": application.MaxVMs, "Status": application.Status });
+    if (json) {
+      console.log(JSON.stringify(applications));
+    } else {
+      logger.info(`Listing applications for ${userCredentials.userName}`)
+      applications.forEach(app => {
+        console.log(`Application Name: ${app.Name}`);
+        console.log(`ID: ${app.ID}`);
+        console.log(`Database Name: ${app.DatabaseName}`);
+        console.log(`Status: ${app.Status}`);
+        console.log(`Version: ${app.Version}`);
+        console.log('-------------------------');
+      });
     }
-    logger.info(`Listing applications for ${userCredentials.userName}`)
-    console.log(JSON.stringify(formattedData));
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

@@ -102,9 +102,10 @@ applicationCommands
 applicationCommands
   .command('list')
   .description('List all deployed applications')
-  .action(async () => {
+  .option('--json', 'Emit JSON output')
+  .action(async (options: { json: boolean }) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await listApps(host);
+    const exitCode = await listApps(host, options.json);
     process.exit(exitCode);
   });
 

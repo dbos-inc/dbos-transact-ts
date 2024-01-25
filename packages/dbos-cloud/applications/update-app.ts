@@ -30,7 +30,6 @@ export async function updateApp(host: string): Promise<number> {
     );
     const application: Application = update.data as Application;
     logger.info(`Successfully updated: ${application.Name}`);
-    console.log(JSON.stringify({ "Name": application.Name, "ID": application.ID, "Version": application.Version, "MaxVMs": application.MaxVMs }));
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

@@ -4,5 +4,4 @@ export type Application = {
   DatabaseName: string;
   Status: string;
   Version: string;
-  MaxVMs: string;
 };
