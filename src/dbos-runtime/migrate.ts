@@ -7,19 +7,58 @@ import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
-export async function migrate(): Promise<number> {
-  const logger = new GlobalLogger();
+import { TelemetryCollector } from '../telemetry/collector';
+import { TelemetryConfig } from '../telemetry';
+import { TelemetryExporter } from '../telemetry/exporters';
+import { getConfigFileParsingDiagnostics } from "typescript";
 
-  // Read the configuration YAML file
+function initConfig(): [ConfigFile, GlobalLogger, (code: number) => void] {
+  let logger = new GlobalLogger();
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`Failed to parse ${dbosConfigFilePath}`);
+    process.exit(1);
+  }
+  if (configFile.telemetry?.OTLPExporter) {
+    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter));
+    logger = new GlobalLogger(telemetryCollector, configFile.telemetry?.logs)
+    function terminate(code: number) {
+      console.log("Terminating")
+      telemetryCollector.destroy().finally(() => {
+        console.log("Exiting")
+        process.exit(code);
+      });
+    }
+    logger.info("Exporter Initialized");
+    telemetryCollector.processAndExportSignals() //needs to be present
+    return [ configFile, logger, terminate ];    
+  }  else {
+    function terminate(code: number) {
+      process.exit(code);
+    }
+    return [ configFile, logger, terminate ];
+  }
+}
+
+export async function runAndLog( action: (configFile: ConfigFile, logger:GlobalLogger) => Promise<number>) {
+  let [configFile, logger, terminate] = initConfig();
+  const returnCode = await action(configFile, logger);
+  terminate(returnCode);
+}
+
+export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
+  const userDBName = configFile.database.user_database;
+  //logger.info("Starting Database Migration");
+  //logger.info(`Creating database ${userDBName} if it does not already exist`);
+  function sleep(duration: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, duration));
+  }
+  await sleep(5);  //needs to be present
+  if (userDBName == 'hello') {
+    logger.error('Injected Error, Buddy!');
     return 1;
   }
 
-  const userDBName = configFile.database.user_database;
-
-  logger.info(`Creating database ${userDBName} if it does not already exist`);
   const createDB = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
   try {
     process.env.PGPASSWORD = configFile.database.password;
@@ -87,19 +126,13 @@ export async function migrate(): Promise<number> {
     }
     return 1;
   }
+
   return 0;
 }
 
-export function rollbackMigration(): number {
-  const logger = new GlobalLogger();
-
-  // read the yaml file
-  const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-  if (!configFile) {
-    logger.error(`failed to parse ${dbosConfigFilePath}`);
-    return 1;
-  }
-
+export async function rollbackMigration(configFile: ConfigFile, logger:GlobalLogger) {
+  logger.info("Starting Database Migration Rollback");
+  
   let dbType = configFile.database.user_dbclient;
   if (dbType == undefined) {
     dbType = "knex";

@@ -35,6 +35,7 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async export(signals: TelemetrySignal[]): Promise<void> {
+    console.log("TelemetryExporter::export")
     return await new Promise<void>((resolve) => {
       // Sort out traces and logs
       const exportSpans: ReadableSpan[] = [];
@@ -58,21 +59,25 @@ export class TelemetryExporter implements ITelemetryExporter {
       }
 
       if (exportLogs.length > 0 && this.logsExporter) {
+        console.log("TelemetryExporter::export exporting data")
         this.logsExporter.export(exportLogs, (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
             console.warn(`Log export failed: ${results.code}`);
             console.warn(results);
           }
         });
+        console.log("TelemetryExporter::export export finished")
       }
-
+      
       resolve();
     });
   }
 
   async flush() {
+    console.log("TelemetryExporter::flush")
     await this.logsExporter?.forceFlush();
     await this.tracesExporter?.forceFlush();
+    console.log("TelemetryExporter::flush complete")
   }
 }
 
