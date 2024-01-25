@@ -74,7 +74,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       if (count % 5 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
         if (count > 20) {
-          logger.info(`If ${appName} takes too long to become available, check its logs at...`);
+          logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
         }
       }
       if (count > 180) {
