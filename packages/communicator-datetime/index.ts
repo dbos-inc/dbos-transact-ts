@@ -10,7 +10,7 @@ class CurrentTimeCommunicator
 
     @Communicator()
     static getCurrentTime(_ctx: CommunicatorContext) : Promise<number> {
-        return Promise.resolve(new Date().getUTCMilliseconds());
+        return Promise.resolve(new Date().getTime());
     }
 }
 
