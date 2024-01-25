@@ -12,6 +12,36 @@ import { TelemetryConfig } from '../telemetry';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { getConfigFileParsingDiagnostics } from "typescript";
 
+async function sleep(millis: number) {
+  return new Promise((resolve) => setTimeout(resolve, millis));
+}
+
+export async function bugRepro() {
+  const configFile = loadConfigFile(dbosConfigFilePath);
+  if (!configFile) {
+    console.log("Wrong branch")
+    process.exit(1);
+  }
+  if (configFile.telemetry?.OTLPExporter) {
+    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter));
+    const logger = new GlobalLogger(telemetryCollector, configFile.telemetry?.logs)
+    /////////////////////////////////
+    // These 3 lines make things work:
+    //logger.info("Logging some data")
+    //telemetryCollector.processAndExportSignals();
+    //await sleep(5); 
+    /////////////////////////////////
+    
+    logger.info("Exiting now"); 
+    await telemetryCollector.destroy();
+    console.log("Exiting")
+    process.exit(1);
+  }
+  console.log("Wrong branch")
+  process.exit(1);
+}
+
+
 function initConfig(): [ConfigFile, GlobalLogger, (code: number) => void] {
   let logger = new GlobalLogger();
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
@@ -50,9 +80,6 @@ export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
   const userDBName = configFile.database.user_database;
   //logger.info("Starting Database Migration");
   //logger.info(`Creating database ${userDBName} if it does not already exist`);
-  function sleep(duration: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, duration));
-  }
   await sleep(5);  //needs to be present
   if (userDBName == 'hello') {
     logger.error('Injected Error, Buddy!');

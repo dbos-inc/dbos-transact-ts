@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import { DBOSConfig } from "../dbos-executor";
 import { init } from "./init";
 import { debugWorkflow } from "./debug";
-import { runAndLog, migrate, rollbackMigration } from "./migrate";
+import { runAndLog, migrate, rollbackMigration, bugRepro } from "./migrate";
 
 const program = new Command();
 
@@ -64,7 +64,9 @@ program
 program
   .command('migrate')
   .description("Perform a database migration")
-  .action(() =>  { runAndLog(migrate) });
+  .action( async () => {
+    bugRepro();
+  });
 
 program
   .command('rollback')
