@@ -1,5 +1,5 @@
-import axios from "axios";
-import { getCloudCredentials, getLogger } from "./cloudutils";
+import axios, { AxiosError } from "axios";
+import { handleAPIErrors, getCloudCredentials, getLogger } from "./cloudutils";
 import { sleep } from "../../src/utils";
 
 export interface UserDBInstance {
@@ -38,11 +38,13 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
       }
     }
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Error creating database ${dbName}: ${e.response?.data}`);
+    const errorLabel = `Failed to create database ${dbName}`;
+    if (axios.isAxiosError(e) && (e as AxiosError).response) {
+      handleAPIErrors(errorLabel, e);
     } else {
-      logger.error(`Error creating database ${dbName}: ${(e as Error).message}`);
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
+    return 1;
   }
 }
 
@@ -60,11 +62,13 @@ export async function deleteUserDb(host: string, dbName: string) {
     });
     logger.info(`Database deleted: ${dbName}`);
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Error deleting database ${dbName}: ${e.response?.data}`);
+    const errorLabel = `Failed to delete database ${dbName}`;
+    if (axios.isAxiosError(e) && (e as AxiosError).response) {
+      handleAPIErrors(errorLabel, e);
     } else {
-      logger.error(`Error deleting database ${dbName}: ${(e as Error).message}`);
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
+    return 1;
   }
 }
 
@@ -83,11 +87,13 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
       console.log(`Port: ${userDBInfo.Port}`);
     }
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Error getting database ${dbName}: ${e.response?.data}`);
+    const errorLabel = `Failed to retreive database record ${dbName}`;
+    if (axios.isAxiosError(e) && (e as AxiosError).response) {
+      handleAPIErrors(errorLabel, e);
     } else {
-      logger.error(`Error getting database ${dbName}: ${(e as Error).message}`);
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
+    return 1;
   }
 }
 
