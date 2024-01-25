@@ -77,6 +77,10 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
           logger.info(`If ${appName} takes too long to become available, check its logs at...`);
         }
       }
+      if (count > 180) {
+        logger.error("Application taking too long to become available")
+        return 1;
+      }
 
       // Retrieve the application status, check if it is "AVAILABLE"
       const list = await axios.get(
