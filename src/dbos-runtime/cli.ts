@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from "./config";
-import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
-
-import { Command } from "commander";
-import { DBOSConfig } from "../dbos-executor";
-import { init } from "./init";
-import { debugWorkflow } from "./debug";
-import { migrate, rollbackMigration } from "./migrate";
-import { GlobalLogger } from "../telemetry/logs";
-import { TelemetryCollector } from "../telemetry/collector";
-import { TelemetryExporter } from "../telemetry/exporters";
+import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
+import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
+import { Command } from 'commander';
+import { DBOSConfig } from '../dbos-executor';
+import { init } from './init';
+import { debugWorkflow } from './debug';
+import { migrate, rollbackMigration } from './migrate';
+import { GlobalLogger } from '../telemetry/logs';
+import { TelemetryCollector } from '../telemetry/collector';
+import { TelemetryExporter } from '../telemetry/exporters';
 
 const program = new Command();
 
@@ -18,15 +17,15 @@ const program = new Command();
 ////////////////////////
 
 export interface DBOSCLIStartOptions {
-  port?: number;
-  loglevel?: string;
-  configfile?: string;
-  entrypoint?: string;
+  port?: number,
+  loglevel?: string,
+  configfile?: string,
+  entrypoint?: string,
 }
 
 interface DBOSDebugOptions extends DBOSCLIStartOptions {
-  proxy: string; // TODO: in the future, we provide the proxy URL
-  uuid: string; // Workflow UUID
+  proxy: string, // TODO: in the future, we provide the proxy URL
+  uuid: string, // Workflow UUID
 }
 
 program
