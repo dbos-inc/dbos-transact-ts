@@ -48,7 +48,7 @@ export async function runAndLog(action: (configFile: ConfigFile, logger:GlobalLo
 
 export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
   const userDBName = configFile.database.user_database;
-  logger.info(`Starting Migration: creating database ${userDBName} if it does not exist`);
+  logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
   
   const createDB = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
   try {
