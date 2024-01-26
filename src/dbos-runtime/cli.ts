@@ -69,7 +69,7 @@ program
 
 program
   .command('rollback')
-  .action(async () => {  await runAndLog(rollbackMigration); });
+  .action(async () => { await runAndLog(rollbackMigration); });
 
 program.parse(process.argv);
 
