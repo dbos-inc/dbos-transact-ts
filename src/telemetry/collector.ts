@@ -37,11 +37,9 @@ export class TelemetryCollector {
   }
 
   async destroy() {
-    console.log("in TelemetryCollector::destroy")
     clearInterval(this.signalBufferID);
     await this.processAndExportSignals();
     await this.exporter?.flush();
-    console.log("in TelemetryCollector::destroy complete")
   }
 
   push(signal: TelemetrySignal) {
@@ -53,7 +51,6 @@ export class TelemetryCollector {
   }
 
   async processAndExportSignals(): Promise<void> {
-    console.log("in ProcessAndExportSignals")
     const batch: TelemetrySignal[] = [];
     while (this.signals.size() > 0) {
       const signal = this.pop();
@@ -64,7 +61,6 @@ export class TelemetryCollector {
     }
     if (batch.length > 0) {
       if (this.exporter) {
-        console.log("in ProcessAndExportSignals adding export batch")
         try {
           await this.exporter.export(batch);
         } catch (e) {
@@ -72,6 +68,5 @@ export class TelemetryCollector {
         }
       }
     }
-    console.log("in ProcessAndExportSignals complete")
   }
 }

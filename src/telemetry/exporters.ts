@@ -61,30 +61,24 @@ export class TelemetryExporter implements ITelemetryExporter {
       )
     }
     if (exportLogs.length > 0 && this.logsExporter) {
-      console.log("TelemetryExporter::export exporting data")
       tasks.push(
         new Promise<void>((resolve) => {
           this.logsExporter?.export(exportLogs, (results: ExportResult) => {
             if (results.code !== ExportResultCode.SUCCESS) {
              console.warn(`Log export failed: ${results.code}`);
              console.warn(results);
-            } else {
-             console.log("TelemetryExporter::export got Result callback")
-            }
+            } 
             resolve();          
          });
         })
       )
     }
     await Promise.all(tasks);
-    console.log("TelemetryExporter::export export finished")
   }
 
   async flush() {
-    console.log("TelemetryExporter::flush")
     await this.logsExporter?.forceFlush();
     await this.tracesExporter?.forceFlush();
-    console.log("TelemetryExporter::flush complete")
   }
 }
 
