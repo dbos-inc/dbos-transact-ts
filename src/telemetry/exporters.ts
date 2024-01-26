@@ -5,6 +5,9 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
+import { resolve } from "path";
+import { convertTypeAcquisitionFromJson } from "typescript";
+import _ from "lodash";
 
 export interface OTLPExporterConfig {
   logsEndpoint?: string;
@@ -48,30 +51,30 @@ export class TelemetryExporter implements ITelemetryExporter {
     });
     const tasks : Promise<void>[] = [];
     if (exportSpans.length > 0 && this.tracesExporter) {
-      tasks.push(
-        new Promise<void>((resolve) => {
-          this.tracesExporter?.export(exportSpans, (results: ExportResult) => {
-            if (results.code !== ExportResultCode.SUCCESS) {
-              console.warn(`Trace export failed: ${results.code}`);
-              console.warn(results);
-            }
-            resolve();
-          });
-        })
-      )
+      const traceExportTask = new Promise<void>((resolve) => {
+        const exportCallback = (results: ExportResult) => {
+          if (results.code !== ExportResultCode.SUCCESS) {
+            console.warn(`Trace export failed: ${results.code}`);
+            console.warn(results);
+          }
+          resolve();
+        }
+        this.tracesExporter?.export(exportSpans, exportCallback);
+      });
+      tasks.push(traceExportTask);
     }
     if (exportLogs.length > 0 && this.logsExporter) {
-      tasks.push(
-        new Promise<void>((resolve) => {
-          this.logsExporter?.export(exportLogs, (results: ExportResult) => {
-            if (results.code !== ExportResultCode.SUCCESS) {
-             console.warn(`Log export failed: ${results.code}`);
-             console.warn(results);
-            } 
-            resolve();          
-         });
-        })
-      )
+      const logExportTask = new Promise<void>((resolve) => {
+        const exportCallback = (results: ExportResult) => {
+          if (results.code !== ExportResultCode.SUCCESS) {
+            console.warn(`Log export failed: ${results.code}`);
+            console.warn(results);
+          }
+          resolve();
+        }
+        this.logsExporter?.export(exportLogs, exportCallback);
+      });
+      tasks.push(logExportTask);
     }
     await Promise.all(tasks);
   }
