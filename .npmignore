@@ -19,6 +19,7 @@ version.json
 .github/
 tests/
 coverage/
+packages/
 
 # ignore any packed packages in the repo
 *.tgz
