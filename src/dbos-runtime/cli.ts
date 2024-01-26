@@ -64,11 +64,11 @@ program
 program
   .command('migrate')
   .description("Perform a database migration")
-  .action((() => { runAndLog(migrate) }));
+  .action((async () => { await runAndLog(migrate) }));
 
 program
   .command('rollback')
-  .action((() => { runAndLog(rollbackMigration) }))
+  .action((async () => { await runAndLog(rollbackMigration) }))
 
 program.parse(process.argv);
 

@@ -27,13 +27,14 @@ export async function runAndLog(action: (configFile: ConfigFile, logger:GlobalLo
       new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), 
       configFile.telemetry?.logs
     )
-    terminate = async (code: number) => {
-      await logger.destroy();
-      process.exit(code);
+    terminate = (code: number) => {
+      void logger.destroy().finally(() => {
+        process.exit(code);
+      });
     };
   }
   else {
-    terminate = async (code:number) => {
+    terminate = (code:number) => {
       process.exit(code);
     }
   }
@@ -121,6 +122,7 @@ export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
   return 0;
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function rollbackMigration(configFile: ConfigFile, logger:GlobalLogger) {
   logger.info("Starting Migration Rollback");
   
