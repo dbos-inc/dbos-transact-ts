@@ -47,31 +47,33 @@ export class TelemetryExporter implements ITelemetryExporter {
       }
     });
     const tasks : Promise<void>[] = [];
+    // A short-lived app that exits before the callback of export() will lose its data.
+    // We wrap these callbacks in promise objects to make sure we wait for them:
     if (exportSpans.length > 0 && this.tracesExporter) {
-      tasks.push(
-        new Promise<void>((resolve) => {
-          this.tracesExporter?.export(exportSpans, (results: ExportResult) => {
-            if (results.code !== ExportResultCode.SUCCESS) {
-              console.warn(`Trace export failed: ${results.code}`);
-              console.warn(results);
-            }
-            resolve();
-          });
-        })
-      )
+      const traceExportTask = new Promise<void>((resolve) => {
+        const exportCallback = (results: ExportResult) => {
+          if (results.code !== ExportResultCode.SUCCESS) {
+            console.warn(`Trace export failed: ${results.code}`);
+            console.warn(results);
+          }
+          resolve();
+        }
+        this.tracesExporter?.export(exportSpans, exportCallback);
+      });
+      tasks.push(traceExportTask);
     }
     if (exportLogs.length > 0 && this.logsExporter) {
-      tasks.push(
-        new Promise<void>((resolve) => {
-          this.logsExporter?.export(exportLogs, (results: ExportResult) => {
-            if (results.code !== ExportResultCode.SUCCESS) {
-             console.warn(`Log export failed: ${results.code}`);
-             console.warn(results);
-            } 
-            resolve();          
-         });
-        })
-      )
+      const logExportTask = new Promise<void>((resolve) => {
+        const exportCallback = (results: ExportResult) => {
+          if (results.code !== ExportResultCode.SUCCESS) {
+            console.warn(`Log export failed: ${results.code}`);
+            console.warn(results);
+          }
+          resolve();
+        }
+        this.logsExporter?.export(exportLogs, exportCallback);
+      });
+      tasks.push(logExportTask);
     }
     await Promise.all(tasks);
   }
