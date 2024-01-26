@@ -64,16 +64,12 @@ program
 
 program
   .command('migrate')
-  .description('Perform a database migration')
-  .action(async () => {
-    await runAndLog(migrate);
-  });
+  .description("Perform a database migration")
+  .action(async () => { await runAndLog(migrate); });
 
 program
   .command('rollback')
-  .action(async () => {
-    await runAndLog(rollbackMigration);
-  });
+  .action(async () => {  await runAndLog(rollbackMigration); });
 
 program.parse(process.argv);
 
