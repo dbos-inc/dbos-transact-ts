@@ -63,15 +63,13 @@ export class TelemetryCollector {
       batch.push(signal);
     }
     if (batch.length > 0) {
-      const exports = [];
       if (this.exporter) {
         console.log("in ProcessAndExportSignals adding export batch")
-        exports.push(this.exporter.export(batch));
-      }
-      try {
-        await Promise.all(exports);
-      } catch (e) {
-        console.error((e as Error).message);
+        try {
+          await this.exporter.export(batch);
+        } catch (e) {
+          console.error((e as Error).message);
+        }
       }
     }
     console.log("in ProcessAndExportSignals complete")

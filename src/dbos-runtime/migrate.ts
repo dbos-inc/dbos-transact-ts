@@ -8,84 +8,48 @@ import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
 import { TelemetryCollector } from '../telemetry/collector';
-import { TelemetryConfig } from '../telemetry';
 import { TelemetryExporter } from '../telemetry/exporters';
-import { getConfigFileParsingDiagnostics } from "typescript";
 
-async function sleep(millis: number) {
-  return new Promise((resolve) => setTimeout(resolve, millis));
-}
-
-export async function bugRepro() {
-  const configFile = loadConfigFile(dbosConfigFilePath);
-  if (!configFile) {
-    console.log("Wrong branch")
-    process.exit(1);
-  }
-  if (configFile.telemetry?.OTLPExporter) {
-    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter));
-    const logger = new GlobalLogger(telemetryCollector, configFile.telemetry?.logs)
-    /////////////////////////////////
-    // These 3 lines make things work:
-    //logger.info("Logging some data")
-    //telemetryCollector.processAndExportSignals();
-    //await sleep(5); 
-    /////////////////////////////////
-    
-    logger.info("Exiting now"); 
-    await telemetryCollector.destroy();
-    console.log("Exiting")
-    process.exit(1);
-  }
-  console.log("Wrong branch")
-  process.exit(1);
-}
-
-
-function initConfig(): [ConfigFile, GlobalLogger, (code: number) => void] {
+//Takes an action function(configFile, logger) that returns a numeric exit code.
+//If otel exporter is specified in configFile, adds it to the logger and flushes it after.
+//If action throws, logs the exception and sets the exit code to 1.
+//Finally, terminates the program with the exit code.
+export async function runAndLog(action: (configFile: ConfigFile, logger:GlobalLogger) => Promise<number>) {
   let logger = new GlobalLogger();
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
     logger.error(`Failed to parse ${dbosConfigFilePath}`);
     process.exit(1);
   }
+  let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
-    const telemetryCollector = new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter));
-    logger = new GlobalLogger(telemetryCollector, configFile.telemetry?.logs)
-    function terminate(code: number) {
-      console.log("Terminating")
-      telemetryCollector.destroy().finally(() => {
-        console.log("Exiting")
-        process.exit(code);
-      });
-    }
-    logger.info("Exporter Initialized");
-    telemetryCollector.processAndExportSignals() //needs to be present
-    return [ configFile, logger, terminate ];    
-  }  else {
-    function terminate(code: number) {
+    logger = new GlobalLogger(
+      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), 
+      configFile.telemetry?.logs
+    )
+    terminate = async (code: number) => {
+      await logger.destroy();
+      process.exit(code);
+    };
+  }
+  else {
+    terminate = async (code:number) => {
       process.exit(code);
     }
-    return [ configFile, logger, terminate ];
   }
-}
-
-export async function runAndLog( action: (configFile: ConfigFile, logger:GlobalLogger) => Promise<number>) {
-  let [configFile, logger, terminate] = initConfig();
-  const returnCode = await action(configFile, logger);
+  let returnCode = 1;
+  try { 
+    returnCode = await action(configFile, logger);
+  } catch(e) {
+    logger.error(e);
+  }
   terminate(returnCode);
 }
 
 export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
   const userDBName = configFile.database.user_database;
-  //logger.info("Starting Database Migration");
-  //logger.info(`Creating database ${userDBName} if it does not already exist`);
-  await sleep(5);  //needs to be present
-  if (userDBName == 'hello') {
-    logger.error('Injected Error, Buddy!');
-    return 1;
-  }
-
+  logger.info(`Starting Migration: creating database ${userDBName} if it does not exist`);
+  
   const createDB = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
   try {
     process.env.PGPASSWORD = configFile.database.password;
@@ -158,7 +122,7 @@ export async function migrate(configFile: ConfigFile, logger:GlobalLogger) {
 }
 
 export async function rollbackMigration(configFile: ConfigFile, logger:GlobalLogger) {
-  logger.info("Starting Database Migration Rollback");
+  logger.info("Starting Migration Rollback");
   
   let dbType = configFile.database.user_dbclient;
   if (dbType == undefined) {

@@ -309,7 +309,7 @@ export class DBOSExecutor {
     await this.flushWorkflowBuffers();
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
-    await this.telemetryCollector.destroy();
+    await this.logger.destroy();
   }
 
   /* WORKFLOW OPERATIONS */

@@ -96,6 +96,10 @@ export class GlobalLogger {
       this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
   }
+
+  async destroy() {
+    await this.telemetryCollector?.destroy();
+  }
 }
 
 /******************/
