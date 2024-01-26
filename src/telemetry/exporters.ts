@@ -5,7 +5,6 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
-import _ from "lodash";
 
 export interface OTLPExporterConfig {
   logsEndpoint?: string;
