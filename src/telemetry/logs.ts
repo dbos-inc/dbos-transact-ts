@@ -96,6 +96,10 @@ export class GlobalLogger {
       this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
   }
+
+  async destroy() {
+    await this.telemetryCollector?.destroy();
+  }
 }
 
 /******************/
@@ -209,8 +213,8 @@ class OTLPLogQueueTransport extends TransportStream {
       severityNumber: levelToSeverityNumber[level as string],
       severityText: level as string,
       body: message as string,
-      timestamp: new Date().getTime(), // So far I don't see a major difference between this and observedTimestamp
-      observedTimestamp: new Date().getTime(),
+      timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
+      observedTimestamp: performance.now(),
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack, applicationID: this.applicationID, executorID: this.executorID } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call

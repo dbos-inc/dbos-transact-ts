@@ -35,39 +35,45 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async export(signals: TelemetrySignal[]): Promise<void> {
-    return await new Promise<void>((resolve) => {
-      // Sort out traces and logs
-      const exportSpans: ReadableSpan[] = [];
-      const exportLogs: ReadableLogRecord[] = [];
-      signals.forEach((signal) => {
-        if (isTraceSignal(signal)) {
-          exportSpans.push(signal as ReadableSpan);
-        }
-        if (isLogSignal(signal)) {
-          exportLogs.push(signal as ReadableLogRecord);
-        }
-      });
-
-      if (exportSpans.length > 0 && this.tracesExporter) {
-        this.tracesExporter.export(exportSpans, (results: ExportResult) => {
-          if (results.code !== ExportResultCode.SUCCESS) {
-            console.warn(`Trace export failed: ${results.code}`);
-            console.warn(results);
-          }
-        });
+    // Sort out traces and logs
+    const exportSpans: ReadableSpan[] = [];
+    const exportLogs: ReadableLogRecord[] = [];
+    signals.forEach((signal) => {
+      if (isTraceSignal(signal)) {
+        exportSpans.push(signal as ReadableSpan);
       }
-
-      if (exportLogs.length > 0 && this.logsExporter) {
-        this.logsExporter.export(exportLogs, (results: ExportResult) => {
-          if (results.code !== ExportResultCode.SUCCESS) {
-            console.warn(`Log export failed: ${results.code}`);
-            console.warn(results);
-          }
-        });
+      if (isLogSignal(signal)) {
+        exportLogs.push(signal as ReadableLogRecord);
       }
-
-      resolve();
     });
+    const tasks : Promise<void>[] = [];
+    if (exportSpans.length > 0 && this.tracesExporter) {
+      tasks.push(
+        new Promise<void>((resolve) => {
+          this.tracesExporter?.export(exportSpans, (results: ExportResult) => {
+            if (results.code !== ExportResultCode.SUCCESS) {
+              console.warn(`Trace export failed: ${results.code}`);
+              console.warn(results);
+            }
+            resolve();
+          });
+        })
+      )
+    }
+    if (exportLogs.length > 0 && this.logsExporter) {
+      tasks.push(
+        new Promise<void>((resolve) => {
+          this.logsExporter?.export(exportLogs, (results: ExportResult) => {
+            if (results.code !== ExportResultCode.SUCCESS) {
+             console.warn(`Log export failed: ${results.code}`);
+             console.warn(results);
+            } 
+            resolve();          
+         });
+        })
+      )
+    }
+    await Promise.all(tasks);
   }
 
   async flush() {
