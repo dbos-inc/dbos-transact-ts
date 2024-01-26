@@ -3,7 +3,7 @@ import { getCloudCredentials, getLogger } from "../cloudutils";
 import { Application } from "./types";
 import path from "node:path";
 
-export async function updateApp(host: string, machines: number): Promise<number> {
+export async function updateApp(host: string): Promise<number> {
   const logger =  getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -15,12 +15,11 @@ export async function updateApp(host: string, machines: number): Promise<number>
   logger.info(`Updating application: ${appName}`)
 
   try {
-    logger.info(`Updating application ${appName} to ${machines} machines`);
+    logger.info(`Updating application ${appName}`);
     const update = await axios.patch(
       `https://${host}/${userCredentials.userName}/application/${appName}`,
       {
         name: appName,
-        max_vms: machines
       },
       {
         headers: {
@@ -31,7 +30,6 @@ export async function updateApp(host: string, machines: number): Promise<number>
     );
     const application: Application = update.data as Application;
     logger.info(`Successfully updated: ${application.Name}`);
-    console.log(JSON.stringify({ "Name": application.Name, "ID": application.ID, "Version": application.Version, "MaxVMs": application.MaxVMs }));
     return 0;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response) {

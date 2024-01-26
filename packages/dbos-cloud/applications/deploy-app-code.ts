@@ -1,7 +1,7 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { createDirectory, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
+import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -42,6 +42,10 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
   }
 
+  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+  writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
+  execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
+
   try {
     const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
 
@@ -70,8 +74,12 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       if (count % 5 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
         if (count > 20) {
-          logger.info(`If ${appName} takes too long to become available, check its logs at...`);
+          logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
         }
+      }
+      if (count > 180) {
+        logger.error("Application taking too long to become available")
+        return 1;
       }
 
       // Retrieve the application status, check if it is "AVAILABLE"
@@ -95,14 +103,22 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Failed to deploy application ${appName}: ${e.response?.data}`);
-      return 1;
+    const errorLabel = `Failed to deploy application ${appName}`;
+    if (axios.isAxiosError(e) && (e as AxiosError).response) {
+      handleAPIErrors(errorLabel, e);
     } else {
-      logger.error(`Failed to deploy application ${appName}: ${(e as Error).message}`);
-      return 1;
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
+    return 1;
   }
+}
+
+function readInterpolatedConfig(configFilePath: string): string {
+  const configFileContent = readFileSync(configFilePath) as string;
+  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
+  return configFileContent.replace(regex, (_, g1: string) => {
+    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+});
 }
 
 async function buildAppInDocker(appName: string): Promise<boolean> {
