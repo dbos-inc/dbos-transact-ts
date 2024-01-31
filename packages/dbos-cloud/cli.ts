@@ -112,9 +112,10 @@ applicationCommands
 applicationCommands
   .command('logs')
   .description('Print the microVM logs of a deployed application')
-  .action(async () => {
+  .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
+  .action(async (options: { last: number}) => {
     const { host }: { host: string } = applicationCommands.opts()
-    const exitCode = await getAppLogs(host);
+    const exitCode = await getAppLogs(host, options.last);
     process.exit(exitCode);
   });
 
