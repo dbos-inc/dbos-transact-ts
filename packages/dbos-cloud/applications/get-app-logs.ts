@@ -1,7 +1,6 @@
 import axios , { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
 import path from "node:path";
-import { stringify } from "node:querystring";
 
 export async function getAppLogs(host: string, last: number): Promise<number> {
   if (last != undefined && (isNaN(last) || last <= 0)) {
