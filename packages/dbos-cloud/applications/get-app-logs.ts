@@ -5,7 +5,7 @@ import { stringify } from "node:querystring";
 
 export async function getAppLogs(host: string, last: number): Promise<number> {
   if (last != undefined && (isNaN(last) || last <= 0)) {
-    throw new Error('The --last parmameter must be greater than 0');
+    throw new Error('The --last parmameter must be an integer greater than 0');
   }
   if (last == undefined) {
     last = 0      //internally, 0 means "get all the logs." This is the default.
