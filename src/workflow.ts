@@ -174,7 +174,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     funcIDs.sort();
     try {
-      let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+      let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
       let paramCnt = 1;
       const values: any[] = [];
       for (const funcID of funcIDs) {
@@ -186,8 +186,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         if (paramCnt > 1) {
           sqlStmt += ", ";
         }
-        sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++})`;
-        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot);
+        sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
+        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, Date.now());
       }
       this.logger.debug(sqlStmt);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -227,7 +227,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordUnguardedOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
     const serialOutput = JSON.stringify(output);
-    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text)) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput);
+    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text), $4) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, Date.now());
     return rows[0].txn_id;
   }
 
@@ -244,7 +244,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
     async recordUnguardedError(client: UserDatabaseClient, funcID: number, err: Error): Promise<string> {
       const serialErr = JSON.stringify(serializeError(err));
-      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text)) RETURNING txn_id;", this.workflowUUID, funcID, serialErr);
+      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text), $4) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, Date.now());
       return rows[0].txn_id;
     }
 
