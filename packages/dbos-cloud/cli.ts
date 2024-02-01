@@ -136,7 +136,8 @@ userdbCommands
   .option('-s, --sync', 'make synchronous call', true)
   .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
     const { host }: { host: string } = userdbCommands.opts()
-    await createUserDb(host, dbname, options.admin, options.password, options.sync)
+    const exitCode = await createUserDb(host, dbname, options.admin, options.password, options.sync)
+    process.exit(exitCode);
   }))
 
 userdbCommands
@@ -145,7 +146,8 @@ userdbCommands
   .option('--json', 'Emit JSON output')
   .action((async (dbname: string, options: { json: boolean}) => {
     const { host }: { host: string } = userdbCommands.opts()
-    await getUserDb(host, dbname, options.json)
+    const exitCode = await getUserDb(host, dbname, options.json)
+    process.exit(exitCode);
   }))
 
 userdbCommands
@@ -153,7 +155,8 @@ userdbCommands
   .argument('<string>', 'database name')
   .action((async (dbname: string) => {
     const { host }: { host: string } = userdbCommands.opts()
-    await deleteUserDb(host, dbname)
+    const exitCode = await deleteUserDb(host, dbname)
+    process.exit(exitCode);
   }))
 
 program.parse(process.argv);
