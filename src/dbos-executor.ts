@@ -383,6 +383,7 @@ export class DBOSExecutor {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
+      createdAt: Date.now() // Remember the start time of this workflow
     };
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     if (!wCtxt.isTempWorkflow) {
@@ -668,7 +669,7 @@ export class DBOSExecutor {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot) VALUES ";
+        let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -679,8 +680,8 @@ export class DBOSExecutor {
             if (paramCnt > 1) {
               sqlStmt += ", ";
             }
-            sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++})`;
-            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot);
+            sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
+            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, Date.now());
           }
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
