@@ -13,6 +13,7 @@ type DeployOutput = {
 }
 
 export async function deployAppCode(host: string, docker: boolean): Promise<number> {
+  const startTime = process.hrtime();
   const logger = getLogger()
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -64,6 +65,9 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       }
     );
     const deployOutput = response.data as DeployOutput;
+    const deployEndTime = process.hrtime(startTime);
+    const deployLatency = (deployEndTime[0] * 1000) + (deployEndTime[1] / 1000000);
+    logger.info(`Application ${appName} code deployed in ${deployLatency.toFixed(3)} ms`)
     logger.info(`Submitted deploy request for ${appName}. Assigned version: ${deployOutput.ApplicationVersion}`);
 
     // Wait for the application to become available
@@ -99,7 +103,9 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
       }
       await sleep(1000)
     }
-    logger.info(`Application ${appName} successfuly deployed`)
+    const endTime = process.hrtime(startTime);
+    const elapsed = (endTime[0] * 1000) + (endTime[1] / 1000000);
+    logger.info(`Application ${appName} successfuly deployed in ${elapsed.toFixed(3)} ms`)
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
   } catch (e) {
