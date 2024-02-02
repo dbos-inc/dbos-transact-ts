@@ -274,7 +274,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     const readOnly = txnInfo.config.readOnly ?? false;
     let retryWaitMillis = 1;
-    const backoffFactor = 2;
+    const backoffFactor = 1.5;
     const funcId = this.functionIDGetIncrement();
     const span: Span = this.#dbosExec.tracer.startSpan(
       txn.name,
