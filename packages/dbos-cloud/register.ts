@@ -24,6 +24,9 @@ export async function registerUser(username: string, host: string): Promise<numb
     if (exitCode !== 0) {
       return exitCode
     }
+  } else {
+    const userCredentials = getCloudCredentials();
+    logger.info(`You are currently logged in as ${userCredentials.userName}.  Registering ${userCredentials.userName} with DBOS Cloud...`)
   }
 
   const userCredentials = getCloudCredentials();
@@ -49,7 +52,7 @@ export async function registerUser(username: string, host: string): Promise<numb
     const userUUID = register.data as string;
     logger.info(`Registered user ${loginName}, UUID: ${userUUID}`);
   } catch (e) {
-    const errorLabel = `Failed to register user ${username}`;
+    const errorLabel = `Failed to register user ${loginName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
