@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger } from "./cloudutils";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from "./cloudutils";
 import { sleep } from "../../src/utils";
 
 export interface UserDBInstance {
@@ -37,10 +37,12 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
         status = userDBInfo.Status;
       }
     }
+    return 0;
   } catch (e) {
     const errorLabel = `Failed to create database ${dbName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -61,10 +63,12 @@ export async function deleteUserDb(host: string, dbName: string) {
       },
     });
     logger.info(`Database deleted: ${dbName}`);
+    return 0;
   } catch (e) {
     const errorLabel = `Failed to delete database ${dbName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -86,10 +90,12 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
       console.log(`Host Name: ${userDBInfo.HostName}`);
       console.log(`Port: ${userDBInfo.Port}`);
     }
+    return 0;
   } catch (e) {
     const errorLabel = `Failed to retreive database record ${dbName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -108,5 +114,6 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
     },
   });
 
+  // TODO: this needs a type guard
   return res.data as UserDBInstance;
 }

@@ -1,5 +1,5 @@
-import axios from "axios";
-import { getCloudCredentials, getLogger } from "../cloudutils";
+import axios, { AxiosError } from "axios";
+import { getCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse } from "../cloudutils";
 import { Application } from "./types";
 import path from "node:path";
 
@@ -7,7 +7,7 @@ export async function updateApp(host: string): Promise<number> {
   const logger =  getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
-  
+
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
@@ -32,13 +32,13 @@ export async function updateApp(host: string): Promise<number> {
     logger.info(`Successfully updated: ${application.Name}`);
     return 0;
   } catch (e) {
-    if (axios.isAxiosError(e) && e.response) {
-      logger.error(`Failed to update application ${appName}: ${e.response?.data}`);
-      return 1;
+    const errorLabel = "Failed to update application";
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
-      (e as Error).message = `Failed to update application ${appName}: ${(e as Error).message}`;
-      logger.error(e);
-      return 1;
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
+    return 1;
   }
 }

@@ -106,6 +106,13 @@ interface CloudAPIErrorResponse {
   requestID: string,
 }
 
+export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
+  return typeof obj === 'object' && obj !== null &&
+    'message' in obj && typeof obj['message'] === 'string' &&
+    'statusCode' in obj && typeof obj['statusCode'] === 'number' &&
+    'requestID' in obj && typeof obj['requestID'] === 'string';
+}
+
 export function handleAPIErrors(label: string, e: AxiosError) {
   const logger = getLogger();
   const resp: CloudAPIErrorResponse = e.response?.data as CloudAPIErrorResponse;

@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep } from "../cloudutils";
+import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -104,8 +104,9 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }

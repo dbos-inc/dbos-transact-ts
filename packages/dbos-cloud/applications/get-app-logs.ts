@@ -1,5 +1,5 @@
 import axios , { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from "../cloudutils";
 import path from "node:path";
 
 export async function getAppLogs(host: string, last: number): Promise<number> {
@@ -34,8 +34,9 @@ export async function getAppLogs(host: string, last: number): Promise<number> {
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve logs of application ${appName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }

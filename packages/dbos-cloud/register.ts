@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger } from "./cloudutils";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from "./cloudutils";
 
 export async function registerUser(username: string, host: string): Promise<number> {
   const userCredentials = getCloudCredentials();
@@ -24,8 +24,9 @@ export async function registerUser(username: string, host: string): Promise<numb
     logger.info(`Registered user ${userName}, UUID: ${userUUID}`);
   } catch (e) {
     const errorLabel = `Failed to register user ${username}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }

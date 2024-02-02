@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
 import path from "node:path";
 
 export async function deleteApp(host: string): Promise<number> {
@@ -25,8 +25,9 @@ export async function deleteApp(host: string): Promise<number> {
     return 0;
   } catch (e) {
     const errorLabel = `Failed to delete application ${appName}`;
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }

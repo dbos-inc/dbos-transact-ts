@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from "../cloudutils";
 import { Application } from "./types";
 
 export async function listApps(host: string, json: boolean): Promise<number> {
@@ -37,8 +37,9 @@ export async function listApps(host: string, json: boolean): Promise<number> {
     return 0;
   } catch (e) {
     const errorLabel = 'Failed to list applications';
-    if (axios.isAxiosError(e) && (e as AxiosError).response) {
-      handleAPIErrors(errorLabel, e);
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
