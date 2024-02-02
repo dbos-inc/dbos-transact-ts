@@ -60,7 +60,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 
 export async function login(username: string): Promise<number> {
   const logger = getLogger();
-  logger.info(`Logging in!`);
+  logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
     method: 'POST',

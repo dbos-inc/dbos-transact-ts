@@ -42,12 +42,6 @@ program
   .requiredOption('-u, --username <string>', 'Username')
   .option('-h, --host <string>', 'Specify the host', DEFAULT_HOST)
   .action(async (options: { username: string, host: string}) => {
-    if (!credentialsExist()) {
-      const exitCode = await login(options.username);
-      if (exitCode !== 0) {
-        process.exit(exitCode);
-      }
-    }
     const exitCode = await registerUser(options.username, options.host);
     process.exit(exitCode);
   });
