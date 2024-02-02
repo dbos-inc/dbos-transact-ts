@@ -106,18 +106,11 @@ interface CloudAPIErrorResponse {
   requestID: string,
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function isCloudAPIErrorResponse(obj: any): obj is CloudAPIErrorResponse {
-// eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return (
-    obj &&
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    typeof obj.message === 'string' &&
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    typeof obj.statusCode === 'number' &&
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    typeof obj.requestID === 'string'
-  );
+export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
+  return typeof obj === 'object' && obj !== null &&
+    'message' in obj && typeof obj['message'] === 'string' &&
+    'statusCode' in obj && typeof obj['statusCode'] === 'number' &&
+    'requestID' in obj && typeof obj['requestID'] === 'string';
 }
 
 export function handleAPIErrors(label: string, e: AxiosError) {
