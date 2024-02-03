@@ -92,7 +92,7 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
     }
     return 0;
   } catch (e) {
-    const errorLabel = `Failed to retreive database record ${dbName}`;
+    const errorLabel = `Failed to retrieve database record ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
         handleAPIErrors(errorLabel, axiosError);
