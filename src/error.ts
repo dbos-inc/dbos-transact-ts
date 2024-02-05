@@ -160,3 +160,10 @@ export class DBOSDebuggerError extends DBOSError {
     super("DEBUGGER: " + msg, DebuggerError);
   }
 }
+
+const NonExistWorkflowError = 16;
+export class DBOSNonExistWorkflowError extends DBOSError {
+  constructor(msg: string) {
+    super(msg, NonExistWorkflowError);
+  }
+}

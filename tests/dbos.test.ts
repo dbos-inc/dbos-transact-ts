@@ -65,6 +65,9 @@ describe("dbos-tests", () => {
   });
 
   test("simple-workflow-notifications", async () => {
+    // Send to non-exist workflow should fail
+    await expect(testRuntime.invoke(DBOSTestClass).sendWorkflow('1234567').then((x) => x.getResult())).rejects.toThrow('Send to non-exist destination UUID');
+
     const workflowUUID = uuidv1();
     const handle = await testRuntime.invoke(DBOSTestClass, workflowUUID).receiveWorkflow();
     await expect(testRuntime.invoke(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.

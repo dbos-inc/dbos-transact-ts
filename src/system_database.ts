@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "./error";
+import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep, findPackageRoot } from "./utils";
@@ -347,10 +347,24 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
       return;
     }
-    await client.query(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-      [destinationUUID, topic, JSON.stringify(message)]
-    );
+
+    try {
+      await client.query(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+        [destinationUUID, topic, JSON.stringify(message)]
+      );
+    } catch (error) {
+      await client.query("ROLLBACK");
+      client.release();
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === "23503") {
+        // Foreign key constraint violation
+        throw new DBOSNonExistWorkflowError(`Send to non-exist destination UUID: ${destinationUUID}`);
+      } else {
+        throw err;
+      }
+    }
+
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
     client.release();
