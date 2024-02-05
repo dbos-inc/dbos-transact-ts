@@ -180,7 +180,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } catch (error) {
       (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
       this.logger.error(error);
-      // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
+    } finally {
+      // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, output] of localBuffer) {
         if (!this.workflowStatusBuffer.has(workflowUUID)) {
           this.workflowStatusBuffer.set(workflowUUID, output)
@@ -222,30 +223,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const values: any[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, args] of localBuffer) {
+          finishedCnt++;
+          if (this.workflowStatusBuffer.has(workflowUUID)) {
+            // Need the workflow status buffer to be flushed first. Continue and retry later.
+            continue;
+          }
+
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
           sqlStmt += `($${paramCnt++}, $${paramCnt++})`;
           values.push(workflowUUID, JSON.stringify(args));
           batchUUIDs.push(workflowUUID);
-          finishedCnt++;
 
           if (batchUUIDs.length >= this.flushBatchSize) {
             // Cap at the batch size.
             break;
           }
         }
-        sqlStmt += " ON CONFLICT (workflow_uuid) DO NOTHING;";
 
-        await this.pool.query(sqlStmt, values);
-
-        // Clean up after each batch succeeds
-        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+        if (batchUUIDs.length > 0) {
+          sqlStmt += " ON CONFLICT (workflow_uuid) DO NOTHING;";
+          await this.pool.query(sqlStmt, values);
+          // Clean up after each batch succeeds
+          batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+        }
       }
     } catch (error) {
       (error as Error).message = `Error flushing workflow inputs buffer: ${(error as Error).message}`;
       this.logger.error(error);
-      // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
+    } finally {
+      // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, args] of localBuffer) {
         if (!this.workflowInputsBuffer.has(workflowUUID)) {
           this.workflowInputsBuffer.set(workflowUUID, args)

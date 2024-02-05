@@ -659,9 +659,9 @@ export class DBOSExecutor {
    */
   async flushWorkflowBuffers() {
     if (this.initialized) {
-      await this.systemDatabase.flushWorkflowInputsBuffer();
       await this.flushWorkflowResultBuffer();
       await this.systemDatabase.flushWorkflowStatusBuffer();
+      await this.systemDatabase.flushWorkflowInputsBuffer();
     }
   }
 
