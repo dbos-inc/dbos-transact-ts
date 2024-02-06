@@ -52,6 +52,7 @@ export interface PgTransactionId {
 export interface BufferedResult {
   output: unknown;
   txn_snapshot: string;
+  created_at?: number;
 }
 
 export const StatusString = {
@@ -188,11 +189,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         const recorded = this.resultBuffer.get(funcID);
         const output = recorded!.output;
         const txnSnapshot = recorded!.txn_snapshot;
+        const createdAt = recorded!.created_at!;
         if (paramCnt > 1) {
           sqlStmt += ", ";
         }
         sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, Date.now());
+        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
       }
       this.logger.debug(sqlStmt);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -214,6 +216,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const guardOutput: BufferedResult = {
       output: null,
       txn_snapshot: txnSnapshot,
+      created_at: Date.now(),
     }
     this.resultBuffer.set(funcID, guardOutput);
   }
@@ -339,6 +342,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           const guardOutput: BufferedResult = {
             output: result,
             txn_snapshot: txn_snapshot!,
+            created_at: Date.now(),
           }
           this.resultBuffer.set(funcId, guardOutput);
         } else {

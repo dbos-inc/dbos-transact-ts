@@ -681,11 +681,12 @@ export class DBOSExecutor {
           for (const [funcID, recorded] of wfBuffer) {
             const output = recorded.output;
             const txnSnapshot = recorded.txn_snapshot;
+            const createdAt = recorded.created_at!
             if (paramCnt > 1) {
               sqlStmt += ", ";
             }
             sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, Date.now());
+            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
           }
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
