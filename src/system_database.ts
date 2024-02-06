@@ -359,7 +359,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "23503") {
         // Foreign key constraint violation
-        throw new DBOSNonExistWorkflowError(`Send to non-exist destination UUID: ${destinationUUID}`);
+        throw new DBOSNonExistWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationUUID}`);
       } else {
         throw err;
       }
