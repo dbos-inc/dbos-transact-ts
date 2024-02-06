@@ -4,7 +4,7 @@ import { UserDatabaseName } from "../user_database";
 import { ConfigFile } from "./config";
 import { readFileSync } from "../utils";
 import { PoolConfig, Client } from "pg";
-import { createUserDBSchema, userDBSchema } from "../../schemas/user_db_schema";
+import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
@@ -135,6 +135,7 @@ async function createDBOSTables(configFile: ConfigFile) {
   if (!schemaExists.rows[0].exists) {
     await pgUserClient.query(createUserDBSchema);
     await pgUserClient.query(userDBSchema);
+    await pgUserClient.query(userDBIndex);
   }
 
   // Create the DBOS system database.

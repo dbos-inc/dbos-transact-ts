@@ -4,6 +4,9 @@
  */
 exports.up = function(knex) {
   return knex.schema.withSchema('dbos')
+    .alterTable('workflow_status', function(table) {
+      table.index('created_at');
+    })
     .alterTable('operation_outputs', function(table) {
       table.foreign('workflow_uuid').references('workflow_uuid').inTable('dbos.workflow_status').onDelete('CASCADE').onUpdate('CASCADE');
     })
@@ -24,6 +27,9 @@ exports.up = function(knex) {
  */
 exports.down = function(knex) {
   return knex.schema.withSchema('dbos')
+    .alterTable('workflow_status', function(table) {
+      table.dropIndex('created_at');
+    })
     .alterTable('operation_outputs', function(table) {
       table.dropForeign('workflow_uuid');
     })

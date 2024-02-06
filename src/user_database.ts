@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "pg";
-import { createUserDBSchema, userDBSchema } from "../schemas/user_db_schema";
+import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
 import { Knex } from "knex";
@@ -58,6 +58,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     if (!debugMode) {
       await this.pool.query(createUserDBSchema);
       await this.pool.query(userDBSchema);
+      await this.pool.query(userDBIndex);
     }
   }
 
@@ -175,6 +176,7 @@ export class PrismaUserDatabase implements UserDatabase {
     if (!debugMode) {
       await this.prisma.$queryRawUnsafe(createUserDBSchema);
       await this.prisma.$queryRawUnsafe(userDBSchema);
+      await this.prisma.$queryRawUnsafe(userDBIndex);
     }
   }
 
@@ -285,6 +287,7 @@ export class TypeORMDatabase implements UserDatabase {
     if (!debugMode) {
       await this.dataSource.query(createUserDBSchema);
       await this.dataSource.query(userDBSchema);
+      await this.dataSource.query(userDBIndex);
     }
   }
 
@@ -364,6 +367,7 @@ export class KnexUserDatabase implements UserDatabase {
     if (!debugMode) {
       await this.knex.raw(createUserDBSchema);
       await this.knex.raw(userDBSchema);
+      await this.knex.raw(userDBIndex);
     }
   }
 
