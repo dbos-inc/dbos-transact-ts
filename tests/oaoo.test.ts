@@ -179,13 +179,16 @@ describe("oaoo-tests", () => {
     const recvWorkflowUUID = uuidv1();
     const idempotencyKey = "test-suffix";
 
+    // Receive twice with the same UUID.  Each should get the same result of true.
+    const recvHandle1 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+    const recvHandle2 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+  
     // Send twice with the same idempotency key.  Only one message should be sent.
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
 
-    // Receive twice with the same UUID.  Each should get the same result of true.
-    await expect(testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
-    await expect(testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1).then((x) => x.getResult())).resolves.toBe(true);
+    await expect(recvHandle1.getResult()).resolves.toBe(true)
+    await expect(recvHandle2.getResult()).resolves.toBe(true)
 
     // A receive with a different UUID should return false.
     await expect(testRuntime.invoke(NotificationOAOO).receiveOaooWorkflow("testTopic", 0).then((x) => x.getResult())).resolves.toBe(false);

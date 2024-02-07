@@ -76,6 +76,11 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
+interface InternalWorkflowParams extends WorkflowParams {
+  readonly tempWfType?: string;
+  readonly tempWfName?: string;
+}
+
 export const OperationType = {
   HANDLER: "handler",
   WORKFLOW: "workflow",
@@ -347,7 +352,7 @@ export class DBOSExecutor {
     this.communicatorInfoMap.set(comm.name, commInfo);
   }
 
-  async workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async workflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     if (this.debugMode) {
       return this.debugWorkflow(wf, params, undefined, undefined, ...args);
     }
@@ -355,7 +360,7 @@ export class DBOSExecutor {
   }
 
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
-  async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
+  async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
@@ -365,7 +370,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID);
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
 
     // If running in DBOS Cloud, set the executor ID
     if (process.env.DBOS__VMID) {
@@ -385,12 +390,15 @@ export class DBOSExecutor {
       executorID: wCtxt.executorID,
       createdAt: Date.now() // Remember the start time of this workflow
     };
-    // Synchronously set the workflow's status to PENDING and record workflow inputs.
-    if (!wCtxt.isTempWorkflow) {
+
+    if (wCtxt.isTempWorkflow) {
+      internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+    }
+
+    // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
+    // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
+    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction) {
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
-    } else {
-      // For temporary workflows, instead asynchronously record inputs.
-      this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
     }
 
     const runWorkflow = async () => {
@@ -398,9 +406,6 @@ export class DBOSExecutor {
       // Execute the workflow.
       try {
         result = await wf(wCtxt, ...args);
-        if (wCtxt.isTempWorkflow) {
-          internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
-        }
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
@@ -428,6 +433,11 @@ export class DBOSExecutor {
         }
       } finally {
         this.tracer.endSpan(wCtxt.span);
+        if (wCtxt.tempWfOperationType === TempWorkflowType.transaction) {
+          // For single-transaction workflows, asynchronously record inputs.
+          // We must buffer inputs after workflow status is buffered/flushed because workflow_inputs table has a foreign key reference to the workflow_status table.
+          this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
+        }
       }
       // Asynchronously flush the result buffer.
       if (wCtxt.resultBuffer.size > 0) {
@@ -501,33 +511,27 @@ export class DBOSExecutor {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      ctxtImpl.tempWfOperationType = TempWorkflowType.transaction;
-      ctxtImpl.tempWfOperationName = txn.name;
       return await ctxtImpl.transaction(txn, ...args);
     };
-    return (await this.workflow(temp_workflow, params, ...args)).getResult();
+    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.transaction, tempWfName: txn.name }, ...args)).getResult();
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      ctxtImpl.tempWfOperationType = TempWorkflowType.external;
-      ctxtImpl.tempWfOperationName = commFn.name;
       return await ctxtImpl.external(commFn, ...args);
     };
-    return (await this.workflow(temp_workflow, params, ...args)).getResult();
+    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.external, tempWfName: commFn.name }, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
-      const ctxtImpl = ctxt as WorkflowContextImpl;
-      ctxtImpl.tempWfOperationType = TempWorkflowType.send;
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
-    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID }, destinationUUID, message, topic)).getResult();
+    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send }, destinationUUID, message, topic)).getResult();
   }
 
   /**
@@ -655,9 +659,9 @@ export class DBOSExecutor {
    */
   async flushWorkflowBuffers() {
     if (this.initialized) {
-      await this.systemDatabase.flushWorkflowInputsBuffer();
       await this.flushWorkflowResultBuffer();
       await this.systemDatabase.flushWorkflowStatusBuffer();
+      await this.systemDatabase.flushWorkflowInputsBuffer();
     }
   }
 
@@ -677,11 +681,12 @@ export class DBOSExecutor {
           for (const [funcID, recorded] of wfBuffer) {
             const output = recorded.output;
             const txnSnapshot = recorded.txn_snapshot;
+            const createdAt = recorded.created_at!
             if (paramCnt > 1) {
               sqlStmt += ", ";
             }
             sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, Date.now());
+            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
           }
           batchUUIDs.push(workflowUUID);
           finishedCnt++;

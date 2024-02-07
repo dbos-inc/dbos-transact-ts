@@ -21,3 +21,7 @@ export const userDBSchema = `
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;
+
+export const userDBIndex = `
+  CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
+`
