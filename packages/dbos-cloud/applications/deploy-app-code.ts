@@ -97,8 +97,9 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
           applicationAvailable = true
         }
       }
-      await sleep(1000)
+      await sleep(1000);
     }
+    await sleep(5000); // Leave time for route cache updates
     logger.info(`Application ${appName} successfuly deployed`)
     logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
     return 0;
