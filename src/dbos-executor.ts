@@ -560,6 +560,10 @@ export class DBOSExecutor {
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
+      if (execID == "local" && process.env.DBOS__VMID) {
+        this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
+        continue;
+      }
       this.logger.debug(`Recovering workflows of executor: ${execID}`);
       const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
       pendingWorkflows.push(...wIDs);
