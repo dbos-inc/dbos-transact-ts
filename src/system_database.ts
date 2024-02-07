@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistWorkflowError } from "./error";
+import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
 import { sleep, findPackageRoot } from "./utils";
@@ -359,7 +359,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "23503") {
         // Foreign key constraint violation
-        throw new DBOSNonExistWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationUUID}`);
+        throw new DBOSNonExistentWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationUUID}`);
       } else {
         throw err;
       }

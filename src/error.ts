@@ -161,9 +161,9 @@ export class DBOSDebuggerError extends DBOSError {
   }
 }
 
-const NonExistWorkflowError = 16;
-export class DBOSNonExistWorkflowError extends DBOSError {
+const NonExistentWorkflowError = 16;
+export class DBOSNonExistentWorkflowError extends DBOSError {
   constructor(msg: string) {
-    super(msg, NonExistWorkflowError);
+    super(msg, NonExistentWorkflowError);
   }
 }
