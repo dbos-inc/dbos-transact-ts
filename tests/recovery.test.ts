@@ -56,6 +56,7 @@ describe("recovery-tests", () => {
   }
 
   test("local-recovery", async () => {
+    LocalRecovery.cnt = 0;
     // Run a workflow until pending and start recovery.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -69,6 +70,23 @@ describe("recovery-tests", () => {
     await expect(recoverHandles[0].getResult()).resolves.toBe("test_recovery_user");
     await expect(handle.getResult()).resolves.toBe("test_recovery_user");
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
+  });
+
+  test("skip-local-recovery", async () => {
+    process.env.DBOS__VMID = "testskip"
+    LocalRecovery.cnt = 0;
+
+    // Run a workflow until pending and start recovery. We should skip the recovery since the DBOS__VMID is not empty.
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+
+    const recoverHandles = await dbosExec.recoverPendingWorkflows();
+
+    expect(recoverHandles.length).toBe(0);
+    LocalRecovery.resolve1(); // Both can finish now.
+    await expect(handle.getResult()).resolves.toBe("test_recovery_user");
+    expect(LocalRecovery.cnt).toBe(5); // Should run once because we skipped the local recovery
   });
 
   /**
