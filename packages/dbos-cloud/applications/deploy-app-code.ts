@@ -153,6 +153,7 @@ RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*"
 node_modules/
 ${deployDirectoryName}/
 dist/
+.dbos/
 `;
   try {
     // Write the Dockerfile and .dockerignore
