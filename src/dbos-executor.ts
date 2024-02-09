@@ -124,6 +124,7 @@ export class DBOSExecutor {
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
   readonly flushBufferID: NodeJS.Timeout;
+  isFlushingBuffers = false;
 
   static readonly defaultNotificationTimeoutSec = 60;
 
@@ -170,7 +171,8 @@ export class DBOSExecutor {
     }
 
     this.flushBufferID = setInterval(() => {
-      if (!this.debugMode) {
+      if (!this.debugMode && !this.isFlushingBuffers) {
+        this.isFlushingBuffers = true;
         void this.flushWorkflowBuffers();
       }
     }, this.flushBufferIntervalMs);
@@ -664,9 +666,9 @@ export class DBOSExecutor {
   async flushWorkflowBuffers() {
     if (this.initialized) {
       await this.flushWorkflowResultBuffer();
-      await this.systemDatabase.flushWorkflowStatusBuffer();
-      await this.systemDatabase.flushWorkflowInputsBuffer();
+      await this.systemDatabase.flushWorkflowSystemBuffers();
     }
+    this.isFlushingBuffers = false;
   }
 
   async flushWorkflowResultBuffer(): Promise<void> {
