@@ -19,13 +19,12 @@ export interface SystemDatabase {
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
   initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
-  flushWorkflowStatusBuffer(): Promise<void>;
+  flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
-  flushWorkflowInputsBuffer(): Promise<void>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
@@ -86,10 +85,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
   readonly workflowInputsBuffer: Map<string, any[]> = new Map();
   readonly flushBatchSize = 100;
+  static readonly connectionTimeoutMillis = 10000;  // 10 second timeout
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
-    this.systemPoolConfig = { ...pgPoolConfig };
+    this.systemPoolConfig = { ...pgPoolConfig};
     this.systemPoolConfig.database = systemDatabaseName;
+    this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
     this.pool = new Pool(this.systemPoolConfig);
   }
 
@@ -143,8 +144,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   /**
-   * Flush the workflow output buffer to the database.
+   * Flush the workflow output buffer and the input buffer to the database.
    */
+  async flushWorkflowSystemBuffers(): Promise<void> {
+    // Always flush the status buffer first because of foreign key constraints
+    await this.flushWorkflowStatusBuffer();
+    await this.flushWorkflowInputsBuffer();
+  }
+
   async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
@@ -178,7 +185,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         batchUUIDs.forEach((value) => { localBuffer.delete(value); });
       }
     } catch (error) {
-      (error as Error).message = `Error flushing workflow buffer: ${(error as Error).message}`;
+      (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
       this.logger.error(error);
     } finally {
       // If there are still items in flushing the buffer, return items to the global buffer for retrying later.

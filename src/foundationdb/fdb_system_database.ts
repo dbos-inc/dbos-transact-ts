@@ -108,6 +108,11 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   // TODO: support batching
+  async flushWorkflowSystemBuffers(): Promise<void> {
+    await this.flushWorkflowStatusBuffer();
+    await this.flushWorkflowInputsBuffer();
+  }
+
   async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
