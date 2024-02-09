@@ -3,7 +3,6 @@
 logs
 *.log
 npm-debug.log*
-package-lock.json
 
 # TypeScript build
 dist/
