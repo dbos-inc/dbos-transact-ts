@@ -62,4 +62,5 @@ export async function init(appName: string) {
   fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
   execSync("npm i", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --save @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
+  execSync("npm install --save-dev @dbos-inc/dbos-cloud", {cwd: appName, stdio: 'inherit'})
 }

@@ -24,5 +24,9 @@ packages/
 # ignore any packed packages in the repo
 *.tgz
 
-# Do not ignore any files or directories inside the examples directory
+# Include only the code from the examples directory
 !examples/**
+examples/hello/.dbos
+examples/hello/dbos_deploy
+examples/hello/dist
+examples/hello/node_modules
