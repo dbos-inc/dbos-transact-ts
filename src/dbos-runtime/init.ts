@@ -56,7 +56,7 @@ export async function init(appName: string) {
   await copy(templatePath, targets, appName);
 
   const packageJsonName = path.resolve(appName, 'package.json');
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8'));
+  const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };
   packageJson.name = appName;
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
   execSync("npm i", {cwd: appName, stdio: 'inherit'})
