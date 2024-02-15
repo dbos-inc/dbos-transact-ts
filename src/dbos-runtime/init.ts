@@ -56,11 +56,11 @@ export async function init(appName: string) {
   await copy(templatePath, targets, appName);
 
   const packageJsonName = path.resolve(appName, 'package.json');
-  const content = fs.readFileSync(packageJsonName, 'utf-8');
-  let updatedContent = content.replace('"name": "dbos-hello"', `"name": "${appName}"`);
-  updatedContent = updatedContent.replace('"@dbos-inc/dbos-sdk": "../..",', ``);
-  fs.writeFileSync(packageJsonName, updatedContent, 'utf-8');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8'));
+  packageJson.name = appName;
+  fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
   execSync("npm i", {cwd: appName, stdio: 'inherit'})
+  execSync("npm uninstall @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --save @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --save-dev @dbos-inc/dbos-cloud", {cwd: appName, stdio: 'inherit'})
 }
