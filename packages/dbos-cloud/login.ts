@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 import fs from "fs";
 import { DBOSCloudCredentials, dbosEnvPath, getLogger, productionEnvironment, sleep } from "./cloudutils";
 
-export const Auth0Domain = productionEnvironment ? 'dbos-cloud.us.auth0.com' : 'dbos-inc.us.auth0.com';
+export const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
 export const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
 export const DBOSCloudIdentifier = 'dbos-cloud-api';
 
