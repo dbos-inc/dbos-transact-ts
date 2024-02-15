@@ -6,6 +6,7 @@ import fs from "fs";
 import { getLogger, sleep } from "./cloudutils";
 
 export const dbosEnvPath = ".dbos";
+export const Auth0Domain = 'dbos-inc.us.auth0.com'
 export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
 export const DBOSCloudIdentifier = 'dbos-cloud-api'
 
@@ -30,7 +31,7 @@ interface TokenResponse {
 }
 
 const client = jwksClient({
-  jwksUri: 'https://dbos-inc.us.auth0.com/.well-known/jwks.json'
+  jwksUri: `https://${Auth0Domain}/.well-known/jwks.json`
 });
 
 async function getSigningKey(kid: string): Promise<string> {
@@ -64,7 +65,7 @@ export async function login(username: string): Promise<number> {
 
   const deviceCodeRequest = {
     method: 'POST',
-    url: 'https://dbos-inc.us.auth0.com/oauth/device/code',
+    url: `https://${Auth0Domain}/oauth/device/code`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: { client_id: DBOSClientID, scope: 'sub', audience: DBOSCloudIdentifier }
   };
@@ -83,7 +84,7 @@ export async function login(username: string): Promise<number> {
 
   const tokenRequest = {
     method: 'POST',
-    url: 'https://dbos-inc.us.auth0.com/oauth/token',
+    url: `https://${Auth0Domain}/oauth/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',

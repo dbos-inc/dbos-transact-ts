@@ -6,6 +6,8 @@ import fs from "fs";
 import { AxiosError } from "axios";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
+export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
+export const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
 
 // FIXME: we should have a global instance of the logger created in cli.ts
 export function getLogger(): Logger {
