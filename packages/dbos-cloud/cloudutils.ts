@@ -1,13 +1,18 @@
-import { DBOSCloudCredentials, dbosEnvPath } from "./login";
 import TransportStream = require("winston-transport");
 import { spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
 
+export interface DBOSCloudCredentials {
+  token: string;
+  userName: string;
+}
+
 export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
+export const dbosEnvPath = ".dbos";
 
 // FIXME: we should have a global instance of the logger created in cli.ts
 export function getLogger(): Logger {
