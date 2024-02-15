@@ -3,12 +3,12 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";
 import fs from "fs";
-import { getLogger, sleep } from "./cloudutils";
+import { getLogger, productionEnvironment, sleep } from "./cloudutils";
 
 export const dbosEnvPath = ".dbos";
-export const Auth0Domain = 'dbos-inc.us.auth0.com'
-export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
-export const DBOSCloudIdentifier = 'dbos-cloud-api'
+export const Auth0Domain = productionEnvironment ? 'dbos-cloud.us.auth0.com' : 'dbos-inc.us.auth0.com';
+export const DBOSClientID = productionEnvironment? 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu' : '6p7Sjxf13cyLMkdwn14MxlH7JdhILled';
+export const DBOSCloudIdentifier = 'dbos-cloud-api';
 
 export interface DBOSCloudCredentials {
   token: string;
