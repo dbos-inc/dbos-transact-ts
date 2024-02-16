@@ -3,11 +3,13 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";
 import fs from "fs";
-import { DBOSCloudCredentials, dbosEnvPath, getLogger, productionEnvironment, sleep } from "./cloudutils";
+import { DBOSCloudCredentials, dbosEnvPath, getLogger, sleep } from "./cloudutils";
 
-export const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
-export const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
-export const DBOSCloudIdentifier = 'dbos-cloud-api';
+const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
+const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
+const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
+const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
+const DBOSCloudIdentifier = 'dbos-cloud-api';
 
 interface DeviceCodeResponse {
   device_code: string;

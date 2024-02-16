@@ -11,7 +11,6 @@ export interface DBOSCloudCredentials {
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
-export const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
 
 // FIXME: we should have a global instance of the logger created in cli.ts
