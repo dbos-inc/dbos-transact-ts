@@ -3,16 +3,11 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { execSync } from "child_process";
 import fs from "fs";
-import { getLogger, sleep } from "./cloudutils";
+import { DBOSCloudCredentials, dbosEnvPath, getLogger, productionEnvironment, sleep } from "./cloudutils";
 
-export const dbosEnvPath = ".dbos";
-export const DBOSClientID = 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu'
-export const DBOSCloudIdentifier = 'dbos-cloud-api'
-
-export interface DBOSCloudCredentials {
-  token: string;
-  userName: string;
-}
+export const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
+export const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
+export const DBOSCloudIdentifier = 'dbos-cloud-api';
 
 interface DeviceCodeResponse {
   device_code: string;
@@ -30,7 +25,7 @@ interface TokenResponse {
 }
 
 const client = jwksClient({
-  jwksUri: 'https://dbos-inc.us.auth0.com/.well-known/jwks.json'
+  jwksUri: `https://${Auth0Domain}/.well-known/jwks.json`
 });
 
 async function getSigningKey(kid: string): Promise<string> {
@@ -64,7 +59,7 @@ export async function login(username: string): Promise<number> {
 
   const deviceCodeRequest = {
     method: 'POST',
-    url: 'https://dbos-inc.us.auth0.com/oauth/device/code',
+    url: `https://${Auth0Domain}/oauth/device/code`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: { client_id: DBOSClientID, scope: 'sub', audience: DBOSCloudIdentifier }
   };
@@ -83,7 +78,7 @@ export async function login(username: string): Promise<number> {
 
   const tokenRequest = {
     method: 'POST',
-    url: 'https://dbos-inc.us.auth0.com/oauth/token',
+    url: `https://${Auth0Domain}/oauth/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
