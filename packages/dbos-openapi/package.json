@@ -11,7 +11,10 @@
   "main": "cli.ts",
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
-    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/dbos-openapi/cli.js",
+    "build": "tsc --project tsconfig.json && npm run chmod",
+    "chmod":"run-script-os",
+    "chmod:darwin:linux":"chmod +x ./dist/packages/dbos-cloud/cli.js",
+    "chmod:win32": "",
     "test": "npm run build && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
     "setversion": "grunt setversion"
   },
@@ -28,6 +31,7 @@
     "grunt": "^1.6.1",
     "jest": "^29.6.1",
     "nerdbank-gitversioning": "^3.6.133",
+    "run-script-os": "^1.1.6",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1"
   },
