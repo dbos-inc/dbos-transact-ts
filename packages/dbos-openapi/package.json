@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json && npm run chmod",
     "chmod":"run-script-os",
-    "chmod:darwin:linux":"chmod +x ./dist/packages/dbos-cloud/cli.js",
+    "chmod:darwin:linux":"chmod +x ./dist/packages/dbos-openapi/cli.js",
     "chmod:win32": "",
     "test": "npm run build && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
     "setversion": "grunt setversion"
