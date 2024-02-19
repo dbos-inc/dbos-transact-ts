@@ -12,7 +12,7 @@ docker run --rm --name=dbos-db --env=POSTGRES_PASSWORD=${PGPASSWORD} --env=PGDAT
 # Wait for PostgreSQL to start
 echo "Waiting for PostgreSQL to start..."
 for i in {1..30}; do
-  if docker exec dbos-db pg_isready -U postgres | grep -q "accepting connections"; then
+  if docker exec dbos-db psql -U postgres -c "SELECT 1;" > /dev/null 2>&1; then
     echo "PostgreSQL started!"
     break
   fi
@@ -21,3 +21,5 @@ done
 
 # Create a database in Postgres.
 docker exec dbos-db psql -U postgres -c "CREATE DATABASE hello;"
+
+echo "Database started successfully!"
