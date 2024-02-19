@@ -77,6 +77,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
+  logger.info("Migration successful!")
   return 0;
 }
 
