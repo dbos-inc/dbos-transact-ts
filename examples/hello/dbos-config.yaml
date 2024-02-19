@@ -11,5 +11,5 @@ database:
   user_database: 'hello'
   connectionTimeoutMillis: 3000
   user_dbclient: 'knex'
-  migrate: ['migrate:latest']
-  rollback: ['migrate:rollback']
+  migrate: ['npx knex migrate:latest']
+  rollback: ['npx knex migrate:rollback']

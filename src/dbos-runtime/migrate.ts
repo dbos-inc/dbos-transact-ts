@@ -35,15 +35,12 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     }
   }
 
-  const dbType = configFile.database.user_dbclient || UserDatabaseName.KNEX;
-  const migrationScript = `node_modules/.bin/${dbType}`;
   const migrationCommands = configFile.database.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
-      const command = `node ${migrationScript} ${cmd}`;
-      logger.info(`Executing migration command: ${command}`);
-      const migrateCommandOutput = execSync(command).toString();
+      logger.info(`Executing migration command: ${cmd}`);
+      const migrateCommandOutput = execSync(cmd).toString();
       logger.info(migrateCommandOutput);
     });
   } catch (e) {
