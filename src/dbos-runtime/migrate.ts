@@ -1,6 +1,5 @@
 import { execSync } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
-import { UserDatabaseName } from "../user_database";
 import { ConfigFile } from "./config";
 import { readFileSync } from "../utils";
 import { PoolConfig, Client } from "pg";
