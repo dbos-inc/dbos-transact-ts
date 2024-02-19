@@ -70,7 +70,7 @@ function configureHelloExample() {
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = "dbos";
   }
-  execSync("npx knex migrate:up", { env: process.env });
+  execSync("npx dbos-sdk migrate", { env: process.env });
 }
 
 describe("runtime-entrypoint-tests", () => {
