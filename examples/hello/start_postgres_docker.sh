@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Check if PGPASSWORD is set
 if [[ -z "${PGPASSWORD}" ]]; then
