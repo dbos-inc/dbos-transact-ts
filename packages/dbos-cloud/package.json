@@ -11,7 +11,7 @@
   "main": "cli.ts",
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
-    "build": "tsc --project tsconfig.json && chmod +x ./dist/packages/dbos-cloud/cli.js",
+    "build": "tsc --project tsconfig.json",
     "test": "echo \"No tests\"",
     "setversion": "grunt setversion"
   },
