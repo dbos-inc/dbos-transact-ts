@@ -11,6 +11,10 @@ export async function registerApp(dbname: string, host: string): Promise<number>
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
   logger.info(`Loaded application name from package.json: ${appName}`)
+  if (appName === undefined) {
+    logger.error("Error: package.json not found. Please run this command in an application root directory.")
+    return 1;
+  }
   logger.info(`Registering application: ${appName}`)
 
   try {

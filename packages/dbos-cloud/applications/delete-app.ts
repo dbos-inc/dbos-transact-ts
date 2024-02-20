@@ -10,6 +10,10 @@ export async function deleteApp(host: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
+  if (appName === undefined) {
+    logger.error("Error: package.json not found. Please run this command in an application root directory.")
+    return 1;
+  }
   logger.info(`Loaded application name from package.json: ${appName}`)
   logger.info(`Deleting application: ${appName}`)
 
