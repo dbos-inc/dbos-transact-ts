@@ -13,6 +13,7 @@ import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
 import { DBOSCloudHost } from "./cloudutils";
+import { getAppInfo } from "./applications/get-app-info";
 
 const program = new Command();
 
@@ -91,6 +92,15 @@ applicationCommands
   .option('--json', 'Emit JSON output')
   .action(async (options: { json: boolean }) => {
     const exitCode = await listApps(DBOSCloudHost, options.json);
+    process.exit(exitCode);
+  });
+
+  applicationCommands
+  .command('get')
+  .description('Get application info')
+  .option('--json', 'Emit JSON output')
+  .action(async (options: { json: boolean }) => {
+    const exitCode = await getAppInfo(DBOSCloudHost, options.json);
     process.exit(exitCode);
   });
 
