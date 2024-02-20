@@ -3,10 +3,11 @@ import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogge
 import { sleep } from "../../src/utils";
 
 export interface UserDBInstance {
-  readonly DBName: string;
+  readonly PostgresInstanceName: string;
   readonly Status: string;
   readonly HostName: string;
   readonly Port: number;
+  readonly AdminUsername: string;
 }
 
 export async function createUserDb(host: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
@@ -84,15 +85,54 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
     if (json) {
       console.log(JSON.stringify(userDBInfo));
     } else {
-      logger.info(`Retrieving status of: ${dbName}`);
-      console.log(`DB Name: ${userDBInfo.DBName}`);
+      console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
       console.log(`Status: ${userDBInfo.Status}`);
       console.log(`Host Name: ${userDBInfo.HostName}`);
       console.log(`Port: ${userDBInfo.Port}`);
+      console.log(`Admin Username: ${userDBInfo.AdminUsername}`);
     }
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function listUserDB(host: string, json: boolean) {
+  const logger = getLogger();
+
+  try {
+    const userCredentials = getCloudCredentials();
+    const bearerToken = "Bearer " + userCredentials.token;
+  
+    const res = await axios.get(`https://${host}/${userCredentials.userName}/databases`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+
+    const userDBs = res.data as UserDBInstance[];
+    if (json) {
+      console.log(JSON.stringify(userDBs));
+    } else {
+      userDBs.forEach(userDBInfo => {
+        console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
+        console.log(`Status: ${userDBInfo.Status}`);
+        console.log(`Host Name: ${userDBInfo.HostName}`);
+        console.log(`Port: ${userDBInfo.Port}`);
+        console.log(`Admin Username: ${userDBInfo.AdminUsername}`);
+      });
+    }
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to retrieve info`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
         handleAPIErrors(errorLabel, axiosError);
@@ -114,6 +154,5 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
     },
   });
 
-  // TODO: this needs a type guard
   return res.data as UserDBInstance;
 }
