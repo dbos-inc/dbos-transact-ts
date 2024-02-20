@@ -28,7 +28,8 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
     } else {
       console.log(`Application Name: ${app.Name}`);
       console.log(`ID: ${app.ID}`);
-      console.log(`Database Name: ${app.DatabaseName}`);
+      console.log(`Postgres Instance Name: ${app.DatabaseName}`);
+      console.log(`Application Database Name: ${app.DatabaseName}`);
       console.log(`Status: ${app.Status}`);
       console.log(`Version: ${app.Version}`);
     }
