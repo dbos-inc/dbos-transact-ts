@@ -11,7 +11,9 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
   const appName = packageJson.name;
-  logger.info(`Retrieving logs for application: ${appName}`)
+  if (!json) {
+    logger.info(`Retrieving info for application: ${appName}`)
+  }
 
   try {
     const res = await axios.get(`https://${host}/${userCredentials.userName}/application/${appName}`, {
