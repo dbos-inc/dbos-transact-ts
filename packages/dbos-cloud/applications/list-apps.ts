@@ -9,7 +9,7 @@ export async function listApps(host: string, json: boolean): Promise<number> {
 
   try {
     const list = await axios.get(
-      `https://${host}/v1alpha1/${userCredentials.userName}/application`,
+      `https://${host}/v1alpha1/${userCredentials.userName}/applications`,
       {
         headers: {
           Authorization: bearerToken,

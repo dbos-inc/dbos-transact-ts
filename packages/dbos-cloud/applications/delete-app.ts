@@ -14,7 +14,7 @@ export async function deleteApp(host: string): Promise<number> {
   logger.info(`Deleting application: ${appName}`)
 
   try {
-    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/application/${appName}`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
