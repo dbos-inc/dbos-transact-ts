@@ -11,9 +11,11 @@ import {
 import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb } from "./userdb";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
 import { DBOSCloudHost } from "./cloudutils";
 import { initDashboard } from "./dashboards";
+import { getAppInfo } from "./applications/get-app-info";
+
 
 const program = new Command();
 
@@ -95,6 +97,15 @@ applicationCommands
     process.exit(exitCode);
   });
 
+  applicationCommands
+  .command('get')
+  .description('Get application info')
+  .option('--json', 'Emit JSON output')
+  .action(async (options: { json: boolean }) => {
+    const exitCode = await getAppInfo(DBOSCloudHost, options.json);
+    process.exit(exitCode);
+  });
+
 applicationCommands
   .command('logs')
   .description('Print the microVM logs of a deployed application')
@@ -129,6 +140,14 @@ userdbCommands
   .option('--json', 'Emit JSON output')
   .action((async (dbname: string, options: { json: boolean}) => {
     const exitCode = await getUserDb(DBOSCloudHost, dbname, options.json)
+    process.exit(exitCode);
+  }))
+
+  userdbCommands
+  .command('list')
+  .option('--json', 'Emit JSON output')
+  .action((async (options: { json: boolean}) => {
+    const exitCode = await listUserDB(DBOSCloudHost, options.json)
     process.exit(exitCode);
   }))
 
