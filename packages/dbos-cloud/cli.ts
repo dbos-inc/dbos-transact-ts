@@ -13,7 +13,7 @@ import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
 import { DBOSCloudHost } from "./cloudutils";
-import { initDashboard } from "./dashboards";
+import { launchDashboard } from "./dashboards";
 import { getAppInfo } from "./applications/get-app-info";
 
 
@@ -168,10 +168,10 @@ const dashboardCommands = program
   .description('Manage Monitoring Dashboards')
 
 dashboardCommands
-  .command('init')
-  .description('Initialize the Monitoring Dashboard')
+  .command('launch')
+  .description('Deploy the Monitoring Dashboard')
   .action(async () => {
-    const exitCode = await initDashboard(DBOSCloudHost);
+    const exitCode = await launchDashboard(DBOSCloudHost);
     process.exit(exitCode);
   });
 

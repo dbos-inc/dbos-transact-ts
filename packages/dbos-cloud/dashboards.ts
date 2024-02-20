@@ -1,16 +1,19 @@
 import axios, { AxiosError } from "axios";
 import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from "./cloudutils";
 
-export async function initDashboard(host: string): Promise<number> {
+export async function launchDashboard(host: string): Promise<number> {
     const logger = getLogger();
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
     try{
-        const res = await axios.get(`https://${host}/${userCredentials.userName}/dashboard`, {
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-        }});
+        const res = await axios.put(`https://${host}/${userCredentials.userName}/dashboard`,
+        {},
+        {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: bearerToken,
+            }
+        });
         logger.info(`Dashboard ready at ${res.data}`)
         return 0
     } catch (e) {
