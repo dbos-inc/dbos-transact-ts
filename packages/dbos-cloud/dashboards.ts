@@ -6,13 +6,12 @@ export async function initDashboard(host: string): Promise<number> {
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
     try{
-        logger.info("Sending api call")
         const res = await axios.get(`https://${host}/${userCredentials.userName}/dashboard`, {
         headers: {
             "Content-Type": "application/json",
             Authorization: bearerToken,
         }});
-        logger.info(`Got Result: ${res.data}`)
+        logger.info(`Dashboard ready at ${res.data}`)
         return 0
     } catch (e) {
         const errorLabel = `Failed to initialize dashboard`;
