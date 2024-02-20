@@ -2,7 +2,7 @@ export type Application = {
   Name: string;
   ID: string;
   PostgresInstanceName: string;
-  DatabaseName: string;
+  ApplicationDatabaseName: string;
   Status: string;
   Version: string;
 };
