@@ -16,7 +16,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
 
   try {
     await axios.post(
-      `https://${host}/${userCredentials.userName}/databases/userdb`,
+      `https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb`,
       { Name: dbName, AdminName: adminName, AdminPassword: adminPassword },
       {
         headers: {
@@ -56,7 +56,7 @@ export async function deleteUserDb(host: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}/${userCredentials.userName}/databases/userdb/${dbName}`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -107,7 +107,7 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`https://${host}/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
+  const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,

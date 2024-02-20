@@ -52,7 +52,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
     const response = await axios.post(
-      `https://${host}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}/v1alpha1/${userCredentials.userName}/application/${appName}`,
       {
         application_archive: zipData,
       },
@@ -84,7 +84,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
 
       // Retrieve the application status, check if it is "AVAILABLE"
       const list = await axios.get(
-        `https://${host}/${userCredentials.userName}/application`,
+        `https://${host}/v1alpha1/${userCredentials.userName}/application`,
         {
           headers: {
             Authorization: bearerToken,

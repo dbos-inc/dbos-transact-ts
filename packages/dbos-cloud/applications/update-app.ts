@@ -17,7 +17,7 @@ export async function updateApp(host: string): Promise<number> {
   try {
     logger.info(`Updating application ${appName}`);
     const update = await axios.patch(
-      `https://${host}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}/v1alpha1/${userCredentials.userName}/application/${appName}`,
       {
         name: appName,
       },

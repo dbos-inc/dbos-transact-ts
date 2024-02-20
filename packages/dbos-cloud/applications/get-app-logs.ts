@@ -19,7 +19,7 @@ export async function getAppLogs(host: string, last: number): Promise<number> {
   logger.info(`Retrieving logs for application: ${appName}`)
 
   try {
-    const res = await axios.get(`https://${host}/${userCredentials.userName}/logs/application/${appName}?last=${last}`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/logs/application/${appName}?last=${last}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
