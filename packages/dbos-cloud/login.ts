@@ -111,7 +111,7 @@ export async function login(username: string): Promise<number> {
     userName: username,
   };
   execSync(`mkdir -p ${dbosEnvPath}`);
-  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), { encoding: "utf-8", mode: 0o600 });
+  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
   logger.info(`Successfully logged in as user: ${credentials.userName}`);
   logger.info(`You can view your credentials in: ./${dbosEnvPath}/credentials`);
   return 0;
