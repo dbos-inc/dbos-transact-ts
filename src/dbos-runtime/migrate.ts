@@ -123,9 +123,8 @@ export async function rollbackMigration(configFile: ConfigFile, logger: GlobalLo
 
   try {
     rollbackcommands?.forEach((cmd) => {
-      const command = "npx " + dbType + " " + cmd;
-      logger.info("Executing " + command);
-      execSync(command);
+      logger.info("Executing " + cmd);
+      execSync(cmd);
     });
   } catch (e) {
     logger.error("Error rolling back migration. ");
