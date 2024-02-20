@@ -12,7 +12,7 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
-import { DBOSCloudHost } from "./cloudutils";
+import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
 
 const program = new Command();
@@ -37,11 +37,21 @@ program
 
 program
   .command('register')
-  .description('Register a user and log in to DBOS cloud')
+  .description('Register a user with DBOS cloud')
   .requiredOption('-u, --username <string>', 'Username')
   .action(async (options: { username: string}) => {
     const exitCode = await registerUser(options.username, DBOSCloudHost);
     process.exit(exitCode);
+  });
+
+  program
+  .command('logout')
+  .description('Log out of DBOS cloud')
+  .action(() => {
+    if (credentialsExist()) {
+      deleteCredentials();
+    }
+    process.exit(0);
   });
 
 /////////////////////////////
@@ -49,13 +59,16 @@ program
 /////////////////////////////
 
 const applicationCommands = program
-  .command('applications')
+  .command('application')
+  .alias('applications')
+  .alias('app')
+  .alias('apps')
   .description('Manage your DBOS applications')
 
 applicationCommands
   .command('register')
-  .description('Register a new application')
-  .requiredOption('-d, --database <string>', 'Specify the app database name')
+  .description('Register this application')
+  .requiredOption('-d, --database <string>', 'Specify a Postgres database instance for this application')
   .action(async (options: { database: string }) => {
     const exitCode = await registerApp(options.database, DBOSCloudHost);
     process.exit(exitCode);
@@ -63,7 +76,7 @@ applicationCommands
 
 applicationCommands
   .command('update')
-  .description('Update an application')
+  .description('Update this application')
   .action(async () => {
     const exitCode = await updateApp(DBOSCloudHost);
     process.exit(exitCode);
@@ -71,7 +84,7 @@ applicationCommands
 
 applicationCommands
   .command('deploy')
-  .description('Deploy an application code to the cloud')
+  .description('Deploy this application to the cloud')
   .option('--no-docker', 'Build the code locally without using Docker')
   .action(async (options: { docker: boolean }) => {
     const exitCode = await deployAppCode(DBOSCloudHost, options.docker);
@@ -80,7 +93,7 @@ applicationCommands
 
 applicationCommands
   .command('delete')
-  .description('Delete a previously deployed application')
+  .description('Delete this application')
   .action(async () => {
     const exitCode = await deleteApp(DBOSCloudHost);
     process.exit(exitCode);
@@ -88,7 +101,7 @@ applicationCommands
 
 applicationCommands
   .command('list')
-  .description('List all deployed applications')
+  .description('List all applications')
   .option('--json', 'Emit JSON output')
   .action(async (options: { json: boolean }) => {
     const exitCode = await listApps(DBOSCloudHost, options.json);
@@ -97,7 +110,7 @@ applicationCommands
 
   applicationCommands
   .command('get')
-  .description('Get application info')
+  .description("Retrieve this application's metadata")
   .option('--json', 'Emit JSON output')
   .action(async (options: { json: boolean }) => {
     const exitCode = await getAppInfo(DBOSCloudHost, options.json);
@@ -106,52 +119,57 @@ applicationCommands
 
 applicationCommands
   .command('logs')
-  .description('Print the microVM logs of a deployed application')
+  .description("Print this application's logs")
   .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
   .action(async (options: { last: number}) => {
     const exitCode = await getAppLogs(DBOSCloudHost, options.last);
     process.exit(exitCode);
   });
 
-//////////////////////////////
-/* USER DATABASE MANAGEMENT */
-//////////////////////////////
+//////////////////////////////////
+/* DATABASE INSTANCE MANAGEMENT */
+//////////////////////////////////
 
-const userdbCommands = program
-  .command('userdb')
-  .description('Manage your databases')
+const databaseCommands = program
+  .command('database')
+  .alias('databases')
+  .alias('db')
+  .description('Manage Postgres database instances')
 
-userdbCommands
-  .command('create')
-  .argument('<string>', 'database name')
+databaseCommands
+  .command('provision')
+  .description("Provision a Postgres database instance")
+  .argument('<string>', 'database instance name')
   .requiredOption('-a, --admin <string>', 'Specify the admin user')
   .requiredOption('-W, --password <string>', 'Specify the admin password')
-  .option('-s, --sync', 'make synchronous call', true)
-  .action((async (dbname: string, options: { admin: string, password: string, sync: boolean }) => {
-    const exitCode = await createUserDb(DBOSCloudHost, dbname, options.admin, options.password, options.sync)
+  .action((async (dbname: string, options: { admin: string, password: string }) => {
+    const exitCode = await createUserDb(DBOSCloudHost, dbname, options.admin, options.password, true)
     process.exit(exitCode);
   }))
 
-userdbCommands
-  .command('status')
-  .argument('<string>', 'database name')
+databaseCommands
+  .command('get')
+  .description("Retrieve information on a Postgres database instance")
+  .argument('<string>', 'database instance name')
   .option('--json', 'Emit JSON output')
   .action((async (dbname: string, options: { json: boolean}) => {
     const exitCode = await getUserDb(DBOSCloudHost, dbname, options.json)
     process.exit(exitCode);
   }))
 
-  userdbCommands
+  databaseCommands
   .command('list')
+  .description("List all your Postgres database instances")
   .option('--json', 'Emit JSON output')
   .action((async (options: { json: boolean}) => {
     const exitCode = await listUserDB(DBOSCloudHost, options.json)
     process.exit(exitCode);
   }))
 
-userdbCommands
-  .command('delete')
-  .argument('<string>', 'database name')
+databaseCommands
+  .command('destroy')
+  .description("Destroy a Postgres database instance")
+  .argument('<string>', 'database instance name')
   .action((async (dbname: string) => {
     const exitCode = await deleteUserDb(DBOSCloudHost, dbname)
     process.exit(exitCode);

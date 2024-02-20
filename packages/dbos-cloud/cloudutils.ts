@@ -77,6 +77,10 @@ export function credentialsExist(): boolean {
   return fs.existsSync(`./${dbosEnvPath}/credentials`);
 }
 
+export function deleteCredentials() {
+  fs.unlinkSync(`./${dbosEnvPath}/credentials`);
+}
+
 // Run a command, streaming its output to stdout
 export function runCommand(command: string, args: string[] = []): Promise<number> {
   return new Promise((resolve, reject) => {
