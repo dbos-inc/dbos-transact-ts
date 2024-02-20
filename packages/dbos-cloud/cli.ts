@@ -110,7 +110,7 @@ applicationCommands
 
   applicationCommands
   .command('status')
-  .description("Retrieve this application's metadata")
+  .description("Retrieve this application's status")
   .option('--json', 'Emit JSON output')
   .action(async (options: { json: boolean }) => {
     const exitCode = await getAppInfo(DBOSCloudHost, options.json);
@@ -149,7 +149,7 @@ databaseCommands
 
 databaseCommands
   .command('status')
-  .description("Retrieve information on a Postgres database instance")
+  .description("Retrieve the status of a Postgres database instance")
   .argument('<string>', 'database instance name')
   .option('--json', 'Emit JSON output')
   .action((async (dbname: string, options: { json: boolean}) => {
