@@ -109,7 +109,7 @@ applicationCommands
   });
 
   applicationCommands
-  .command('get')
+  .command('status')
   .description("Retrieve this application's metadata")
   .option('--json', 'Emit JSON output')
   .action(async (options: { json: boolean }) => {
@@ -148,7 +148,7 @@ databaseCommands
   }))
 
 databaseCommands
-  .command('get')
+  .command('status')
   .description("Retrieve information on a Postgres database instance")
   .argument('<string>', 'database instance name')
   .option('--json', 'Emit JSON output')
