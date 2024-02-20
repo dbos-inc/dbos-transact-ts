@@ -19,6 +19,9 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
       connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
       database: "postgres",
     };
+    if (configFile.database.ssl_ca) {
+      postgresConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+    }
     const postgresClient = new Client(postgresConfig);
     try {
       await postgresClient.connect()
@@ -29,6 +32,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
       } else {
         logger.error(e);
       }
+      return 1;
     } finally {
       await postgresClient.end()
     }
@@ -81,7 +85,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 }
 
 export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
-  const userPoolConfig: PoolConfig = {
+  const pgUserConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
@@ -89,7 +93,10 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
     database: configFile.database.user_database,
   };
-  const pgUserClient = new Client(userPoolConfig);
+  if (configFile.database.ssl_ca) {
+    pgUserConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+  }
+  const pgUserClient = new Client(pgUserConfig);
 
   try {
     await pgUserClient.connect(); // Try to establish a connection
