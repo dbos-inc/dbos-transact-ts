@@ -101,7 +101,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     }
     await sleep(5000); // Leave time for route cache updates
     logger.info(`Application ${appName} successfuly deployed`)
-    logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
+    logger.info(`Access your application at https://${host}/apps/${userCredentials.userName}/${appName}`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
