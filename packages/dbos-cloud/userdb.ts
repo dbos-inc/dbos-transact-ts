@@ -111,7 +111,7 @@ export async function listUserDB(host: string, json: boolean) {
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
   
-    const res = await axios.get(`https://${host}/${userCredentials.userName}/databases`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,

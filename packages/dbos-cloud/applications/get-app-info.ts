@@ -16,7 +16,7 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   }
 
   try {
-    const res = await axios.get(`https://${host}/${userCredentials.userName}/application/${appName}`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
