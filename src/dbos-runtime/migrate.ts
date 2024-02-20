@@ -1,6 +1,5 @@
 import { execSync } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
-import { UserDatabaseName } from "../user_database";
 import { ConfigFile } from "./config";
 import { readFileSync } from "../utils";
 import { PoolConfig, Client } from "pg";
@@ -11,38 +10,40 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   const userDBName = configFile.database.user_database;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
-  const createDB = `createdb -h ${configFile.database.hostname} -p ${configFile.database.port} ${userDBName} -U ${configFile.database.username} -ew ${userDBName}`;
-  try {
-    process.env.PGPASSWORD = configFile.database.password;
-    const createDBOutput = execSync(createDB, { env: process.env }).toString();
-    if (createDBOutput.includes(`database "${userDBName}" already exists`)) {
-      logger.info(`Database ${userDBName} already exists`);
-    } else {
-      logger.info(createDBOutput);
+  if (!(await checkDatabaseExists(configFile, logger))) {
+    const postgresConfig: PoolConfig = {
+      host: configFile.database.hostname,
+      port: configFile.database.port,
+      user: configFile.database.username,
+      password: configFile.database.password,
+      connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
+      database: "postgres",
+    };
+    if (configFile.database.ssl_ca) {
+      postgresConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
     }
-  } catch (e) {
-    if (e instanceof Error) {
-      if (e.message.includes(`database "${userDBName}" already exists`)) {
-        logger.info(`Database ${userDBName} already exists`);
+    const postgresClient = new Client(postgresConfig);
+    try {
+      await postgresClient.connect()
+      await postgresClient.query(`CREATE DATABASE ${configFile.database.user_database}`);
+    } catch (e) {
+      if (e instanceof Error) {
+        logger.error(`Error creating database ${configFile.database.user_database}: ${e.message}`);
       } else {
-        logger.error(`Error creating database: ${e.message}`);
-        return 1;
+        logger.error(e);
       }
-    } else {
-      logger.error(e);
       return 1;
+    } finally {
+      await postgresClient.end()
     }
   }
 
-  const dbType = configFile.database.user_dbclient || UserDatabaseName.KNEX;
-  const migrationScript = `node_modules/.bin/${dbType}`;
   const migrationCommands = configFile.database.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
-      const command = `node ${migrationScript} ${cmd}`;
-      logger.info(`Executing migration command: ${command}`);
-      const migrateCommandOutput = execSync(command).toString();
+      logger.info(`Executing migration command: ${cmd}`);
+      const migrateCommandOutput = execSync(cmd).toString();
       logger.info(migrateCommandOutput);
     });
   } catch (e) {
@@ -79,7 +80,34 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
+  logger.info("Migration successful!")
   return 0;
+}
+
+export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
+  const pgUserConfig: PoolConfig = {
+    host: configFile.database.hostname,
+    port: configFile.database.port,
+    user: configFile.database.username,
+    password: configFile.database.password,
+    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
+    database: configFile.database.user_database,
+  };
+  if (configFile.database.ssl_ca) {
+    pgUserConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+  }
+  const pgUserClient = new Client(pgUserConfig);
+
+  try {
+    await pgUserClient.connect(); // Try to establish a connection
+    logger.info(`Database ${configFile.database.user_database} exists!`)
+    return true; // If successful, return true
+  } catch (error) {
+    logger.info(`Database ${configFile.database.user_database} does not exist, creating...`)
+    return false; // If connection fails, return false
+  } finally {
+    await pgUserClient.end(); // Close pool regardless of the outcome
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/require-await
