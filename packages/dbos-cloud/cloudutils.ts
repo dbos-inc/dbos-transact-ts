@@ -3,6 +3,7 @@ import { spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
+import jwt from 'jsonwebtoken';
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -44,6 +45,16 @@ const consoleFormat = format.combine(
   })
 );
 
+function isTokenExpired(token: string): boolean {
+  try {
+    const { exp } = jwt.decode(token) as jwt.JwtPayload;
+    if (!exp) return false;
+    return Date.now() >= exp * 1000;
+  } catch (error) {
+    return true;
+  }
+}
+
 export function getCloudCredentials(): DBOSCloudCredentials {
   const logger = getLogger();
   if (!credentialsExist()) {
@@ -51,10 +62,15 @@ export function getCloudCredentials(): DBOSCloudCredentials {
     process.exit(1)
   }
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
-  return {
+  const credentials =  {
     userName: userCredentials.userName,
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
+  if (isTokenExpired(credentials.token)) {
+    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login -u <username>'")
+    process.exit(1)
+  }
+  return credentials
 }
 
 export function credentialsExist(): boolean {
