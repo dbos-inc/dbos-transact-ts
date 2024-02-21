@@ -12,8 +12,10 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
+import { launchDashboard } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
+
 
 const program = new Command();
 
@@ -174,6 +176,22 @@ databaseCommands
     const exitCode = await deleteUserDb(DBOSCloudHost, dbname)
     process.exit(exitCode);
   }))
+
+/////////////////////
+/* USER DASHBOARDS */
+/////////////////////
+
+const dashboardCommands = program
+  .command('dashboard')
+  .description('Manage Monitoring Dashboards')
+
+dashboardCommands
+  .command('launch')
+  .description('Deploy the Monitoring Dashboard')
+  .action(async () => {
+    const exitCode = await launchDashboard(DBOSCloudHost);
+    process.exit(exitCode);
+  });
 
 program.parse(process.argv);
 
