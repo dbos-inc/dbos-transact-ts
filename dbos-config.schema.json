@@ -28,7 +28,7 @@
           "type": "number",
           "description": "The number of milliseconds the system waits before timing out when connecting to the application database"
         },
-        "user_database": {
+        "app_db_name": {
           "type": "string",
           "description": "The name of the application database"
         },
@@ -36,10 +36,7 @@
           "type": "string",
           "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file"
         },
-        "observability_database": {
-          "type": "string"
-        },
-        "user_dbclient": {
+        "app_db_client": {
           "type": "string",
           "description": "Specify the database client to use to connect to the application database",
           "enum": [
@@ -63,7 +60,7 @@
         "port",
         "username",
         "password",
-        "user_database"
+        "app_db_name"
       ]
     },
     "telemetry": {
