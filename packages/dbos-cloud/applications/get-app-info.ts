@@ -1,6 +1,5 @@
 import axios , { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from "../cloudutils";
-import path from "node:path";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import { Application } from "./types";
 
 export async function getAppInfo(host: string, json: boolean): Promise<number> {
@@ -8,11 +7,8 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
-  const appName = packageJson.name;
-  if (appName === undefined) {
-    logger.error("Error: package.json not found. Please run this command in an application root directory.")
+  const appName = retrieveApplicationName(logger);
+  if (appName == null) {
     return 1;
   }
   if (!json) {
