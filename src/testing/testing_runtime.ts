@@ -13,7 +13,7 @@ import { Workflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
-import { get, has } from "lodash";
+import { get, set, has } from "lodash";
 import { Client } from "pg";
 
 /**
@@ -57,6 +57,7 @@ export interface TestingRuntime {
 
   getConfig<T>(key: string): T | undefined; // Get application configuration.
   getConfig<T>(key: string, defaultValue: T): T;
+  setConfig<T>(key: string, newValue: T): void;
 
   // User database operations.
   queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
@@ -80,7 +81,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
  */
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
-  #applicationConfig: unknown = undefined;
+  #applicationConfig: object | undefined = undefined;
   #isInitialized = false;
 
   /**
@@ -92,7 +93,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     await dbosExec.init(...userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
-    this.#applicationConfig = dbosExec.config.application;
+    this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
 
@@ -126,6 +127,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
     return value as T;
+  }
+
+  setConfig<T>(key: string, newValue: T): void {
+    set(this.#applicationConfig!, key, newValue);
   }
 
   /**

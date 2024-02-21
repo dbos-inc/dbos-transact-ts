@@ -55,7 +55,7 @@ export interface DBOSConfig {
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
-  readonly application?: any;
+  readonly application?: object;
   readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
 }
