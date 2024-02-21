@@ -12,9 +12,8 @@ on:
       - synchronize
 
 jobs:
-  # temp comment out test
-  # test:
-  #   uses: ./.github/workflows/test.yml
+  test:
+    uses: ./.github/workflows/test.yml
   artifact:
-    # needs: test
+    needs: test
     uses: ./.github/workflows/artifact.yml
