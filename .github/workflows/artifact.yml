@@ -27,7 +27,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci
       - name: Stamp Version 
-        run: npm version -ws --no-git-tag-version "$NBGV_NpmPackageVersion"
+        run: npm version --workspaces --include-workspace-root --no-git-tag-version "$NBGV_NpmPackageVersion"
       - run: npm run build
       - run: npm publish
         # boolean properties from NBGV step appears to be converted into *capitalized* strings
