@@ -40,7 +40,7 @@ export async function registerUser(username: string, host: string): Promise<numb
   try {
     // First, register the user.
     const register = await axios.put(
-      `https://${host}/user`,
+      `https://${host}/v1alpha1/user`,
       {
         name: loginName,
         given_name: givenName,
