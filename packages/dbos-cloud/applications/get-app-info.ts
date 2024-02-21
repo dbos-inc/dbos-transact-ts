@@ -7,7 +7,7 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const appName = retrieveApplicationName(logger, true);
+  const appName = retrieveApplicationName(logger, json);
   if (appName === null) {
     return 1;
   }
