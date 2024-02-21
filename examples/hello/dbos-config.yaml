@@ -8,8 +8,8 @@ database:
   port: 5432
   username: 'postgres'
   password: ${PGPASSWORD}
-  user_database: 'hello'
+  app_db_name: 'hello'
   connectionTimeoutMillis: 3000
-  user_dbclient: 'knex'
+  app_db_client: 'knex'
   migrate: ['npx knex migrate:latest']
   rollback: ['npx knex migrate:rollback']

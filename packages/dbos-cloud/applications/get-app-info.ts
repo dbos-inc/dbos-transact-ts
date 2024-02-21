@@ -7,7 +7,7 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const appName = retrieveApplicationName(logger);
+  const appName = retrieveApplicationName(logger, json);
   if (appName === null) {
     return 1;
   }
@@ -16,7 +16,7 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   }
 
   try {
-    const res = await axios.get(`https://${host}/${userCredentials.userName}/application/${appName}`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,

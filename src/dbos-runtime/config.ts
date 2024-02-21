@@ -19,10 +19,9 @@ export interface ConfigFile {
     username: string;
     password?: string;
     connectionTimeoutMillis?: number;
-    user_database: string;
+    app_db_name: string;
     ssl_ca?: string;
-    observability_database?: string;
-    user_dbclient?: UserDatabaseName;
+    app_db_client?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];
   };
@@ -87,8 +86,12 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.user_database,
+    database: configFile.database.app_db_name,
   };
+
+  if (!poolConfig.database) {
+    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain application database name`);
+  }
 
   if (!poolConfig.password) {
     throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
@@ -118,10 +121,9 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
   /************************************/
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
-    userDbclient: configFile.database.user_dbclient || UserDatabaseName.KNEX,
+    userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
     system_database: `${poolConfig.database}_dbos_sys`,
-    observability_database: configFile.database.observability_database || undefined,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
     dbClientMetadata: {
