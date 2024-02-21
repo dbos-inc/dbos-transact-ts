@@ -55,7 +55,6 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
   await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.observability_database};`);
   await pgSystemClient.end();
 }
 

@@ -101,9 +101,9 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  user_database: 'hello'
+  app_db_name: 'hello'
   connectionTimeoutMillis: 3000
-  user_dbclient: 'knex'
+  app_db_client: 'knex'
 runtimeConfig:
   entrypoint: dist/entrypoint.js
 `;
@@ -161,9 +161,9 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  user_database: 'hello'
+  app_db_name: 'hello'
   connectionTimeoutMillis: 3000
-  user_dbclient: 'knex'
+  app_db_client: 'knex'
 runtimeConfig:
   port: 6666
 `;

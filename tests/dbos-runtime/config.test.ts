@@ -5,7 +5,7 @@ import { UserDatabaseName } from "../../src/user_database";
 import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/dbos-runtime/config";
 import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
-import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
+import { DBOSConfigKeyTypeError, DBOSDebuggerError, DBOSInitializationError } from "../../src/error";
 import { DBOSExecutor, DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContextImpl } from "../../src/workflow";
 
@@ -17,7 +17,7 @@ describe("dbos-config", () => {
         port: 1234
         username: 'some user'
         password: \${PGPASSWORD}
-        user_database: 'some DB'
+        app_db_name: 'some DB'
       runtimeConfig:
         port: 1234
         entrypoint: fake-entrypoint
@@ -98,6 +98,20 @@ describe("dbos-config", () => {
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
       process.env.PGPASSWORD = dbPassword;
     });
+
+    test("config file is missing app database name", () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+      `;
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
   });
 
   describe("context getConfig()", () => {
@@ -132,7 +146,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          user_database: 'some DB'
+          app_db_name: 'some DB'
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);

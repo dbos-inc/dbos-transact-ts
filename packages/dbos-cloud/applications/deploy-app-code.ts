@@ -53,7 +53,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
     const response = await axios.post(
-      `https://${host}/${userCredentials.userName}/application/${appName}`,
+      `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`,
       {
         application_archive: zipData,
       },
@@ -85,7 +85,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
 
       // Retrieve the application status, check if it is "AVAILABLE"
       const list = await axios.get(
-        `https://${host}/${userCredentials.userName}/application`,
+        `https://${host}/v1alpha1/${userCredentials.userName}/applications`,
         {
           headers: {
             Authorization: bearerToken,
@@ -102,7 +102,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     }
     await sleep(5000); // Leave time for route cache updates
     logger.info(`Application ${appName} successfuly deployed`)
-    logger.info(`Access your application at https://${host}/${userCredentials.userName}/application/${appName}`)
+    logger.info(`Access your application at https://${host}/apps/${userCredentials.userName}/${appName}`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;

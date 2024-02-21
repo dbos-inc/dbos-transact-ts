@@ -7,7 +7,7 @@ import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/use
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  const userDBName = configFile.database.user_database;
+  const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
   if (!(await checkDatabaseExists(configFile, logger))) {
@@ -25,10 +25,10 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     const postgresClient = new Client(postgresConfig);
     try {
       await postgresClient.connect()
-      await postgresClient.query(`CREATE DATABASE ${configFile.database.user_database}`);
+      await postgresClient.query(`CREATE DATABASE ${configFile.database.app_db_name}`);
     } catch (e) {
       if (e instanceof Error) {
-        logger.error(`Error creating database ${configFile.database.user_database}: ${e.message}`);
+        logger.error(`Error creating database ${configFile.database.app_db_name}: ${e.message}`);
       } else {
         logger.error(e);
       }
@@ -91,7 +91,7 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.user_database,
+    database: configFile.database.app_db_name,
   };
   if (configFile.database.ssl_ca) {
     pgUserConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
@@ -100,10 +100,10 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
 
   try {
     await pgUserClient.connect(); // Try to establish a connection
-    logger.info(`Database ${configFile.database.user_database} exists!`)
+    logger.info(`Database ${configFile.database.app_db_name} exists!`)
     return true; // If successful, return true
   } catch (error) {
-    logger.info(`Database ${configFile.database.user_database} does not exist, creating...`)
+    logger.info(`Database ${configFile.database.app_db_name} does not exist, creating...`)
     return false; // If connection fails, return false
   } finally {
     await pgUserClient.end(); // Close pool regardless of the outcome
@@ -114,7 +114,7 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
 export async function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
   logger.info("Starting Migration Rollback");
 
-  let dbType = configFile.database.user_dbclient;
+  let dbType = configFile.database.app_db_client;
   if (dbType == undefined) {
     dbType = "knex";
   }
@@ -144,7 +144,7 @@ async function createDBOSTables(configFile: ConfigFile) {
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.user_database,
+    database: configFile.database.app_db_name,
   };
 
   if (configFile.database.ssl_ca) {
