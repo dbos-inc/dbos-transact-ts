@@ -144,7 +144,7 @@ RUN apt update
 RUN apt install -y zip
 WORKDIR /app
 COPY . .
-RUN npm install
+RUN npm clean-install
 RUN npm run build
 RUN npm prune --omit=dev
 RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
