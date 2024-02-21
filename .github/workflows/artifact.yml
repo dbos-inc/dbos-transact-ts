@@ -23,8 +23,11 @@ jobs:
         id: nbgv
         uses: dotnet/nbgv@v0.4.2
         with:
-          stamp: package.json
-      - run: npm ci
+          setAllVars: true
+      - name: Install Dependencies
+        run: npm ci
+      - name: Stamp Version 
+        run: npm version -ws --no-git-tag-version "$NBGV_NpmPackageVersion"
       - run: npm run build
       - run: npm publish
         # boolean properties from NBGV step appears to be converted into *capitalized* strings
