@@ -1,16 +1,15 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from "../cloudutils";
-import path from "node:path";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 
 export async function registerApp(dbname: string, host: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
-  const appName = packageJson.name;
-  logger.info(`Loaded application name from package.json: ${appName}`)
+  const appName = retrieveApplicationName(logger);
+  if (appName === null) {
+    return 1;
+  }
   logger.info(`Registering application: ${appName}`)
 
   try {
