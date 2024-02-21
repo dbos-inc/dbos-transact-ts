@@ -17,7 +17,7 @@ describe("dbos-config", () => {
         port: 1234
         username: 'some user'
         password: \${PGPASSWORD}
-        user_database: 'some DB'
+        app_db_name: 'some DB'
       runtimeConfig:
         port: 1234
         entrypoint: fake-entrypoint
@@ -132,7 +132,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          user_database: 'some DB'
+          app_db_name: 'some DB'
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);

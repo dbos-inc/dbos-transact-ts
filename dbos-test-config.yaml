@@ -3,8 +3,8 @@ database:
   port: 5432
   username: 'postgres'
   password: ${PGPASSWORD}
-  user_database: 'dbostest'
-  user_dbclient: 'pg-node'
+  app_db_name: 'dbostest'
+  app_db_client: 'pg-node'
   connectionTimeoutMillis: 3000
 telemetry:
   logs:
