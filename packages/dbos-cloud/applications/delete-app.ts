@@ -7,7 +7,7 @@ export async function deleteApp(host: string): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName == null) {
+  if (appName === null) {
     return 1;
   }
   logger.info(`Deleting application: ${appName}`)

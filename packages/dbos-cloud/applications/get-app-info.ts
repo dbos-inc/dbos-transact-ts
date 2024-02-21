@@ -8,7 +8,7 @@ export async function getAppInfo(host: string, json: boolean): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName == null) {
+  if (appName === null) {
     return 1;
   }
   if (!json) {

@@ -18,7 +18,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName == null) {
+  if (appName === null) {
     return 1;
   }
   logger.info(`Loaded application name from package.json: ${appName}`)
