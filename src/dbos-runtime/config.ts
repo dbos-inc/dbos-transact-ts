@@ -89,6 +89,10 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
     database: configFile.database.app_db_name,
   };
 
+  if (!poolConfig.database) {
+    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain application database name`);
+  }
+
   if (!poolConfig.password) {
     throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
   }
