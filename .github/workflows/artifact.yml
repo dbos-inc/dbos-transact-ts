@@ -15,13 +15,13 @@ jobs:
         with:
           fetch-depth: 0 # fetch-depth 0 needed for NBGV
       - name: Use Node.js 20
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: 'https://npm.pkg.github.com'
       - name: Nerdbank.GitVersioning
         id: nbgv
-        uses: dotnet/nbgv@v0.4.1
+        uses: dotnet/nbgv@v0.4.2
         with:
           stamp: package.json
       - run: npm ci
@@ -34,7 +34,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm pack
       - name: Upload package
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.3.1
         with:
           name: dbos-workflow
           path: ./dbos-inc-workflow-*.tgz
