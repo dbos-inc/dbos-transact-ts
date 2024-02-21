@@ -28,7 +28,7 @@ export async function listApps(host: string, json: boolean): Promise<number> {
       applications.forEach(app => {
         console.log(`Application Name: ${app.Name}`);
         console.log(`ID: ${app.ID}`);
-        console.log(`Postgres Instance Name: ${app.ApplicationDatabaseName}`);
+        console.log(`Postgres Instance Name: ${app.PostgresInstanceName}`);
         console.log(`Application Database Name: ${app.ApplicationDatabaseName}`);
         console.log(`Status: ${app.Status}`);
         console.log(`Version: ${app.Version}`);

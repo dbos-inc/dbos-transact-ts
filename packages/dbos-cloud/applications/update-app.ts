@@ -1,17 +1,16 @@
 import axios, { AxiosError } from "axios";
-import { getCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse } from "../cloudutils";
+import { getCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import { Application } from "./types";
-import path from "node:path";
 
 export async function updateApp(host: string): Promise<number> {
   const logger =  getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
-  const appName = packageJson.name;
-  logger.info(`Loaded application name from package.json: ${appName}`)
+  const appName = retrieveApplicationName(logger);
+  if (appName === null) {
+    return 1;
+  }
   logger.info(`Updating application: ${appName}`)
 
   try {

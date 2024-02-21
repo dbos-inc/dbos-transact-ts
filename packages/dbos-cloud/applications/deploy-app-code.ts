@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse } from "../cloudutils";
+import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -17,9 +17,10 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
-  const appName = packageJson.name;
+  const appName = retrieveApplicationName(logger);
+  if (appName === null) {
+    return 1;
+  }
   logger.info(`Loaded application name from package.json: ${appName}`)
 
   createDirectory(deployDirectoryName);
