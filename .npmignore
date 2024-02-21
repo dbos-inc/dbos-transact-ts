@@ -20,6 +20,7 @@ version.json
 tests/
 coverage/
 packages/
+dist/packages/
 
 # ignore any packed packages in the repo
 *.tgz
