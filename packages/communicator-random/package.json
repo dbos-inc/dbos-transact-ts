@@ -22,6 +22,6 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "^0.8.51-preview"
+    "@dbos-inc/dbos-sdk": "*"
   }
 }
