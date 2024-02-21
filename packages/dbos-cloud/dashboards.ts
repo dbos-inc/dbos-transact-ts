@@ -6,7 +6,7 @@ export async function launchDashboard(host: string): Promise<number> {
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
     try{
-        const res = await axios.put(`https://${host}/${userCredentials.userName}/dashboard`,
+        const res = await axios.put(`https://${host}/v1alpha1/${userCredentials.userName}/dashboard`,
         {},
         {
             headers: {
