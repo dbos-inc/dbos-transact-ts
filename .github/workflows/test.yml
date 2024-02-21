@@ -31,9 +31,9 @@ jobs:
           docker exec -i ${{ job.services.postgres.id }} apt update
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
-      - uses: actions/checkout@v4.1.0
+      - uses: actions/checkout@v4.1.1
       - name: Use Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4.0.2
         with:
           node-version: 20
       - name: Compile and Test
