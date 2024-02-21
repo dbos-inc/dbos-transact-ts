@@ -15,7 +15,7 @@ export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
 
-export function retrieveApplicationName(logger: Logger): string | null {
+export function retrieveApplicationName(logger: Logger, silent: Boolean = false): string | null {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
     const appName = packageJson.name;
@@ -23,7 +23,9 @@ export function retrieveApplicationName(logger: Logger): string | null {
       logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.")
       return null;
     }
-    logger.info(`Loaded application name from package.json: ${appName}`)
+    if (!silent) {
+      logger.info(`Loaded application name from package.json: ${appName}`)
+    }
     return appName
 }
 
