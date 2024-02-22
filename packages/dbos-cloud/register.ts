@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist } from "./cloudutils";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials } from "./cloudutils";
 import readline from 'readline';
-import { login } from "./login";
+import { authenticate } from "./login";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -20,10 +20,15 @@ export async function registerUser(username: string, host: string): Promise<numb
     givenName = await prompt("Enter First/Given Name: ");
     familyName = await prompt("Enter Last/Family Name: ");
     company = await prompt("Enter Company: ");
-    const exitCode = await login(username);
-    if (exitCode !== 0) {
-      return exitCode
+    const bearerToken = await authenticate(logger);
+    if (bearerToken === null) {
+      return 1
     }
+    const credentials: DBOSCloudCredentials = {
+      token: bearerToken,
+      userName: username,
+    };
+    writeCredentials(credentials)
   } else {
     const userCredentials = getCloudCredentials();
     if (userCredentials.userName !== username) {

@@ -31,9 +31,8 @@ program.
 program
   .command('login')
   .description('Log in to DBOS cloud')
-  .requiredOption('-u, --username <string>', 'Username')
-  .action(async (options: { username: string }) => {
-    const exitCode = await login(options.username);
+  .action(async () => {
+    const exitCode = await login(DBOSCloudHost);
     process.exit(exitCode);
   });
 
