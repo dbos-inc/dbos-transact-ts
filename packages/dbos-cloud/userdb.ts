@@ -27,7 +27,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
       }
     );
 
-    logger.info(`Successfully started creating database: ${dbName}`);
+    logger.info(`Successfully started provisioning database: ${dbName}`);
 
     if (sync) {
       let status = "";
@@ -38,6 +38,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
         status = userDBInfo.Status;
       }
     }
+    logger.info(`Database successfully provisioned!`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to create database ${dbName}`;

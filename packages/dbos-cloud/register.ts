@@ -39,7 +39,7 @@ export async function registerUser(username: string, host: string): Promise<numb
   const loginName = userCredentials.userName;
   try {
     // First, register the user.
-    const register = await axios.put(
+    await axios.put(
       `https://${host}/v1alpha1/user`,
       {
         name: loginName,
@@ -54,8 +54,7 @@ export async function registerUser(username: string, host: string): Promise<numb
         },
       }
     );
-    const userUUID = register.data as string;
-    logger.info(`Registered user ${loginName}, UUID: ${userUUID}`);
+    logger.info(`${username} successfully registered!`);
   } catch (e) {
     const errorLabel = `Failed to register user ${loginName}`;
     const axiosError = e as AxiosError;
