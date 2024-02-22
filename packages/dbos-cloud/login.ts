@@ -109,39 +109,38 @@ export async function authenticate(logger: Logger): Promise<string | null> {
 }
 
 export async function login(host: string): Promise<number> {
-    const logger = getLogger();
-    const bearerToken = await authenticate(logger)
-    if (bearerToken === null) {
-      return 1;
-    }
-    try {
-      const response = await axios.put(
-        `https://${host}/v1alpha1/user`,
-        {
+  const logger = getLogger();
+  let bearerToken = await authenticate(logger)
+  if (bearerToken === null) {
+    return 1;
+  }
+  bearerToken = "Bearer " + bearerToken;
+  try {
+    const response = await axios.get(
+      `https://${host}/v1alpha1/user`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
         },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: bearerToken,
-          },
-        }
-      );
-      const username = response.data as string;
-      const credentials: DBOSCloudCredentials = {
-        token: bearerToken,
-        userName: username,
-      };
-      writeCredentials(credentials)
-      logger.info(`Successfully logged in as ${credentials.userName}!`);
-    } catch (e) {
-      const errorLabel = `Failed to login`;
-      const axiosError = e as AxiosError;
-      if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
-      } else {
-        logger.error(`${errorLabel}: ${(e as Error).message}`);
       }
-      return 1;
+    );
+    const username = response.data as string;
+    const credentials: DBOSCloudCredentials = {
+      token: bearerToken,
+      userName: username,
+    };
+    writeCredentials(credentials)
+    logger.info(`Successfully logged in as ${credentials.userName}!`);
+  } catch (e) {
+    const errorLabel = `Failed to login`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
-    return 0;
+    return 1;
+  }
+  return 0;
 }
