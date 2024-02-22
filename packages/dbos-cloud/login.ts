@@ -1,9 +1,8 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-import { execSync } from "child_process";
-import fs from "fs";
-import { DBOSCloudCredentials, dbosEnvPath, getLogger, sleep } from "./cloudutils";
+import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils";
+import { Logger } from "winston";
 
 const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
@@ -55,8 +54,8 @@ async function verifyToken(token: string): Promise<JwtPayload> {
   });
 }
 
-export async function login(username: string): Promise<number> {
-  const logger = getLogger();
+// Redirect a user to auth0 to authenticate, retrieving a JWT bearer token
+export async function authenticate(logger: Logger): Promise<string | null> {
   logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
@@ -74,7 +73,7 @@ export async function login(username: string): Promise<number> {
     logger.error(e);
   }
   if (!deviceCodeResponse) {
-    return 1;
+    return null;
   }
   console.log(`Login URL: ${deviceCodeResponse.verification_uri_complete}`);
 
@@ -102,17 +101,46 @@ export async function login(username: string): Promise<number> {
     }
   }
   if (!tokenResponse) {
-    return 1;
+    return null;
   }
 
   await verifyToken(tokenResponse.access_token);
-  const credentials: DBOSCloudCredentials = {
-    token: tokenResponse.access_token,
-    userName: username,
-  };
-  execSync(`mkdir -p ${dbosEnvPath}`);
-  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
-  logger.info(`Successfully logged in as user: ${credentials.userName}`);
-  logger.info(`You can view your credentials in: ./${dbosEnvPath}/credentials`);
+  return tokenResponse.access_token
+}
+
+export async function login(host: string): Promise<number> {
+  const logger = getLogger();
+  let bearerToken = await authenticate(logger)
+  if (bearerToken === null) {
+    return 1;
+  }
+  bearerToken = "Bearer " + bearerToken;
+  try {
+    const response = await axios.get(
+      `https://${host}/v1alpha1/user`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
+    const username = response.data as string;
+    const credentials: DBOSCloudCredentials = {
+      token: bearerToken,
+      userName: username,
+    };
+    writeCredentials(credentials)
+    logger.info(`Successfully logged in as ${credentials.userName}!`);
+  } catch (e) {
+    const errorLabel = `Failed to login`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
   return 0;
 }

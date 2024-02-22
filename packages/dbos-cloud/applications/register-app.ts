@@ -27,8 +27,8 @@ export async function registerApp(dbname: string, host: string): Promise<number>
       }
     );
     const uuid = register.data as string;
-    logger.info(`Successfully registered: ${appName}`);
     logger.info(`${appName} ID: ${uuid}`);
+    logger.info(`Successfully registered ${appName}!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to register application ${appName}`;

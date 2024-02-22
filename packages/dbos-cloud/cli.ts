@@ -16,7 +16,6 @@ import { launchDashboard } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
 
-
 const program = new Command();
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -31,9 +30,8 @@ program.
 program
   .command('login')
   .description('Log in to DBOS cloud')
-  .requiredOption('-u, --username <string>', 'Username')
-  .action(async (options: { username: string }) => {
-    const exitCode = await login(options.username);
+  .action(async () => {
+    const exitCode = await login(DBOSCloudHost);
     process.exit(exitCode);
   });
 

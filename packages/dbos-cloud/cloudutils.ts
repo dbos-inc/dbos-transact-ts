@@ -1,5 +1,5 @@
 import TransportStream = require("winston-transport");
-import { spawn, StdioOptions } from 'child_process';
+import { execSync, spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
@@ -94,6 +94,11 @@ export function credentialsExist(): boolean {
 
 export function deleteCredentials() {
   fs.unlinkSync(`./${dbosEnvPath}/credentials`);
+}
+
+export function writeCredentials(credentials: DBOSCloudCredentials) {
+  execSync(`mkdir -p ${dbosEnvPath}`);
+  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
 }
 
 // Run a command, streaming its output to stdout
