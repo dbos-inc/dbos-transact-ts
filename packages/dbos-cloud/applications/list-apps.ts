@@ -20,7 +20,6 @@ export async function listApps(host: string, json: boolean): Promise<number> {
     if (json) {
       console.log(JSON.stringify(applications));
     } else {
-      logger.info(`Listing applications for ${userCredentials.userName}`);
       if (applications.length === 0) {
         logger.info("No applications found");
       }

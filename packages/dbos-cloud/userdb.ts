@@ -123,6 +123,9 @@ export async function listUserDB(host: string, json: boolean) {
     if (json) {
       console.log(JSON.stringify(userDBs));
     } else {
+      if (userDBs.length === 0) {
+        logger.info("No database instances found");
+      }
       userDBs.forEach(userDBInfo => {
         console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
         console.log(`Status: ${userDBInfo.Status}`);
