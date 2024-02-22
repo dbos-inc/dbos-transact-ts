@@ -205,6 +205,7 @@ export class DBOSExecutor {
             database: userDBConfig.database,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             entities: this.entities,
+            ssl: userDBConfig.ssl,
           })
         );
       } catch (s) {
