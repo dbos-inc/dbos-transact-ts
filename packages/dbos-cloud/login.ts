@@ -54,6 +54,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
   });
 }
 
+// Redirect a user to auth0 to authenticate, retrieving a JWT bearer token
 export async function authenticate(logger: Logger): Promise<string | null> {
   logger.info(`Please authenticate with DBOS Cloud!`);
 

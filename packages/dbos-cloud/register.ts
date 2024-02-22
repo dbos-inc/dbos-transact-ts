@@ -32,10 +32,10 @@ export async function registerUser(username: string, host: string): Promise<numb
   } else {
     const userCredentials = getCloudCredentials();
     if (userCredentials.userName !== username) {
-      logger.error(`You are trying to register ${username}, but are currently logged in as ${userCredentials.userName}. Please run "npx dbos-cloud logout".`)
+      logger.error(`You are trying to register ${username}, but are currently authenticated as ${userCredentials.userName}. Please run "npx dbos-cloud logout".`)
       return 1;
     } else {
-      logger.info(`You are currently logged in as ${userCredentials.userName}.  Registering ${userCredentials.userName} with DBOS Cloud...`)
+      logger.info(`You are currently authenticated as ${userCredentials.userName}.  Registering ${userCredentials.userName} with DBOS Cloud...`)
     }
   }
 
@@ -43,7 +43,7 @@ export async function registerUser(username: string, host: string): Promise<numb
   const bearerToken = "Bearer " + userCredentials.token;
   const loginName = userCredentials.userName;
   try {
-    // First, register the user.
+    // Register the user in DBOS Cloud
     await axios.put(
       `https://${host}/v1alpha1/user`,
       {

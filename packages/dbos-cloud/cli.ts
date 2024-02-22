@@ -16,7 +16,6 @@ import { launchDashboard } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
 
-
 const program = new Command();
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
