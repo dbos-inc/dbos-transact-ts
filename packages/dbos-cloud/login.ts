@@ -110,11 +110,11 @@ export async function authenticate(logger: Logger): Promise<string | null> {
 
 export async function login(host: string): Promise<number> {
   const logger = getLogger();
-  let bearerToken = await authenticate(logger)
-  if (bearerToken === null) {
+  const token = await authenticate(logger)
+  if (token === null) {
     return 1;
   }
-  bearerToken = "Bearer " + bearerToken;
+  const bearerToken = "Bearer " + token;
   try {
     const response = await axios.get(
       `https://${host}/v1alpha1/user`,
@@ -127,7 +127,7 @@ export async function login(host: string): Promise<number> {
     );
     const username = response.data as string;
     const credentials: DBOSCloudCredentials = {
-      token: bearerToken,
+      token: token,
       userName: username,
     };
     writeCredentials(credentials)
