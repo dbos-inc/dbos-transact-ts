@@ -111,7 +111,24 @@ describe("oaoo-tests", () => {
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
       return wfCtxt.childWorkflow(WorkflowOAOO.testTxWorkflow, name).then((x) => x.getResult());
     }
+
+    @Workflow()
+    static async sleepWorkflow(wfCtxt: WorkflowContext, durationSec: number) {
+      await wfCtxt.sleep(durationSec);
+      return;
+    }
   }
+
+  test("workflow-sleep-oaoo", async () => {
+    const workflowUUID = uuidv1();
+    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(3).then((x) => x.getResult())).resolves.toBeFalsy();
+
+    // Rerunning should skip the sleep
+    const startTime = Date.now();
+    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(3).then((x) => x.getResult())).resolves.toBeFalsy();
+    const elapsedTimeMs = Date.now() - startTime;
+    expect(elapsedTimeMs).toBeLessThanOrEqual(1000);
+  });
 
   test("workflow-oaoo", async () => {
     let workflowResult: number;
