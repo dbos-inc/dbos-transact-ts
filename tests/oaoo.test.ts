@@ -121,13 +121,14 @@ describe("oaoo-tests", () => {
 
   test("workflow-sleep-oaoo", async () => {
     const workflowUUID = uuidv1();
-    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(3).then((x) => x.getResult())).resolves.toBeFalsy();
+    const initTime = Date.now();
+    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(2).then((x) => x.getResult())).resolves.toBeFalsy();
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1500);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
-    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(3).then((x) => x.getResult())).resolves.toBeFalsy();
-    const elapsedTimeMs = Date.now() - startTime;
-    expect(elapsedTimeMs).toBeLessThanOrEqual(1000);
+    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(2).then((x) => x.getResult())).resolves.toBeFalsy();
+    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
   });
 
   test("workflow-oaoo", async () => {
