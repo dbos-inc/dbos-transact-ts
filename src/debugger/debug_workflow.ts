@@ -222,6 +222,11 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const functionID: number = this.functionIDGetIncrement();
     return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async sleep(_: number): Promise<void> {
+    return;
+  }
 }
 
 /**
