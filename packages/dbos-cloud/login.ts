@@ -110,7 +110,7 @@ export async function authenticate(logger: Logger): Promise<string | null> {
 
 export async function login(host: string): Promise<number> {
   const logger = getLogger();
-  let token = await authenticate(logger)
+  const token = await authenticate(logger)
   if (token === null) {
     return 1;
   }
