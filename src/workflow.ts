@@ -71,6 +71,8 @@ export interface WorkflowContext extends DBOSContext {
 
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+
+  sleep(durationSec: number): Promise<void>;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -549,6 +551,17 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
     const functionID: number = this.functionIDGetIncrement();
     return new RetrievedHandle(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
+  }
+
+  /**
+   * Sleep for the duration.
+   */
+  async sleep(durationSec: number): Promise<void> {
+    if (durationSec <= 0) {
+      return;
+    }
+    const functionID = this.functionIDGetIncrement()
+    return await this.#dbosExec.systemDatabase.sleep(this.workflowUUID, functionID, durationSec);
   }
 
 }
