@@ -347,12 +347,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
     if (rows.length > 0) {
       const endTimeMs = JSON.parse(rows[0].output) as number;
-      await sleep(endTimeMs - Date.now())
+      await sleep(Math.max(endTimeMs - Date.now(), 0))
       return;
     } else {
       const endTimeMs = Date.now() + durationSec * 1000;
       await this.pool.query(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`, [workflowUUID, functionID, JSON.stringify(endTimeMs)]);
-      await sleep(endTimeMs - Date.now())
+      await sleep(Math.max(endTimeMs - Date.now(), 0))
       return;
     }
   }
