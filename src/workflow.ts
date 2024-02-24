@@ -102,6 +102,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         assumedRole: parentCtx?.assumedRole ?? "",
         executorID: parentCtx?.executorID,
       },
+      parentCtx?.span,
     );
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
