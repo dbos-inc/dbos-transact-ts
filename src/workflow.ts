@@ -277,6 +277,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const readOnly = txnInfo.config.readOnly ?? false;
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
     const funcId = this.functionIDGetIncrement();
     const span: Span = this.#dbosExec.tracer.startSpan(
       txn.name,
@@ -360,6 +361,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           // Retry serialization failures.
           await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
           continue;
         }
 
@@ -390,6 +392,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
 
     const funcID = this.functionIDGetIncrement();
+    const maxRetryIntervalSec = 3600 // Maximum retry interval: 1 hour
 
     const span: Span = this.#dbosExec.tracer.startSpan(
       commFn.name,
@@ -430,14 +433,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     if (ctxt.retriesAllowed) {
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
+      if (intervalSeconds > maxRetryIntervalSec) {
+        this.logger.warn(`Communicator config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
+      }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn(ctxt, ...args);
         } catch (error) {
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
-            await sleep(intervalSeconds);
+            // Cap at the maximum allowed retry interval.
+            await sleep(intervalSeconds * 1000);
             intervalSeconds *= ctxt.backoffRate;
+            intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
           }
           ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
           this.#dbosExec.tracer.endSpan(ctxt.span);

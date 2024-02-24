@@ -121,12 +121,12 @@ describe("dbos-tests", () => {
   test("readonly-recording", async () => {
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });
@@ -135,7 +135,7 @@ describe("dbos-tests", () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrowError(new Error("dumb test error"));
+    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
 
     // Check the transaction output table and make sure we record transaction information correctly.
     const readRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
