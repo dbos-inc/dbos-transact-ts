@@ -638,6 +638,7 @@ export class DBOSExecutor {
     return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 
+  // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
     const span = this.tracer.startSpan(
       status.workflowName,
