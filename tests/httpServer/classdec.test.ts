@@ -87,7 +87,7 @@ describe("httpserver-defsec-tests", () => {
     expect(res).toBe("hello 1");
 
     // Unauthorized.
-    await expect(testRuntime.invoke(TestEndpointDefSec).testTranscation("alice")).rejects.toThrowError(
+    await expect(testRuntime.invoke(TestEndpointDefSec).testTranscation("alice")).rejects.toThrow(
       new DBOSNotAuthorizedError("User does not have a role with permission to call testTranscation", 403)
     );
   });

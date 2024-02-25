@@ -33,31 +33,31 @@ describe("failures-tests", () => {
 
   test("dbos-error", async () => {
     const wfUUID1 = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrow(new DBOSError("test dbos error with code.", 11));
 
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
-    await expect(retrievedHandle.getResult()).rejects.toThrowError(new DBOSError("test dbos error with code.", 11));
+    await expect(retrievedHandle.getResult()).rejects.toThrow(new DBOSError("test dbos error with code.", 11));
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrowError(new DBOSError("test dbos error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code"));
   });
 
   test("readonly-error", async () => {
     const testUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrowError(new Error("test error"));
+    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrow(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // The error should be recorded in the database, so the function shouldn't run again.
-    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrowError(new Error("test error"));
+    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrow(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // A run with a generated UUID should fail normally
-    await expect(testRuntime.invoke(FailureTestClass).testReadonlyError()).rejects.toThrowError(new Error("test error"));
+    await expect(testRuntime.invoke(FailureTestClass).testReadonlyError()).rejects.toThrow(new Error("test error"));
     expect(FailureTestClass.cnt).toBe(2);
 
   });
@@ -103,20 +103,24 @@ describe("failures-tests", () => {
   });
 
   test("failing-communicator", async () => {
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).resolves.toBe(4);
+    let startTime = Date.now();
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).resolves.toBe(2);
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrowError(new DBOSError("Communicator reached maximum retries.", 1));
+    startTime = Date.now();
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
+    expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
   });
 
   test("nonretry-communicator", async () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrowError(new Error("failed no retry"));
+    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrow(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrowError(new Error("failed no retry"));
+    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrow(new Error("failed no retry"));
     expect(FailureTestClass.cnt).toBe(1);
   });
 
@@ -125,13 +129,13 @@ describe("failures-tests", () => {
     // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
 
     // Invoke an unregistered workflow.
-    expect(() => testRuntime.invoke(FailureTestClass).noRegWorkflow(10)).toThrowError();
+    expect(() => testRuntime.invoke(FailureTestClass).noRegWorkflow(10)).toThrow();
 
     // Invoke an unregistered transaction.
-    expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrowError();
+    expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrow();
 
     // Invoke an unregistered communicator in a workflow.
-    await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrowError();
+    await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrow();
   });
 });
 
@@ -182,7 +186,7 @@ class FailureTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
+  @Communicator({ intervalSeconds: 1, maxAttempts: 2 })
   static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
