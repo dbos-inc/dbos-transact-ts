@@ -22,17 +22,14 @@
     "@types/node": "^20.6.3",
     "grunt": "^1.6.1",
     "nerdbank-gitversioning": "^3.6.133",
-    "typescript": "^5.3.3",
-    "@types/validator": "^13.11.9"
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "axios": "^1.6.5",
     "commander": "^11.0.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
-    "validator": "^13.11.0",
     "winston": "^3.11.0",
-    "winston-transport": "^4.6.0",
-    "validator": "^13.11.0"
+    "winston-transport": "^4.6.0"
   }
 }

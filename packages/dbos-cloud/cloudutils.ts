@@ -5,7 +5,6 @@ import fs from "fs";
 import { AxiosError } from "axios";
 import jwt from 'jsonwebtoken';
 import path from "node:path";
-import * as validator from 'validator';
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -164,12 +163,5 @@ export function handleAPIErrors(label: string, e: AxiosError) {
   const logger = getLogger();
   const resp: CloudAPIErrorResponse = e.response?.data as CloudAPIErrorResponse;
   logger.error(`[${resp.requestID}] ${label}: ${resp.message}.`);
-}
-
-export function isValidApplicationName(appName: string): boolean {
-  if (appName.length < 3 || appName.length > 30) {
-    return false;
-  }
-  return validator.matches(appName, "^[a-z0-9-_]+$");
 }
 
