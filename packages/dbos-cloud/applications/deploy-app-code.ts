@@ -31,18 +31,7 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     return 1;
   }
 
-  if (docker) {
-    // Build the application inside a Docker container using the same base image as our cloud setup
-    logger.info(`Building ${appName} using Docker`)
-    const dockerSuccess = await buildAppInDocker(appName);
-    if (!dockerSuccess) {
-      return 1;
-    }
-  } else {
-    // Zip the current directory and deploy from there. Requires app to have already been built. Only for testing.
-    execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* > /dev/null`);
-  }
-
+  execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* -x node_modules/* -x dist/* > /dev/null`);
   const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
   writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
   execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
@@ -122,56 +111,4 @@ function readInterpolatedConfig(configFilePath: string): string {
   return configFileContent.replace(regex, (_, g1: string) => {
     return process.env[g1] || "";  // If the env variable is not set, return an empty string.
 });
-}
-
-async function buildAppInDocker(appName: string): Promise<boolean> {
-  const logger = getLogger();
-
-  // Verify Docker is running
-  try {
-    execSync(`docker > /dev/null 2>&1`)
-  } catch (e) {
-    logger.error("Docker not available.  To deploy, please start the Docker daemon and make the `docker` command runnable without sudo.")
-    return false
-  }
-
-  const dockerFileName = `${deployDirectoryName}/Dockerfile.dbos`;
-  const containerName = `dbos-builder-${appName}`;
-
-  // Dockerfile content
-  const dockerFileContent = `
-FROM node:lts-bookworm-slim
-RUN apt update
-RUN apt install -y zip
-WORKDIR /app
-COPY . .
-RUN npm clean-install
-RUN npm run build
-RUN npm prune --omit=dev
-RUN zip -ry ${appName}.zip ./* -x "${appName}.zip" -x "${deployDirectoryName}/*" > /dev/null
-`;
-  const dockerIgnoreContent = `
-node_modules/
-${deployDirectoryName}/
-dist/
-.dbos/
-`;
-  try {
-    // Write the Dockerfile and .dockerignore
-    writeFileSync(dockerFileName, dockerFileContent);
-    writeFileSync(`${deployDirectoryName}/Dockerfile.dbos.dockerignore`, dockerIgnoreContent);
-    // Build the Docker image.  As build takes a long time, use runCommand to stream its output to stdout.
-    await runCommand('docker', ['build', '-t', appName, '-f', dockerFileName, '.'])
-    // Run the container
-    execSync(`docker run -d --name ${containerName} ${appName}`);
-    // Copy the archive from the container to the local deploy directory
-    execSync(`docker cp ${containerName}:/app/${appName}.zip ${deployDirectoryName}/${appName}.zip`);
-    // Stop and remove the container
-    execSync(`docker stop ${containerName}`);
-    execSync(`docker rm ${containerName}`);
-    return true;
-  } catch (e) {
-    logger.error(`Failed to build application ${appName}: ${(e as Error).message}`);
-    return false;
-  }
 }
