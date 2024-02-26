@@ -85,9 +85,8 @@ applicationCommands
 applicationCommands
   .command('deploy')
   .description('Deploy this application to the cloud')
-  .option('--no-docker', 'Build the code locally without using Docker')
-  .action(async (options: { docker: boolean }) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, options.docker);
+  .action(async () => {
+    const exitCode = await deployAppCode(DBOSCloudHost);
     process.exit(exitCode);
   });
 

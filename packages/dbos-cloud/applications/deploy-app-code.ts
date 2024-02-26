@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -12,7 +12,7 @@ type DeployOutput = {
   ApplicationVersion: string;
 }
 
-export async function deployAppCode(host: string, docker: boolean): Promise<number> {
+export async function deployAppCode(host: string): Promise<number> {
   const logger = getLogger()
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
