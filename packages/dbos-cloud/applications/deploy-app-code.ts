@@ -21,7 +21,6 @@ export async function deployAppCode(host: string): Promise<number> {
   if (appName === null) {
     return 1;
   }
-  logger.info(`Loaded application name from package.json: ${appName}`)
 
   createDirectory(deployDirectoryName);
 
@@ -31,7 +30,7 @@ export async function deployAppCode(host: string): Promise<number> {
     return 1;
   }
 
-  execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x ${deployDirectoryName}/* -x node_modules/* -x dist/* > /dev/null`);
+  execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x "${deployDirectoryName}/*" "node_modules/*" "dist/*" > /dev/null`);
   const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
   writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
   execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
