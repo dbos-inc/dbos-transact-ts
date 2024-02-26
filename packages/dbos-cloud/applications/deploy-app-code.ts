@@ -1,7 +1,10 @@
 import axios, { AxiosError } from "axios";
 import { execSync } from "child_process";
 import { writeFileSync, existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import {
+  handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials,
+  getLogger, readFileSync, runCommand, sleep, isCloudAPIErrorResponse,
+  retrieveApplicationName, isValidApplicationName } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 
@@ -22,6 +25,11 @@ export async function deployAppCode(host: string, docker: boolean): Promise<numb
     return 1;
   }
   logger.info(`Loaded application name from package.json: ${appName}`)
+
+  if (!isValidApplicationName(appName)) {
+    logger.error(`Invalid application name: ${appName}.  Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+    return 1;
+  }
 
   createDirectory(deployDirectoryName);
 

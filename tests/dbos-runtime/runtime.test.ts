@@ -5,6 +5,8 @@ import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
+import { init } from "../../src/dbos-runtime/init";
+import { DBOSError } from "../../src/error";
 import fs from "fs";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
@@ -183,3 +185,16 @@ runtimeConfig:
   });
 });
 
+describe("init-tests", () => {
+ test("init an application fails when name is too short", () => {
+    expect(init("a")).rejects.toThrow(new DBOSError("Invalid application name: a. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
+   });
+
+  test("init an application fails when name is too long", () => {
+    expect(init("a".repeat(31))).rejects.toThrow(new DBOSError("Invalid application name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
+  });
+
+  test("init an application fails when name contains invalid characters", () => {
+    expect(init("abcedf!@")).rejects.toThrow(new DBOSError("Invalid application name: a!. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
+  });
+});

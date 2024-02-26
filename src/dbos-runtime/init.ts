@@ -3,6 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
 import { DBOSError } from '../error'
+import * as validator from 'validator';
 
 interface CopyOption {
   rename?: (basename: string) => string
@@ -45,7 +46,17 @@ export const copy = async (
   )
 }
 
+function isValidApplicationName(appName: string): boolean {
+  if (appName.length < 3 || appName.length > 30) {
+    return false;
+  }
+  return validator.matches(appName, "^[a-z0-9-_]+$");
+}
+
 export async function init(appName: string) {
+  if (!isValidApplicationName(appName)) {
+    throw new DBOSError(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+  }
 
   if (fs.existsSync(appName)) {
     throw new DBOSError(`Directory ${appName} already exists, exiting...`);
