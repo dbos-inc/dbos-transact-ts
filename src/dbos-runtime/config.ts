@@ -137,7 +137,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
   /*************************************/
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint || "dist/operations.js",
-    port: cliOptions?.port || configFile.runtimeConfig?.port || 3000,
+    port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 
   return [dbosConfig, runtimeConfig];
