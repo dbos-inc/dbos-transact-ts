@@ -5,6 +5,9 @@ import { isObject } from 'lodash';
 import { DBOSError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
+import { Error } from '..';
+const readline = require('readline');
+const net = require('net');
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,4 +92,45 @@ export class DBOSRuntime {
     }
     await this.dbosExec?.destroy();
   }
+
+  async checkPortAvailability(port: number) {
+    return new Promise<void>((resolve, reject) => {
+      const server = net.createServer();
+  
+      server.once('error', (error: Error) => {
+        if (error.message.includes('EADDRINUSE')) {
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+          });
+  
+          rl.question(`Port ${port} is already in use. Do you want to use it anyway? (y/n): `, answer => {
+            if (answer.toLowerCase() === 'y') {
+              rl.close();
+              resolve();
+            } else {
+              rl.close();
+              reject(new DBOSError(`Port ${port} is already in use`));
+            }
+          });
+        } else {
+          reject(new DBOSError(`Error occurred while checking port availability: ${error.message}`));
+        }
+      });
+  
+      server.once('listening', () => {
+        server.close();
+        resolve();
+      });
+  
+      server.once('close', () => {
+        resolve();
+      });
+  
+      server.listen(port);
+    });
+  }
+  
 }
+
+ 
