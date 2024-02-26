@@ -191,10 +191,10 @@ describe("init-tests", () => {
    });
 
   test("init an application fails when name is too long", () => {
-    expect(init("a".repeat(31))).rejects.toThrow(new DBOSError("Invalid application name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
+    expect(init("a".repeat(31))).rejects.toThrow(new DBOSError("Invalid application name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
   });
 
   test("init an application fails when name contains invalid characters", () => {
-    expect(init("abcedf!@")).rejects.toThrow(new DBOSError("Invalid application name: a!. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
+    expect(init("abcedf!@")).rejects.toThrow(new DBOSError("Invalid application name: abcedf!@. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
   });
 });
