@@ -5,9 +5,6 @@ import { isObject } from 'lodash';
 import { DBOSError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
-import { Error } from '..';
-const readline = require('readline');
-const net = require('net');
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,7 +89,4 @@ export class DBOSRuntime {
     }
     await this.dbosExec?.destroy();
   }
-
 }
-
- 
