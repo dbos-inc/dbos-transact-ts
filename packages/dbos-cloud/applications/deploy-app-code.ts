@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 import JSZip from "jszip";
