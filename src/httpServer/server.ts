@@ -62,7 +62,7 @@ export class DBOSHttpServer {
    * Register HTTP endpoints and attach to the app. Then start the server at the given port.
    * @param port
    */
-  listen(port: number) {
+  async listen(port: number) {
     // Start the HTTP server.
     /* const appServer = this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
@@ -72,9 +72,9 @@ export class DBOSHttpServer {
 
   try {
       this.checkPortAvailability(port);
-      this.checkPortAvailabilityipv6(port)
+      await this.checkPortAvailabilityipv6(port);
   } catch (error) {
-      console.error("Port {port} is already used. Please use the -p option to choose another port.");
+      console.error(`Port {port} is already used. Please use the -p option to choose another port.`);
       process.exit(1);
   }
 
@@ -107,20 +107,29 @@ checkPortAvailability(port: number): void {
     server.close();
 }
 
-checkPortAvailabilityipv6(port: number): void {
+async checkPortAvailabilityipv6(port: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
   const server = new net.Server();
   console.log("In check availabilty server ipv6")
   server.on('error', (error: NodeJS.ErrnoException) => {
       console.log("We have an error");
       if (error.code === 'EADDRINUSE') {
-          throw new Error(`Port ${port} is already in use`);
+          reject(new Error(`Port ${port} is already in use`));
       } else {
-          throw error;
+          reject(error);
       }
   });
 
-  server.listen({port: port, host: "::1", ipv6Only: true, exclusive: false});
-  server.close();
+  server.on('listening', () => {
+    server.close();
+    resolve();
+  });
+
+  server.listen({port:port, host: "::1"},() => {
+    resolve();
+  });
+
+});
 }
   /**
    * Health check endpoint.
