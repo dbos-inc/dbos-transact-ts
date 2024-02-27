@@ -122,7 +122,7 @@ export function runCommand(command: string, args: string[] = []): Promise<number
   });
 }
 
-export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
+export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
   // First, check the file
   fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
     if (error) {
