@@ -1,16 +1,35 @@
 import axios, { AxiosError } from "axios";
-import { execSync } from "child_process";
-import { writeFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
-
-const deployDirectoryName = "dbos_deploy";
+import JSZip from "jszip";
+import fg from 'fast-glob';
 
 type DeployOutput = {
   ApplicationName: string;
   ApplicationVersion: string;
 }
+
+async function createZipBuffer(): Promise<Buffer | null> {
+    const zip = new JSZip();
+    // Add the interpolated config file at package root
+    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+    zip.file('', interpolatedConfig, { binary: true });
+
+    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['dbos_deploy/**', 'node_modules/**', 'dist/**'] });
+
+    files.forEach(file => {
+        const relativePath = file.replace(`${process.cwd()}/`, '');
+        const fileData = readFileSync(file);
+        zip.file(relativePath, fileData, { binary: true });
+    });
+
+    // Generate ZIP file as a Buffer
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    return buffer;
+}
+
 
 export async function deployAppCode(host: string): Promise<number> {
   const logger = getLogger()
@@ -22,21 +41,14 @@ export async function deployAppCode(host: string): Promise<number> {
     return 1;
   }
 
-  createDirectory(deployDirectoryName);
-
   // Verify that package-lock.json exists
   if (!existsSync(path.join(process.cwd(), 'package-lock.json'))) {
     logger.error("package-lock.json not found. Please run 'npm install' before deploying.")
     return 1;
   }
 
-  execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x "${deployDirectoryName}/*" "node_modules/*" "dist/*" > /dev/null`);
-  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
-  writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
-  execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
-
   try {
-    const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
+    const zipData = createZipBuffer();
 
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
