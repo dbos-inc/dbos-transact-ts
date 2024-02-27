@@ -93,6 +93,7 @@ export class DBOSRuntime {
     await this.dbosExec?.destroy();
   }
 
+  /*
   async checkPortAvailability(port: number) {
     return new Promise<void>((resolve, reject) => {
       const server = net.createServer();
@@ -131,6 +132,38 @@ export class DBOSRuntime {
     });
   }
   
+  async startServer(server: DBOSHttpServer, port: number) {
+    try {
+      await this.checkPortAvailability(port);
+      server.listen(port);
+    } catch (error) {
+
+      if (error.message.includes('EADDRINUSE')) {
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout
+        });
+
+        rl.question(`Port ${port} is already in use. Do you want to use it anyway? (y/n): `, answer => {
+          if (answer.toLowerCase() === 'y') {
+            rl.close();
+            resolve();
+          } else {
+            rl.close();
+            reject(new DBOSError(`Port ${port} is already in use`));
+          }
+        });
+      } else {
+        reject(new DBOSError(`Error occurred while checking port availability: ${error.message}`));
+      }
+
+
+      console.warn(`Port ${port} is already in use.`);
+      // Try the next available port
+      this.startServer(server, port + 1);
+    }
+  }
+  */
 }
 
  

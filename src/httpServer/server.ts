@@ -21,6 +21,7 @@ import { GlobalLogger as Logger } from "../telemetry/logs";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
+import * as net from 'net';
 
 export const WorkflowUUIDHeader = "dbos-workflowuuid";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -63,9 +64,24 @@ export class DBOSHttpServer {
    */
   listen(port: number) {
     // Start the HTTP server.
-    const appServer = this.app.listen(port, () => {
+    /* const appServer = this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
-    });
+    }); */
+
+    console.log("We are in the local build");
+
+  try {
+      this.checkPortAvailability(port);
+      this.checkPortAvailabilityipv6(port)
+  } catch (error) {
+      console.error("Port {port} is already used. Please use the -p option to choose another port.");
+      process.exit(1);
+  }
+
+  const appServer = this.app.listen(port, () => {
+    this.logger.info(`DBOS Server is running at http://localhost:${port}`);
+  });
+
     const adminPort = port + 1
     const adminServer = this.adminApp.listen(adminPort, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
@@ -73,6 +89,39 @@ export class DBOSHttpServer {
     return {appServer: appServer, adminServer: adminServer}
   }
 
+
+
+checkPortAvailability(port: number): void {
+    const server = new net.Server();
+    console.log("In check availabilty server ipv4")
+    server.on('error', (error: NodeJS.ErrnoException) => {
+        console.log("We have an error");
+        if (error.code === 'EADDRINUSE') {
+            throw new Error(`Port ${port} is already in use`);
+        } else {
+            throw error;
+        }
+    });
+
+    server.listen({port: port, host: "127.0.0.1", exclusive: false});
+    server.close();
+}
+
+checkPortAvailabilityipv6(port: number): void {
+  const server = new net.Server();
+  console.log("In check availabilty server ipv6")
+  server.on('error', (error: NodeJS.ErrnoException) => {
+      console.log("We have an error");
+      if (error.code === 'EADDRINUSE') {
+          throw new Error(`Port ${port} is already in use`);
+      } else {
+          throw error;
+      }
+  });
+
+  server.listen({port: port, host: "::1", ipv6Only: true, exclusive: false});
+  server.close();
+}
   /**
    * Health check endpoint.
    */
