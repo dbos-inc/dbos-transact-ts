@@ -82,7 +82,7 @@ export function getCloudCredentials(): DBOSCloudCredentials {
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
   if (isTokenExpired(credentials.token)) {
-    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login -u <username>'")
+    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login'")
     process.exit(1)
   }
   return credentials

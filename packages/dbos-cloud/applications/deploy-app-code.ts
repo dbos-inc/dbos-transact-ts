@@ -11,7 +11,7 @@ type DeployOutput = {
   ApplicationVersion: string;
 }
 
-async function createZipBuffer(): Promise<Buffer | null> {
+async function createZipData(): Promise<string> {
     const zip = new JSZip();
     // Add the interpolated config file at package root
     const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
@@ -27,7 +27,7 @@ async function createZipBuffer(): Promise<Buffer | null> {
 
     // Generate ZIP file as a Buffer
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
-    return buffer;
+    return buffer.toString('base64');
 }
 
 
@@ -48,7 +48,7 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 
   try {
-    const zipData = createZipBuffer();
+    const zipData = createZipData();
 
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
