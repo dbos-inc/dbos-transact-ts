@@ -54,7 +54,6 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     )
     let span: Span;
     const spanAttributes = {
-      operationUUID: requestID,
       operationType: OperationType.HANDLER,
       requestID: requestID,
       requestIP: koaContext.request.ip,
