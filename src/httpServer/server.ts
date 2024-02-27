@@ -63,24 +63,17 @@ export class DBOSHttpServer {
    * @param port
    */
   async listen(port: number) {
-    // Start the HTTP server.
-    /* const appServer = this.app.listen(port, () => {
-      this.logger.info(`DBOS Server is running at http://localhost:${port}`);
-    }); */
-
-    console.log("We are in the local build");
-
-  try {
-      this.checkPortAvailability(port);
-      await this.checkPortAvailabilityipv6(port);
-  } catch (error) {
-      console.error(`Port {port} is already used. Please use the -p option to choose another port.`);
+    try {
+      await this.checkPortAvailability(port, "127.0.0.1");
+      await this.checkPortAvailability(port, "::1");
+    } catch (error) {
+      console.error(`Port ${port} is already used. Please use the -p option to choose another port.`);
       process.exit(1);
-  }
+    }
 
-  const appServer = this.app.listen(port, () => {
+    const appServer = this.app.listen(port, () => {
     this.logger.info(`DBOS Server is running at http://localhost:${port}`);
-  });
+    });
 
     const adminPort = port + 1
     const adminServer = this.adminApp.listen(adminPort, () => {
@@ -89,25 +82,7 @@ export class DBOSHttpServer {
     return {appServer: appServer, adminServer: adminServer}
   }
 
-
-
-checkPortAvailability(port: number): void {
-    const server = new net.Server();
-    console.log("In check availabilty server ipv4")
-    server.on('error', (error: NodeJS.ErrnoException) => {
-        console.log("We have an error");
-        if (error.code === 'EADDRINUSE') {
-            throw new Error(`Port ${port} is already in use`);
-        } else {
-            throw error;
-        }
-    });
-
-    server.listen({port: port, host: "127.0.0.1", exclusive: false});
-    server.close();
-}
-
-async checkPortAvailabilityipv6(port: number): Promise<void> {
+async checkPortAvailability(port: number, host: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
   const server = new net.Server();
   console.log("In check availabilty server ipv6")
