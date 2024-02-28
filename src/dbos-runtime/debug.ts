@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSExecutor } from "../dbos-executor";
-import { DBOSError, DBOSFailLoadOperationsError } from "../error";
+import { DBOSError, DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from "../error";
 import { GlobalLogger } from "../telemetry/logs";
 import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
 
@@ -31,7 +31,11 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
         }
       }
     } else if (e instanceof DBOSFailLoadOperationsError) {
-      console.error('\x1b[31m%s\x1b[0m', "Did you correctly compile this application? Hint: run `npm run build` and try again");
+      console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
+    } else if (e instanceof DBOSNotRegisteredError) {
+      console.error('\x1b[31m%s\x1b[0m', "Did you modify this application? Hint: make sure the above function exists in your application, then run `npm run build` to re-compile and try again");
+    } else if (e instanceof DBOSInitializationError) {
+      console.error('\x1b[31m%s\x1b[0m', "Please check your configuration file and try again");
     }
     process.exit(1);
   }
