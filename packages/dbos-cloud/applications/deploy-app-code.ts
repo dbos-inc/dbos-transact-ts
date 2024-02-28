@@ -14,7 +14,7 @@ type DeployOutput = {
 async function createZipData(): Promise<string> {
     const zip = new JSZip();
 
-    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['**/node_modules/**', '**/dist/**'] });
+    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
 
     files.forEach(file => {
         const relativePath = file.replace(`${process.cwd()}/`, '');
