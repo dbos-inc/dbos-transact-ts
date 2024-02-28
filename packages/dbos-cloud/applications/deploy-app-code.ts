@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { existsSync, readFileSync } from 'fs';
-import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
 import JSZip from "jszip";
@@ -14,7 +14,7 @@ type DeployOutput = {
 async function createZipData(): Promise<string> {
     const zip = new JSZip();
 
-    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
+    const files = await fg(`${process.cwd()}/**/*`, { dot: true, onlyFiles: true, ignore: [`**/${dbosEnvPath}/**`, '**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
 
     files.forEach(file => {
         const relativePath = file.replace(`${process.cwd()}/`, '');
