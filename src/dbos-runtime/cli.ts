@@ -28,6 +28,10 @@ interface DBOSDebugOptions extends DBOSCLIStartOptions {
   uuid: string, // Workflow UUID
 }
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const packageJson = require('../../../package.json') as { version: string };
+program.version(packageJson.version);
+
 program
   .command('start')
   .description('Start the server')
