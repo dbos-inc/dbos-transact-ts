@@ -39,7 +39,7 @@ export class DBOSRuntime {
       }
       await this.dbosExec.init(...classes);    
       const server = new DBOSHttpServer(this.dbosExec)
-      this.servers = server.listen(this.runtimeConfig.port);
+      this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
     } catch (error) {
       this.dbosExec?.logger.error(error);
