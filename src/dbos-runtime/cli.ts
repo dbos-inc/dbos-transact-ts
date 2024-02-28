@@ -9,6 +9,8 @@ import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
+import { findPackageRoot } from '../utils';
+import path from "path";
 
 const program = new Command();
 
@@ -27,6 +29,11 @@ interface DBOSDebugOptions extends DBOSCLIStartOptions {
   proxy: string, // TODO: in the future, we provide the proxy URL
   uuid: string, // Workflow UUID
 }
+
+const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const packageJson = require(packageJsonPath) as { version: string };
+program.version(packageJson.version);
 
 program
   .command('start')

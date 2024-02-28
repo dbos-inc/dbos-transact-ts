@@ -13,15 +13,16 @@ import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
 import { launchDashboard } from "./dashboards";
-import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
+import { DBOSCloudHost, credentialsExist, deleteCredentials, findPackageRoot } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
+import path from "path";
 
 const program = new Command();
 
+const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson = require('../../../package.json') as { version: string };
-program.
-  version(packageJson.version);
+const packageJson = require(packageJsonPath) as { version: string };
+program.version(packageJson.version);
 
 /////////////////////
 /* AUTHENTICATION  */
