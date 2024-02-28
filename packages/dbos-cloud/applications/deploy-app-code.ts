@@ -13,9 +13,6 @@ type DeployOutput = {
 
 async function createZipData(): Promise<string> {
     const zip = new JSZip();
-    // Add the interpolated config file at package root
-    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
-    zip.file('', interpolatedConfig, { binary: true });
 
     const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['**/node_modules/**', '**/dist/**'] });
 
@@ -24,6 +21,10 @@ async function createZipData(): Promise<string> {
         const fileData = readFileSync(file);
         zip.file(relativePath, fileData, { binary: true });
     });
+
+    // Add the interpolated config file at package root
+    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+    zip.file('', interpolatedConfig, { binary: true });
 
     // Generate ZIP file as a Buffer
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
