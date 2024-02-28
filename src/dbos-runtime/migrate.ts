@@ -7,6 +7,10 @@ import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/use
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
+  if (!configFile.database.password) {
+    logger.error(`DBOS configuration does not contain database password, please check your config file and retry!`);
+    return 1;
+  }
   const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
