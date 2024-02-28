@@ -23,9 +23,12 @@ export interface DBOSCLIStartOptions {
   entrypoint?: string,
 }
 
-interface DBOSDebugOptions extends DBOSCLIStartOptions {
+interface DBOSDebugOptions {
   proxy: string, // TODO: in the future, we provide the proxy URL
   uuid: string, // Workflow UUID
+  loglevel?: string,
+  configfile?: string,
+  entrypoint?: string,
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -48,7 +51,7 @@ program
 program
   .command('debug')
   .description('Debug a workflow')
-  .option('-x, --proxy <string>', 'Specify the debugger proxy URL', 'postgresql://localhost:2345')
+  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL', 'postgresql://localhost:2345')
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to debug')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
