@@ -1,16 +1,36 @@
 import axios, { AxiosError } from "axios";
-import { execSync } from "child_process";
-import { writeFileSync, existsSync } from 'fs';
-import { handleAPIErrors, createDirectory, dbosConfigFilePath, getCloudCredentials, getLogger, readFileSync, sleep, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import { existsSync, readFileSync } from 'fs';
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath } from "../cloudutils";
 import path from "path";
 import { Application } from "./types";
-
-const deployDirectoryName = "dbos_deploy";
+import JSZip from "jszip";
+import fg from 'fast-glob';
 
 type DeployOutput = {
   ApplicationName: string;
   ApplicationVersion: string;
 }
+
+async function createZipData(): Promise<string> {
+    const zip = new JSZip();
+
+    const files = await fg(`${process.cwd()}/**/*`, { dot: true, onlyFiles: true, ignore: [`**/${dbosEnvPath}/**`, '**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
+
+    files.forEach(file => {
+        const relativePath = file.replace(`${process.cwd()}/`, '');
+        const fileData = readFileSync(file);
+        zip.file(relativePath, fileData, { binary: true });
+    });
+
+    // Add the interpolated config file at package root
+    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+    zip.file(dbosConfigFilePath, interpolatedConfig, { binary: true });
+
+    // Generate ZIP file as a Buffer
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    return buffer.toString('base64');
+}
+
 
 export async function deployAppCode(host: string): Promise<number> {
   const logger = getLogger()
@@ -22,21 +42,14 @@ export async function deployAppCode(host: string): Promise<number> {
     return 1;
   }
 
-  createDirectory(deployDirectoryName);
-
   // Verify that package-lock.json exists
   if (!existsSync(path.join(process.cwd(), 'package-lock.json'))) {
     logger.error("package-lock.json not found. Please run 'npm install' before deploying.")
     return 1;
   }
 
-  execSync(`zip -ry ${deployDirectoryName}/${appName}.zip ./* -x "${deployDirectoryName}/*" "node_modules/*" "dist/*" > /dev/null`);
-  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
-  writeFileSync(`${deployDirectoryName}/${dbosConfigFilePath}`, interpolatedConfig)
-  execSync(`zip -j ${deployDirectoryName}/${appName}.zip ${deployDirectoryName}/${dbosConfigFilePath} > /dev/null`);
-
   try {
-    const zipData = readFileSync(`${deployDirectoryName}/${appName}.zip`, "base64");
+    const zipData = await createZipData();
 
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
@@ -105,7 +118,7 @@ export async function deployAppCode(host: string): Promise<number> {
 }
 
 function readInterpolatedConfig(configFilePath: string): string {
-  const configFileContent = readFileSync(configFilePath) as string;
+  const configFileContent = checkReadFile(configFilePath) as string;
   const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
   return configFileContent.replace(regex, (_, g1: string) => {
     return process.env[g1] || "";  // If the env variable is not set, return an empty string.

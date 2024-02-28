@@ -82,7 +82,7 @@ export function getCloudCredentials(): DBOSCloudCredentials {
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
   if (isTokenExpired(credentials.token)) {
-    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login -u <username>'")
+    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login'")
     process.exit(1)
   }
   return credentials
@@ -122,7 +122,7 @@ export function runCommand(command: string, args: string[] = []): Promise<number
   });
 }
 
-export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
+export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
   // First, check the file
   fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
     if (error) {
