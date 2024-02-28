@@ -48,7 +48,7 @@ export async function deployAppCode(host: string): Promise<number> {
   }
 
   try {
-    const zipData = createZipData();
+    const zipData = await createZipData();
 
     // Submit the deploy request
     logger.info(`Submitting deploy request for ${appName}`)
