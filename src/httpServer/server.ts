@@ -66,10 +66,6 @@ export class DBOSHttpServer {
     const appServer = this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
-    appServer.on("error", (err) => {
-      console.error(err.message);
-      process.exit(1);
-    })
     const adminPort = port + 1
     const adminServer = this.adminApp.listen(adminPort, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
