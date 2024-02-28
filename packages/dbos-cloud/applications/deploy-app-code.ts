@@ -24,7 +24,7 @@ async function createZipData(): Promise<string> {
 
     // Add the interpolated config file at package root
     const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
-    zip.file('', interpolatedConfig, { binary: true });
+    zip.file(dbosConfigFilePath, interpolatedConfig, { binary: true });
 
     // Generate ZIP file as a Buffer
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
