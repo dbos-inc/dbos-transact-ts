@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSExecutor } from "../dbos-executor";
-import { DBOSError, DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from "../error";
+import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from "../error";
 import { GlobalLogger } from "../telemetry/logs";
 import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
 
