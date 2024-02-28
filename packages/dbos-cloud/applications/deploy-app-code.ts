@@ -17,7 +17,7 @@ async function createZipData(): Promise<string> {
     const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
     zip.file('', interpolatedConfig, { binary: true });
 
-    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['dbos_deploy/**', 'node_modules/**', 'dist/**'] });
+    const files = await fg(`${process.cwd()}/**/*`, { dot: false, onlyFiles: true, ignore: ['**/node_modules/**', '**/dist/**'] });
 
     files.forEach(file => {
         const relativePath = file.replace(`${process.cwd()}/`, '');
