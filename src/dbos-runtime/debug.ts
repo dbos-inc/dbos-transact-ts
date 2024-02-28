@@ -1,4 +1,5 @@
 import { DBOSConfig, DBOSExecutor } from "../dbos-executor";
+import { DBOSError, DBOSFailLoadOperationsError } from "../error";
 import { GlobalLogger } from "../telemetry/logs";
 import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
 
@@ -18,7 +19,7 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
     // Destroy testing runtime.
     await dbosExec.destroy();
   } catch (e) {
-    const errorLabel = `Debug mode failed`;
+    const errorLabel = `Debug mode error`;
     logger.error(`${errorLabel}: ${(e as Error).message}`);
     if (e instanceof AggregateError) {
       console.error(e.errors);
@@ -29,6 +30,8 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
           break;
         }
       }
+    } else if (e instanceof DBOSFailLoadOperationsError) {
+      console.error('\x1b[31m%s\x1b[0m', "Did you correctly compile this application? Hint: run `npm run build` and try again");
     }
     process.exit(1);
   }
