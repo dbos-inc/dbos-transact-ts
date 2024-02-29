@@ -1,34 +1,32 @@
 # Contributing to DBOS-TS
 
-Thank you for considering contributing to DBOS-TS! We welcome contributions from everyone, whether it's bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
+Thank you for considering contributing to DBOS-TS. We welcome contributions from everyone, whether it's bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
 
 ## How to Contribute
 
 To get started with DBOS-TS, please read the [README](README.md).
 
 You can contribute in many ways. Some simple ways are:
-* Use the SDK and Open issues to report any issues, questions, concern with the SDK, samples or documentation.
+* Use the SDK and open issues to report any bugs, questions, concern with the SDK, samples or documentation.
 * Respond to issues with advice or suggestions.
 * Participate in discussions in our [Discord](https://discord.gg/fMwQjeW5zg) channel.
 * Contribute fixes and improvement to code, samples or documentation.
 
 ### To contribute code, please follow these steps:
 
-1. Complete, sign and accept the contributor agreement. This allows us to accept your contributions.
+1. Fork the the github repository to your own account.
 
-2. Fork the the github repository to you own account.
+2. Clone the forked repository to your local machine.
 
-3. Clone the forked repository to your local machine.
+3. Create a branch.
 
-4. Create a branch.
+4. Make the necessary change to code, samples or documentation.
 
-5. Make the necessary change to code, samples or documentation.
+5. Write tests.
 
-6. Write tests.
+6. Commit the changes to your forked repository.
 
-7. Commit the changes to your forked repository.
-
-8. Submit a pull request to DBOS repository.
+7. Submit a pull request to DBOS repository.
 
 ## Requesting features
 
