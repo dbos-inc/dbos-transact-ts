@@ -77,7 +77,7 @@ function isTypeReference(node: ts.Type): node is ts.TypeReference {
 const workflowUuidParamName = "dbosWorkflowUUID";
 const workflowUuidRef: OpenApi3.ReferenceObject = { $ref: `#/components/parameters/${workflowUuidParamName}` }
 const workflowUuidParam: readonly [string, OpenApi3.ParameterObject] = [workflowUuidParamName, {
-  name: 'dbos-workflowuuid',
+  name: 'dbos-idempotency-key',
   in: 'header',
   required: false,
   description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
