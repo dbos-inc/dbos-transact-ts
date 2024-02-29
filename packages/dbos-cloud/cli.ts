@@ -12,7 +12,7 @@ import { Command } from 'commander';
 import { login } from "./login";
 import { registerUser } from "./register";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB } from "./userdb";
-import { launchDashboard } from "./dashboards";
+import { launchDashboard, getDashboardURL } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
 
@@ -186,6 +186,14 @@ dashboardCommands
   .description('Deploy the Monitoring Dashboard')
   .action(async () => {
     const exitCode = await launchDashboard(DBOSCloudHost);
+    process.exit(exitCode);
+  });
+
+dashboardCommands
+  .command('url')
+  .description('Get the URL of your Monitoring Dashboard')
+  .action(async () => {
+    const exitCode = await getDashboardURL(DBOSCloudHost);
     process.exit(exitCode);
   });
 
