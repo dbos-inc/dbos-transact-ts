@@ -23,7 +23,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
 
-export const WorkflowUUIDHeader = "dbos-workflowuuid";
+export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
 export const HealthUrl = "/dbos-healthz"
 
