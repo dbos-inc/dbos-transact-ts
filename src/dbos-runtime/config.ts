@@ -64,7 +64,7 @@ export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
   const configFilePath = cliOptions?.configfile ?? dbosConfigFilePath;
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
@@ -94,7 +94,11 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions): [DBOSConfig, 
   }
 
   if (!poolConfig.password) {
-    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
+    if (debugMode) {
+      poolConfig.password = "DEBUG-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
+    } else {
+      throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
+    }
   }
 
   if (configFile.database.ssl_ca) {

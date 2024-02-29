@@ -609,7 +609,8 @@ export class DBOSExecutor {
     if (nameArr[1] === TempWorkflowType.transaction) {
       const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(nameArr[2]);
       if (!txnInfo) {
-        throw new DBOSError(`Cannot find transaction info for UUID ${workflowUUID}, name ${wfName}`);
+        this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
+        throw new DBOSNotRegisteredError(nameArr[2]);
       }
       temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
@@ -619,7 +620,8 @@ export class DBOSExecutor {
     } else if (nameArr[1] === TempWorkflowType.external) {
       const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(nameArr[2]);
       if (!commInfo) {
-        throw new DBOSError(`Cannot find transaction info for UUID ${workflowUUID}, name ${wfName}`);
+        this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
+        throw new DBOSNotRegisteredError(nameArr[2]);
       }
       temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
@@ -632,7 +634,8 @@ export class DBOSExecutor {
         return await ctxt.send<any>(args[0], args[1], args[2]);
       };
     } else {
-      throw new DBOSError(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
+      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
+      throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);

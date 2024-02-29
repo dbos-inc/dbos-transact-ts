@@ -167,3 +167,10 @@ export class DBOSNonExistentWorkflowError extends DBOSError {
     super(msg, NonExistentWorkflowError);
   }
 }
+
+const FailLoadOperationsError = 17;
+export class DBOSFailLoadOperationsError extends DBOSError {
+  constructor(msg: string) {
+    super(msg, FailLoadOperationsError);
+  }
+}
