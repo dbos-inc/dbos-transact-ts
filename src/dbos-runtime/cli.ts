@@ -57,7 +57,7 @@ program
   .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, true);
     await debugWorkflow(dbosConfig, runtimeConfig, options.proxy, options.uuid);
   });
 
