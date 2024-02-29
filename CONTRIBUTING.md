@@ -8,7 +8,7 @@ To get started with DBOS-TS, please read the [README](README.md).
 
 You can contribute in many ways. Some simple ways are:
 * Use the SDK and Open issues to report any issues, questions, concern with the SDK, samples or documentation.
-* Respond to issues with advice or suggestiong.
+* Respond to issues with advice or suggestions.
 * Participate in discussions in our discord channel.
 * Contribute fixes and improvement to code, samples or documentation.
 
@@ -39,3 +39,5 @@ If you have a feature request or an idea for an enhancement, feel free to open a
 If you are stuck, need help, or wondering if a certain contribution will be welcome, please ask! Either in our Discord or Github discussions.
 
 ## Code of conduct
+
+It is important to us that contributing to DBOS-TS will be a pleasant experience, if necessary, please refer to our [code of conduct](CODE_OF_CONDUCT.md) for participation guidelines.
