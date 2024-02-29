@@ -96,7 +96,7 @@ describe("OpenApiGenerator", () => {
         schemas: {},
         parameters: {
           dbosWorkflowUUID: {
-            name: "dbos-workflowuuid",
+            name: "dbos-idempotency-key",
             in: "header",
             required: false,
             schema: {
@@ -183,7 +183,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           dbosWorkflowUUID: {
-            name: "dbos-workflowuuid",
+            name: "dbos-idempotency-key",
             in: "header",
             required: false,
             description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -273,7 +273,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           dbosWorkflowUUID: {
-            name: "dbos-workflowuuid",
+            name: "dbos-idempotency-key",
             in: "header",
             required: false,
             description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -359,7 +359,7 @@ describe("OpenApiGenerator", () => {
       components: {
         parameters: {
           dbosWorkflowUUID: {
-            name: "dbos-workflowuuid",
+            name: "dbos-idempotency-key",
             in: "header",
             required: false,
             description: "Caller specified [workflow idempotency key](https://docs.dbos.dev/tutorials/idempotency-tutorial#setting-idempotency-keys)",
@@ -384,6 +384,7 @@ describe("OpenApiGenerator", () => {
     expect(parser.diags.length).toBe(0);
     const generator = new OpenApiGenerator(program);
     const openApi = generator.generate(classes!, "dbos-hello", "0.0.1");
+    console.log(openApi)
     expect(generator.diags.length).toBe(0);
     expect(openApi).toBeDefined();
     expect(openApi).toMatchObject(expected);

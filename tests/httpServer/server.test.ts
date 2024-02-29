@@ -153,7 +153,7 @@ describe("httpserver-tests", () => {
 
   test("test-workflowUUID-header", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "dbos-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "dbos-idempotency-key": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
@@ -172,7 +172,7 @@ describe("httpserver-tests", () => {
 
   test("endpoint-handler-UUID", async () => {
     const workflowUUID = uuidv1();
-    const response = await request(testRuntime.getHandlersCallback()).get("/handler/bob").set({ "dbos-workflowuuid": workflowUUID });
+    const response = await request(testRuntime.getHandlersCallback()).get("/handler/bob").set({ "dbos-idempotency-key": workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
 
