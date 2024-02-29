@@ -32,7 +32,7 @@ export async function getDashboardURL(host: string): Promise<number> {
     const logger = getLogger();
     const userCredentials = getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
-    try{
+    try {
         const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/dashboard`,
         {
             headers: {
