@@ -2,7 +2,7 @@ import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
-import { DBOSError } from '../error';
+import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
 
@@ -35,7 +35,7 @@ export class DBOSRuntime {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
       if (classes.length === 0) {
-        throw new DBOSError("operations not found");
+        throw new DBOSFailLoadOperationsError("operations not found");
       }
       await this.dbosExec.init(...classes);    
       const server = new DBOSHttpServer(this.dbosExec)
@@ -43,6 +43,10 @@ export class DBOSRuntime {
       this.dbosExec.logRegisteredHTTPUrls();
     } catch (error) {
       this.dbosExec?.logger.error(error);
+      if (error instanceof DBOSFailLoadOperationsError) {
+        console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
+        process.exit(1);
+      }
       await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
       throw error;
     }
@@ -61,7 +65,7 @@ export class DBOSRuntime {
       /* eslint-disable-next-line @typescript-eslint/no-var-requires */
       exports = (await import(operations)) as Promise<ModuleExports>;
     } else {
-      throw new DBOSError(`Failed to load operations from the entrypoint ${entrypoint}`);
+      throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
     }
     const classes: object[] = [];
     for (const key in exports) {
