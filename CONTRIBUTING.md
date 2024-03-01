@@ -27,6 +27,10 @@ You can contribute in many ways. Some simple ways are:
 6. Commit the changes to your forked repository.
 
 7. Submit a pull request to this repository.
+In the PR description please include:
+* Description of the fix/feature
+* Brief description of implementation
+* Description on how you tested the fix
 
 ## Requesting features
 
