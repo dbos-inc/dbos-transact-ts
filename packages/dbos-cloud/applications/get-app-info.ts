@@ -2,13 +2,13 @@ import axios , { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
 import { Application, prettyPrintApplication } from "./types";
 
-export async function getAppInfo(host: string, json: boolean): Promise<number> {
+export async function getAppInfo(host: string, json: boolean, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const appName = retrieveApplicationName(logger, json);
-  if (appName === null) {
+  appName = appName ?? retrieveApplicationName(logger, json);
+  if (!appName) {
     return 1;
   }
   if (!json) {
