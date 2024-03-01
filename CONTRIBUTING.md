@@ -1,6 +1,6 @@
 # Contributing to DBOS-TS
 
-Thank you for considering contributing to DBOS Typescript SDK. We welcome contributions from everyone, whether it's bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
+Thank you for considering contributing to the DBOS Typescript SDK. We welcome contributions from everyone, including bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
 
 ## How to Contribute
 
@@ -14,7 +14,7 @@ You can contribute in many ways. Some simple ways are:
 
 ### To contribute code, please follow these steps:
 
-1. Fork the the github repository to your own account.
+1. Fork this github repository to your own account.
 
 2. Clone the forked repository to your local machine.
 
@@ -26,7 +26,7 @@ You can contribute in many ways. Some simple ways are:
 
 6. Commit the changes to your forked repository.
 
-7. Submit a pull request to DBOS repository.
+7. Submit a pull request to this repository.
 
 ## Requesting features
 
@@ -34,8 +34,8 @@ If you have a feature request or an idea for an enhancement, feel free to open a
 
 ## Discuss with the community
 
-If you are stuck, need help, or wondering if a certain contribution will be welcome, please ask! Either in our [Discord](https://discord.gg/fMwQjeW5zg) or Github discussions.
+If you are stuck, need help, or wondering if a certain contribution will be welcome, please ask! You can reach out to us on  [Discord](https://discord.gg/fMwQjeW5zg) or Github discussions.
 
 ## Code of conduct
 
-It is important to us that contributing to DBOS-TS will be a pleasant experience, if necessary, please refer to our [code of conduct](CODE_OF_CONDUCT.md) for participation guidelines.
+It is important to us that contributing to DBOS will be a pleasant experience, if necessary, please refer to our [code of conduct](CODE_OF_CONDUCT.md) for participation guidelines.
