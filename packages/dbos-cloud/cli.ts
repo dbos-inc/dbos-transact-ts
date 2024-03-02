@@ -92,8 +92,9 @@ applicationCommands
 applicationCommands
   .command('delete')
   .description('Delete this application')
-  .action(async () => {
-    const exitCode = await deleteApp(DBOSCloudHost);
+  .argument('[string]', 'application name')
+  .action(async (appName?: string) => {
+    const exitCode = await deleteApp(DBOSCloudHost, appName);
     process.exit(exitCode);
   });
 
@@ -106,12 +107,13 @@ applicationCommands
     process.exit(exitCode);
   });
 
-  applicationCommands
+applicationCommands
   .command('status')
   .description("Retrieve this application's status")
+  .argument('[string]', 'application name')
   .option('--json', 'Emit JSON output')
-  .action(async (options: { json: boolean }) => {
-    const exitCode = await getAppInfo(DBOSCloudHost, options.json);
+  .action(async (appName: string | undefined, options: { json: boolean }) => {
+    const exitCode = await getAppInfo(DBOSCloudHost, options.json, appName);
     process.exit(exitCode);
   });
 

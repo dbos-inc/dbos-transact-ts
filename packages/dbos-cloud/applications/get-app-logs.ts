@@ -13,7 +13,7 @@ export async function getAppLogs(host: string, last: number): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName === null) {
+  if (!appName) {
     return 1;
   }
   logger.info(`Retrieving logs for application: ${appName}`)

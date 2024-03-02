@@ -15,18 +15,18 @@ export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
 
-export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | null {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
-    const appName = packageJson.name;
-    if (appName === undefined) {
-      logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.")
-      return null;
-    }
-    if (!silent) {
-      logger.info(`Loaded application name from package.json: ${appName}`)
-    }
-    return appName
+export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const appName = packageJson.name;
+  if (appName === undefined) {
+    logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.")
+    return undefined;
+  }
+  if (!silent) {
+    logger.info(`Loaded application name from package.json: ${appName}`)
+  }
+  return appName
 }
 
 // FIXME: we should have a global instance of the logger created in cli.ts

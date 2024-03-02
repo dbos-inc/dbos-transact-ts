@@ -38,7 +38,7 @@ export async function deployAppCode(host: string): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName === null) {
+  if (!appName) {
     return 1;
   }
 

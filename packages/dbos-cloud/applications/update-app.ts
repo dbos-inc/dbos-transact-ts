@@ -8,7 +8,7 @@ export async function updateApp(host: string): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
-  if (appName === null) {
+  if (!appName) {
     return 1;
   }
   logger.info(`Updating application: ${appName}`)
