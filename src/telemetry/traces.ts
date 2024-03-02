@@ -3,6 +3,7 @@ import { Resource } from "@opentelemetry/resources";
 import opentelemetry, { Attributes, SpanContext } from "@opentelemetry/api";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
 import { TelemetryCollector } from "./collector";
+import { hrTime } from '@opentelemetry/core';
 
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
@@ -27,7 +28,7 @@ export class Tracer {
 
   startSpan(name: string, attributes?: Attributes, parentSpan?: Span): Span {
     const tracer = opentelemetry.trace.getTracer("dbos-tracer");
-    const startTime = performance.now();
+    const startTime = hrTime(performance.now());
     if (parentSpan) {
       const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
       return tracer.startSpan(name, { startTime: startTime, attributes: attributes }, ctx) as Span;
@@ -37,7 +38,7 @@ export class Tracer {
   }
 
   endSpan(span: Span) {
-    span.end(performance.now());
+    span.end(hrTime(performance.now()));
     span.attributes.applicationID = this.applicationID;
     if ( !("executorID" in span.attributes)) {
       span.attributes.executorID = this.executorID;
