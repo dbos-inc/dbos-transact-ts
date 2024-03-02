@@ -31,7 +31,7 @@ export class Tracer {
       const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
       return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
     } else {
-      return tracer.startSpan(name, { attributes: attributes }) as Span;
+      return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }) as Span;
     }
   }
 
