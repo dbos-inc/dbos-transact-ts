@@ -27,11 +27,12 @@ export class Tracer {
 
   startSpan(name: string, attributes?: Attributes, parentSpan?: Span): Span {
     const tracer = opentelemetry.trace.getTracer("dbos-tracer");
+    const startTime = performance.now();
     if (parentSpan) {
       const ctx = opentelemetry.trace.setSpan(opentelemetry.context.active(), parentSpan);
-      return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
+      return tracer.startSpan(name, { startTime: startTime, attributes: attributes }, ctx) as Span;
     } else {
-      return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }) as Span;
+      return tracer.startSpan(name, { startTime: startTime, attributes: attributes }) as Span;
     }
   }
 
