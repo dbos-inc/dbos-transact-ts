@@ -103,7 +103,7 @@ export async function deployAppCode(host: string): Promise<number> {
     }
     await sleep(5000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`)
-    logger.info(`Access your application at https://${host}/apps/${userCredentials.userName}/${appName}`)
+    logger.info(`Access your application at https://${userCredentials.userName}-${appName}.${host}/`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
