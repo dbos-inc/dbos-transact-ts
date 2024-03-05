@@ -2,17 +2,29 @@ import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials } from "./cloudutils";
 import readline from 'readline';
 import { authenticate } from "./login";
+import * as validator from 'validator';
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
 });
 
+function isValidUsername(username: string): boolean {
+  if (username.length < 3 || username.length > 30) {
+    return false;
+  }
+  return validator.matches(username, "^[a-z0-9_]+$");
+}
+
 export async function registerUser(username: string, host: string): Promise<number> {
   const logger = getLogger();
   let givenName = "";
   let familyName = "";
   let company = "";
+  if (!isValidUsername(username)) {
+    logger.error("Invalid username. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.")
+    return 1
+  }
   if (!credentialsExist()) {
     logger.info("Welcome to DBOS Cloud!")
     logger.info("Before creating an account, please tell us a bit about yourself!")
