@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials } from "./cloudutils";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials } from "./cloudutils";
 import readline from 'readline';
 import { authenticate } from "./login";
 import * as validator from 'validator';
@@ -79,6 +79,9 @@ export async function registerUser(username: string, host: string): Promise<numb
       handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    if (credentialsExist()) {
+      deleteCredentials();
     }
     return 1;
   }
