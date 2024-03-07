@@ -139,7 +139,7 @@ const databaseCommands = program
 databaseCommands
   .command('provision')
   .description("Provision a Postgres database instance")
-  .argument('<string>', 'database instance name')
+  .argument('<name>', 'database instance name')
   .requiredOption('-a, --admin <string>', 'Specify the database user')
   .requiredOption('-W, --password <string>', 'Specify the database user password')
   .action((async (dbname: string, options: { admin: string, password: string }) => {
@@ -150,7 +150,7 @@ databaseCommands
 databaseCommands
   .command('status')
   .description("Retrieve the status of a Postgres database instance")
-  .argument('<string>', 'database instance name')
+  .argument('<name>', 'database instance name')
   .option('--json', 'Emit JSON output')
   .action((async (dbname: string, options: { json: boolean}) => {
     const exitCode = await getUserDb(DBOSCloudHost, dbname, options.json)
@@ -167,9 +167,9 @@ databaseCommands
   }))
 
 databaseCommands
-  .command('reset')
+  .command('reset-password')
   .description("Reset password for a Postgres database instance")
-  .argument('<string>', 'database instance name')
+  .argument('<name>', 'database instance name')
   .requiredOption('-W, --password <string>', 'Specify the database user password')
   .action((async (dbName: string, options: { password: string}) => {
     const exitCode = await resetDBCredentials(DBOSCloudHost, dbName, options.password)
@@ -179,7 +179,7 @@ databaseCommands
 databaseCommands
   .command('destroy')
   .description("Destroy a Postgres database instance")
-  .argument('<string>', 'database instance name')
+  .argument('<name>', 'database instance name')
   .action((async (dbname: string) => {
     const exitCode = await deleteUserDb(DBOSCloudHost, dbname)
     process.exit(exitCode);
