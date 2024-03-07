@@ -3,7 +3,7 @@ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executo
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
-import { DBOSDebuggerError} from "../error";
+import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
@@ -60,16 +60,16 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
+        (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
-        : undefined;
+          : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
   }
 
-  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R>> {
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
     // Note: we read the recorded snapshot and transaction ID!
     const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
 
@@ -81,7 +81,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
 
     if (JSON.parse(rows[0].error) != null) {
-      throw deserializeError(JSON.parse(rows[0].error)); // We don't replay errors.
+      return deserializeError(JSON.parse(rows[0].error));
     }
 
     const res: RecordedResult<R> = {
@@ -91,7 +91,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     };
 
     // Send a signal to the debug proxy.
-    // TODO: use the real command once the proxy is fully implemented.
     await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
 
     return res;
@@ -121,29 +120,45 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       },
       this.span
     );
-    let check: RecordedResult<R>;
 
+    let check: RecordedResult<R> | Error;
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
       const tCtxt = new TransactionContextImpl(this.#dbosExec.userDatabase.getName(), client, this, span, this.#dbosExec.logger, funcID, txn.name);
       check = await this.checkExecution<R>(client, funcID);
+
+      if (check instanceof Error) {
+        this.logger.warn(`original transaction ${txn.name} failed with error: ${check.message}`);
+      }
 
       // Execute the user's transaction.
       const result = await txn(tCtxt, ...args);
       return result;
     };
 
-    const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+    let result: Awaited<R> | Error;
+    try {
+      result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+    } catch (e) {
+      result = e as Error;
+    }
+
+    check = check!;
+    result = result!;
+
+    if (check instanceof Error) {
+      throw check;
+    }
 
     // If returned nothing and the recorded value is also null/undefined, we just return it
-    if (result === undefined && !check!.output) {
+    if (result === undefined && !check.output) {
       return result;
     }
 
-    if (JSON.stringify(check!.output) !== JSON.stringify(result)) {
-      this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check!.output)}`);
+    if (JSON.stringify(check.output) !== JSON.stringify(result)) {
+      this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check.output)}`);
     }
-    return check!.output; // Always return the recorded result.
+    return check.output; // Always return the recorded result.
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
@@ -233,7 +248,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
  * The handle returned when retrieving a workflow with Debug workflow's retrieve
  */
 class RetrievedHandleDebug<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID: string, readonly callerFunctionID: number) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID: string, readonly callerFunctionID: number) { }
 
   getWorkflowUUID(): string {
     return this.workflowUUID;

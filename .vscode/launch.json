@@ -21,6 +21,5 @@
             "type": "node-terminal",
             "cwd": "${workspaceFolder}/examples/hello",
         },
-        
     ]
 }
