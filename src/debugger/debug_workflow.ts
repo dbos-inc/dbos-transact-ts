@@ -3,7 +3,7 @@ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executo
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
-import { DBOSDebuggerError} from "../error";
+import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
@@ -60,11 +60,11 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
+        (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
-        : undefined;
+          : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
   }
@@ -120,6 +120,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       },
       this.span
     );
+
     let check: RecordedResult<R> | Error;
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
@@ -247,7 +248,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
  * The handle returned when retrieving a workflow with Debug workflow's retrieve
  */
 class RetrievedHandleDebug<R> implements WorkflowHandle<R> {
-  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID: string, readonly callerFunctionID: number) {}
+  constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID: string, readonly callerFunctionID: number) { }
 
   getWorkflowUUID(): string {
     return this.workflowUUID;
