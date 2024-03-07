@@ -121,7 +121,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       this.span
     );
     let check: RecordedResult<R> | Error;
-
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
       const tCtxt = new TransactionContextImpl(this.#dbosExec.userDatabase.getName(), client, this, span, this.#dbosExec.logger, funcID, txn.name);
@@ -136,8 +135,15 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return result;
     };
 
-    const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+    let result: Awaited<R> | Error;
+    try {
+      result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+    } catch (e) {
+      result = e as Error;
+    }
+
     check = check!;
+    result = result!;
 
     if (check instanceof Error) {
       throw check;
