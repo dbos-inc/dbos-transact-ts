@@ -10,7 +10,7 @@ export interface UserDBInstance {
   readonly AdminUsername: string;
 }
 
-export async function createUserDb(host: string, dbName: string, adminName: string, adminPassword: string, sync: boolean) {
+export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -18,7 +18,7 @@ export async function createUserDb(host: string, dbName: string, adminName: stri
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb`,
-      { Name: dbName, AdminName: adminName, AdminPassword: adminPassword },
+      { Name: dbName, AdminName: appDBUsername, AdminPassword: appDBPassword },
       {
         headers: {
           "Content-Type": "application/json",
@@ -159,4 +159,32 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
   });
 
   return res.data as UserDBInstance;
+}
+
+export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
+  const logger = getLogger();
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/credentials`,
+    { Name: dbName, Password: appDBPassword },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    logger.info(`Successfully reset user password for database: ${dbName}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to reset user password for database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
 }
