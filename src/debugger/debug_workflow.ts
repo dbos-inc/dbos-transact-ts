@@ -144,7 +144,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
 
     // If returned nothing and the recorded value is also null/undefined, we just return it
-    if (result === undefined && check.output) {
+    if (result === undefined && !check.output) {
       return result;
     }
 
