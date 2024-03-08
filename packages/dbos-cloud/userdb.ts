@@ -7,7 +7,7 @@ export interface UserDBInstance {
   readonly Status: string;
   readonly HostName: string;
   readonly Port: number;
-  readonly AdminUsername: string;
+  readonly DatabaseUsername: string;
 }
 
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
@@ -90,7 +90,7 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
       console.log(`Status: ${userDBInfo.Status}`);
       console.log(`Host Name: ${userDBInfo.HostName}`);
       console.log(`Port: ${userDBInfo.Port}`);
-      console.log(`Admin Username: ${userDBInfo.AdminUsername}`);
+      console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
     }
     return 0;
   } catch (e) {
@@ -131,7 +131,7 @@ export async function listUserDB(host: string, json: boolean) {
         console.log(`Status: ${userDBInfo.Status}`);
         console.log(`Host Name: ${userDBInfo.HostName}`);
         console.log(`Port: ${userDBInfo.Port}`);
-        console.log(`Admin Username: ${userDBInfo.AdminUsername}`);
+        console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
       });
     }
     return 0;
