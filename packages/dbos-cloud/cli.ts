@@ -15,6 +15,7 @@ import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials }
 import { launchDashboard, getDashboardURL } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
+import promptSync from 'prompt-sync';
 
 const program = new Command();
 
@@ -136,14 +137,18 @@ const databaseCommands = program
   .alias('db')
   .description('Manage Postgres database instances')
 
+const prompt = promptSync({ sigint: true });
 databaseCommands
   .command('provision')
   .description("Provision a Postgres database instance")
   .argument('<name>', 'database instance name')
-  .requiredOption('-a, --admin <string>', 'Specify the database user')
-  .requiredOption('-W, --password <string>', 'Specify the database user password')
-  .action((async (dbname: string, options: { admin: string, password: string }) => {
-    const exitCode = await createUserDb(DBOSCloudHost, dbname, options.admin, options.password, true)
+  .requiredOption('-U, --username <string>', 'Specify your database username')
+  .option('-W, --password <string>', 'Specify your database user password')
+  .action((async (dbname: string, options: { username: string, password: string | undefined }) => {
+    if (!options.password) {
+      options.password = prompt('Database Password: ', { echo: '*' });
+    }
+    const exitCode = await createUserDb(DBOSCloudHost, dbname, options.username, options.password, true)
     process.exit(exitCode);
   }))
 
@@ -172,6 +177,9 @@ databaseCommands
   .argument('<name>', 'database instance name')
   .requiredOption('-W, --password <string>', 'Specify the database user password')
   .action((async (dbName: string, options: { password: string}) => {
+    if (!options.password) {
+      options.password = prompt('Database Password: ', { echo: '*' });
+    }
     const exitCode = await resetDBCredentials(DBOSCloudHost, dbName, options.password)
     process.exit(exitCode);
   }))
