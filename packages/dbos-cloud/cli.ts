@@ -175,7 +175,7 @@ databaseCommands
   .command('reset-password')
   .description("Reset password for a Postgres database instance")
   .argument('<name>', 'database instance name')
-  .requiredOption('-W, --password <string>', 'Specify the database user password')
+  .option('-W, --password <string>', 'Specify the database user password')
   .action((async (dbName: string, options: { password: string}) => {
     if (!options.password) {
       options.password = prompt('Database Password: ', { echo: '*' });
