@@ -33,6 +33,12 @@ module.exports = {
       { "argsIgnorePattern": "^_",
         "varsIgnorePattern": "^_" }
     ],
+    "@typescript-eslint/no-misused-promises": [
+      "error",
+      {
+        "checksVoidReturn": false
+      }
+    ]
   },
   env: {
     node: true,

@@ -20,20 +20,22 @@
   },
   "devDependencies": {
     "@types/node": "^20.6.3",
+    "@types/prompt-sync": "^4.2.3",
     "@types/validator": "^13.11.9",
     "grunt": "^1.6.1",
     "nerdbank-gitversioning": "^3.6.133",
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "axios": "^1.6.5",
-    "commander": "^11.0.0",
+    "axios": "^1.6.7",
+    "commander": "^12.0.0",
     "fast-glob": "^3.3.2",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "jwks-rsa": "^3.1.0",
+    "prompt-sync": "^4.2.0",
     "validator": "^13.11.0",
-    "winston": "^3.11.0",
-    "winston-transport": "^4.6.0"
+    "winston": "^3.12.0",
+    "winston-transport": "^4.7.0"
   }
 }
