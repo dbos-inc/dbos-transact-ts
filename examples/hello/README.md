@@ -29,7 +29,9 @@ npm run build
 npx dbos-sdk start
 ```
 
-To see that it's working, visit this URL in your browser: `http://localhost:3000/greeting/dbos`. You should get this message: `Hello, dbos! You have been greeted 1 times.` Each time you refresh the page, the counter should go up by one!
+To see that it's working, visit this URL in your browser: [`http://localhost:3000/greeting/dbos`](http://localhost:3000/greeting/dbos).
+You should get this message: `Hello, dbos! You have been greeted 1 times.`
+Each time you refresh the page, the counter should go up by one!
 
 Congratulations! You just launched a DBOS application.
 
