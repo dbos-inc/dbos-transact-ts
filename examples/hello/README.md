@@ -1,6 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `dbos init`.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init`.
 
 ## Getting Started
 
