@@ -12,22 +12,24 @@ You want to build your next database-backed application with DBOS because:
 
 ## Getting Started
 
-The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a backend running in less than five minutes.
+The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS application running in less than five minutes.
 
 ## Documentation
 
 You can find our full documentation at [https://docs.dbos.dev/](https://docs.dbos.dev/).
 
-Check out our [Getting Started](https://docs.dbos.dev/category/getting-started) for an overview of how to build an application.
+Check out our [Getting Started](https://docs.dbos.dev/category/getting-started) for an overview of how to start with DBOS.
 
 Our documentation has the following sections:
 
-- [Getting Started](https://docs.dbos.dev/category/getting-started)
-- [DBOS SDK Tutorials](https://docs.dbos.dev/category/tutorials)
+- [Getting Started](https://docs.dbos.dev/getting-started/)
+- [DBOS SDK Tutorials](https://docs.dbos.dev/category/dbos-sdk-tutorials)
 - [DBOS Cloud Tutorials](https://docs.dbos.dev/category/dbos-cloud-tutorials)
 - [API Reference](https://docs.dbos.dev/category/reference)
 - [Concepts and Explanations](https://docs.dbos.dev/category/concepts-and-explanations)
 
 ## Community
 
-Please join our community on [Discord](https://discord.gg/fMwQjeW5zg)!  If you see a bug or have a feature request, don't hesitate to open an issue here on GitHub.
+Please join our community on [Discord](https://discord.gg/fMwQjeW5zg)!
+If you see a bug or have a feature request, don't hesitate to open an issue here on GitHub.
+If you're interested in contributing, check out our [contributions guide](./CONTRIBUTING.md).
