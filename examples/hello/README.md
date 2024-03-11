@@ -14,7 +14,7 @@ export PGPASSWORD=dbos
 
 If successful, the script should print `Database started successfully!`.
 
-Then, let's run a database migration to create some tables:
+Then, let's run a schema migration to create some tables:
 
 ```bash
 npx dbos-sdk migrate
