@@ -76,8 +76,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
 
     if (rows.length === 0 || rows.length > 1) {
-      this.logger.error("Unexpected! This should never happen during debug. Returned rows: " + rows.toString() + `. WorkflowUUID ${this.workflowUUID}, function ID ${funcID}`);
-      throw new DBOSDebuggerError(`This should never happen during debug. Returned ${rows.length} rows: ` + rows.toString());
+      this.logger.error("Unexpected! This should never happen during debug. Found incorrect rows for transaction output.  Returned rows: " + rows.toString() + `. WorkflowUUID ${this.workflowUUID}, function ID ${funcID}`);
+      throw new DBOSDebuggerError(`This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` + rows.toString());
     }
 
     if (JSON.parse(rows[0].error) != null) {
@@ -240,6 +240,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async sleep(_: number): Promise<void> {
+    // Need to increment function ID for faithful replay.
+    this.functionIDGetIncrement();
     return;
   }
 }

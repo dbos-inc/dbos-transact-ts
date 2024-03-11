@@ -112,6 +112,14 @@ describe("debugger-test", () => {
       DebuggerTest.cnt += num;
       return DebuggerTest.cnt;
     }
+
+    // Workflow that sleep
+    @Workflow()
+    static async sleepWorkflow(ctxt: WorkflowContext, num: number) {
+      await ctxt.sleep(1)
+      const funcResult = await ctxt.invoke(DebuggerTest).testReadOnlyFunction(num);
+      return funcResult;
+    }
   }
 
   test("debug-workflow", async () => {
@@ -140,6 +148,24 @@ describe("debugger-test", () => {
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
+  });
+
+  test("debug-sleep-workflow", async () => {
+    const wfUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    const res = await testRuntime
+      .invoke(DebuggerTest, wfUUID)
+      .sleepWorkflow(2)
+      .then((x) => x.getResult());
+    expect(res).toBe(3);
+    await testRuntime.destroy();
+
+    // Execute again in debug mode, should return the correct value
+    const debugRes = await debugRuntime
+      .invoke(DebuggerTest, wfUUID)
+      .sleepWorkflow(2)
+      .then((x) => x.getResult());
+    expect(debugRes).toBe(3);
   });
 
   test("debug-void-transaction", async () => {
