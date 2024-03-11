@@ -18,7 +18,7 @@ The fastest way to get started with DBOS is by following the [quickstart](https:
 
 You can find our full documentation at [https://docs.dbos.dev/](https://docs.dbos.dev/).
 
-Check out our [Getting Started](https://docs.dbos.dev/category/getting-started) for an overview of how to start with DBOS.
+Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an overview of how to start with DBOS.
 
 Our documentation has the following sections:
 
