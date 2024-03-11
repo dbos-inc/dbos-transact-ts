@@ -72,7 +72,7 @@ export async function init(appName: string) {
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
   execSync("npm ci --no-fund", {cwd: appName, stdio: 'inherit'})
   execSync("npm uninstall --no-fund @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
-  execSync("npm install --no-fund --save @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
-  execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud", {cwd: appName, stdio: 'inherit'})
+  execSync("npm install --no-fund --save @dbos-inc/dbos-sdk@latest", {cwd: appName, stdio: 'inherit'})
+  execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest", {cwd: appName, stdio: 'inherit'})
   console.log("Application initialized successfully!")
 }
