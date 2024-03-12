@@ -6,7 +6,7 @@ You develop your applications in TypeScript and PostgreSQL with this SDK, test t
 You want to build your next database-backed application with DBOS because:
 
 - **It's simple**.  Write your business logic using serverless functions, test them locally, and deploy them to [DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart-cloud) in minutes.  Store all your data in Postgres&#8212;we'll manage the connections and transactions for you.
-- **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev//tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
+- **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev/tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
 - **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened.
 
 ## Getting Started
@@ -43,7 +43,7 @@ Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an o
 
 Our documentation has the following sections:
 
-- [Getting Started](https://docs.dbos.dev/getting-started/)
+- [Getting Started](https://docs.dbos.dev/getting-started)
 - [DBOS SDK Tutorials](https://docs.dbos.dev/category/dbos-sdk-tutorials)
 - [DBOS Cloud Tutorials](https://docs.dbos.dev/category/dbos-cloud-tutorials)
 - [API Reference](https://docs.dbos.dev/category/reference)
