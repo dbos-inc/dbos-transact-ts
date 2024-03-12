@@ -1,7 +1,7 @@
 # DBOS Typescript SDK
 
 DBOS is a **transactional serverless** SDK and platform that helps you develop and deploy database-backed applications.
-You develop your applications in Typescript and PostgreSQL with this open-source SDK then deploy them with a push of a button to DBOS Cloud.
+You develop your applications in Typescript and PostgreSQL with this SDK then deploy them with a push of a button to DBOS Cloud.
 
 You want to build your next database-backed application with DBOS because:
 
