@@ -1,8 +1,11 @@
 # DBOS Typescript SDK
 
-The DBOS SDK (from [DBOS, Inc.](https://dbos.dev)) is a **transactional serverless Typescript framework.**
-DBOS fully embraces the power of your application database, helping you write backend applications that are reliable by default.
-It runs your Typescript functions as database transactions, guarantees they run "once and only once" for each request, and orchestrates them into workflows so reliable that if your service is interrupted, they resume exactly where they left off.
+Welcome to DBOS!
+
+### What is DBOS?
+
+DBOS is a **transactional serverless** SDK and platform that helps you develop and deploy database-backed applications.
+You develop your applications in Typescript and PostgreSQL with this open-source SDK then deploy them with a push of a button to DBOS Cloud.
 
 You want to build your next database-backed application with DBOS because:
 
@@ -13,6 +16,28 @@ You want to build your next database-backed application with DBOS because:
 ## Getting Started
 
 The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS application running in less than five minutes.
+
+### Main Features
+
+Here are some of the core features of the DBOS Typescript SDK:
+
+| Feature                                                                       | Description
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [Transactions](https://docs.dbos.dev//tutorials/transaction-tutorial)                              | Easily and safely query your application database
+| [Workflows](https://docs.dbos.dev//tutorials/workflow-tutorial)                                    | Reliable workflow orchestration&#8212;resume your program after any failure.
+| [HTTP Serving](https://docs.dbos.dev//tutorials/http-serving-tutorial)                             | Set up endpoints to serve requests from your application.
+| [Idempotency](https://docs.dbos.dev//tutorials/idempotency-tutorial)                               | Automatically make any request idempotent, so your requests happen exactly once.
+| [Authentication and Authorization](https://docs.dbos.dev//tutorials/authentication-authorization)  | Secure your HTTP endpoints so only authorized users can access them.
+| [Testing and Debugging](https://docs.dbos.dev//tutorials/testing-tutorial)                         | Easily write unit tests for your applications, compatible with Jest and other popular testing frameworks.
+
+And DBOS Cloud:
+
+| Feature                                                                       | Description
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [Serverless App Deployment](https://docs.dbos.dev//cloud-tutorials/application-management.md)      | Deploy apps to DBOS Cloud with the push of a button
+| [Time Travel Debugging](https://docs.dbos.dev//cloud-tutorials/timetravel-debugging.md)            | Replay any DBOS Cloud trace locally on your computer.
+| [Cloud Database Management](https://docs.dbos.dev/cloud-tutorials/database-management.md)         | Provision cloud Postgres instances for your applications.
+| [Built-in Observability](https://docs.dbos.dev//cloud-tutorials/monitoring-dashboard.md)           | Built-in log capture, request tracing, and dashboards.
 
 ## Documentation
 
