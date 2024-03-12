@@ -5,7 +5,7 @@ You develop your applications in Typescript and PostgreSQL with this SDK, test t
 
 You want to build your next database-backed application with DBOS because:
 
-- **It's simple**.  Write your business logic using serverless functions, test them locally, and deploy them to [DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart-cloud) with the push of a button.  Store all your data in Postgres&#8212;we'll manage the connections and transactions for you.
+- **It's simple**.  Write your business logic using serverless functions, test them locally, and deploy them to [DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart-cloud) in minutes.  Store all your data in Postgres&#8212;we'll manage the connections and transactions for you.
 - **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev//tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
 - **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened. Whatever the issue is, we'll help you reproduce it.
 
@@ -13,7 +13,7 @@ You want to build your next database-backed application with DBOS because:
 
 The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS application running in less than five minutes.
 
-### Main Features
+## Main Features
 
 Here are some of the core features of the DBOS Typescript SDK:
 
