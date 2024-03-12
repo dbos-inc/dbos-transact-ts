@@ -1,13 +1,13 @@
-# DBOS Typescript SDK
+# DBOS TypeScript SDK
 
-DBOS is a **transactional serverless** SDK and platform that helps you develop and deploy database-backed applications.
-You develop your applications in Typescript and PostgreSQL with this SDK, test them locally, then deploy them with a push of a button to DBOS Cloud.
+DBOS is a **transactional serverless** SDK and platform that helps you develop and deploy database-backed TypeScript applications.
+You develop your applications in TypeScript and PostgreSQL with this SDK, test them locally, then deploy them to DBOS Cloud in minutes.
 
 You want to build your next database-backed application with DBOS because:
 
 - **It's simple**.  Write your business logic using serverless functions, test them locally, and deploy them to [DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart-cloud) in minutes.  Store all your data in Postgres&#8212;we'll manage the connections and transactions for you.
-- **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev//tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
-- **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened. Whatever the issue is, we'll help you reproduce it.
+- **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev/tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
+- **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened.
 
 ## Getting Started
 
@@ -15,7 +15,7 @@ The fastest way to get started with DBOS is by following the [quickstart](https:
 
 ## Main Features
 
-Here are some of the core features of the DBOS Typescript SDK:
+Here are some of the core features of the DBOS TypeScript SDK:
 
 | Feature                                                                       | Description
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -30,7 +30,7 @@ And DBOS Cloud:
 
 | Feature                                                                       | Description
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [Serverless App Deployment](https://docs.dbos.dev/cloud-tutorials/application-management)      | Deploy apps to DBOS Cloud with the push of a button
+| [Serverless App Deployment](https://docs.dbos.dev/cloud-tutorials/application-management)      | Deploy apps to DBOS Cloud in minutes.
 | [Time Travel Debugging](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging)            | Replay any DBOS Cloud trace locally on your computer.
 | [Cloud Database Management](https://docs.dbos.dev/cloud-tutorials/database-management)         | Provision cloud Postgres instances for your applications.
 | [Built-in Observability](https://docs.dbos.dev/cloud-tutorials/monitoring-dashboard)           | Built-in log capture, request tracing, and dashboards.
@@ -43,7 +43,7 @@ Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an o
 
 Our documentation has the following sections:
 
-- [Getting Started](https://docs.dbos.dev/getting-started/)
+- [Getting Started](https://docs.dbos.dev/getting-started)
 - [DBOS SDK Tutorials](https://docs.dbos.dev/category/dbos-sdk-tutorials)
 - [DBOS Cloud Tutorials](https://docs.dbos.dev/category/dbos-cloud-tutorials)
 - [API Reference](https://docs.dbos.dev/category/reference)
