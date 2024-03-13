@@ -44,7 +44,7 @@ program
     process.exit(exitCode);
   });
 
-  program
+program
   .command('logout')
   .description('Log out of DBOS cloud')
   .action(() => {
@@ -86,7 +86,15 @@ applicationCommands
   .command('deploy')
   .description('Deploy this application to the cloud')
   .action(async () => {
-    const exitCode = await deployAppCode(DBOSCloudHost);
+    const exitCode = await deployAppCode(DBOSCloudHost, false);
+    process.exit(exitCode);
+  });
+
+applicationCommands
+  .command('rollback')
+  .description('Deploy this application to the cloud and run associated database rollback commands')
+  .action(async () => {
+    const exitCode = await deployAppCode(DBOSCloudHost, true);
     process.exit(exitCode);
   });
 
