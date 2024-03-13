@@ -16,11 +16,40 @@ import { launchDashboard, getDashboardURL } from "./dashboards";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
 import { getAppInfo } from "./applications/get-app-info";
 import promptSync from 'prompt-sync';
+import chalk from 'chalk';
+
+interface Package {
+  name: string;
+  version: string;
+}
+
+const packageJson = require('../../../package.json') as Package;
+
+// Dynamically import update-notifier
+const updateNotifierPromise = import('update-notifier');
+updateNotifierPromise.then((updateNotifier) => {
+  const notifier = updateNotifier.default({
+    pkg: packageJson,
+    updateCheckInterval: 0
+  })
+  if (notifier.update) {
+    console.log(`
+${chalk.yellow("-----------------------------------------------------------------------------------------")}
+
+DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
+
+To upgrade the DBOS Cloud CLI to the latest version, run the following command:
+${chalk.cyan("\`npm i --save-dev @dbos-inc/dbos-cloud@latest\`")}
+
+${chalk.yellow("-----------------------------------------------------------------------------------------")}`
+    );
+  }
+});
+
 
 const program = new Command();
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson = require('../../../package.json') as { version: string };
 program.version(packageJson.version);
 
 /////////////////////
@@ -39,12 +68,12 @@ program
   .command('register')
   .description('Register a user with DBOS cloud')
   .requiredOption('-u, --username <string>', 'Username')
-  .action(async (options: { username: string}) => {
+  .action(async (options: { username: string }) => {
     const exitCode = await registerUser(options.username, DBOSCloudHost);
     process.exit(exitCode);
   });
 
-  program
+program
   .command('logout')
   .description('Log out of DBOS cloud')
   .action(() => {
@@ -122,7 +151,7 @@ applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
-  .action(async (options: { last: number}) => {
+  .action(async (options: { last: number }) => {
     const exitCode = await getAppLogs(DBOSCloudHost, options.last);
     process.exit(exitCode);
   });
@@ -157,7 +186,7 @@ databaseCommands
   .description("Retrieve the status of a Postgres database instance")
   .argument('<name>', 'database instance name')
   .option('--json', 'Emit JSON output')
-  .action((async (dbname: string, options: { json: boolean}) => {
+  .action((async (dbname: string, options: { json: boolean }) => {
     const exitCode = await getUserDb(DBOSCloudHost, dbname, options.json)
     process.exit(exitCode);
   }))
@@ -166,7 +195,7 @@ databaseCommands
   .command('list')
   .description("List all your Postgres database instances")
   .option('--json', 'Emit JSON output')
-  .action((async (options: { json: boolean}) => {
+  .action((async (options: { json: boolean }) => {
     const exitCode = await listUserDB(DBOSCloudHost, options.json)
     process.exit(exitCode);
   }))
@@ -176,7 +205,7 @@ databaseCommands
   .description("Reset password for a Postgres database instance")
   .argument('<name>', 'database instance name')
   .option('-W, --password <string>', 'Specify the database user password')
-  .action((async (dbName: string, options: { password: string}) => {
+  .action((async (dbName: string, options: { password: string }) => {
     if (!options.password) {
       options.password = prompt('Database Password: ', { echo: '*' });
     }
