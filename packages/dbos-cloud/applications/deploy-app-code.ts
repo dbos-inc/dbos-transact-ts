@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { existsSync, readFileSync } from 'fs';
-import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath } from "../cloudutils.js";
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath, CloudAPIErrorResponse } from "../cloudutils.js";
 import path from "path";
 import { Application } from "./types.js";
 import JSZip from "jszip";
@@ -117,6 +117,10 @@ export async function deployAppCode(host: string, rollback: boolean): Promise<nu
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
+      const resp: CloudAPIErrorResponse = axiosError.response?.data;
+      if (resp.message.includes(`application ${appName} not found`)) {
+        console.error('\x1b[31m%s\x1b[0m', "Did you register this application? Hint: run `npx dbos-cloud app register -d <database-instance-name>` to register your app and try to deploy again");
+      }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }

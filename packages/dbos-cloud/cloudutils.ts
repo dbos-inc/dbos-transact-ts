@@ -144,7 +144,7 @@ export function createDirectory(path: string): string | undefined {
   return fs.mkdirSync(path, { recursive: true });
 }
 
-interface CloudAPIErrorResponse {
+export interface CloudAPIErrorResponse {
   message: string,
   statusCode: number,
   requestID: string,
