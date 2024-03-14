@@ -3,12 +3,12 @@
   "version": "0.0.0-placeholder",
   "description": "Tool for performing application deployment to DBOS cloud",
   "license": "MIT",
+  "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-ts",
     "directory": "packages/dbos-cloud"
   },
-  "main": "cli.ts",
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json",
@@ -16,11 +16,12 @@
     "setversion": "grunt setversion"
   },
   "bin": {
-    "dbos-cloud": "./dist/packages/dbos-cloud/cli.js"
+    "dbos-cloud": "./dist/cli.js"
   },
   "devDependencies": {
     "@types/node": "^20.6.3",
     "@types/prompt-sync": "^4.2.3",
+    "@types/update-notifier": "^6.0.8",
     "@types/validator": "^13.11.9",
     "grunt": "^1.6.1",
     "nerdbank-gitversioning": "^3.6.133",
@@ -28,12 +29,15 @@
   },
   "dependencies": {
     "axios": "^1.6.7",
+    "chalk": "4.1.2",
     "commander": "^12.0.0",
     "fast-glob": "^3.3.2",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "jwks-rsa": "^3.1.0",
+    "open": "^10.1.0",
     "prompt-sync": "^4.2.0",
+    "update-notifier": "^7.0.0",
     "validator": "^13.11.0",
     "winston": "^3.12.0",
     "winston-transport": "^4.7.0"

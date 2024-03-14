@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils";
+import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils.js";
 import { Logger } from "winston";
 
 const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
@@ -75,7 +75,15 @@ export async function authenticate(logger: Logger): Promise<string | null> {
   if (!deviceCodeResponse) {
     return null;
   }
-  console.log(`Login URL: ${deviceCodeResponse.verification_uri_complete}`);
+
+  const loginURL = deviceCodeResponse.verification_uri_complete
+  // TODO: Reenable after patching extension compatibility
+  // try {
+  //   await open(loginURL)
+  // } catch (error) {
+  //   // Ignore errors from open
+  // }
+  console.log(`Login URL: ${loginURL}`);
 
   const tokenRequest = {
     method: 'POST',

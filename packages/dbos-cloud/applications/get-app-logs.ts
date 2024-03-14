@@ -1,5 +1,5 @@
 import axios , { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 
 export async function getAppLogs(host: string, last: number): Promise<number> {
   if (last != undefined && (isNaN(last) || last <= 0)) {

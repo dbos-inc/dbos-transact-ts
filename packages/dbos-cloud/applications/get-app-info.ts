@@ -1,6 +1,6 @@
 import axios , { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils";
-import { Application, prettyPrintApplication } from "./types";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { Application, prettyPrintApplication } from "./types.js";
 
 export async function getAppInfo(host: string, json: boolean, appName?: string): Promise<number> {
   const logger = getLogger();

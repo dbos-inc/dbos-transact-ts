@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName } from "../cloudutils";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName } from "../cloudutils.js";
 
 export async function deleteApp(host: string, appName?: string): Promise<number> {
   const logger = getLogger()
