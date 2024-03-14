@@ -32,7 +32,7 @@ async function createZipData(): Promise<string> {
 }
 
 
-export async function deployAppCode(host: string): Promise<number> {
+export async function deployAppCode(host: string, rollback: boolean): Promise<number> {
   const logger = getLogger()
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -52,9 +52,16 @@ export async function deployAppCode(host: string): Promise<number> {
     const zipData = await createZipData();
 
     // Submit the deploy request
+    let url = '';
+    if (rollback) {
+      url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/rollback`;
+    } else {
+      url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`;
+    }
+
     logger.info(`Submitting deploy request for ${appName}`)
     const response = await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`,
+      url,
       {
         application_archive: zipData,
       },
