@@ -1,4 +1,3 @@
-import TransportStream = require("winston-transport");
 import { execSync, spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
@@ -16,8 +15,7 @@ export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
 
 export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const packageJson = require(path.join(process.cwd(), 'package.json')) as { name: string };
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
   const appName = packageJson.name;
   if (appName === undefined) {
     logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.")
@@ -31,7 +29,7 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
 
 // FIXME: we should have a global instance of the logger created in cli.ts
 export function getLogger(): Logger {
-  const winstonTransports: TransportStream[] = [];
+  const winstonTransports = [];
   winstonTransports.push(
     new transports.Console({
       format: consoleFormat,
