@@ -1,8 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { existsSync, readFileSync } from 'fs';
-import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath } from "../cloudutils";
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath } from "../cloudutils.js";
 import path from "path";
-import { Application } from "./types";
+import { Application } from "./types.js";
 import JSZip from "jszip";
 import fg from 'fast-glob';
 

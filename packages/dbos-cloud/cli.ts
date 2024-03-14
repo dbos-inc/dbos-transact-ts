@@ -7,33 +7,32 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
-} from "./applications";
+} from "./applications/index.js";
 import { Command } from 'commander';
-import { login } from "./login";
-import { registerUser } from "./register";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials } from "./userdb";
-import { launchDashboard, getDashboardURL } from "./dashboards";
-import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils";
-import { getAppInfo } from "./applications/get-app-info";
+import { login } from "./login.js";
+import { registerUser } from "./register.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials } from "./userdb.js";
+import { launchDashboard, getDashboardURL } from "./dashboards.js";
+import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils.js";
+import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
+import fs from "fs";
+import * as url from 'url';
+import path from "path";
+import updateNotifier, { Package } from "update-notifier";
 
-interface Package {
-  name: string;
-  version: string;
-}
+// Read local package.json
+const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json")).toString()) as Package;
 
-const packageJson = require('../../../package.json') as Package;
-
-// Dynamically import update-notifier
-const updateNotifierPromise = import('update-notifier');
-updateNotifierPromise.then((updateNotifier) => {
-  const notifier = updateNotifier.default({
-    pkg: packageJson,
-    updateCheckInterval: 0
-  })
-  if (notifier.update) {
-    console.log(`
+// Notify the user if the package requires an update.
+const notifier = updateNotifier({
+  pkg: packageJson,
+  updateCheckInterval: 0
+})
+if (notifier.update) {
+  console.log(`
 ${chalk.yellow("-----------------------------------------------------------------------------------------")}
 
 DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
@@ -42,10 +41,8 @@ To upgrade the DBOS Cloud CLI to the latest version, run the following command:
 ${chalk.cyan("\`npm i --save-dev @dbos-inc/dbos-cloud@latest\`")}
 
 ${chalk.yellow("-----------------------------------------------------------------------------------------")}`
-    );
-  }
-});
-
+  );
+}
 
 const program = new Command();
 

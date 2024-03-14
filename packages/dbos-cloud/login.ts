@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils";
+import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils.js";
 import { Logger } from "winston";
 
 const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
