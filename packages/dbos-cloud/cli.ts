@@ -24,7 +24,7 @@ import updateNotifier, { Package } from "update-notifier";
 
 // Read local package.json
 const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
-const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json")).toString()) as Package;
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json")).toString()) as Package;
 
 // Notify the user if the package requires an update.
 const notifier = updateNotifier({

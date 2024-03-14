@@ -19,6 +19,5 @@
   "include": [                                         /* Specifies an array of filenames or patterns to include in the program. */
     ".",
     "applications",
-    "package.json"
   ],
 }
