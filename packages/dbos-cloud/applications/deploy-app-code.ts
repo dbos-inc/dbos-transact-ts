@@ -119,7 +119,7 @@ export async function deployAppCode(host: string, rollback: boolean): Promise<nu
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`application ${appName} not found`)) {
-        console.error('\x1b[31m%s\x1b[0m', "Did you register this application? Hint: run `npx dbos-cloud app register -d <database-instance-name>` to register your app and try to deploy again");
+        console.error('\x1b[31m%s\x1b[0m', "Did you register this application? Hint: run `npx dbos-cloud app register -d <database-instance-name>` to register your app and try again");
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
