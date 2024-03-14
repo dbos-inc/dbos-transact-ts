@@ -38,7 +38,7 @@ ${chalk.yellow("----------------------------------------------------------------
 DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
 
 To upgrade the DBOS Cloud CLI to the latest version, run the following command:
-${chalk.cyan("\`npm i --save-dev @dbos-inc/dbos-cloud@latest\`")}
+${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
 
 ${chalk.yellow("-----------------------------------------------------------------------------------------")}`
   );
