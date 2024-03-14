@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse } from "../cloudutils.js";
+import chalk from 'chalk';
 
 export async function registerApp(dbname: string, host: string): Promise<number> {
   const logger = getLogger();
@@ -37,7 +38,7 @@ export async function registerApp(dbname: string, host: string): Promise<number>
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`database ${dbname} not found`)) {
-        console.error('\x1b[31m%s\x1b[0m', `Did you provision this database? Hint: run \`npx dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`);
+        console.log(chalk.red(`Did you provision this database? Hint: run \`npx dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`));
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
