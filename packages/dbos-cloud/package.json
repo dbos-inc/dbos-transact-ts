@@ -16,7 +16,7 @@
     "setversion": "grunt setversion"
   },
   "bin": {
-    "dbos-cloud": "./dist/packages/dbos-cloud/cli.js"
+    "dbos-cloud": "./dist/cli.js"
   },
   "devDependencies": {
     "@types/node": "^20.6.3",
