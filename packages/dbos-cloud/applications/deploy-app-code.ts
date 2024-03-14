@@ -5,7 +5,7 @@ import path from "path";
 import { Application } from "./types.js";
 import JSZip from "jszip";
 import fg from 'fast-glob';
-import chalk from "chalk/index.js";
+import chalk from "chalk";
 
 type DeployOutput = {
   ApplicationName: string;
