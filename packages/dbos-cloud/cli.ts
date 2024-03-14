@@ -27,21 +27,25 @@ const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json")).toString()) as Package;
 
 // Notify the user if the package requires an update.
-const notifier = updateNotifier({
-  pkg: packageJson,
-  updateCheckInterval: 0
-})
-if (notifier.update) {
-  console.log(`
-${chalk.yellow("-----------------------------------------------------------------------------------------")}
+try {
+  const notifier = updateNotifier({
+    pkg: packageJson,
+    updateCheckInterval: 0
+  })
+  if (notifier.update) {
+    console.log(`
+  ${chalk.yellow("-----------------------------------------------------------------------------------------")}
 
-DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
+  DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
 
-To upgrade the DBOS Cloud CLI to the latest version, run the following command:
-${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
+  To upgrade the DBOS Cloud CLI to the latest version, run the following command:
+  ${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
 
-${chalk.yellow("-----------------------------------------------------------------------------------------")}`
-  );
+  ${chalk.yellow("-----------------------------------------------------------------------------------------")}`
+    );
+  }
+} catch (error) {
+  // Ignore errors in the notifier
 }
 
 const program = new Command();
