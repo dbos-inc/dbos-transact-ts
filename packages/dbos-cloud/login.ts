@@ -77,13 +77,10 @@ export async function authenticate(logger: Logger): Promise<string | null> {
   }
 
   const loginURL = deviceCodeResponse.verification_uri_complete
-  // TODO: Reenable after patching extension compatibility
-  // try {
-  //   await open(loginURL)
-  // } catch (error) {
-  //   // Ignore errors from open
-  // }
   console.log(`Login URL: ${loginURL}`);
+  try {
+    open(loginURL)
+  } catch (error) { /* Ignore errors from open */ }
 
   const tokenRequest = {
     method: 'POST',
