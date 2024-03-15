@@ -15,10 +15,22 @@ type DeployOutput = {
 async function createZipData(): Promise<string> {
     const zip = new JSZip();
 
-    const files = await fg(`${process.cwd()}/**/*`, { dot: true, onlyFiles: true, ignore: [`**/${dbosEnvPath}/**`, '**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
+    const globPattern = path.join(process.cwd(), '**', '*');
+
+    const files = await fg(globPattern, {
+      dot: true,
+      onlyFiles: true,
+      ignore: [
+        path.join('**', dbosEnvPath, '**'), // Use path.join for cross-platform paths
+        '**/node_modules/**',
+        '**/dist/**',
+        path.join('**', dbosConfigFilePath)  // Use path.join for cross-platform paths
+      ]
+    });
 
     files.forEach(file => {
-        const relativePath = file.replace(`${process.cwd()}/`, '');
+        // Use path.relative and replace backslashes for zip file compatibility
+        const relativePath = path.relative(process.cwd(), file).replace(/\\/g, '/');
         const fileData = readFileSync(file);
         zip.file(relativePath, fileData, { binary: true });
     });
