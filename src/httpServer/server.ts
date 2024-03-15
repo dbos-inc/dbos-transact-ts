@@ -148,11 +148,12 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
    * Returns information on VM performance since last call.
    */
   static registerPerfEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    let lastELU: EventLoopUtilization | undefined = undefined
+    let lastELU = performance.eventLoopUtilization()
     const perfHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      let elu = performance.eventLoopUtilization(lastELU);
-      lastELU = elu;
+      const currELU = performance.eventLoopUtilization();
+      const elu = performance.eventLoopUtilization(currELU, lastELU);
       koaCtxt.body = elu;
+      lastELU = currELU;
       await koaNext();
     };
     router.get(PerfUrl, perfHandler);
