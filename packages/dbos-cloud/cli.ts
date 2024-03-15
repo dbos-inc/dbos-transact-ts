@@ -18,12 +18,12 @@ import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
 import fs from "fs";
-import * as url from 'url';
+import { fileURLToPath } from 'url';
 import path from "path";
 import updateNotifier, { Package } from "update-notifier";
 
 // Read local package.json
-const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json")).toString()) as Package;
 
 // Notify the user if the package requires an update.
