@@ -1,4 +1,6 @@
 .dbos/
+.vscode/
+
 # Logs
 logs
 *.log

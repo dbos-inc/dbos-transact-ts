@@ -12,13 +12,31 @@ type DeployOutput = {
   ApplicationVersion: string;
 }
 
+function convertPathForGlob(p: string) {
+  if (path.sep === '\\') {
+      return p.replace(/\\/g, '/');
+  }
+  return p;
+}
 async function createZipData(): Promise<string> {
     const zip = new JSZip();
 
-    const files = await fg(`${process.cwd()}/**/*`, { dot: true, onlyFiles: true, ignore: [`**/${dbosEnvPath}/**`, '**/node_modules/**', '**/dist/**', `**/${dbosConfigFilePath}`] });
+    const globPattern = convertPathForGlob(path.join(process.cwd(), '**', '*'));
+
+    const files = await fg(globPattern, {
+      dot: true,
+      onlyFiles: true,
+      ignore: [
+        `**/${dbosEnvPath}/**`,
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/.git/**',
+        `**/${dbosConfigFilePath}`,
+      ]
+    });
 
     files.forEach(file => {
-        const relativePath = file.replace(`${process.cwd()}/`, '');
+        const relativePath = path.relative(process.cwd(), file).replace(/\\/g, '/');
         const fileData = readFileSync(file);
         zip.file(relativePath, fileData, { binary: true });
     });
