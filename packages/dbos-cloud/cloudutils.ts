@@ -1,5 +1,4 @@
 import TransportStream = require("winston-transport");
-import { execSync, spawn, StdioOptions } from 'child_process';
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
@@ -97,29 +96,8 @@ export function deleteCredentials() {
 }
 
 export function writeCredentials(credentials: DBOSCloudCredentials) {
-  execSync(`mkdir -p ${dbosEnvPath}`);
-  fs.writeFileSync(`${dbosEnvPath}/credentials`, JSON.stringify(credentials), "utf-8");
-}
-
-// Run a command, streaming its output to stdout
-export function runCommand(command: string, args: string[] = []): Promise<number> {
-  return new Promise((resolve, reject) => {
-      const stdio: StdioOptions = 'inherit';
-
-      const process = spawn(command, args, { stdio });
-
-      process.on('close', (code) => {
-          if (code === 0) {
-              resolve(code);
-          } else {
-              reject(new Error(`Command "${command}" exited with code ${code}`));
-          }
-      });
-
-      process.on('error', (error) => {
-          reject(error);
-      });
-  });
+  fs.mkdirSync(dbosEnvPath, { recursive: true });
+  fs.writeFileSync(path.join(dbosEnvPath, 'credentials'), JSON.stringify(credentials), "utf-8");
 }
 
 export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
