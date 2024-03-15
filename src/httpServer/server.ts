@@ -22,10 +22,12 @@ import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
+import { performance } from 'perf_hooks';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
 export const HealthUrl = "/dbos-healthz"
+export const PerfUrl = "/dbos-perf"
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -53,6 +55,7 @@ export class DBOSHttpServer {
     // Register HTTP endpoints.
     DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
+    DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
     this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
@@ -113,7 +116,6 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
         koaCtxt.body = "healthy";
         await koaNext();
       };
-
       router.get(HealthUrl, healthHandler);
       dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
     }
@@ -139,6 +141,23 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
 
     router.post(WorkflowRecoveryUrl, recoveryHandler);
     dbosExec.logger.debug(`DBOS Server Registered Recovery POST ${WorkflowRecoveryUrl}`);
+  }
+
+  /**
+   * Register performance endpoint.
+   * Returns information on VM performance since last call.
+   */
+  static registerPerfEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    let lastELU = performance.eventLoopUtilization()
+    const perfHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      const currELU = performance.eventLoopUtilization();
+      const elu = performance.eventLoopUtilization(currELU, lastELU);
+      koaCtxt.body = elu;
+      lastELU = currELU;
+      await koaNext();
+    };
+    router.get(PerfUrl, perfHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
   }
 
   /**
