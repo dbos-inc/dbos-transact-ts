@@ -105,9 +105,12 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
   if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else {
+  } else if (poolConfig.host != "localhost") {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
     poolConfig.ssl = { rejectUnauthorized: false }
+  } else {
+    // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
+    poolConfig.ssl = false
   }
 
   /***************************/
