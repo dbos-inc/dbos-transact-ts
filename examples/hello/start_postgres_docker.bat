@@ -22,4 +22,4 @@ for /l %%i in (1,1,30) do (
 )
 :break
 
-echo Database started successfully!
+echo Database started successfully^^!
