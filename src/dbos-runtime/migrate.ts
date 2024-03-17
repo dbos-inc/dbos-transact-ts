@@ -1,7 +1,6 @@
 import { execSync } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
 import { ConfigFile, constructPoolConfig } from "./config";
-import { readFileSync } from "../utils";
 import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";

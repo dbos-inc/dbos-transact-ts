@@ -117,7 +117,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile)
+  const poolConfig = constructPoolConfig(configFile, debugMode)
 
   /***************************/
   /* Handle telemetry config */
