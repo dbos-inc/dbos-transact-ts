@@ -60,6 +60,46 @@ export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
   return configFile;
 }
 
+export function constructPoolConfig(configFile: ConfigFile, debugMode: boolean =false) {
+  if (!configFile.database) {
+    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
+  }
+
+  const poolConfig: PoolConfig = {
+    host: configFile.database.hostname,
+    port: configFile.database.port,
+    user: configFile.database.username,
+    password: configFile.database.password,
+    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
+    database: configFile.database.app_db_name,
+  };
+
+  if (!poolConfig.database) {
+    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain application database name`);
+  }
+
+  if (!poolConfig.password) {
+    if (debugMode) {
+      poolConfig.password = "DEBUG-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
+    } else {
+      throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+    }
+  }
+
+  // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
+  if (configFile.database.ssl_ca) {
+    // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
+    poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+  } else if (poolConfig.host != "localhost") {
+    // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
+    poolConfig.ssl = { rejectUnauthorized: false }
+  } else {
+    // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
+    poolConfig.ssl = false
+  }
+  return poolConfig
+}
+
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
@@ -76,42 +116,8 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
   /*******************************/
   /* Handle user database config */
   /*******************************/
-  if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database config`);
-  }
 
-  const poolConfig: PoolConfig = {
-    host: configFile.database.hostname,
-    port: configFile.database.port,
-    user: configFile.database.username,
-    password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.app_db_name,
-  };
-
-  if (!poolConfig.database) {
-    throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain application database name`);
-  }
-
-  if (!poolConfig.password) {
-    if (debugMode) {
-      poolConfig.password = "DEBUG-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      throw new DBOSInitializationError(`DBOS configuration ${configFilePath} does not contain database password`);
-    }
-  }
-
-  // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
-  if (configFile.database.ssl_ca) {
-    // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
-    poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else if (poolConfig.host != "localhost") {
-    // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
-    poolConfig.ssl = { rejectUnauthorized: false }
-  } else {
-    // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
-    poolConfig.ssl = false
-  }
+  const poolConfig = constructPoolConfig(configFile)
 
   /***************************/
   /* Handle telemetry config */
