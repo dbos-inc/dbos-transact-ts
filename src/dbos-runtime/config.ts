@@ -90,7 +90,7 @@ export function constructPoolConfig(configFile: ConfigFile, debugMode: boolean =
   if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else if (poolConfig.host != "localhost") {
+  } else if (poolConfig.host != "localhost" && poolConfig.host != "127.0.0.1") {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
     poolConfig.ssl = { rejectUnauthorized: false }
   } else {
