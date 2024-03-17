@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 rem Check if PGPASSWORD is set
 if "%PGPASSWORD%"=="" (
@@ -16,7 +16,7 @@ for /l %%i in (1,1,30) do (
   docker exec dbos-db psql -U postgres -c "SELECT 1;" >NUL 2>&1
   if !errorlevel! == 0 (
     echo PostgreSQL started!
-    goto :break
+    goto break
   )
   timeout /t 1 /nobreak
 )
