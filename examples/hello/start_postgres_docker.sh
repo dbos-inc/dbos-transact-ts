@@ -19,3 +19,5 @@ for i in {1..30}; do
   fi
   sleep 1
 done
+
+echo "Database started successfully!"

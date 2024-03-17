@@ -21,3 +21,5 @@ for /l %%i in (1,1,30) do (
   timeout /t 1 /nobreak
 )
 :break
+
+echo Database started successfully!
