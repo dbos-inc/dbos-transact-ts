@@ -101,8 +101,13 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
     }
   }
 
+  // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
   if (configFile.database.ssl_ca) {
+    // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
+  } else {
+    // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
+    poolConfig.ssl = { rejectUnauthorized: false }
   }
 
   /***************************/
