@@ -13,7 +13,7 @@ export PGPASSWORD=dbos
 ./start_postgres_docker.sh
 ```
 
-On Windows (CMD), run:
+On Windows (cmd), run:
 
 ```cmd
 set PGPASSWORD=dbos
