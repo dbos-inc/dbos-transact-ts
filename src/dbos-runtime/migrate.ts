@@ -1,7 +1,6 @@
 import { execSync } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
-import { ConfigFile } from "./config";
-import { readFileSync } from "../utils";
+import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
@@ -15,17 +14,8 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
   if (!(await checkDatabaseExists(configFile, logger))) {
-    const postgresConfig: PoolConfig = {
-      host: configFile.database.hostname,
-      port: configFile.database.port,
-      user: configFile.database.username,
-      password: configFile.database.password,
-      connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-      database: "postgres",
-    };
-    if (configFile.database.ssl_ca) {
-      postgresConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-    }
+    const postgresConfig: PoolConfig = constructPoolConfig(configFile)
+    postgresConfig.database = "postgres"
     const postgresClient = new Client(postgresConfig);
     try {
       await postgresClient.connect()
@@ -89,17 +79,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 }
 
 export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
-  const pgUserConfig: PoolConfig = {
-    host: configFile.database.hostname,
-    port: configFile.database.port,
-    user: configFile.database.username,
-    password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.app_db_name,
-  };
-  if (configFile.database.ssl_ca) {
-    pgUserConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  }
+  const pgUserConfig: PoolConfig = constructPoolConfig(configFile)
   const pgUserClient = new Client(pgUserConfig);
 
   try {
@@ -142,18 +122,7 @@ export async function rollbackMigration(configFile: ConfigFile, logger: GlobalLo
 async function createDBOSTables(configFile: ConfigFile) {
   const logger = new GlobalLogger();
 
-  const userPoolConfig: PoolConfig = {
-    host: configFile.database.hostname,
-    port: configFile.database.port,
-    user: configFile.database.username,
-    password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.app_db_name,
-  };
-
-  if (configFile.database.ssl_ca) {
-    userPoolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  }
+  const userPoolConfig: PoolConfig = constructPoolConfig(configFile)
 
   const systemPoolConfig = { ...userPoolConfig };
   systemPoolConfig.database = `${userPoolConfig.database}_dbos_sys`;
