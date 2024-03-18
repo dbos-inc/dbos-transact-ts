@@ -20,7 +20,4 @@ for i in {1..30}; do
   sleep 1
 done
 
-# Create a database in Postgres.
-docker exec dbos-db psql -U postgres -c "CREATE DATABASE hello;"
-
 echo "Database started successfully!"
