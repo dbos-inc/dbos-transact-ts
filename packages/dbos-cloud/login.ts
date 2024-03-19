@@ -3,6 +3,7 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, sleep, writeCredentials } from "./cloudutils.js";
 import { Logger } from "winston";
+import open from 'open';
 
 const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
@@ -79,7 +80,7 @@ export async function authenticate(logger: Logger): Promise<string | null> {
   const loginURL = deviceCodeResponse.verification_uri_complete
   console.log(`Login URL: ${loginURL}`);
   try {
-    open(loginURL)
+    await open(loginURL)
   } catch (error) { /* Ignore errors from open */ }
 
   const tokenRequest = {
