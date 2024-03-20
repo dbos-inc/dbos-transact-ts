@@ -63,7 +63,7 @@ export class DBOSRuntime {
     const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
     let exports: ModuleExports;
     if (fs.existsSync(operations)) {
-      const operationsURL = pathToFileURL(operations).href
+      const operationsURL = pathToFileURL(operations).href;
       exports = (await import(operationsURL)) as Promise<ModuleExports>;
     } else {
       throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
