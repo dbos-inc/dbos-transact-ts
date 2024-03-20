@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from "./cloudutils.js";
+import open from 'open';
 
 export async function launchDashboard(host: string): Promise<number> {
     const logger = getLogger();
@@ -17,7 +18,7 @@ export async function launchDashboard(host: string): Promise<number> {
         logger.info(`Dashboard ready at ${res.data}`)
         if (typeof res.data === 'string') {
             try {
-                open(res.data)
+                await open(res.data)
             } catch (error) { /* Ignore errors from open */ }
         }
         return 0
@@ -48,7 +49,7 @@ export async function getDashboardURL(host: string): Promise<number> {
         logger.info(`Dashboard URL is ${res.data}`)
         if (typeof res.data === 'string') {
             try {
-                open(res.data)
+                await open(res.data)
             } catch (error) { /* Ignore errors from open */ }
         }
 
