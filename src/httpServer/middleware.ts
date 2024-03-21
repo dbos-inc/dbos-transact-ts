@@ -39,12 +39,14 @@ export interface DBOSHttpAuthReturn {
 
 // Class-level decorators
 export interface MiddlewareDefaults extends RegistrationDefaults {
-  koaMiddlewares?: Koa.Middleware[];
   authMiddleware?: DBOSHttpAuthMiddleware;
+  koaBodyParser?: Koa.Middleware;
+  koaMiddlewares?: Koa.Middleware[];
 }
 
 export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements MiddlewareDefaults {
   authMiddleware?: DBOSHttpAuthMiddleware;
+  koaBodyParser?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
 
   constructor(ctor: CT) {
@@ -66,6 +68,17 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.authMiddleware = authMiddleware;
+  }
+  return clsdec;
+}
+
+/**
+ * Define a Koa body parser applied before any middleware. If not set, the default @koa/bodyparser is used.
+ */
+export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
+  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    clsreg.koaBodyParser = koaBodyParser;
   }
   return clsdec;
 }

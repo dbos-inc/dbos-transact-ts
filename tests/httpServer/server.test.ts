@@ -18,13 +18,14 @@ import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers
 import request from "supertest";
 import { ArgSource, HandlerContext } from "../../src/httpServer/handler";
 import { ArgSources } from "../../src/httpServer/handlerTypes";
-import { Authentication } from "../../src/httpServer/middleware";
+import { Authentication, KoaBodyParser } from "../../src/httpServer/middleware";
 import { v1 as uuidv1, validate as uuidValidate } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { DBOSNotAuthorizedError, DBOSResponseError } from "../../src/error";
 import { PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { IncomingMessage } from "http";
+import { bodyParser } from "@koa/bodyparser";
 
 describe("httpserver-tests", () => {
   const testTableName = "dbos_test_kv";
@@ -74,6 +75,14 @@ describe("httpserver-tests", () => {
     const response = await request(testRuntime.getHandlersCallback()).post("/testpost").send({ name: "alice" });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
+  });
+
+  test("post-test-custom-body", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
   });
 
   test("endpoint-transaction", async () => {
@@ -212,6 +221,12 @@ describe("httpserver-tests", () => {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @Authentication(testAuthMiddlware)
+  @KoaBodyParser(bodyParser({
+    extendTypes: {
+      json: ["application/json", "application/custom-content-type"],
+    },
+    encoding: "utf-8"
+  }))
   class TestEndpoints {
     // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
