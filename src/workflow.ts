@@ -354,6 +354,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       try {
         const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
         span.setStatus({ code: SpanStatusCode.OK });
+        this.#dbosExec.tracer.endSpan(span);
         return result;
       } catch (err) {
         if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
@@ -374,9 +375,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-        throw err;
-      } finally {
         this.#dbosExec.tracer.endSpan(span);
+        throw err;
       }
     }
   }
@@ -442,14 +442,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           result = await commFn(ctxt, ...args);
         } catch (error) {
           if (numAttempts < ctxt.maxAttempts) {
+            span.addEvent(`Communicator attempt ${numAttempts+1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
             // Sleep for an interval, then increase the interval by backoffRate.
             // Cap at the maximum allowed retry interval.
             await sleep(intervalSeconds * 1000);
             intervalSeconds *= ctxt.backoffRate;
             intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
           }
-          ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-          this.#dbosExec.tracer.endSpan(ctxt.span);
         }
       }
     } else {
@@ -457,8 +456,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         result = await commFn(ctxt, ...args);
       } catch (error) {
         err = error as Error;
-        ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message });
-        this.#dbosExec.tracer.endSpan(ctxt.span);
       }
     }
 
