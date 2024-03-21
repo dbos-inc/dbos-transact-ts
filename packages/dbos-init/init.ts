@@ -2,7 +2,8 @@ import glob from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
-import * as validator from 'validator';
+import validator from 'validator';
+import { fileURLToPath } from 'url';
 
 interface CopyOption {
   rename?: (basename: string) => string
@@ -16,7 +17,6 @@ export const copy = async (
   dest: string,
   { rename = identity }: CopyOption = {}
 ) => {
-
   if (targets.length === 0 || !dest) {
     throw new TypeError('`src` and `dest` are required')
   }
@@ -61,7 +61,8 @@ export async function init(appName: string) {
     throw new Error(`Directory ${appName} already exists, exiting...`);
   }
 
-  const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const templatePath = path.resolve(__dirname, '..', 'templates', 'hello');
   const targets = ["**"]
   await copy(templatePath, targets, appName);
 
