@@ -1,4 +1,4 @@
-import { async as glob } from 'fast-glob'
+import glob from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { init } from './init.js';
+import fs from 'fs'
+import path from "path";
+import { Package } from "update-notifier";
 
 const program = new Command();
 
@@ -9,7 +12,9 @@ const program = new Command();
 ////////////////////////
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson = require('./package.json') as { version: string };
+import { fileURLToPath } from 'url';
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json")).toString()) as Package;
 program.version(packageJson.version);
 
 program
@@ -19,9 +24,11 @@ program
     await init(options.appName);
   });
 
-program.parse(process.argv);
-
 // If no arguments provided, display help by default
 if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
+else {
+  program.parse(process.argv);
+}
+
