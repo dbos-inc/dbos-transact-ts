@@ -5,6 +5,7 @@ import { isObject } from 'lodash';
 import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
+import { pathToFileURL } from 'url';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,7 +38,7 @@ export class DBOSRuntime {
       if (classes.length === 0) {
         throw new DBOSFailLoadOperationsError("operations not found");
       }
-      await this.dbosExec.init(...classes);    
+      await this.dbosExec.init(...classes);
       const server = new DBOSHttpServer(this.dbosExec)
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
@@ -62,8 +63,8 @@ export class DBOSRuntime {
     const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
     let exports: ModuleExports;
     if (fs.existsSync(operations)) {
-      /* eslint-disable-next-line @typescript-eslint/no-var-requires */
-      exports = (await import(operations)) as Promise<ModuleExports>;
+      const operationsURL = pathToFileURL(operations).href;
+      exports = (await import(operationsURL)) as Promise<ModuleExports>;
     } else {
       throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
     }
