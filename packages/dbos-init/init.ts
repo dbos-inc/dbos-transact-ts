@@ -2,7 +2,7 @@ import { async as glob } from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
-import { DBOSError } from '../error'
+import { DBOSError } from '../../src/error.js'
 import * as validator from 'validator';
 
 interface CopyOption {
