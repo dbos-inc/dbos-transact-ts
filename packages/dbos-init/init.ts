@@ -2,7 +2,6 @@ import { async as glob } from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
-import { DBOSError } from '../../src/error.js'
 import * as validator from 'validator';
 
 interface CopyOption {
@@ -55,11 +54,11 @@ function isValidApplicationName(appName: string): boolean {
 
 export async function init(appName: string) {
   if (!isValidApplicationName(appName)) {
-    throw new DBOSError(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+    throw new Error(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
   }
 
   if (fs.existsSync(appName)) {
-    throw new DBOSError(`Directory ${appName} already exists, exiting...`);
+    throw new Error(`Directory ${appName} already exists, exiting...`);
   }
 
   const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
