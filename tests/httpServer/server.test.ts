@@ -78,9 +78,11 @@ describe("httpserver-tests", () => {
   });
 
   test("post-test-custom-body", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    let response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
+    response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
   });
 
   test("endpoint-transaction", async () => {
