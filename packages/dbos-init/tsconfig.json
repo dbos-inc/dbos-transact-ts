@@ -20,5 +20,6 @@
   ],
   "exclude": [
     "templates",
+    "dist",
   ],
 }
