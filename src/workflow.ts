@@ -359,7 +359,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       } catch (err) {
         if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
-          span.addEvent("TXN SERIALIZATION FAILURE", { retryWaitMillis });
+          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
           // Retry serialization failures.
           await sleep(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
