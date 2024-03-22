@@ -24,7 +24,7 @@ program
   .option('-t, --template <template name>', 'Name of template application to copy')
   .action(async (options: { appName?: string, template?: string }, command: Command) => {
     if (command.args.length > 0) {
-      throw new Error(`Unexpected arguments: ${command.args.join(',')}`);
+      throw new Error(`Unexpected arguments: ${command.args.join(',')}; Did you forget '--'?`);
     }
     let {appName, template} = options;
     if (appName || template) {
