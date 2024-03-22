@@ -54,7 +54,7 @@ function isValidApplicationName(appName: string): boolean {
 }
 
 export async function init(appName: string) {
-  console.log("NOTE: This command is deprecated in favor of `npx @dbos-inc/dbos-template init`");
+  console.log("NOTE: This command is deprecated in favor of `npm create @dbos-inc` or `npx @dbos-inc/create`");
   if (!isValidApplicationName(appName)) {
     throw new DBOSError(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
   }
