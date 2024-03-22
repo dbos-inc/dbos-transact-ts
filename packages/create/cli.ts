@@ -4,6 +4,7 @@ import { init } from './init.js';
 import fs from 'fs'
 import path from "path";
 import { Package } from "update-notifier";
+import inquirer from "inquirer";
 
 const program = new Command();
 
@@ -19,17 +20,40 @@ program.version(packageJson.version);
 
 program
   .description('Init a DBOS application')
-  .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .option('-t, --template <template name>', 'Name of template application to copy', 'hello')
-  .action(async (options: { appName: string, template: string }) => {
-    await init(options.appName, options.template);
-  });
+  .option('-n, --appName <application-name>', 'Application name')
+  .option('-t, --template <template name>', 'Name of template application to copy')
+  .action(async (options: { appName?: string, template?: string }, command: Command) => {
+    if (command.args.length > 0) {
+      throw new Error(`Unexpected arguments: ${command.args.join(',')}; Did you forget '--'?`);
+    }
+    let {appName, template} = options;
+    if (appName || template) {
+      appName = appName || 'dbos-hello-app';
+      template = template || 'hello';
+    }
+    else {
+      const res = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'template',
+          message: 'What is the template to use for the application?',
+          // Providing a default value
+          default: 'hello',
+        },
+        {
+          type: 'input',
+          name: 'appName',
+          message: 'What is the application/directory name to create?',
+          // Providing a default value
+          default: 'dbos-hello-app',
+        },
+      ]) as {appName: string, template: string};
+      appName = res.appName;
+      template = res.template;
+    }
+    await init(appName, template);
+  })
+  .allowUnknownOption(false);
 
-// If no arguments provided, display help by default
-if (!process.argv.slice(2).length) {
-  program.outputHelp();
-}
-else {
-  program.parse(process.argv);
-}
+program.parse(process.argv);
 
