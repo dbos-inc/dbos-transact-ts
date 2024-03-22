@@ -18,7 +18,7 @@
     "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "../..",
+    "@dbos-inc/dbos-sdk": "../../../..",
     "knex": "3.1.0"
   }
 }
