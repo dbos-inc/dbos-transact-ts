@@ -52,17 +52,21 @@ function isValidApplicationName(appName: string): boolean {
   return validator.matches(appName, "^[a-z0-9-_]+$");
 }
 
-export async function init(appName: string) {
+export async function init(appName: string, templateName: string) {
   if (!isValidApplicationName(appName)) {
     throw new Error(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+  }
+
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const templatePath = path.resolve(__dirname, '..', 'templates', templateName);
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Template does not exist: ${templateName}. Exiting...`);
   }
 
   if (fs.existsSync(appName)) {
     throw new Error(`Directory ${appName} already exists, exiting...`);
   }
 
-  const __dirname = fileURLToPath(new URL('.', import.meta.url));
-  const templatePath = path.resolve(__dirname, '..', 'templates', 'hello');
   const targets = ["**"]
   await copy(templatePath, targets, appName);
 

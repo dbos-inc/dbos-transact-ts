@@ -20,8 +20,9 @@ program.version(packageJson.version);
 program
   .description('Init a DBOS application')
   .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .action(async (options: { appName: string }) => {
-    await init(options.appName);
+  .option('-t, --template <template name>', 'Name of template application to copy', 'hello')
+  .action(async (options: { appName: string, template: string }) => {
+    await init(options.appName, options.template);
   });
 
 // If no arguments provided, display help by default
