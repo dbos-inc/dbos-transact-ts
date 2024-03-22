@@ -1,9 +1,9 @@
-import { async as glob } from 'fast-glob'
+import glob from 'fast-glob'
 import path from 'path'
 import fs from 'fs'
 import { execSync } from 'child_process'
-import { DBOSError } from '../error'
-import * as validator from 'validator';
+import validator from 'validator';
+import { fileURLToPath } from 'url';
 
 interface CopyOption {
   rename?: (basename: string) => string
@@ -17,7 +17,6 @@ export const copy = async (
   dest: string,
   { rename = identity }: CopyOption = {}
 ) => {
-
   if (targets.length === 0 || !dest) {
     throw new TypeError('`src` and `dest` are required')
   }
@@ -53,17 +52,21 @@ function isValidApplicationName(appName: string): boolean {
   return validator.matches(appName, "^[a-z0-9-_]+$");
 }
 
-export async function init(appName: string) {
-  console.log("NOTE: This command is deprecated in favor of `npm create @dbos-inc` or `npx @dbos-inc/create`");
+export async function init(appName: string, templateName: string) {
   if (!isValidApplicationName(appName)) {
-    throw new DBOSError(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+    throw new Error(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
+  }
+
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const templatePath = path.resolve(__dirname, '..', 'templates', templateName);
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Template does not exist: ${templateName}. Exiting...`);
   }
 
   if (fs.existsSync(appName)) {
-    throw new DBOSError(`Directory ${appName} already exists, exiting...`);
+    throw new Error(`Directory ${appName} already exists, exiting...`);
   }
 
-  const templatePath = path.resolve(__dirname, '..', '..', '..', 'examples', 'hello');
   const targets = ["**"]
   await copy(templatePath, targets, appName);
 

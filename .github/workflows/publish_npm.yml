@@ -10,7 +10,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        package: [., packages/dbos-cloud, packages/dbos-openapi, packages/communicator-datetime, packages/communicator-bcrypt, packages/communicator-random]
+        package: [., packages/dbos-cloud, packages/dbos-openapi, packages/communicator-datetime, packages/communicator-bcrypt, packages/communicator-random, packages/create]
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.1
@@ -53,4 +53,4 @@ jobs:
         run: echo "Published a new release package!"
       - if: ${{ steps.npmtest.outputs.type }}
         run: echo "Published a new test package!"
-  
+
