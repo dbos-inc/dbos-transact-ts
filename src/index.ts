@@ -82,6 +82,7 @@ export {
 
   // Middleware Decorators
   Authentication,
+  KoaBodyParser,
   KoaMiddleware,
 
   // OpenApi Decorators

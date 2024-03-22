@@ -46,7 +46,6 @@ export class DBOSHttpServer {
     this.adminRouter = new Router();
     this.logger = dbosExec.logger;
     this.app = new Koa();
-    this.app.use(bodyParser());
     this.app.use(cors());
     this.adminApp = new Koa();
     this.adminApp.use(bodyParser());
@@ -168,8 +167,14 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        // Check if we need to apply any Koa middleware.
         const defaults = ro.defaults as MiddlewareDefaults;
+        // Check if we need to apply a custom body parser
+        if (defaults.koaBodyParser) {
+          router.use(ro.apiURL, defaults.koaBodyParser)
+        } else {
+          router.use(ro.apiURL, bodyParser())
+        }
+        // Check if we need to apply any Koa middleware.
         if (defaults?.koaMiddlewares) {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
             dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
