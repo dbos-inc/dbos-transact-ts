@@ -1,4 +1,4 @@
-import { DBOSInitializer, InitContext, KafkaConsume, TestingRuntime, Transaction, TransactionContext } from "../../src";
+import { DBOSInitializer, InitContext, KafkaConsume, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
@@ -12,8 +12,12 @@ const kafka = new Kafka({
 })
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
-const txnConsumer = kafka.consumer({ groupId: 'dbos-test-group' })
+const txnConsumer = kafka.consumer({ groupId: 'dbos-test-txn-group' })
 let txnCounter = 0;
+const wfTopic = 'dbos-test-wf-topic';
+const wfMessage = 'dbos-wf'
+const wfConsumer = kafka.consumer({ groupId: 'dbos-test-wf-group' })
+let wfCounter = 0;
 
 describe("kafka-tests", () => {
   let username: string;
@@ -34,7 +38,7 @@ describe("kafka-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("simple-kafka", async () => {
+  test("txn-kafka", async () => {
     // Create a producer to send a message
     const producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner
@@ -46,15 +50,24 @@ describe("kafka-tests", () => {
         { value: txnMessage },
       ],
     })
+    await producer.send({
+      topic: wfTopic,
+      messages: [
+        { value: wfMessage },
+      ],
+    })
     await producer.disconnect()
 
-    // Check that the message is consumed
+    // Check that both messages are consumed
     await DBOSTestClass.txnPromise;
-    expect(txnCounter).toBe(1)
+    expect(txnCounter).toBe(1);
+    await DBOSTestClass.wfPromise;
+    expect(wfCounter).toBe(1);
 
-  // Clean up the consumer
-    await txnConsumer.disconnect()
-  }, 15000);
+    // Clean up the consumers
+    await txnConsumer.disconnect();
+    await wfConsumer.disconnect();
+  }, 20000);
 });
 
 class DBOSTestClass {
@@ -64,10 +77,17 @@ class DBOSTestClass {
     DBOSTestClass.txnResolve = r;
   });
 
+  static wfResolve: () => void;
+  static wfPromise = new Promise<void>((r) => {
+    DBOSTestClass.wfResolve = r;
+  });
+
   @DBOSInitializer()
   static async init(_ctx: InitContext) {
     await txnConsumer.connect()
     await txnConsumer.subscribe({ topic: txnTopic, fromBeginning: true })
+    await wfConsumer.connect()
+    await wfConsumer.subscribe({ topic: wfTopic, fromBeginning: true })
   }
 
   @KafkaConsume(txnConsumer)
@@ -76,6 +96,15 @@ class DBOSTestClass {
     if (topic == txnTopic && message.value?.toString() == txnMessage) {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve()
+    }
+  }
+
+  @KafkaConsume(wfConsumer)
+  @Transaction()
+  static async testWorkflow(_ctxt: any, topic: string, _partition: number, message: KafkaMessage) {
+    if (topic == wfTopic && message.value?.toString() == wfMessage) {
+      wfCounter = wfCounter + 1;
+      DBOSTestClass.wfResolve()
     }
   }
 }
