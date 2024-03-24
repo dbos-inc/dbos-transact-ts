@@ -25,6 +25,7 @@ describe("kafka-tests", () => {
   });
 
   test("simple-kafka", async () => {
+    let counter = 0
     const kafka = new Kafka({
       clientId: 'my-app',
       brokers: ['localhost:9092'],
@@ -51,15 +52,18 @@ describe("kafka-tests", () => {
 
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
-        console.log({
-          value: message.value!.toString(),
-        })
+        counter += 1;
+        console.log(topic)
+        console.log(partition)
+        console.log(message)
       },
     })
 
     await sleep(1000);
 
     await consumer.disconnect()
+
+    expect(counter).toBe(1)
   }, 15000);
 });
 
