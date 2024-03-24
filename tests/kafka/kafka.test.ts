@@ -10,8 +10,10 @@ const kafka = new Kafka({
   clientId: 'dbos-kafka-test',
   brokers: ['localhost:9092'],
 })
-const consumer = kafka.consumer({ groupId: 'test-group' })
-let counter = 0;
+const txnTopic = 'dbos-test-txn-topic';
+const txnMessage = 'dbos-txn'
+const txnConsumer = kafka.consumer({ groupId: 'dbos-test-group' })
+let txnCounter = 0;
 
 describe("kafka-tests", () => {
   let username: string;
@@ -33,39 +35,47 @@ describe("kafka-tests", () => {
   });
 
   test("simple-kafka", async () => {
+    // Create a producer to send a message
     const producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner
     });
-
     await producer.connect()
     await producer.send({
-      topic: 'dbos-test-topic',
+      topic: txnTopic,
       messages: [
-        { value: 'Hello KafkaJS user!' },
+        { value: txnMessage },
       ],
     })
-
     await producer.disconnect()
 
-    await sleep(1000);
+    // Check that the message is consumed
+    await DBOSTestClass.txnPromise;
+    expect(txnCounter).toBe(1)
 
-    await consumer.disconnect()
-
-    expect(counter).toBe(1)
+  // Clean up the consumer
+    await txnConsumer.disconnect()
   }, 15000);
 });
 
 class DBOSTestClass {
 
+  static txnResolve: () => void;
+  static txnPromise = new Promise<void>((r) => {
+    DBOSTestClass.txnResolve = r;
+  });
+
   @DBOSInitializer()
   static async init(_ctx: InitContext) {
-    await consumer.connect()
-    await consumer.subscribe({ topic: 'dbos-test-topic', fromBeginning: true })
+    await txnConsumer.connect()
+    await txnConsumer.subscribe({ topic: txnTopic, fromBeginning: true })
   }
 
-  @KafkaConsume(consumer)
+  @KafkaConsume(txnConsumer)
   @Transaction()
-  static async testTxn(_ctxt: TransactionContext<Knex>, _topic: string, _partition: number, _message: KafkaMessage) {
-    counter = counter + 1;
+  static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
+    if (topic == txnTopic && message.value?.toString() == txnMessage) {
+      txnCounter = txnCounter + 1;
+      DBOSTestClass.txnResolve()
+    }
   }
 }
