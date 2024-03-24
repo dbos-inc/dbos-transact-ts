@@ -93,16 +93,16 @@ class DBOSTestClass {
   @KafkaConsume(txnConsumer)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == txnTopic && message.value?.toString() == txnMessage) {
+    if (topic == txnTopic && message.value?.toString() === txnMessage) {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve()
     }
   }
 
   @KafkaConsume(wfConsumer)
-  @Transaction()
-  static async testWorkflow(_ctxt: any, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == wfTopic && message.value?.toString() == wfMessage) {
+  @Workflow()
+  static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    if (topic == wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve()
     }

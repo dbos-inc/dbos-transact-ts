@@ -1,4 +1,5 @@
 import fs from "fs";
+import _ from "lodash";
 import path from "path";
 
 /*
@@ -47,4 +48,18 @@ export function findPackageRoot(start: string | string[]): string {
     }
 
     return findPackageRoot(start);
+}
+
+// A replacer function to use in JSON.stringify to support more types
+export function DBOSReplacer(_key: any, value: any) {
+  return value;
+}
+
+// A reviver function to use in JSON.parse to support more types
+export function DBOSReviver(_key: any, value: any) {
+  // Buffers are automatically serialized correctly but not deserialized--this does it instead.
+  if(value && value.type === 'Buffer' && value.data) {
+    return Buffer.from(value.data);
+  }
+  return value;
 }
