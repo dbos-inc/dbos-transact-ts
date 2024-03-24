@@ -5,6 +5,10 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { Kafka, KafkaMessage, Partitioners } from "kafkajs";
 import { Knex } from "knex";
 
+// These tests require local Kafka to run.
+// Without it, they're automatically skipped.
+// Quick guide on setting it up: https://kafka.js.org/docs/running-kafka-in-development
+
 const kafka = new Kafka({
   clientId: 'dbos-kafka-test',
   brokers: ['localhost:9092'],
