@@ -3,7 +3,6 @@ import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { Kafka, KafkaMessage, Partitioners } from "kafkajs";
-import { sleep } from "../../src/utils";
 import { Knex } from "knex";
 
 const kafka = new Kafka({
@@ -20,13 +19,11 @@ const wfConsumer = kafka.consumer({ groupId: 'dbos-test-wf-group' })
 let wfCounter = 0;
 
 describe("kafka-tests", () => {
-  let username: string;
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig.user || "postgres";
     await setUpDBOSTestDb(config);
   });
 
@@ -90,6 +87,7 @@ class DBOSTestClass {
     await wfConsumer.subscribe({ topic: wfTopic, fromBeginning: true })
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   @KafkaConsume(txnConsumer)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
@@ -99,6 +97,7 @@ class DBOSTestClass {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   @KafkaConsume(wfConsumer)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {

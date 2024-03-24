@@ -51,15 +51,20 @@ export function findPackageRoot(start: string | string[]): string {
 }
 
 // A replacer function to use in JSON.stringify to support more types
-export function DBOSReplacer(_key: any, value: any) {
+export function DBOSReplacer(_key: string, value: unknown) {
   return value;
 }
 
+interface SerializedBuffer {
+  type: 'Buffer';
+  data: number[];
+}
+
 // A reviver function to use in JSON.parse to support more types
-export function DBOSReviver(_key: any, value: any) {
-  // Buffers are automatically serialized correctly but not deserialized--this does it instead.
-  if(value && value.type === 'Buffer' && value.data) {
-    return Buffer.from(value.data);
+export function DBOSReviver(_key: string, value: unknown): unknown {
+  const candidate = value as SerializedBuffer;
+  if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
+    return Buffer.from(candidate.data);
   }
   return value;
 }

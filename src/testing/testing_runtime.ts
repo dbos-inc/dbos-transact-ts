@@ -94,7 +94,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     await dbosExec.init(...userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
-    initKafka(dbosExec);
+    await initKafka(dbosExec);
     this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
