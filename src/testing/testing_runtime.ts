@@ -15,6 +15,7 @@ import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 import { get, set, has } from "lodash";
 import { Client } from "pg";
+import { initKafka } from "../kafka/kafka";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -93,6 +94,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     await dbosExec.init(...userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
+    initKafka(dbosExec);
     this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }

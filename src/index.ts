@@ -88,3 +88,7 @@ export {
   // OpenApi Decorators
   OpenApiSecurityScheme
 } from "./httpServer/middleware";
+
+export {
+  KafkaConsume
+} from "./kafka/kafka"

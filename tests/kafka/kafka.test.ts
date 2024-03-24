@@ -1,9 +1,17 @@
-import { TestingRuntime } from "../../src";
+import { DBOSInitializer, InitContext, KafkaConsume, TestingRuntime, Transaction, TransactionContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { Kafka, Partitioners } from "kafkajs";
+import { Kafka, KafkaMessage, Partitioners } from "kafkajs";
 import { sleep } from "../../src/utils";
+import { Knex } from "knex";
+
+const kafka = new Kafka({
+  clientId: 'dbos-kafka-test',
+  brokers: ['localhost:9092'],
+})
+const consumer = kafka.consumer({ groupId: 'test-group' })
+let counter = 0;
 
 describe("kafka-tests", () => {
   let username: string;
@@ -25,39 +33,19 @@ describe("kafka-tests", () => {
   });
 
   test("simple-kafka", async () => {
-    let counter = 0
-    const kafka = new Kafka({
-      clientId: 'my-app',
-      brokers: ['localhost:9092'],
-    })
-
     const producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner
     });
 
     await producer.connect()
     await producer.send({
-      topic: 'test-topic',
+      topic: 'dbos-test-topic',
       messages: [
         { value: 'Hello KafkaJS user!' },
       ],
     })
 
     await producer.disconnect()
-
-    const consumer = kafka.consumer({ groupId: 'test-group' })
-
-    await consumer.connect()
-    await consumer.subscribe({ topic: 'test-topic', fromBeginning: true })
-
-    await consumer.run({
-      eachMessage: async ({ topic, partition, message }) => {
-        counter += 1;
-        console.log(topic)
-        console.log(partition)
-        console.log(message)
-      },
-    })
 
     await sleep(1000);
 
@@ -69,4 +57,15 @@ describe("kafka-tests", () => {
 
 class DBOSTestClass {
 
+  @DBOSInitializer()
+  static async init(_ctx: InitContext) {
+    await consumer.connect()
+    await consumer.subscribe({ topic: 'dbos-test-topic', fromBeginning: true })
+  }
+
+  @KafkaConsume(consumer)
+  @Transaction()
+  static async testTxn(_ctxt: TransactionContext<Knex>, _topic: string, _partition: number, _message: KafkaMessage) {
+    counter = counter + 1;
+  }
 }
