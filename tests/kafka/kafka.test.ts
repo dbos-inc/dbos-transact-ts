@@ -8,6 +8,10 @@ import { Knex } from "knex";
 const kafka = new Kafka({
   clientId: 'dbos-kafka-test',
   brokers: ['localhost:9092'],
+  requestTimeout: 100, // FOR TESTING
+  retry: { // FOR TESTING
+    retries: 0
+  }
 })
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
@@ -21,21 +25,43 @@ let wfCounter = 0;
 describe("kafka-tests", () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
+  let kafkaIsAvailable = true;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+
+    // Check if Kafka is available, skip the test if it's not
+    const producer = kafka.producer({
+      createPartitioner: Partitioners.DefaultPartitioner
+    });
+    try {
+      await producer.connect();
+      kafkaIsAvailable = true;
+    } catch (error) {
+      kafkaIsAvailable = false;
+    } finally {
+      await producer.disconnect();
+    }
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([DBOSTestClass], config);
+    if (kafkaIsAvailable) {
+      testRuntime = await createInternalTestRuntime([DBOSTestClass], config);
+    }
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    if (kafkaIsAvailable) {
+      await testRuntime.destroy();
+    }
   });
 
   test("txn-kafka", async () => {
+    if (!kafkaIsAvailable) {
+      console.log("Kafka unavailable, skipping Kafka tests")
+      return
+    }
     // Create a producer to send a message
     const producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner
