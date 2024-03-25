@@ -2,7 +2,7 @@ import { DBOSInitializer, InitContext, KafkaConsume, TestingRuntime, Transaction
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { Kafka, KafkaMessage, Partitioners } from "kafkajs";
+import { Kafka, KafkaMessage, Partitioners, logLevel } from "kafkajs";
 import { Knex } from "knex";
 
 // These tests require local Kafka to run.
@@ -14,8 +14,9 @@ const kafka = new Kafka({
   brokers: ['localhost:9092'],
   requestTimeout: 100, // FOR TESTING
   retry: { // FOR TESTING
-    retries: 0
-  }
+    retries: 5
+  },
+  logLevel: logLevel.NOTHING, // FOR TESTING
 })
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
