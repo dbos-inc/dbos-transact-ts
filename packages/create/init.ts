@@ -69,6 +69,7 @@ export async function init(appName: string, templateName: string) {
 
   const targets = ["**"]
   await copy(templatePath, targets, appName);
+  fs.renameSync(path.resolve(appName, 'gitignore.template'), path.resolve(appName, '.gitignore'));
 
   const packageJsonName = path.resolve(appName, 'package.json');
   const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };
