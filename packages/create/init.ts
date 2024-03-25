@@ -74,8 +74,8 @@ export async function init(appName: string, templateName: string) {
   const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };
   packageJson.name = appName;
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
-  execSync("npm ci --no-fund", {cwd: appName, stdio: 'inherit'})
   execSync("npm uninstall --no-fund @dbos-inc/dbos-sdk", {cwd: appName, stdio: 'inherit'})
+  execSync("npm ci --no-fund", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --no-fund --save @dbos-inc/dbos-sdk@latest", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest", {cwd: appName, stdio: 'inherit'})
   console.log("Application initialized successfully!")
