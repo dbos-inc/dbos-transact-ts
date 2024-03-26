@@ -12,7 +12,7 @@ type KafkaArgs = [string, number, KafkaMessage]
 /////////////////////////////
 
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  topic?: string;
+  kafkaTopic?: string;
   consumerConfig?: ConsumerConfig;
 
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
@@ -28,7 +28,7 @@ export function KafkaConsume(topic: string, consumerConfig?: ConsumerConfig) {
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     const kafkaRegistration = registration as unknown as KafkaRegistration<This, KafkaArgs, Return>;
-    kafkaRegistration.topic = topic;
+    kafkaRegistration.kafkaTopic = topic;
     kafkaRegistration.consumerConfig = consumerConfig;
 
     return descriptor;
@@ -72,13 +72,13 @@ export class DBOSKafka{
   async initKafka() {
     for (const registeredOperation of this.dbosExec.registeredOperations) {
       const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
-      if (ro.topic) {
+      if (ro.kafkaTopic) {
         const defaults = ro.defaults as KafkaDefaults;
         const kafka = new KafkaJS(defaults.kafkaConfig!);
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.topic}`}
+        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect()
-        await consumer.subscribe({topic: ro.topic, fromBeginning: true})
+        await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
