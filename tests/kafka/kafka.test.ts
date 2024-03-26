@@ -1,15 +1,16 @@
-import { DBOSInitializer, InitContext, KafkaConsume, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
+import { KafkaConsume, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
+import { Kafka } from "../../src/kafka/kafka";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { Kafka, KafkaMessage, Partitioners, logLevel } from "kafkajs";
+import { Kafka as KafkaJS, KafkaConfig, KafkaMessage, Partitioners, logLevel } from "kafkajs";
 import { Knex } from "knex";
 
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
 // Quick guide on setting it up: https://kafka.js.org/docs/running-kafka-in-development
 
-const kafka = new Kafka({
+const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
   brokers: ['localhost:9092'],
   requestTimeout: 100, // FOR TESTING
@@ -17,14 +18,13 @@ const kafka = new Kafka({
     retries: 5
   },
   logLevel: logLevel.NOTHING, // FOR TESTING
-})
+}
+const kafka = new KafkaJS(kafkaConfig)
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
-const txnConsumer = kafka.consumer({ groupId: 'dbos-test-txn-group' })
 let txnCounter = 0;
 const wfTopic = 'dbos-test-wf-topic';
 const wfMessage = 'dbos-wf'
-const wfConsumer = kafka.consumer({ groupId: 'dbos-test-wf-group' })
 let wfCounter = 0;
 
 describe("kafka-tests", () => {
@@ -60,7 +60,7 @@ describe("kafka-tests", () => {
     if (kafkaIsAvailable) {
       await testRuntime.destroy();
     }
-  });
+  }, 10000);
 
   test("txn-kafka", async () => {
     if (!kafkaIsAvailable) {
@@ -91,13 +91,10 @@ describe("kafka-tests", () => {
     expect(txnCounter).toBe(1);
     await DBOSTestClass.wfPromise;
     expect(wfCounter).toBe(1);
-
-    // Clean up the consumers
-    await txnConsumer.disconnect();
-    await wfConsumer.disconnect();
   }, 20000);
 });
 
+@Kafka(kafkaConfig)
 class DBOSTestClass {
 
   static txnResolve: () => void;
@@ -110,16 +107,8 @@ class DBOSTestClass {
     DBOSTestClass.wfResolve = r;
   });
 
-  @DBOSInitializer()
-  static async init(_ctx: InitContext) {
-    await txnConsumer.connect()
-    await txnConsumer.subscribe({ topic: txnTopic, fromBeginning: true })
-    await wfConsumer.connect()
-    await wfConsumer.subscribe({ topic: wfTopic, fromBeginning: true })
-  }
-
   // eslint-disable-next-line @typescript-eslint/require-await
-  @KafkaConsume(txnConsumer)
+  @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == txnTopic && message.value?.toString() === txnMessage) {
@@ -129,7 +118,7 @@ class DBOSTestClass {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  @KafkaConsume(wfConsumer)
+  @KafkaConsume(wfTopic)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == wfTopic && message.value?.toString() === wfMessage) {
