@@ -4,6 +4,7 @@ import { ClassRegistration, MethodRegistration, RegistrationDefaults, getOrCreat
 import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
+import { DBOSError } from "../error";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -74,7 +75,13 @@ export class DBOSKafka{
       const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
       if (ro.kafkaTopic) {
         const defaults = ro.defaults as KafkaDefaults;
-        const kafka = new KafkaJS(defaults.kafkaConfig!);
+        if (!ro.txnConfig && !ro.workflowConfig) {
+          throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: A Kafka decorator can only be assigned to a transaction or workflow!`)
+        }
+        if (!defaults.kafkaConfig) {
+          throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
+        }
+        const kafka = new KafkaJS(defaults.kafkaConfig);
         const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect()
