@@ -90,5 +90,6 @@ export {
 } from "./httpServer/middleware";
 
 export {
-  KafkaConsume
+  Kafka,
+  KafkaConsume,
 } from "./kafka/kafka"
