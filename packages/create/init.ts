@@ -94,7 +94,8 @@ function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>):
             resultSet.add(line);
         }
     });
-    return Array.from(resultSet).join('\n');
+    const joined = Array.from(resultSet).join('\n');
+    return joined.replaceAll('\n#','\n\n#');
 }
 
 function mergeGitignoreFiles(existingFilePath: string, templateFilePath: string, outputFilePath: string): void {
