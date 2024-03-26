@@ -52,6 +52,61 @@ function isValidApplicationName(appName: string): boolean {
   return validator.matches(appName, "^[a-z0-9-_]+$");
 }
 
+const filesAllowedInEmpty = ['.gitignore', 'readme.md'];
+const pathPrefixesAllowedInEmpty = ['.']; // Directories that start with 
+
+function dirHasStuffInIt(pathName: string): boolean {
+  if (!fs.existsSync(pathName)) {
+    return false;
+  }
+
+  const files = fs.readdirSync(pathName);
+  for (const file of files) {
+      const fullPath = path.join(pathName, file);
+      const isDirectory = fs.lstatSync(fullPath).isDirectory();
+
+      if (isDirectory && !pathPrefixesAllowedInEmpty.some(prefix => file.startsWith(prefix))) {
+          //console.log(`Directory ${pathName} is not sufficiently empty because it contains directory: ${file}`);
+          return true;
+      }
+
+      // If it's not a directory, and not in the list of allowed files, return false
+      if (!isDirectory && !filesAllowedInEmpty.includes(file.toLowerCase())) {
+          //console.log(`Directory ${pathName} is not sufficiently empty because it contains file: ${file}`);
+          return true;
+      }
+  }
+
+  return false;
+}
+
+function loadGitignoreFile(filePath: string): Set<string> {
+  if (!fs.existsSync(filePath)) return new Set();
+  const content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split(/\r?\n/);
+  return new Set(lines);
+}
+
+function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>): string {
+    const resultSet = new Set(existingGISet);
+    templateGISet.forEach(line => {
+        if (!resultSet.has(line)) {
+            resultSet.add(line);
+        }
+    });
+    return Array.from(resultSet).join('\n');
+}
+
+function mergeGitignoreFiles(existingFilePath: string, templateFilePath: string, outputFilePath: string): void {
+    const existingSet = loadGitignoreFile(existingFilePath);
+    const templateSet = loadGitignoreFile(templateFilePath);
+    const resultContent = mergeGitIgnore(existingSet, templateSet);
+    fs.writeFileSync(outputFilePath, resultContent);
+    console.log(`Merged .gitignore files saved to ${outputFilePath}`);
+}
+
+
+
 export async function init(appName: string, templateName: string) {
   if (!isValidApplicationName(appName)) {
     throw new Error(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
@@ -63,13 +118,14 @@ export async function init(appName: string, templateName: string) {
     throw new Error(`Template does not exist: ${templateName}. Exiting...`);
   }
 
-  if (fs.existsSync(appName)) {
+  if (dirHasStuffInIt(appName)) {
     throw new Error(`Directory ${appName} already exists, exiting...`);
   }
 
   const targets = ["**"]
   await copy(templatePath, targets, appName);
-  fs.renameSync(path.resolve(appName, 'gitignore.template'), path.resolve(appName, '.gitignore'));
+  mergeGitignoreFiles(path.join(appName, '.gitignore'), path.join(appName, 'gitignore.template'), path.join(appName, '.gitignore'));
+  fs.rmSync(path.resolve(appName, 'gitignore.template'));
 
   const packageJsonName = path.resolve(appName, 'package.json');
   const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };
