@@ -1,9 +1,11 @@
-import { Consumer } from "kafkajs";
+import { Consumer, KafkaMessage } from "kafkajs";
 import { DBOSContext } from "..";
 import { MethodRegistration, registerAndWrapFunction } from "../decorators";
 import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
+
+type KafkaArgs = [string, number, KafkaMessage]
 
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
   consumer: Consumer | undefined = undefined;
@@ -14,13 +16,13 @@ export class KafkaRegistration<This, Args extends unknown[], Return> extends Met
 }
 
 export function KafkaConsume(consumer: Consumer) {
-  function kafkadec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
+  function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const kafkaRegistration = registration as unknown as KafkaRegistration<This, Args, Return>;
+    const kafkaRegistration = registration as unknown as KafkaRegistration<This, KafkaArgs, Return>;
     kafkaRegistration.consumer = consumer;
 
     return descriptor;
@@ -39,7 +41,7 @@ export async function initKafka(dbosExec: DBOSExecutor) {
           const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
           const wfParams = { workflowUUID: workflowUUID };
           // All operations annotated with Kafka decorators must take in these three arguments
-          const args = [topic, partition, message]
+          const args: KafkaArgs = [topic, partition, message]
           // We can only guarantee exactly-once-per-message execution of transactions and workflows.
           if (ro.txnConfig) {
             // Execute the transaction
