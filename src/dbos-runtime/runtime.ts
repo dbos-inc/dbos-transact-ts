@@ -6,6 +6,7 @@ import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
+import { DBOSKafka } from '../kafka/kafka';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,7 +22,7 @@ export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server, adminServer: Server } | undefined
-
+  private kafka: DBOSKafka | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -42,6 +43,8 @@ export class DBOSRuntime {
       const server = new DBOSHttpServer(this.dbosExec)
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
+      this.kafka = new DBOSKafka(this.dbosExec);
+      await this.kafka.initKafka();
     } catch (error) {
       this.dbosExec?.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
@@ -88,6 +91,7 @@ export class DBOSRuntime {
     * Shut down the HTTP server and destroy workflow executor.
     */
   async destroy() {
+    await this.kafka?.destroyKafka();
     if (this.servers) {
       this.servers.appServer.close()
       this.servers.adminServer.close()

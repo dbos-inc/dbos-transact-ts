@@ -48,3 +48,32 @@ export function findPackageRoot(start: string | string[]): string {
 
     return findPackageRoot(start);
 }
+
+/**
+ * Reviver and Replacer
+ * --------------------
+ * These can be passed to JSON.stringify and JSON.parse, respectively, to support more types.
+ *
+ * Additional types supported:
+ * - Buffer
+ *
+ * Currently, these are only used for operation inputs.
+ * TODO: Use in other contexts where we perform serialization and deserialization.
+ */
+
+export function DBOSReplacer(_key: string, value: unknown) {
+  return value;
+}
+
+interface SerializedBuffer {
+  type: 'Buffer';
+  data: number[];
+}
+
+export function DBOSReviver(_key: string, value: unknown): unknown {
+  const candidate = value as SerializedBuffer;
+  if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
+    return Buffer.from(candidate.data);
+  }
+  return value;
+}

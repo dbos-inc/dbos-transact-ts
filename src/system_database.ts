@@ -6,7 +6,7 @@ import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } fro
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
-import { sleep, findPackageRoot } from "./utils";
+import { sleep, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from 'knex';
@@ -136,9 +136,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
-      [initStatus.workflowUUID, JSON.stringify(args)]
+      [initStatus.workflowUUID, JSON.stringify(args, DBOSReplacer)]
     )
-    return JSON.parse(rows[0].inputs) as T;
+    return JSON.parse(rows[0].inputs, DBOSReviver) as T;
   }
 
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {
@@ -242,7 +242,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             sqlStmt += ", ";
           }
           sqlStmt += `($${paramCnt++}, $${paramCnt++})`;
-          values.push(workflowUUID, JSON.stringify(args));
+          values.push(workflowUUID, JSON.stringify(args, DBOSReplacer));
           batchUUIDs.push(workflowUUID);
 
           if (batchUUIDs.length >= this.flushBatchSize) {
@@ -280,7 +280,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       return null
     }
-    return JSON.parse(rows[0].inputs) as T;
+    return JSON.parse(rows[0].inputs, DBOSReviver) as T;
   }
 
   async checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R> {
