@@ -77,14 +77,14 @@ describe("runtime-entrypoint-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("examples/hello");
+    process.chdir("packages/create/templates/hello");
     execSync("mv src/operations.ts src/entrypoint.ts");
     configureHelloExample();
   });
 
   afterAll(() => {
     execSync("mv src/entrypoint.ts src/operations.ts");
-    process.chdir("../..");
+    process.chdir("../../../..");
   });
 
   test("runtime-hello using entrypoint CLI option", async () => {
@@ -127,12 +127,12 @@ describe("runtime-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("examples/hello");
+    process.chdir("packages/create/templates/hello");
     configureHelloExample();
   });
 
   afterAll(() => {
-    process.chdir("../..");
+    process.chdir("../../../..");
   });
 
   test("runtime-hello-jest", () => {
