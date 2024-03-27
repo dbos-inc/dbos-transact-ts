@@ -5,16 +5,16 @@ DBOS Transact is a **transactional TypeScript framework** for developing databas
 You want to build your next database-backed application with DBOS Transact because:
 
 - **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev/tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
-- **It's simple**.  Write your business logic with serverless functions and either [self-host them](https://docs.dbos.dev/tutorials/self-hosting.md) or [deploy them to DBOS cloud](https://docs.dbos.dev/getting-started/quickstart.md#deploying-to-dbos-cloud) in minutes.  Store your data in Postgres&mdash;state management and transactionality are all handled for you.
-- **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging.md), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened.
+- **It's simple**.  Write your business logic with serverless functions and either [self-host them](https://docs.dbos.dev/tutorials/self-hosting) or [deploy them to DBOS cloud](https://docs.dbos.dev/getting-started/quickstart#deploying-to-dbos-cloud) in minutes.  Store your data in Postgres&mdash;state management and transactionality are handled for you.
+- **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened.
 
 ## Getting Started
 
-The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS application running in less than five minutes.
+The fastest way to get started is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS Transact application running in less than five minutes.
 
 ## Main Features
 
-Here are some of the core features of DBOS Transact
+Here are some of the core features of DBOS Transact:
 
 | Feature                                                                       | Description
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -38,7 +38,7 @@ And DBOS Cloud:
 
 You can find our full documentation at [https://docs.dbos.dev/](https://docs.dbos.dev/).
 
-Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an overview of how to start with DBOS.
+Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an overview of how to start with DBOS Transact.
 
 Our documentation has the following sections:
 
