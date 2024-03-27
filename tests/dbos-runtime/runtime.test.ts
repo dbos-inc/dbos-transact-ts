@@ -5,8 +5,6 @@ import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { init } from "../../src/dbos-runtime/init";
-import { DBOSError } from "../../src/error";
 import fs from "fs";
 
 async function waitForMessageTest(command: ChildProcess, port: string) {
@@ -79,14 +77,14 @@ describe("runtime-entrypoint-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("examples/hello");
+    process.chdir("packages/create/templates/hello");
     execSync("mv src/operations.ts src/entrypoint.ts");
     configureHelloExample();
   });
 
   afterAll(() => {
     execSync("mv src/entrypoint.ts src/operations.ts");
-    process.chdir("../..");
+    process.chdir("../../../..");
   });
 
   test("runtime-hello using entrypoint CLI option", async () => {
@@ -129,12 +127,12 @@ describe("runtime-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("examples/hello");
+    process.chdir("packages/create/templates/hello");
     configureHelloExample();
   });
 
   afterAll(() => {
-    process.chdir("../..");
+    process.chdir("../../../..");
   });
 
   test("runtime-hello-jest", () => {
@@ -182,19 +180,5 @@ runtimeConfig:
       fs.copyFileSync(`${filePath}.bak`, filePath);
       fs.unlinkSync(`${filePath}.bak`);
     }
-  });
-});
-
-describe("init-tests", () => {
- test("init an application fails when name is too short", async () => {
-    await expect(init("a")).rejects.toThrow(new DBOSError("Invalid application name: a. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
-   });
-
-  test("init an application fails when name is too long", async () => {
-    await expect(init("a".repeat(31))).rejects.toThrow(new DBOSError("Invalid application name: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
-  });
-
-  test("init an application fails when name contains invalid characters", async () => {
-    await expect(init("abcedf!@")).rejects.toThrow(new DBOSError("Invalid application name: abcedf!@. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting..."));
   });
 });
