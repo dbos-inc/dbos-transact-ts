@@ -1,21 +1,20 @@
-# DBOS TypeScript SDK
+# DBOS Transact
 
-DBOS is a **transactional serverless** SDK and platform that helps you develop and deploy database-backed TypeScript applications.
-You develop your applications in TypeScript and PostgreSQL with this SDK, test them locally, then deploy them to DBOS Cloud in minutes.
+DBOS Transact is a **transactional TypeScript framework** for developing database-backed applications with built-in once-and-only-once code execution.
 
-You want to build your next database-backed application with DBOS because:
+You want to build your next database-backed application with DBOS Transact because:
 
-- **It's simple**.  Write your business logic using serverless functions, test them locally, and deploy them to [DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart-cloud) in minutes.  Store all your data in Postgres&#8212;we'll manage the connections and transactions for you.
 - **It's reliable by default**.  If your workflows are interrupted for any reason, they [will always resume from where they left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev/tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
+- **It's simple**.  Write your business logic with serverless functions and either [self-host them](https://docs.dbos.dev/tutorials/self-hosting) or [deploy them to DBOS cloud](https://docs.dbos.dev/getting-started/quickstart#deploying-to-dbos-cloud) in minutes. Store your data in any PostgreSQL-compatible database&mdash;we'll manage the transactions for you.
 - **It makes debugging easy**.  With our [time travel debugger](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging), you can "rewind time" and replay any DBOS Cloud trace locally on your computer, exactly as it originally happened.
 
 ## Getting Started
 
-The fastest way to get started with DBOS is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS application running in less than five minutes.
+The fastest way to get started is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS Transact application running in less than five minutes.
 
 ## Main Features
 
-Here are some of the core features of the DBOS TypeScript SDK:
+Here are some of the core features of DBOS Transact:
 
 | Feature                                                                       | Description
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -39,12 +38,12 @@ And DBOS Cloud:
 
 You can find our full documentation at [https://docs.dbos.dev/](https://docs.dbos.dev/).
 
-Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an overview of how to start with DBOS.
+Check out our [Getting Started](https://docs.dbos.dev/getting-started/) for an overview of how to start with DBOS Transact.
 
 Our documentation has the following sections:
 
 - [Getting Started](https://docs.dbos.dev/getting-started)
-- [DBOS SDK Tutorials](https://docs.dbos.dev/category/dbos-sdk-tutorials)
+- [DBOS Transact Tutorials](https://docs.dbos.dev/category/dbos-transact-tutorials)
 - [DBOS Cloud Tutorials](https://docs.dbos.dev/category/dbos-cloud-tutorials)
 - [API Reference](https://docs.dbos.dev/category/reference)
 - [Concepts and Explanations](https://docs.dbos.dev/category/concepts-and-explanations)
