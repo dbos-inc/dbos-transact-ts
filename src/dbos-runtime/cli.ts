@@ -3,7 +3,6 @@ import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfig } from '../dbos-executor';
-import { init } from './init';
 import { debugWorkflow } from './debug';
 import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
@@ -65,8 +64,8 @@ program
   .command('init')
   .description('Init a DBOS application')
   .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .action(async (options: { appName: string }) => {
-    await init(options.appName);
+  .action((_options: { appName: string }) => {
+    console.log("NOTE: This command has been removed in favor of `npx @dbos-inc/create` or `npm create @dbos-inc`");
   });
 
 program
