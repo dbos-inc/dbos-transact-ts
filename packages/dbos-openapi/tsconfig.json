@@ -27,4 +27,7 @@
     ".",
     "applications"
   ],
+  "exclude": [
+    "dist",
+  ],
 }
