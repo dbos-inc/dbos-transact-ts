@@ -19,8 +19,8 @@
     "lint": "eslint --fix --ext .ts --ignore-pattern foundationdb/ --ignore-pattern templates/ .",
     "lint-fdb": "eslint --fix --ext .ts --ignore-pattern templates/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "test": "npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && npm run build && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
-    "test-fdb": "npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && npm run build-fdb && jest --runInBand --coverage"
+    "test": "npm run build && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
+    "test-fdb": "npm run build-fdb && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"
   },
   "bin": {
     "dbos": "./dist/src/dbos-runtime/cli.js",

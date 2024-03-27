@@ -16,11 +16,4 @@
     "skipLibCheck": true,                                /* Skip type checking all .d.ts files. */
     "composite": true,
   },
-  "include": [                                         /* Specifies an array of filenames or patterns to include in the program. */
-    "src",
-    "schemas",
-    "tests",
-    "jest.setup.ts",
-    "packages",
-  ]
 }
