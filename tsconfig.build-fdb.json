@@ -3,6 +3,5 @@
   "include": [
     "src/**/*",
     "schemas/**/*",
-    "packages/**/*"
   ]
 }
