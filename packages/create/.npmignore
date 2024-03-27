@@ -10,3 +10,9 @@ tsconfig.json
 
 # ignore any packed packages in the repo
 *.tgz
+
+# Include the templates code, but not node_modules or dist
+!templates/**
+templates/hello/.dbos
+templates/hello/dist
+templates/hello/node_modules
