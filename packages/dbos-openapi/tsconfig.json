@@ -28,6 +28,6 @@
     "applications"
   ],
   "exclude": [
-    "dist",
-  ],
+    "dist"
+  ]
 }

@@ -195,6 +195,10 @@ export class OpenApiGenerator {
     switch (verb) {
       case APITypes.GET: return [$path, { get: operation }];
       case APITypes.POST: return [$path, { post: operation }];
+      default: {
+        const _: never = verb;
+        break;
+      }
     }
   }
 
@@ -285,12 +289,17 @@ export class OpenApiGenerator {
 
   getLocation(parameter: ParameterInfo, argSource: ArgSources): "query" | "path" | undefined {
     switch (argSource) {
+      case ArgSources.DEFAULT:
+      case ArgSources.BODY:
+        break;
       case ArgSources.QUERY: return 'query';
       case ArgSources.URL: return 'path';
-      default:
-        this.#diags.raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
-        return;
+      default: {
+        const _: never = argSource;
+        break;
+      }
     }
+    this.#diags.raise(`Unsupported Parameter ArgSource: ${argSource}`, parameter.node);
   }
 
   generateRequestBody(sourcedParams: [ParameterInfo, ArgSources][]): OpenApi3.RequestBodyObject | undefined {
@@ -384,20 +393,27 @@ export class OpenApiGenerator {
       this.#diags.raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
       return;
     }
-    switch (argSource.args[0].name.text) {
-      case "BODY": return ArgSources.BODY;
-      case "QUERY": return ArgSources.QUERY;
-      case "URL": return ArgSources.URL;
-      case "DEFAULT": return getDefaultArgSource(verb);
-      default:
-        this.#diags.raise(`Unexpected ArgSource argument: ${argSource.args[0].name.text}`, parameter.node);
+    const name = argSource.args[0].name.text as ArgSources;
+    switch (name) {
+      case ArgSources.DEFAULT: return getDefaultArgSource(verb);
+      case ArgSources.BODY: return ArgSources.BODY;
+      case ArgSources.QUERY: return ArgSources.QUERY;
+      case ArgSources.URL: return ArgSources.URL;
+      default: {
+        const _: never = name;
+        this.#diags.raise(`Unexpected ArgSource argument: ${name}`, parameter.node);
         return;
+      }
     }
 
-    function getDefaultArgSource(verb: APITypes): ArgSources.BODY | ArgSources.QUERY {
+    function getDefaultArgSource(verb: APITypes): ArgSources.BODY | ArgSources.QUERY | undefined {
       switch (verb) {
         case APITypes.GET: return ArgSources.QUERY;
         case APITypes.POST: return ArgSources.BODY;
+        default: {
+          const _: never = verb;
+          return;
+        }
       }
     }
   }
