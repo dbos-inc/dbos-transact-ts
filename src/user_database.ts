@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError } from "pg";
+import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
@@ -103,14 +103,14 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    return this.pool.query(sql, params).then((value) => {
+    return this.pool.query<QueryResultRow>(sql, params).then((value) => {
       return value.rows as R[];
     });
   }
 
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const pgClient: PoolClient = client as PoolClient;
-    return pgClient.query(sql, params).then((value) => {
+    return pgClient.query<QueryResultRow>(sql, params).then((value) => {
       return value.rows as R[];
     });
   }
