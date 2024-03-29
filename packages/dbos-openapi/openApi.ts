@@ -393,14 +393,16 @@ export class OpenApiGenerator {
       this.#diags.raise(`Unexpected ArgSource argument type: ${ts.SyntaxKind[argSource.args[0].kind]}`, parameter.node);
       return;
     }
-    const name = argSource.args[0].name.text as ArgSources;
-    switch (name) {
+
+    const name = argSource.args[0].name.text;
+    const argSrc = name as ArgSources;
+    switch (argSrc) {
       case ArgSources.DEFAULT: return getDefaultArgSource(verb);
       case ArgSources.BODY: return ArgSources.BODY;
       case ArgSources.QUERY: return ArgSources.QUERY;
       case ArgSources.URL: return ArgSources.URL;
       default: {
-        const _: never = name;
+        const _: never = argSrc;
         this.#diags.raise(`Unexpected ArgSource argument: ${name}`, parameter.node);
         return;
       }
