@@ -26,8 +26,8 @@ export const copy = async (
     dot: true,
     absolute: false,
     stats: false,
-    ignore: ['**/node_modules/**', '**/dist/**']
-  })
+    ignore: ['package-lock.json', '**/node_modules/**', '**/dist/**']
+  });
 
   return Promise.all(
     sourceFiles.map(async (p) => {
@@ -76,7 +76,7 @@ export async function init(appName: string, templateName: string) {
   packageJson.name = appName;
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
   execSync("npm install --no-fund --save @dbos-inc/dbos-sdk@latest", {cwd: appName, stdio: 'inherit'})
-  execSync("npm ci --no-fund", {cwd: appName, stdio: 'inherit'})
+  execSync("npm i --no-fund", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest", {cwd: appName, stdio: 'inherit'})
   console.log("Application initialized successfully!")
 }
