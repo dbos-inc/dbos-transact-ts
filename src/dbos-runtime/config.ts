@@ -8,6 +8,7 @@ import { UserDatabaseName } from "../user_database";
 import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
+import { writeFileSync } from "fs";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 
@@ -38,29 +39,42 @@ export interface ConfigFile {
 * Will find anything in curly braces.
 * TODO: Use a more robust solution.
 */
-function substituteEnvVars(content: string): string {
+export function substituteEnvVars(content: string): string {
   const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
   return content.replace(regex, (_, g1: string) => {
-      return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
   });
 }
 
-export function loadConfigFile(configFilePath: string): ConfigFile | undefined {
-  let configFile: ConfigFile | undefined;
+export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
     const configFileContent = readFileSync(configFilePath);
     const interpolatedConfig = substituteEnvVars(configFileContent as string);
-    configFile = YAML.parse(interpolatedConfig) as ConfigFile;
+    const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
+    return configFile;
   } catch (e) {
     if (e instanceof Error) {
       throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
+    } else {
+      throw e;
     }
   }
-
-  return configFile;
 }
 
-export function constructPoolConfig(configFile: ConfigFile, debugMode: boolean =false) {
+export function writeConfigFile(configFile: ConfigFile, configFilePath: string) {
+  try {
+    const configFileContent = YAML.stringify(configFile);
+    writeFileSync(configFilePath, configFileContent);
+  } catch (e) {
+    if (e instanceof Error) {
+      throw new DBOSInitializationError(`Failed to write config to ${configFilePath}: ${e.message}`);
+    } else {
+      throw e;
+    }
+  }
+}
+
+export function constructPoolConfig(configFile: ConfigFile, debugMode: boolean = false) {
   if (!configFile.database) {
     throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
   }
@@ -82,7 +96,12 @@ export function constructPoolConfig(configFile: ConfigFile, debugMode: boolean =
     if (debugMode) {
       poolConfig.password = "DEBUG-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
     } else {
-      throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+      const pgPassword: string | undefined = process.env.PGPASSWORD;
+      if (pgPassword) {
+        poolConfig.password = pgPassword;
+      } else {
+        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+      }
     }
   }
 

@@ -8,6 +8,7 @@ import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
+import { configure } from './configure';
 
 const program = new Command();
 
@@ -21,6 +22,13 @@ export interface DBOSCLIStartOptions {
   configfile?: string,
   entrypoint?: string,
 }
+
+export interface DBOSConfigureOptions {
+  host?: string,
+  port?: number,
+  username?: string,
+}
+
 
 interface DBOSDebugOptions {
   proxy: string, // TODO: in the future, we provide the proxy URL
@@ -66,6 +74,16 @@ program
   .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
   .action((_options: { appName: string }) => {
     console.log("NOTE: This command has been removed in favor of `npx @dbos-inc/create` or `npm create @dbos-inc`");
+  });
+
+
+program
+  .command('configure')
+  .option('-h, --host <string>', 'Specify your Postgres server hostname')
+  .option('-p, --port <number>', 'Specify your Postgres server port')
+  .option('-U, --username <number>', 'Specify your Postgres username')
+  .action(async (options: DBOSConfigureOptions) => {
+    await configure(options.host, options.port, options.username);
   });
 
 program
