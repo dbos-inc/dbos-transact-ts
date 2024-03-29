@@ -132,8 +132,9 @@ applicationCommands
   .command('delete')
   .description('Delete this application')
   .argument('[string]', 'application name')
-  .action(async (appName?: string) => {
-    const exitCode = await deleteApp(DBOSCloudHost, appName);
+  .option('--dropdb', 'Drop application database')
+  .action(async (appName: string | undefined, options: { dropdb: boolean }) => {
+    const exitCode = await deleteApp(DBOSCloudHost, options.dropdb, appName);
     process.exit(exitCode);
   });
 
