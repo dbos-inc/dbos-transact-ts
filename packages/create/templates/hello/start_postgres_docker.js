@@ -1,12 +1,24 @@
 const { execSync } = require('child_process');
 
+// Default PostgreSQL port
+let port = '5432';
+
+// Set the host PostgreSQL port with the -p/--port flag.
+process.argv.forEach((val, index) => {
+  if (val === '-p' || val === '--port') {
+    if (process.argv[index + 1]) {
+      port = process.argv[index + 1];
+    }
+  }
+});
+
 if (!process.env.PGPASSWORD) {
   console.error("Error: PGPASSWORD is not set.");
   process.exit(1);
 }
 
 try {
-  execSync(`docker run --rm --name=dbos-db --env=POSTGRES_PASSWORD=${process.env.PGPASSWORD} --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p 5432:5432 -d postgres:16.1`);
+  execSync(`docker run --rm --name=dbos-db --env=POSTGRES_PASSWORD="${process.env.PGPASSWORD}" --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p ${port}:5432 -d postgres:16.1`);
   console.log("Waiting for PostgreSQL to start...");
 
   let attempts = 30;
