@@ -79,6 +79,7 @@ program
 
 program
   .command('configure')
+  .alias('config')
   .option('-h, --host <string>', 'Specify your Postgres server hostname')
   .option('-p, --port <number>', 'Specify your Postgres server port')
   .option('-U, --username <number>', 'Specify your Postgres username')
