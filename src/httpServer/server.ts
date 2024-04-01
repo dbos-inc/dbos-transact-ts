@@ -1,4 +1,4 @@
-import Koa from 'koa';
+import Koa, { Context } from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
@@ -46,7 +46,19 @@ export class DBOSHttpServer {
     this.adminRouter = new Router();
     this.logger = dbosExec.logger;
     this.app = new Koa();
-    this.app.use(cors());
+    if (dbosExec.config.http?.cors_middleware ?? true) {
+      this.app.use(cors({
+        credentials: dbosExec.config.http?.credentials ?? true,
+        origin:
+          (o: Context)=>{
+            const whitelist = dbosExec.config.http?.allowed_origins;
+            if (whitelist) {
+              return (whitelist.includes(o.request.header.origin!) ? o.request.header.origin! : whitelist[0]);
+            }
+            return o.request.header.origin!;
+          }
+      }));
+    }
     this.adminApp = new Koa();
     this.adminApp.use(bodyParser());
     this.adminApp.use(cors());

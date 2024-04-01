@@ -26,6 +26,11 @@ export interface ConfigFile {
     migrate?: string[];
     rollback?: string[];
   };
+  http?: {
+    cors_middleware?: boolean;
+    credentials?: boolean;
+    allowed_origins?: string[];
+  };
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
@@ -163,6 +168,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
     system_database: `${poolConfig.database}_dbos_sys`,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
+    http: configFile.http,
     dbClientMetadata: {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       entities: configFile.dbClientMetadata?.entities,

@@ -113,6 +113,24 @@
         }
       }
     },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cors_middleware": {
+          "type": "boolean"
+        },
+        "credentials": {
+          "type": "boolean"
+        },
+        "allowed_origins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "application": {},
     "dbClientMetadata": {}
   },
