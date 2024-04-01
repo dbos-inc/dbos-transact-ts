@@ -52,10 +52,11 @@ export class DBOSHttpServer {
         origin:
           (o: Context)=>{
             const whitelist = dbosExec.config.http?.allowed_origins;
-            if (whitelist) {
-              return (whitelist.includes(o.request.header.origin!) ? o.request.header.origin! : whitelist[0]);
+            const origin = o.request.header.origin ?? '*';
+            if (whitelist && whitelist.length > 0) {
+              return (whitelist.includes(origin) ? origin : whitelist[0]);
             }
-            return o.request.header.origin!;
+            return o.request.header.origin || '*';
           }
       }));
     }
