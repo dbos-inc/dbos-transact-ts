@@ -46,20 +46,6 @@ export class DBOSHttpServer {
     this.adminRouter = new Router();
     this.logger = dbosExec.logger;
     this.app = new Koa();
-    if (dbosExec.config.http?.cors_middleware ?? true) {
-      this.app.use(cors({
-        credentials: dbosExec.config.http?.credentials ?? true,
-        origin:
-          (o: Context)=>{
-            const whitelist = dbosExec.config.http?.allowed_origins;
-            const origin = o.request.header.origin ?? '*';
-            if (whitelist && whitelist.length > 0) {
-              return (whitelist.includes(origin) ? origin : whitelist[0]);
-            }
-            return o.request.header.origin || '*';
-          }
-      }));
-    }
     this.adminApp = new Koa();
     this.adminApp.use(bodyParser());
     this.adminApp.use(cors());
@@ -181,6 +167,25 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
         const defaults = ro.defaults as MiddlewareDefaults;
+        // Check if we need to apply a custom CORS
+        if (defaults.koaCors) {
+          router.use(ro.apiURL, defaults.koaCors);
+        } else {
+          if (dbosExec.config.http?.cors_middleware ?? true) {
+            router.use(ro.apiURL, cors({
+              credentials: dbosExec.config.http?.credentials ?? true,
+              origin:
+                (o: Context)=>{
+                  const whitelist = dbosExec.config.http?.allowed_origins;
+                  const origin = o.request.header.origin ?? '*';
+                  if (whitelist && whitelist.length > 0) {
+                    return (whitelist.includes(origin) ? origin : whitelist[0]);
+                  }
+                  return o.request.header.origin || '*';
+                }
+            }));
+          }
+        }
         // Check if we need to apply a custom body parser
         if (defaults.koaBodyParser) {
           router.use(ro.apiURL, defaults.koaBodyParser)

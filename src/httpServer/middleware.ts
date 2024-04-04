@@ -41,12 +41,14 @@ export interface DBOSHttpAuthReturn {
 export interface MiddlewareDefaults extends RegistrationDefaults {
   authMiddleware?: DBOSHttpAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
+  koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
 }
 
 export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements MiddlewareDefaults {
   authMiddleware?: DBOSHttpAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
+  koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
 
   constructor(ctor: CT) {
@@ -79,6 +81,17 @@ export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
   function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaBodyParser = koaBodyParser;
+  }
+  return clsdec;
+}
+
+/**
+ * Define a Koa CORS policy applied before any middleware. If not set, the default @koa/cors (w/ .yaml config) is used.
+ */
+export function KoaCors(koaCors: Koa.Middleware) {
+  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    clsreg.koaCors = koaCors;
   }
   return clsdec;
 }
