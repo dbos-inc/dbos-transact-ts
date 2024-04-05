@@ -179,7 +179,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
                   const whitelist = dbosExec.config.http?.allowed_origins;
                   const origin = o.request.header.origin ?? '*';
                   if (whitelist && whitelist.length > 0) {
-                    return (whitelist.includes(origin) ? origin : whitelist[0]);
+                    return (whitelist.includes(origin) ? origin : '');
                   }
                   return o.request.header.origin || '*';
                 }
