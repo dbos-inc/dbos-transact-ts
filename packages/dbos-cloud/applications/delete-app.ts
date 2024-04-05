@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName } from "../cloudutils.js";
 
-export async function deleteApp(host: string, appName?: string): Promise<number> {
+export async function deleteApp(host: string, dropdb: boolean, appName?: string): Promise<number> {
   const logger = getLogger()
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -17,6 +17,9 @@ export async function deleteApp(host: string, appName?: string): Promise<number>
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
+      },
+      data: {
+        "dropdb": dropdb,
       },
     });
 
