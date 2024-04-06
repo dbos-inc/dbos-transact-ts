@@ -58,6 +58,11 @@ export interface DBOSConfig {
   readonly application?: object;
   readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
+  readonly http?: {
+    readonly cors_middleware?: boolean;
+    readonly credentials?: boolean;
+    readonly allowed_origins?: string[];
+  };
 }
 
 interface WorkflowInfo {
