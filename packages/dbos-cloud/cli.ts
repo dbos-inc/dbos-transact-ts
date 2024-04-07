@@ -32,7 +32,7 @@ try {
     pkg: packageJson,
     updateCheckInterval: 0
   })
-  if (notifier.update && !notifier.update.current.includes("preview") && !notifier.update.current.includes("placeholder")) {
+  if (notifier.update && !notifier.update.current.includes("preview") && !notifier.update.current.includes("placeholder") && (notifier.update.current !== notifier.update.latest)) {
     console.log(`
   ${chalk.yellow("-----------------------------------------------------------------------------------------")}
 
