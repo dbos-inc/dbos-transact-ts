@@ -26,16 +26,18 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
   return appName
 }
 
-// FIXME: we should have a global instance of the logger created in cli.ts
-export function getLogger(): Logger {
+export type CLILogger = ReturnType<typeof createLogger>;
+let curLogger: Logger | undefined = undefined;
+export function getLogger(verbose?:boolean): CLILogger {
+  if (curLogger) return curLogger;
   const winstonTransports = [];
   winstonTransports.push(
     new transports.Console({
       format: consoleFormat,
-      level:  "info",
+      level:  verbose ? "debug" : "info",
     })
   );
-  return createLogger({ transports: winstonTransports });
+  return curLogger = createLogger({ transports: winstonTransports });
 }
 
 const consoleFormat = format.combine(
