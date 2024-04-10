@@ -75,9 +75,9 @@ export class DBOSDataType {
   }
 }
 
-const paramMetadataKey = Symbol("dbos:parameter");
-const methodMetadataKey = Symbol("dbos:method");
-const classMetadataKey = Symbol("dbos:class");
+const paramMetadataKey = Symbol.for("dbos:parameter");
+const methodMetadataKey = Symbol.for("dbos:method");
+const classMetadataKey = Symbol.for("dbos:class");
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
