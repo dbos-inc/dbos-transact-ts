@@ -166,11 +166,11 @@ function readInterpolatedConfig(configFilePath: string, verbose: boolean, logger
   const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
   return configFileContent.replace(regex, (_, g1: string) => {
     if (process.env[g1] !== undefined) {
-      if (verbose) logger.info(`      Inserting value of '${g1}' from process environment.`);
+      if (verbose) logger.info(`      Substituting value of '${g1}' from process environment.`);
       return process.env[g1] ?? "";
     }
 
-    if (verbose) logger.info(`      Variable '${g1}' would be taken from process environment, but is not defined.`);
+    if (verbose) logger.info(`      Variable '${g1}' would be substituted from the process environment, but is not defined.`);
     return "";
   });
 }
