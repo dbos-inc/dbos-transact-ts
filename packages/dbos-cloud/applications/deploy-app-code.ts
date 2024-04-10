@@ -18,7 +18,7 @@ function convertPathForGlob(p: string) {
   }
   return p;
 }
-async function createZipData(): Promise<string> {
+async function createZipData(verbose: boolean, logger: {debug: (arg: string)=>void}): Promise<string> {
     const zip = new JSZip();
 
     const globPattern = convertPathForGlob(path.join(process.cwd(), '**', '*'));
@@ -36,39 +36,53 @@ async function createZipData(): Promise<string> {
     });
 
     files.forEach(file => {
+        if (verbose) logger.debug(`    Zipping file ${file}`);
         const relativePath = path.relative(process.cwd(), file).replace(/\\/g, '/');
         const fileData = readFileSync(file);
         zip.file(relativePath, fileData, { binary: true });
     });
 
     // Add the interpolated config file at package root
-    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath)
+
+    if (verbose) logger.debug(`    Interpreting configuration from ${dbosConfigFilePath}`);
+    const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath, verbose, logger);
     zip.file(dbosConfigFilePath, interpolatedConfig, { binary: true });
 
     // Generate ZIP file as a Buffer
+    if (verbose) logger.debug(`    Finalizing zip archive ...`);
     const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    if (verbose) logger.debug(`    ... zip archive complete.`);
     return buffer.toString('base64');
 }
 
 
-export async function deployAppCode(host: string, rollback: boolean): Promise<number> {
-  const logger = getLogger()
+export async function deployAppCode(host: string, rollback: boolean, verbose: boolean): Promise<number> {
+  const logger = getLogger();
+  if (verbose) logger.debug("Getting cloud credentials...");
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+  if (verbose) logger.debug("  ... got cloud credentials");
 
+  if (verbose) logger.debug("Retrieving app name...");
   const appName = retrieveApplicationName(logger);
   if (!appName) {
+    if (verbose) logger.warn("Failed to get app name.");
     return 1;
   }
+  if (verbose) logger.debug(`  ... app name is ${appName}.`);
 
   // Verify that package-lock.json exists
+  if (verbose) logger.debug("Checking for package-lock.json...");
   if (!existsSync(path.join(process.cwd(), 'package-lock.json'))) {
     logger.error("package-lock.json not found. Please run 'npm install' before deploying.")
     return 1;
   }
+  if (verbose) logger.debug(" ... package-lock.json exists.");
 
   try {
-    const zipData = await createZipData();
+    if (verbose) logger.debug("Creating application zip ...");
+    const zipData = await createZipData(verbose, logger);
+    if (verbose) logger.debug("  ... application zipped.");
 
     // Submit the deploy request
     let url = '';
@@ -147,10 +161,16 @@ export async function deployAppCode(host: string, rollback: boolean): Promise<nu
   }
 }
 
-function readInterpolatedConfig(configFilePath: string): string {
+function readInterpolatedConfig(configFilePath: string, verbose: boolean, logger: {debug: (arg: string)=>void}): string {
   const configFileContent = checkReadFile(configFilePath) as string;
   const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
   return configFileContent.replace(regex, (_, g1: string) => {
-    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
-});
+    if (process.env[g1] !== undefined) {
+      if (verbose) logger.debug(`      Inserting value of '${g1}' from process environment.`);
+      return process.env[g1] ?? "";
+    }
+
+    if (verbose) logger.debug(`      Variable '${g1}' would be taken from process environment, but is not defined.`);
+    return "";
+  });
 }
