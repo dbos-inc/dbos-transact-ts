@@ -65,7 +65,7 @@ export async function deployAppCode(host: string, rollback: boolean, verbose: bo
   logger.debug("Retrieving app name...");
   const appName = retrieveApplicationName(logger);
   if (!appName) {
-    logger.warn("Failed to get app name.");
+    logger.error("Failed to get app name.");
     return 1;
   }
   logger.debug(`  ... app name is ${appName}.`);
