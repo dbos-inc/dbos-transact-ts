@@ -6,7 +6,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbos-inc/dbos-ts",
+    "url": "https://github.com/dbos-inc/dbos-transact",
     "directory": "packages/dbos-cloud"
   },
   "homepage": "https://docs.dbos.dev/",
