@@ -139,7 +139,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
       if (!this.#dbosExec.debugProxy) {
         // Direct mode skips execution and return the recorded result.
-        return check as R;
+        return (check as RecordedResult<R>).output;
       }
       // If we have a proxy, then execute the user's transaction.
       const result = await txn(tCtxt, ...args);

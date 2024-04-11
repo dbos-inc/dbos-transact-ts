@@ -4,7 +4,7 @@ import { UserDatabaseName } from "../src/user_database";
 import { setApplicationVersion } from "../src/dbos-runtime/applicationVersion";
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugProxy?: string): DBOSConfig {
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugMode?: boolean, debugProxy?: string): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error("DB_PASSWORD or PGPASSWORD environment variable not set");
@@ -38,6 +38,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugProxy?:
       entities: ["KV"],
     },
     debugProxy: debugProxy,
+    debugMode: debugMode,
   };
 
   return dbosTestConfig;

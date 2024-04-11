@@ -165,16 +165,18 @@ export class DBOSExecutor {
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
-    if (this.debugProxy) {
-      this.logger.info("Running in debug mode with a proxy!");
-      try {
-        const url = new URL(this.config.debugProxy!);
-        this.config.poolConfig.host = url.hostname;
-        this.config.poolConfig.port = parseInt(url.port, 10);
-        this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
-      } catch (err) {
-        this.logger.error(err);
-        throw err;
+    if (this.debugMode) {
+      this.logger.info("Running in debug mode!");
+      if (this.debugProxy) {
+        try {
+          const url = new URL(this.config.debugProxy!);
+          this.config.poolConfig.host = url.hostname;
+          this.config.poolConfig.port = parseInt(url.port, 10);
+          this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
+        } catch (err) {
+          this.logger.error(err);
+          throw err;
+        }
       }
     }
 

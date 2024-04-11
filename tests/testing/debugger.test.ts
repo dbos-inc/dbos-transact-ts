@@ -12,26 +12,30 @@ describe("debugger-test", () => {
   let username: string;
   let config: DBOSConfig;
   let debugConfig: DBOSConfig;
+  let debugProxyConfig: DBOSConfig;
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
+  let debugProxyRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    debugConfig = generateDBOSTestConfig(undefined, "http://127.0.0.1:5432");
+    debugConfig = generateDBOSTestConfig(undefined, true);
+    debugProxyConfig = generateDBOSTestConfig(undefined, true, "localhost:5432");
     username = config.poolConfig.user || "postgres";
     await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
-    // TODO: connect to the real proxy.
     debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
     testRuntime = await createInternalTestRuntime([DebuggerTest], config);
+    debugProxyRuntime = await createInternalTestRuntime([DebuggerTest], debugProxyConfig);     // TODO: connect to the real proxy.
     DebuggerTest.cnt = 0;
   });
 
   afterEach(async () => {
     await debugRuntime.destroy();
     await testRuntime.destroy();
+    await debugProxyRuntime.destroy();
   });
 
   class DebuggerTest {
@@ -142,6 +146,8 @@ describe("debugger-test", () => {
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
+    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow("Workflow status or inputs not found!");
@@ -166,6 +172,13 @@ describe("debugger-test", () => {
       .sleepWorkflow(2)
       .then((x) => x.getResult());
     expect(debugRes).toBe(3);
+
+    // Proxy mode should return the same result
+    const debugProxyRes = await debugProxyRuntime
+      .invoke(DebuggerTest, wfUUID)
+      .sleepWorkflow(2)
+      .then((x) => x.getResult());
+    expect(debugProxyRes).toBe(3);
   });
 
   test("debug-void-transaction", async () => {
@@ -196,6 +209,9 @@ describe("debugger-test", () => {
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
+    // Proxy mode should return the same result.
+    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("Workflow status or inputs not found!");
@@ -215,6 +231,9 @@ describe("debugger-test", () => {
 
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
+
+    // Proxy mode should return the same result.
+    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
