@@ -49,10 +49,9 @@ export class DBOSRuntime {
       this.dbosExec?.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
         console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
-        process.exit(1);
       }
       await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
-      throw error;
+      process.exit(1);
     }
     const onSigterm = this.onSigterm.bind(this);
     process.on('SIGTERM', onSigterm);
