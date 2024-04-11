@@ -55,7 +55,7 @@ export interface DBOSConfig {
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
-  readonly environmentVariables?: Record<string, string>
+  readonly env?: Record<string, string>
   readonly application?: object;
   readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
@@ -146,8 +146,8 @@ export class DBOSExecutor {
     this.debugMode = config.debugProxy ? true : false;
 
     // Set configured environment variables
-    if (config.environmentVariables) {
-      for (const [key, value] of Object.entries(config.environmentVariables)) {
+    if (config.env) {
+      for (const [key, value] of Object.entries(config.env)) {
         process.env[key] = value;
       }
     }

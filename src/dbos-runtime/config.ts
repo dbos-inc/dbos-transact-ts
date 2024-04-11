@@ -34,7 +34,7 @@ export interface ConfigFile {
   telemetry?: TelemetryConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   application: any;
-  environmentVariables: Record<string, string>;
+  env: Record<string, string>;
   runtimeConfig?: DBOSRuntimeConfig;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dbClientMetadata?: any;
@@ -169,7 +169,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
     system_database: `${poolConfig.database}_dbos_sys`,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
-    environmentVariables: configFile.environmentVariables || {},
+    env: configFile.env || {},
     http: configFile.http,
     dbClientMetadata: {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access

@@ -168,7 +168,7 @@ describe("dbos-config", () => {
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
           app_db_name: 'some DB'
-        environmentVariables:
+        env:
           FOOFOO: barbar
       `;
       jest.restoreAllMocks();
