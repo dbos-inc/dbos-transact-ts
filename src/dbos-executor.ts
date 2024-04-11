@@ -59,6 +59,7 @@ export interface DBOSConfig {
   readonly application?: object;
   readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
+  readonly debugMode?: boolean;
   readonly http?: {
     readonly cors_middleware?: boolean;
     readonly credentials?: boolean;
@@ -134,6 +135,7 @@ export class DBOSExecutor {
   static readonly defaultNotificationTimeoutSec = 60;
 
   readonly debugMode: boolean;
+  readonly debugProxy: string | undefined;
   static systemDBSchemaName = "dbos";
 
   readonly logger: Logger;
@@ -143,7 +145,8 @@ export class DBOSExecutor {
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
-    this.debugMode = config.debugProxy ? true : false;
+    this.debugMode = config.debugMode ?? false;
+    this.debugProxy = config.debugProxy;
 
     // Set configured environment variables
     if (config.env) {
@@ -162,8 +165,8 @@ export class DBOSExecutor {
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
-    if (this.debugMode) {
-      this.logger.info("Running in debug mode!");
+    if (this.debugProxy) {
+      this.logger.info("Running in debug mode with a proxy!");
       try {
         const url = new URL(this.config.debugProxy!);
         this.config.poolConfig.host = url.hostname;
