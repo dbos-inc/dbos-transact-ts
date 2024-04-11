@@ -159,6 +159,29 @@ describe("dbos-config", () => {
       await dbosExec.telemetryCollector.destroy();
     });
 
+    test("environment variables are set correctly", async () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          app_db_name: 'some DB'
+        env:
+          FOOFOO: barbar
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
+      expect(process.env.FOOFOO).toBe("barbar")
+      console.log(process.env)
+      // We didn't init, so do some manual cleanup only
+      clearInterval(dbosExec.flushBufferID);
+      await dbosExec.telemetryCollector.destroy();
+    });
+
     test("getConfig throws when it finds a value of different type than the default", async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);

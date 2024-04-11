@@ -55,6 +55,7 @@ export interface DBOSConfig {
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
+  readonly env?: Record<string, string>
   readonly application?: object;
   readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
@@ -143,6 +144,14 @@ export class DBOSExecutor {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugProxy ? true : false;
+
+    // Set configured environment variables
+    if (config.env) {
+      for (const [key, value] of Object.entries(config.env)) {
+        process.env[key] = value;
+      }
+    }
+
     if (config.telemetry?.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
       this.telemetryCollector = new TelemetryCollector(OTLPExporter);
