@@ -130,7 +130,7 @@ async function createDBOSTables(configFile: ConfigFile) {
   const userPoolConfig: PoolConfig = constructPoolConfig(configFile)
 
   const systemPoolConfig = { ...userPoolConfig };
-  systemPoolConfig.database = `${userPoolConfig.database}_dbos_sys`;
+  systemPoolConfig.database = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
 
   const pgUserClient = new Client(userPoolConfig);
   await pgUserClient.connect();

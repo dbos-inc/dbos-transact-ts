@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbos-inc/dbos-ts",
+    "url": "https://github.com/dbos-inc/dbos-transact",
     "directory": "packages/openapi-gen"
   },
   "main": "cli.ts",

@@ -52,7 +52,7 @@ export class DBOSRuntime {
         process.exit(1);
       }
       await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
-      throw error;
+      process.exit(1);
     }
     const onSigterm = this.onSigterm.bind(this);
     process.on('SIGTERM', onSigterm);

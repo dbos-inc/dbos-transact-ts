@@ -21,6 +21,7 @@ export interface ConfigFile {
     password?: string;
     connectionTimeoutMillis?: number;
     app_db_name: string;
+    sys_db_name?: string;
     ssl_ca?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
@@ -166,7 +167,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, debugMode: boo
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
-    system_database: `${poolConfig.database}_dbos_sys`,
+    system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
     env: configFile.env || {},

@@ -32,6 +32,10 @@
           "type": "string",
           "description": "The name of the application database"
         },
+        "sys_db_name": {
+          "type": "string",
+          "description": "The name of the system database"
+        },
         "ssl_ca": {
           "type": "string",
           "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file"
@@ -132,6 +136,7 @@
       }
     },
     "application": {},
+    "env": {},
     "dbClientMetadata": {}
   },
   "required": [
