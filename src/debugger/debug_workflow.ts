@@ -90,15 +90,17 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       txn_id: rows[0].txn_id,
     };
 
-    // Send a signal to the debug proxy.
-    await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
+    if (this.#dbosExec.debugProxy) {
+      // Send a signal to the debug proxy.
+      await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
+    }
 
     return res;
   }
 
   /**
    * Execute a transactional function in debug mode.
-   * It connects to a debug proxy and everything should be read-only.
+   * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
@@ -128,10 +130,18 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       check = await this.checkExecution<R>(client, funcID);
 
       if (check instanceof Error) {
-        this.logger.warn(`original transaction ${txn.name} failed with error: ${check.message}`);
+        if (this.#dbosExec.debugProxy) {
+          this.logger.warn(`original transaction ${txn.name} failed with error: ${check.message}`);
+        } else {
+          throw check; // In direct mode, directly throw the error.
+        }
       }
 
-      // Execute the user's transaction.
+      if (!this.#dbosExec.debugProxy) {
+        // Direct mode skips execution and return the recorded result.
+        return (check as RecordedResult<R>).output;
+      }
+      // If we have a proxy, then execute the user's transaction.
       const result = await txn(tCtxt, ...args);
       return result;
     };

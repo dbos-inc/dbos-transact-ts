@@ -31,8 +31,8 @@ export interface DBOSConfigureOptions {
 
 
 interface DBOSDebugOptions {
-  proxy: string, // TODO: in the future, we provide the proxy URL
   uuid: string, // Workflow UUID
+  proxy: string,
   loglevel?: string,
   configfile?: string,
   entrypoint?: string,
@@ -58,14 +58,14 @@ program
 program
   .command('debug')
   .description('Debug a workflow')
-  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL', 'postgresql://localhost:2345')
+  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL for debugging cloud traces')
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
   .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, true);
-    await debugWorkflow(dbosConfig, runtimeConfig, options.proxy, options.uuid);
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, (options.proxy !== undefined));
+    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
   });
 
 program

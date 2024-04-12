@@ -16,7 +16,7 @@ describe("typeorm-debugger-test", () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
-    debugConfig = generateDBOSTestConfig(UserDatabaseName.TYPEORM, "http://127.0.0.1:5432");
+    debugConfig = generateDBOSTestConfig(UserDatabaseName.TYPEORM, true);
     await setUpDBOSTestDb(config);
   });
 

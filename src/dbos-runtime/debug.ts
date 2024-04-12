@@ -3,13 +3,12 @@ import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegistered
 import { GlobalLogger } from "../telemetry/logs";
 import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
 
-export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, proxy: string, workflowUUID: string) {
-  dbosConfig = {...dbosConfig, debugProxy: proxy};
+export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, workflowUUID: string, proxy?: string) {
+  dbosConfig = {...dbosConfig, debugProxy: proxy, debugMode: true};
   const logger = new GlobalLogger();
   try {
-    // Load classes
-    const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoint);
     const dbosExec = new DBOSExecutor(dbosConfig);
+    const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoint);
     await dbosExec.init(...classes);
 
     // Invoke the workflow in debug mode.
@@ -26,7 +25,11 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
       for (const err of e.errors) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (err.code && err.code === "ECONNREFUSED") {
-          console.error('\x1b[31m%s\x1b[0m', `Is DBOS time-travel debug proxy running at ${proxy} ?`);
+          if (proxy !== undefined) {
+            console.error('\x1b[31m%s\x1b[0m', `Is DBOS time-travel debug proxy running at ${proxy} ?`);
+          } else {
+            console.error('\x1b[31m%s\x1b[0m', `Is database running at ${dbosConfig.poolConfig.host} ?`);
+          }
           break;
         }
       }
