@@ -5,7 +5,9 @@
     "build": "tsc",
     "test": "npx knex migrate:rollback && npx knex migrate:up && jest",
     "lint": "eslint src",
-    "lint-fix": "eslint --fix src"
+    "lint-fix": "eslint --fix src",
+    "dev": "nodemon",
+    "start": "npx dbos-sdk start"
   },
   "devDependencies": {
     "@dbos-inc/eslint-plugin": "^0.0.6",
@@ -13,6 +15,7 @@
     "@types/supertest": "^2.0.14",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1",
     "typescript": "^5.2.2"
