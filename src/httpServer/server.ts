@@ -69,10 +69,10 @@ export class DBOSHttpServer {
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.stack}`);
+        this.logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
         process.exit(1);
       } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.stack}`);
+        this.logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
       }
     }
 
@@ -81,10 +81,10 @@ export class DBOSHttpServer {
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.stack}`);
+        this.logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
         process.exit(1);
       } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.stack}`);
+        this.logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
       }
     }
 
