@@ -16,7 +16,7 @@ export async function configure(host: string | undefined, port: number | undefin
         // Providing a default value
         default: 'localhost',
       },
-    ]) as {host: string};
+    ]) as { host: string };
     host = output.host;
   }
 
@@ -29,8 +29,8 @@ export async function configure(host: string | undefined, port: number | undefin
         // Providing a default value
         default: 5432,
       },
-    ]) as {port: number};
-    port = output.port;
+    ]) as { port: number };
+    port = Number(output.port);
   }
 
   if (!username) {
@@ -42,7 +42,7 @@ export async function configure(host: string | undefined, port: number | undefin
         // Providing a default value
         default: 'postgres',
       },
-    ]) as {username: string};
+    ]) as { username: string };
     username = output.username;
   }
 
