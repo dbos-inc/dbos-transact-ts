@@ -203,7 +203,7 @@ databaseCommands
     if (!options.password) {
       options.password = prompt('Database Password: ', { echo: '*' });
     }
-    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, options.port, options.password)
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password)
     process.exit(exitCode);
   }))
 

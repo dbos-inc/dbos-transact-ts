@@ -56,7 +56,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
-export async function linkUserDB(host: string, dbName: string, hostName: string, port: string, dbPassword: string) {
+export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string) {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
