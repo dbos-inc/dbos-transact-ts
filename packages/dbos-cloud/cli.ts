@@ -196,7 +196,7 @@ databaseCommands
   .command('link')
   .description("Link your own Postgres database instance to DBOS Cloud")
   .argument('<name>', 'database instance name')
-  .option('-h, --hostname <string>', 'Specify your database hostname')
+  .option('-H, --hostname <string>', 'Specify your database hostname')
   .option('-p, --port <number>', 'Specify your database port')
   .option('-W, --password <string>', 'Specify password for the dbosadmin user')
   .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined }) => {
