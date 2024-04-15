@@ -168,8 +168,9 @@ function readInterpolatedConfig(configFilePath: string, logger: CLILogger): stri
       logger.debug(`      Substituting value of '${g1}' from process environment.`);
       return process.env[g1] ?? "";
     }
-
-    logger.warn(`      Variable '${g1}' would be substituted from the process environment, but is not defined.`);
+    if (g1 !== "PGPASSWORD") {
+      logger.warn(`      Variable '${g1}' would be substituted from the process environment, but is not defined.`);
+    }
     return "";
   });
 }
