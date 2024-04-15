@@ -113,6 +113,35 @@ export async function deleteUserDb(host: string, dbName: string) {
   }
 }
 
+export async function unlinkUserDB(host: string, dbName: string) {
+  const logger = getLogger();
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+      data: {
+        "name": dbName,
+      }
+    });
+    logger.info(`Database unlinked: ${dbName}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to unlink database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
 export async function getUserDb(host: string, dbName: string, json: boolean) {
   const logger = getLogger();
 
