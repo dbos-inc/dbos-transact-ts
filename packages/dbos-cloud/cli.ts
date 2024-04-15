@@ -11,7 +11,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login.js";
 import { registerUser } from "./register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDb, unlinkUserDB } from "./userdb.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB } from "./userdb.js";
 import { launchDashboard, getDashboardURL } from "./dashboards.js";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
