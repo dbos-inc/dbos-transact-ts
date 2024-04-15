@@ -66,10 +66,26 @@ export class DBOSHttpServer {
   async listen(port: number) {
     try {
       await this.checkPortAvailability(port, "127.0.0.1");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'EADDRINUSE') {
+        this.logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
+        process.exit(1);
+      } else {
+        this.logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
+      }
+    }
+
+    try {
       await this.checkPortAvailability(port, "::1");
     } catch (error) {
-      this.logger.warn(`Port ${port} is already used. Please use the -p option to choose another port.`);
-      process.exit(1);
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'EADDRINUSE') {
+        this.logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
+        process.exit(1);
+      } else {
+        this.logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
+      }
     }
 
     const appServer = this.app.listen(port, () => {
@@ -87,11 +103,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
   const server = new net.Server();
   server.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EADDRINUSE') {
-          reject(new Error(`Port ${port} is already in use`));
-      } else {
-          reject(error);
-      }
+    reject(error);
   });
 
   server.on('listening', () => {
