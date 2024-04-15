@@ -11,7 +11,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./login.js";
 import { registerUser } from "./register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials } from "./userdb.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB } from "./userdb.js";
 import { launchDashboard, getDashboardURL } from "./dashboards.js";
 import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
@@ -189,6 +189,21 @@ databaseCommands
       options.password = prompt('Database Password: ', { echo: '*' });
     }
     const exitCode = await createUserDb(DBOSCloudHost, dbname, options.username, options.password, true)
+    process.exit(exitCode);
+  }))
+
+databaseCommands
+  .command('link')
+  .description("Link your own Postgres database instance to DBOS Cloud")
+  .argument('<name>', 'database instance name')
+  .option('-h, --hostname <string>', 'Specify your database hostname')
+  .option('-p, --port <number>', 'Specify your database port')
+  .option('-W, --password <string>', 'Specify password for the dbosadmin user')
+  .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined }) => {
+    if (!options.password) {
+      options.password = prompt('Database Password: ', { echo: '*' });
+    }
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, options.port, options.password)
     process.exit(exitCode);
   }))
 
