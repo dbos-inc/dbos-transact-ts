@@ -64,7 +64,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`,
-      { Name: dbName, HostName: hostName, Port: port, DBOSAdminPassword: dbPassword },
+      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword },
       {
         headers: {
           "Content-Type": "application/json",
