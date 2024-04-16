@@ -119,14 +119,11 @@ export async function unlinkUserDB(host: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/byod/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
       },
-      data: {
-        "name": dbName,
-      }
     });
     logger.info(`Database unlinked: ${dbName}`);
     return 0;
