@@ -55,6 +55,37 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
+export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string) {
+  const logger = getLogger();
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.post(
+      `https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`,
+      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
+
+    logger.info(`Database successfully linked!`)
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to link database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
 export async function deleteUserDb(host: string, dbName: string) {
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
@@ -71,6 +102,32 @@ export async function deleteUserDb(host: string, dbName: string) {
     return 0;
   } catch (e) {
     const errorLabel = `Failed to delete database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function unlinkUserDB(host: string, dbName: string) {
+  const logger = getLogger();
+  const userCredentials = getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/byod/${dbName}`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    logger.info(`Database unlinked: ${dbName}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to unlink database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
         handleAPIErrors(errorLabel, axiosError);
