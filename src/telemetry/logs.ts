@@ -37,10 +37,7 @@ export class GlobalLogger {
   private readonly logger: IWinstonLogger;
   readonly addContextMetadata: boolean;
 
-  constructor(
-    private readonly telemetryCollector?: TelemetryCollector,
-    config?: LoggerConfig
-  ) {
+  constructor(private readonly telemetryCollector?: TelemetryCollector, config?: LoggerConfig) {
     const winstonTransports: TransportStream[] = [];
     winstonTransports.push(
       new transports.Console({
@@ -51,7 +48,7 @@ export class GlobalLogger {
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
     if (this.telemetryCollector?.exporter) {
-      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector));
+      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || "info"));
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
@@ -109,10 +106,7 @@ export class GlobalLogger {
 // Wrapper around our global logger. Expected to be instantiated by a new contexts so they can inject contextual metadata
 export class Logger {
   readonly metadata: ContextualMetadata;
-  constructor(
-    private readonly globalLogger: GlobalLogger,
-    readonly ctx: DBOSContextImpl
-  ) {
+  constructor(private readonly globalLogger: GlobalLogger, readonly ctx: DBOSContextImpl) {
     this.metadata = {
       span: ctx.span,
       includeContextMetadata: this.globalLogger.addContextMetadata,
@@ -172,12 +166,13 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly applicationID: string;
   readonly executorID: string;
 
-  constructor(readonly telemetryCollector: TelemetryCollector) {
+  constructor(readonly telemetryCollector: TelemetryCollector, logLevel: string) {
     super();
+    this.level = logLevel;
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
-    this.applicationID = process.env.DBOS__APPID  || "APP_ID_NOT_DEFINED";
+    this.applicationID = process.env.DBOS__APPID || "APP_ID_NOT_DEFINED";
     this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
     const logRecordProcessor = {
       forceFlush: async () => {
@@ -215,8 +210,18 @@ class OTLPLogQueueTransport extends TransportStream {
       body: message as string,
       timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: performance.now(),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      attributes: { ...span?.attributes, traceId: span?.spanContext()?.traceId, spanId: span?.spanContext()?.spanId, stack, applicationID: this.applicationID, executorID: this.executorID } as LogAttributes,
+      attributes: {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        ...span?.attributes,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+        traceId: span?.spanContext()?.traceId,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+        spanId: span?.spanContext()?.spanId,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        stack,
+        applicationID: this.applicationID,
+        executorID: this.executorID,
+      } as LogAttributes,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       // context: span?.spanContext() || undefined,
     });
