@@ -210,11 +210,14 @@ class OTLPLogQueueTransport extends TransportStream {
       body: message as string,
       timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: performance.now(),
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       attributes: {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         ...span?.attributes,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         traceId: span?.spanContext()?.traceId,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         spanId: span?.spanContext()?.spanId,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
         executorID: this.executorID,
