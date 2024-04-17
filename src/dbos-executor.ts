@@ -37,6 +37,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
+  DBOSQueryUserDatabase,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -200,55 +201,74 @@ export class DBOSExecutor {
   }
 
   configureDbClient() {
-    const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
-    if (userDbClient === UserDatabaseName.PRISMA) {
-      // TODO: make Prisma work with debugger proxy.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const { PrismaClient } = require("@prisma/client");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-      this.userDatabase = new PrismaUserDatabase(new PrismaClient());
-      this.logger.debug("Loaded Prisma user database");
-    } else if (userDbClient === UserDatabaseName.TYPEORM) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const DataSourceExports = require("typeorm");
-      try {
-        this.userDatabase = new TypeORMDatabase(
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-          new DataSourceExports.DataSource({
-            type: "postgres", // perhaps should move to config file
+
+    switch (this.config.userDbclient) {
+      case UserDatabaseName.PRISMA: {
+        // TODO: make Prisma work with debugger proxy.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const { PrismaClient } = require("@prisma/client");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+        this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+        this.logger.debug("Loaded Prisma user database");
+      }
+        break;
+      case UserDatabaseName.TYPEORM: {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+        const DataSourceExports = require("typeorm");
+        try {
+          this.userDatabase = new TypeORMDatabase(
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            new DataSourceExports.DataSource({
+              type: "postgres", // perhaps should move to config file
+              host: userDBConfig.host,
+              port: userDBConfig.port,
+              username: userDBConfig.user,
+              password: userDBConfig.password,
+              database: userDBConfig.database,
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+              entities: this.entities,
+              ssl: userDBConfig.ssl,
+            })
+          );
+        } catch (s) {
+          (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
+          this.logger.error(s);
+        }
+        this.logger.debug("Loaded TypeORM user database");
+      }
+        break;
+      case UserDatabaseName.KNEX: {
+        const knexConfig: Knex.Config = {
+          client: "postgres",
+          connection: {
             host: userDBConfig.host,
             port: userDBConfig.port,
-            username: userDBConfig.user,
+            user: userDBConfig.user,
             password: userDBConfig.password,
             database: userDBConfig.database,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-            entities: this.entities,
             ssl: userDBConfig.ssl,
-          })
-        );
-      } catch (s) {
-        (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
-        this.logger.error(s);
+          },
+        };
+        this.userDatabase = new KnexUserDatabase(knex(knexConfig));
+        this.logger.debug("Loaded Knex user database");
       }
-      this.logger.debug("Loaded TypeORM user database");
-    } else if (userDbClient === UserDatabaseName.KNEX) {
-      const knexConfig: Knex.Config = {
-        client: "postgres",
-        connection: {
-          host: userDBConfig.host,
-          port: userDBConfig.port,
-          user: userDBConfig.user,
-          password: userDBConfig.password,
-          database: userDBConfig.database,
-          ssl: userDBConfig.ssl,
-        },
-      };
-      this.userDatabase = new KnexUserDatabase(knex(knexConfig));
-      this.logger.debug("Loaded Knex user database");
-    } else {
-      this.userDatabase = new PGNodeUserDatabase(userDBConfig);
-      this.logger.debug("Loaded Postgres user database");
+        break;
+      case UserDatabaseName.DBOSQUERY: {
+        this.userDatabase = new DBOSQueryUserDatabase(userDBConfig);
+        this.logger.debug("Loaded DBOS Query user database");
+      }
+        break;
+      case undefined:
+      case UserDatabaseName.PGNODE: {
+        this.userDatabase = new PGNodeUserDatabase(userDBConfig);
+        this.logger.debug("Loaded Postgres user database");
+      }
+        break;
+      default: {
+        const _: never = this.config.userDbclient;
+        break;
+      }
     }
   }
 

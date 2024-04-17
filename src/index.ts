@@ -25,6 +25,15 @@ export {
   CommunicatorConfig,
 } from './communicator';
 
+export {
+  DBOSFieldDef,
+  DBOSQuery,
+  DBOSQueryConfigValues,
+  DBOSQueryResult,
+  DBOSQueryResultBase,
+  DBOSQueryResultRow
+} from './query'
+
 export * as Error from './error';
 
 export {

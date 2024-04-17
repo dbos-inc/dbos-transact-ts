@@ -4,6 +4,7 @@ import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_d
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
 import { Knex } from "knex";
+import { DBOSQuery, DBOSQueryImpl } from "./query";
 
 export interface UserDatabase {
   init(debugMode?: boolean): Promise<void>;
@@ -34,15 +35,115 @@ export interface UserDatabase {
 type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
+export type UserDatabaseClient = DBOSQuery | PoolClient | PrismaClient | TypeORMEntityManager | Knex;
 
 export const UserDatabaseName = {
+  DBOSQUERY: "dbos-query",
   PGNODE: "pg-node",
   PRISMA: "prisma",
   TYPEORM: "typeorm",
   KNEX: "knex",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
+
+export class DBOSQueryUserDatabase implements UserDatabase {
+
+  readonly pool: Pool;
+
+  constructor(readonly poolConfig: PoolConfig) {
+    this.pool = new Pool(poolConfig);
+  }
+
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      await this.pool.query(createUserDBSchema); 4
+      await this.pool.query(userDBSchema);
+      await this.pool.query(userDBIndex);
+    }
+  }
+
+  async destroy(): Promise<void> {
+    await this.pool.end();
+  }
+
+  getName() {
+    return UserDatabaseName.DBOSQUERY;
+  }
+
+  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+    const client: PoolClient = await this.pool.connect();
+    const dbosQuery: DBOSQuery = new DBOSQueryImpl(client);
+    try {
+      const readOnly = config.readOnly ?? false;
+      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+      await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
+      if (readOnly) {
+        await client.query(`SET TRANSACTION READ ONLY`);
+      }
+      const result: R = await txn(dbosQuery, ...args);
+      await client.query(`COMMIT`);
+      return result;
+    } catch (err) {
+      await client.query(`ROLLBACK`);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    const client: PoolClient = await this.pool.connect();
+    const dbosQuery: DBOSQuery = new DBOSQueryImpl(client);
+    try {
+      return func(dbosQuery as C, ...args);
+    }
+    finally {
+      client.release();
+    }
+  }
+
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
+    return this.pool.query<QueryResultRow>(sql, params).then((value) => {
+      return value.rows as R[];
+    });
+  }
+
+  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+    const pgClient: PoolClient = client as PoolClient;
+    return pgClient.query<QueryResultRow>(sql, params).then((value) => {
+      return value.rows as R[];
+    });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
+    return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    if (!(error instanceof PGDatabaseError)) {
+      return false;
+    }
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    if (!(error instanceof PGDatabaseError)) {
+      return false;
+    }
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "23505";
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async createSchema(): Promise<void> {
+    throw new Error("createSchema() is not supported in PG user database.");
+  }
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async dropSchema(): Promise<void> {
+    throw new Error("dropSchema() is not supported in PG user database.");
+  }
+}
 
 /**
  * node-postgres user data access interface
@@ -56,7 +157,7 @@ export class PGNodeUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      await this.pool.query(createUserDBSchema);
+      await this.pool.query(createUserDBSchema); 4
       await this.pool.query(userDBSchema);
       await this.pool.query(userDBIndex);
     }
@@ -92,12 +193,10 @@ export class PGNodeUserDatabase implements UserDatabase {
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
-    try
-    {
-       return func(client as C, ...args);
+    try {
+      return func(client as C, ...args);
     }
-    finally
-    {
+    finally {
       client.release();
     }
   }
@@ -405,7 +504,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await func(transactionClient as unknown as C, ...args);
       },
-      { isolationLevel: "read committed", readOnly : true }
+      { isolationLevel: "read committed", readOnly: true }
     );
     return result;
   }
