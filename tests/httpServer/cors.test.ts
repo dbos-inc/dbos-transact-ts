@@ -108,7 +108,7 @@ describe("http-cors-tests", () => {
 
 
   // Check get with us as origin AND credentials
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://us.com')
@@ -119,7 +119,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://us.com')
@@ -131,7 +131,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://us.com')
@@ -144,7 +144,7 @@ describe("http-cors-tests", () => {
   });
 
   // Check get with partner as origin AND credentials
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://partner.com')
@@ -155,7 +155,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://partner.com')
@@ -167,7 +167,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://partner.com')
@@ -179,8 +179,43 @@ describe("http-cors-tests", () => {
     expect(response.status).toBe(200);
   });
 
+  it('should allow preflight requests with credentials from allowed origins', async () => {
+    const response = await request(testRuntime.getHandlersCallback())
+      .options('/hellos') // Custom whitelist cors() implementation
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Origin', 'https://partner.com')
+      .set('Cookie', 'sessionId=abc123');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('https://partner.com');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+  });
+  it('should allow preflight requests with credentials from allowed origins', async () => {
+    const response = await request(testRuntime.getHandlersCallback())
+      .options('/hellor') // Regular cors() defaults from Koa
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Origin', 'https://crimewave.com')
+      .set('Cookie', 'sessionId=abc123');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('*');
+    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+  });
+  it('should allow preflight requests with credentials from allowed origins', async () => {
+    const response = await request(testRuntime.getHandlersCallback())
+      .options('/hellod') // Default CORS policy
+      .set('Access-Control-Request-Method', 'GET')
+      .set('Origin', 'https://crimewave.com')
+      .set('Cookie', 'sessionId=abc123');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('https://crimewave.com');
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+    expect(response.headers['access-control-allow-headers']).toBe('Origin,X-Requested-With,Content-Type,Accept,Authorization');
+  });
+
   // Check get with another origin AND credentials
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://crimewave.com')
@@ -191,7 +226,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins', async () => {
+  it('should allow requests with credentials from allowed origins', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://crimewave.com')
@@ -203,7 +238,7 @@ describe("http-cors-tests", () => {
 
     expect(response.status).toBe(200);
   });
-  it('should allow requests without credentials from allowed origins - not this one', async () => {
+  it('should allow requests with credentials from allowed origins - not this one', async () => {
     const response = await request(testRuntime.getHandlersCallback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://crimewave.com')
@@ -244,7 +279,8 @@ class TestEndpointsRegCORS {
         return (whitelist.includes(origin) ? origin : '');
       }
       return o.request.header.origin || '*';
-    }
+    },
+  allowMethods: 'GET,OPTIONS', // Need to have options for preflight.
 }))
 class TestEndpointsSpecCORS {
   // eslint-disable-next-line @typescript-eslint/require-await
