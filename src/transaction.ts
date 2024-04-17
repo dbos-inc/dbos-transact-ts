@@ -30,7 +30,7 @@ export interface TransactionContext<T extends UserDatabaseClient> extends DBOSCo
   readonly client: T;
 }
 
-export type ProcTransactionContext = Pick<TransactionContext<DBOSQuery>, 'client' | 'workflowUUID'>;
+export type ProcTransactionContext = Pick<TransactionContext<DBOSQuery>, 'client' | 'workflowUUID' | 'logger'>;
 
 export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSContextImpl implements TransactionContext<T> {
   constructor(
