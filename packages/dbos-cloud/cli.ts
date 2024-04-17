@@ -240,11 +240,12 @@ databaseCommands
   .option('-H, --hostname <string>', 'Specify your database hostname')
   .option('-p, --port <number>', 'Specify your database port')
   .option('-W, --password <string>', 'Specify password for the dbosadmin user')
-  .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined }) => {
+  .option('--timetravel', 'Enable time travel on the linked database')
+  .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined, timetravel: boolean }) => {
     if (!options.password) {
       options.password = prompt('Database Password: ', { echo: '*' });
     }
-    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password)
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.timetravel);
     process.exit(exitCode);
   }))
 
