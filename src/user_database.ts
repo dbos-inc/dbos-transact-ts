@@ -56,7 +56,7 @@ export class DBOSQueryUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      await this.pool.query(createUserDBSchema); 4
+      await this.pool.query(createUserDBSchema);
       await this.pool.query(userDBSchema);
       await this.pool.query(userDBIndex);
     }
