@@ -13,6 +13,8 @@ export type Transaction<T extends any[], R> = (ctxt: TransactionContext<any>, ..
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
+  // TODO: Replace this with a simple flag to indicate stored proc deployment
+  storedProc?: string;
 }
 
 export const IsolationLevel = {

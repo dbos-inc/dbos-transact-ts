@@ -294,6 +294,26 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
+
+    if (txnInfo.config.storedProc) {
+      const $args = [this.workflowUUID, funcId, this.presetUUID, ...args, null]
+      const sql = `CALL ${txnInfo.config.storedProc}(${$args.map((v, i) => `$${i + 1}`).join()});`;
+      // eslint-disable-next-line no-useless-catch
+      try {
+        const [queryResult] = await this.#dbosExec.userDatabase.query<{ results: R }, unknown[]>(sql, ...$args);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return queryResult.results;
+      } catch (e) {
+        // PG stored proc errors include a bunch of additional information that we don't want to expose to the user
+        const { detail, message } = e as { detail?: string, message: string };
+        const errorMsg = detail ?? message;
+        span.setStatus({ code: SpanStatusCode.ERROR, message: errorMsg });
+        throw new Error(errorMsg);
+      } finally {
+        this.#dbosExec.tracer.endSpan(span);
+      }
+    }
+
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
