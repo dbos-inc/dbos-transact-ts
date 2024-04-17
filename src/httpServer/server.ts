@@ -196,7 +196,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
                   return o.request.header.origin || '*';
                 },
               allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
-              allowHeaders: ['Origin', '"X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+              allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
             }));
           }
         }

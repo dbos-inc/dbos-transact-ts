@@ -211,6 +211,7 @@ describe("http-cors-tests", () => {
     expect(response.status).toBe(204);
     expect(response.headers['access-control-allow-origin']).toBe('https://crimewave.com');
     expect(response.headers['access-control-allow-credentials']).toBe('true');
+    expect(response.headers['access-control-allow-headers']).toBe('Origin,X-Requested-With,Content-Type,Accept,Authorization');
   });
 
   // Check get with another origin AND credentials
