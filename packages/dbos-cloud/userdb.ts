@@ -59,7 +59,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   const logger = getLogger();
   const userCredentials = getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
-
+  logger.info(`Linking Postgres instance: ${dbName}, hostname: ${hostName}, port: ${port}, time travel: ${enableTimetravel}`);
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`,
