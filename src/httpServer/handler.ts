@@ -185,7 +185,7 @@ export class HandlerParameter extends MethodParameter {
 /////////////////////////
 
 export function GetApi(url: string) {
-  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
+  function apidec<This, Ctx extends Pick<DBOSContext, "workflowUUID">, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>

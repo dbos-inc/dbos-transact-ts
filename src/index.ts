@@ -10,6 +10,7 @@ export {
 
 export {
   TransactionContext,
+  ProcTransactionContext,
   TransactionConfig,
 } from './transaction';
 
