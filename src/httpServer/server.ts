@@ -181,10 +181,10 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
-          router.use(ro.apiURL, defaults.koaCors);
+          router.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
         } else {
           if (dbosExec.config.http?.cors_middleware ?? true) {
-            router.use(ro.apiURL, cors({
+            router.all(ro.apiURL, cors({
               credentials: dbosExec.config.http?.credentials ?? true,
               origin:
                 (o: Context)=>{
@@ -194,7 +194,9 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
                     return (whitelist.includes(origin) ? origin : '');
                   }
                   return o.request.header.origin || '*';
-                }
+                },
+              allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
+              allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
             }));
           }
         }
