@@ -237,14 +237,15 @@ databaseCommands
   .command('link')
   .description("Link your own Postgres database instance to DBOS Cloud")
   .argument('<name>', 'database instance name')
-  .option('-H, --hostname <string>', 'Specify your database hostname')
-  .option('-p, --port <number>', 'Specify your database port')
+  .requiredOption('-H, --hostname <string>', 'Specify your database hostname')
+  .option('-p, --port <number>', 'Specify your database port', '5432')
   .option('-W, --password <string>', 'Specify password for the dbosadmin user')
-  .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined }) => {
+  .option('--enable-timetravel', 'Enable time travel on the linked database', false)
+  .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined, enableTimetravel: boolean }) => {
     if (!options.password) {
-      options.password = prompt('Database Password: ', { echo: '*' });
+      options.password = prompt('Password for the dbosadmin user: ', { echo: '*' });
     }
-    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password)
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel);
     process.exit(exitCode);
   }))
 
