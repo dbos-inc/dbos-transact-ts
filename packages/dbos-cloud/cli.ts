@@ -243,7 +243,7 @@ databaseCommands
   .option('--enable-timetravel', 'Enable time travel on the linked database', false)
   .action((async (dbname: string, options: { hostname: string, port: string, password: string | undefined, enableTimetravel: boolean }) => {
     if (!options.password) {
-      options.password = prompt('dbosadmin Password: ', { echo: '*' });
+      options.password = prompt('Password for the dbosadmin user: ', { echo: '*' });
     }
     const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel);
     process.exit(exitCode);
