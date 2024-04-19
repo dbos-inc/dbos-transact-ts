@@ -162,8 +162,9 @@ applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
-  .action(async (options: { last: number }) => {
-    const exitCode = await getAppLogs(DBOSCloudHost, options.last);
+  .option('-p, --pagesize <integer>', 'How many lines to fetch at once when paginating. Default is 1000', parseInt)
+  .action(async (options: { last: number, pagesize: number}) => {
+    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize);
     process.exit(exitCode);
   });
 
