@@ -21,6 +21,7 @@ import fs from "fs";
 import { fileURLToPath } from 'url';
 import path from "path";
 import updateNotifier, { Package } from "update-notifier";
+import { profile } from "./profile.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -64,6 +65,16 @@ program
     const exitCode = await login(DBOSCloudHost);
     process.exit(exitCode);
   });
+
+program
+  .command('profile')
+  .description('Get user information')
+  .option('--json', 'Emit JSON output')
+  .action(async (options: { json: boolean }) => {
+    const exitCode = await profile(DBOSCloudHost, options.json);
+    process.exit(exitCode);
+  });
+
 
 program
   .command('register')

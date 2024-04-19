@@ -123,7 +123,7 @@ export async function login(host: string): Promise<number> {
   const bearerToken = "Bearer " + token;
   try {
     const response = await axios.get(
-      `https://${host}/v1alpha1/user`,
+      `https://${host}/v1alpha1/user`, // TODO: Change to /user/profile endpoint
       {
         headers: {
           "Content-Type": "application/json",
