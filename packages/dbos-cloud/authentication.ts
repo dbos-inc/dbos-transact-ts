@@ -153,7 +153,7 @@ export async function authenticateWithRefreshToken(logger: Logger, refreshToken:
       refreshToken: refreshToken,
     }
   } catch (e) {
-    (e as Error).message = `failed to log in: ${(e as Error).message}`;
+    (e as Error).message = `Failed to authenticate with refresh token: ${(e as Error).message}`;
     logger.error(e);
     return null;
   }
