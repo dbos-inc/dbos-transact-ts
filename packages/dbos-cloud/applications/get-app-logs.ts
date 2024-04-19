@@ -1,6 +1,13 @@
 import axios , { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 
+type LogResponse = {
+  end: boolean;
+  next_timestamp :string;
+  body: string;
+};
+
+
 export async function getAppLogs(host: string, last: number, pagesize:number): Promise<number> {
   if (last != undefined && (isNaN(last) || last <= 0)) {
     throw new Error('The --last parmameter must be an integer greater than 0');
@@ -35,22 +42,24 @@ export async function getAppLogs(host: string, last: number, pagesize:number): P
   }
   try {
     const res = await axios.get(url, {headers: headers, params: params});
-    if (res.data.end && res.data.body == "") {
+    const logResponse = res.data as LogResponse
+    if (logResponse.end && logResponse.body == "") {
       logger.info(`No logs found for the specified parameters`);
     } else {
-      console.log(res.data.body.trimEnd())
-      let more = !res.data.end
-      let nextTs = res.data.next_timestamp
+      console.log(logResponse.body.trimEnd())
+      let more = !logResponse.end
+      let nextTs = logResponse.next_timestamp
       while (more) {
-        let pageParams = {
+        const pageParams = {
           limit: pagesize,
           format: 'json',
           since: nextTs
         }
-        let nextPage = await axios.get(url, {headers: headers, params: pageParams});
-        console.log(nextPage.data.body.trimEnd())
-        more = !nextPage.data.end
-        nextTs = nextPage.data.next_timestamp
+        const nextPage = await axios.get(url, {headers: headers, params: pageParams});
+        const logResponse = nextPage.data as LogResponse
+        console.log(logResponse.body.trimEnd())
+        more = !logResponse.end
+        nextTs = logResponse.next_timestamp
       }
     }
     return 0;
