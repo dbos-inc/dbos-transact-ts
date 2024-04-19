@@ -24,6 +24,7 @@ interface TokenResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
+  refresh_token?: string;
 }
 
 interface AuthenticationResponse {
@@ -61,15 +62,20 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 }
 
 // Redirect a user to auth0 to authenticate, retrieving a JWT bearer token
-export async function authenticate(logger: Logger): Promise<AuthenticationResponse | null> {
+export async function authenticate(logger: Logger, getRefreshToken: boolean = false): Promise<AuthenticationResponse | null> {
   logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
     method: 'POST',
     url: `https://${Auth0Domain}/oauth/device/code`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    data: { client_id: DBOSClientID, scope: 'sub', audience: DBOSCloudIdentifier }
+    data: {
+      client_id: DBOSClientID,
+      scope: getRefreshToken ?  'offline_access': 'sub',
+      audience: DBOSCloudIdentifier
+    }
   };
+  console.log(deviceCodeRequest)
   let deviceCodeResponse: DeviceCodeResponse | undefined;
   try {
     const response = await axios.request(deviceCodeRequest);
@@ -114,17 +120,19 @@ export async function authenticate(logger: Logger): Promise<AuthenticationRespon
   if (!tokenResponse) {
     return null;
   }
+  console.log(tokenResponse)
 
   await verifyToken(tokenResponse.access_token);
   return {
-    token: tokenResponse.access_token
+    token: tokenResponse.access_token,
+    refreshToken: tokenResponse.refresh_token,
   }
 
 }
 
-export async function login(host: string, getLoginToken: boolean, useLoginToken?: string): Promise<number> {
+export async function login(host: string, getRefreshToken: boolean, useRefreshToken?: string): Promise<number> {
   const logger = getLogger();
-  const authResponse = await authenticate(logger)
+  const authResponse = await authenticate(logger, getRefreshToken)
   if (authResponse === null) {
     return 1;
   }
