@@ -4,7 +4,7 @@ import open from 'open';
 
 export async function launchDashboard(host: string): Promise<number> {
     const logger = getLogger();
-    const userCredentials = getCloudCredentials();
+    const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
     try {
         const res = await axios.put(`https://${host}/v1alpha1/${userCredentials.userName}/dashboard`,
@@ -36,7 +36,7 @@ export async function launchDashboard(host: string): Promise<number> {
 
 export async function getDashboardURL(host: string): Promise<number> {
     const logger = getLogger();
-    const userCredentials = getCloudCredentials();
+    const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
     try {
         const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/dashboard`,

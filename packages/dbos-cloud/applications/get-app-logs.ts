@@ -9,7 +9,7 @@ export async function getAppLogs(host: string, last: number): Promise<number> {
     last = 0      //internally, 0 means "get all the logs." This is the default.
   }
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);

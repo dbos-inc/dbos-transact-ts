@@ -1,7 +1,6 @@
 import axios from "axios";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-import { sleep } from "./cloudutils.js";
 import { Logger } from "winston";
 import open from 'open';
 
@@ -10,6 +9,7 @@ const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
 const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
 const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
 const DBOSCloudIdentifier = 'dbos-cloud-api';
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DeviceCodeResponse {
   device_code: string;

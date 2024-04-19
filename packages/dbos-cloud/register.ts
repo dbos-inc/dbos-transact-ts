@@ -42,7 +42,7 @@ export async function registerUser(username: string, host: string): Promise<numb
     };
     writeCredentials(credentials)
   } else {
-    const userCredentials = getCloudCredentials();
+    const userCredentials = await getCloudCredentials();
     if (userCredentials.userName !== username) {
       logger.error(`You are trying to register ${username}, but are currently authenticated as ${userCredentials.userName}. Please run "npx dbos-cloud logout".`)
       return 1;
@@ -51,7 +51,7 @@ export async function registerUser(username: string, host: string): Promise<numb
     }
   }
 
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   const loginName = userCredentials.userName;
   try {

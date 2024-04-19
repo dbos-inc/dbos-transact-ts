@@ -4,7 +4,7 @@ import chalk from 'chalk';
 
 export async function registerApp(dbname: string, host: string): Promise<number> {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);
