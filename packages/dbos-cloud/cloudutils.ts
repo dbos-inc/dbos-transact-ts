@@ -6,6 +6,7 @@ import path from "node:path";
 
 export interface DBOSCloudCredentials {
   token: string;
+  refreshToken?: string;
   userName: string;
 }
 

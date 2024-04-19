@@ -26,6 +26,11 @@ interface TokenResponse {
   expires_in: number;
 }
 
+interface AuthenticationResponse {
+  token: string
+  refreshToken?: string
+}
+
 const client = jwksClient({
   jwksUri: `https://${Auth0Domain}/.well-known/jwks.json`
 });
@@ -56,7 +61,7 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 }
 
 // Redirect a user to auth0 to authenticate, retrieving a JWT bearer token
-export async function authenticate(logger: Logger): Promise<string | null> {
+export async function authenticate(logger: Logger): Promise<AuthenticationResponse | null> {
   logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
@@ -111,16 +116,19 @@ export async function authenticate(logger: Logger): Promise<string | null> {
   }
 
   await verifyToken(tokenResponse.access_token);
-  return tokenResponse.access_token
+  return {
+    token: tokenResponse.access_token
+  }
+
 }
 
-export async function login(host: string): Promise<number> {
+export async function login(host: string, getLoginToken: boolean, useLoginToken?: string): Promise<number> {
   const logger = getLogger();
-  const token = await authenticate(logger)
-  if (token === null) {
+  const authResponse = await authenticate(logger)
+  if (authResponse === null) {
     return 1;
   }
-  const bearerToken = "Bearer " + token;
+  const bearerToken = "Bearer " + authResponse.token;
   try {
     const response = await axios.get(
       `https://${host}/v1alpha1/user`,
@@ -133,7 +141,7 @@ export async function login(host: string): Promise<number> {
     );
     const username = response.data as string;
     const credentials: DBOSCloudCredentials = {
-      token: token,
+      token: authResponse.token,
       userName: username,
     };
     writeCredentials(credentials)

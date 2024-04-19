@@ -60,8 +60,10 @@ program.version(packageJson.version);
 program
   .command('login')
   .description('Log in to DBOS cloud')
-  .action(async () => {
-    const exitCode = await login(DBOSCloudHost);
+  .option('--get-refresh-token', 'Get a refresh token you can use to programatically log in')
+  .option('--with-refresh-token <token>', 'Use a refresh token to programatically log in')
+  .action(async (options: { getRefreshToken?: boolean, withRefreshToken?: string }) => {
+    const exitCode = await login(DBOSCloudHost, options.getRefreshToken || false, options.withRefreshToken);
     process.exit(exitCode);
   });
 

@@ -32,12 +32,12 @@ export async function registerUser(username: string, host: string): Promise<numb
     givenName = await prompt("Enter First/Given Name: ");
     familyName = await prompt("Enter Last/Family Name: ");
     company = await prompt("Enter Company: ");
-    const bearerToken = await authenticate(logger);
-    if (bearerToken === null) {
+    const authResponse = await authenticate(logger);
+    if (authResponse === null) {
       return 1
     }
     const credentials: DBOSCloudCredentials = {
-      token: bearerToken,
+      token: authResponse.token,
       userName: username,
     };
     writeCredentials(credentials)
