@@ -1,14 +1,19 @@
 import { DBOSConfig, DBOSExecutor } from "../dbos-executor";
 import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from "../error";
 import { GlobalLogger } from "../telemetry/logs";
-import { DBOSRuntime, DBOSRuntimeConfig,  } from "./runtime";
+import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
 
 export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, workflowUUID: string, proxy?: string) {
-  dbosConfig = {...dbosConfig, debugProxy: proxy, debugMode: true};
+  dbosConfig = { ...dbosConfig, debugProxy: proxy, debugMode: true };
   const logger = new GlobalLogger();
   try {
     const dbosExec = new DBOSExecutor(dbosConfig);
-    const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoint);
+    const entrypoints = runtimeConfig.entrypoints;
+    const classes = await Promise.all(
+      entrypoints.map(async (entrypoint) => {
+        return await DBOSRuntime.loadClasses(entrypoint);
+      })
+    );
     await dbosExec.init(...classes);
 
     // Invoke the workflow in debug mode.

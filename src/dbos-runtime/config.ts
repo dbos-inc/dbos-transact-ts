@@ -118,12 +118,12 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   } else if (poolConfig.host != "localhost" && poolConfig.host != "127.0.0.1") {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
-    poolConfig.ssl = { rejectUnauthorized: false }
+    poolConfig.ssl = { rejectUnauthorized: false };
   } else {
     // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
-    poolConfig.ssl = false
+    poolConfig.ssl = false;
   }
-  return poolConfig
+  return poolConfig;
 }
 
 /*
@@ -143,7 +143,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile, useProxy)
+  const poolConfig = constructPoolConfig(configFile, useProxy);
 
   /***************************/
   /* Handle telemetry config */
@@ -181,8 +181,9 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
+  const defaultEntrypoint = cliOptions?.entrypoint || "dist/operations.js";
   const runtimeConfig: DBOSRuntimeConfig = {
-    entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint || "dist/operations.js",
+    entrypoints: Array.from(new Set(configFile.runtimeConfig?.entrypoints?.concat(defaultEntrypoint))) || [defaultEntrypoint],
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 

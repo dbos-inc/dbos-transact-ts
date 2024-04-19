@@ -14,14 +14,14 @@ interface ModuleExports {
 }
 
 export interface DBOSRuntimeConfig {
-  entrypoint: string;
+  entrypoints: string[];
   port: number;
 }
 
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
-  private servers: { appServer: Server, adminServer: Server } | undefined
+  private servers: { appServer: Server; adminServer: Server } | undefined;
   private kafka: DBOSKafka | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
@@ -35,12 +35,17 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
-      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoint);
+      const classes: object[] = [];
+      for (const entrypoint of this.runtimeConfig.entrypoints) {
+        this.dbosExec.logger.debug(`Loading classes from entrypoint ${entrypoint}`);
+        const loadedClasses = await DBOSRuntime.loadClasses(entrypoint);
+        classes.push(...loadedClasses);
+      }
       if (classes.length === 0) {
         throw new DBOSFailLoadOperationsError("operations not found");
       }
       await this.dbosExec.init(...classes);
-      const server = new DBOSHttpServer(this.dbosExec)
+      const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
       this.kafka = new DBOSKafka(this.dbosExec);
@@ -84,17 +89,17 @@ export class DBOSRuntime {
     this.dbosExec?.logger.info("Stopping application: received a termination signal");
     void this.destroy().finally(() => {
       process.exit(1);
-    })
+    });
   }
 
   /**
-    * Shut down the HTTP server and destroy workflow executor.
-    */
+   * Shut down the HTTP server and destroy workflow executor.
+   */
   async destroy() {
     await this.kafka?.destroyKafka();
     if (this.servers) {
-      this.servers.appServer.close()
-      this.servers.adminServer.close()
+      this.servers.appServer.close();
+      this.servers.adminServer.close();
     }
     await this.dbosExec?.destroy();
   }
