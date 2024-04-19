@@ -20,6 +20,13 @@ interface DeviceCodeResponse {
   interval: number;
 }
 
+interface RefreshTokenAuthResponse {
+  access_token: string;
+  scope: string;
+  expires_in: number;
+  token_type: string;
+}
+
 interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -75,7 +82,6 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
       audience: DBOSCloudIdentifier
     }
   };
-  console.log(deviceCodeRequest)
   let deviceCodeResponse: DeviceCodeResponse | undefined;
   try {
     const response = await axios.request(deviceCodeRequest);
@@ -120,19 +126,49 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
   if (!tokenResponse) {
     return null;
   }
-  console.log(tokenResponse)
 
   await verifyToken(tokenResponse.access_token);
   return {
     token: tokenResponse.access_token,
     refreshToken: tokenResponse.refresh_token,
   }
+}
 
+export async function authenticateWithRefreshToken(logger: Logger, refreshToken: string): Promise<AuthenticationResponse | null> {
+  logger.info("Authenticating with refresh token...")
+  const authenticationRequest = {
+    method: 'POST',
+    url: `https://${Auth0Domain}/oauth/token`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    data: {
+      grant_type: "refresh_token",
+      client_id: DBOSClientID,
+      refresh_token: refreshToken
+    }
+  };
+
+  try {
+    const response = await axios.request(authenticationRequest);
+    const responseData = response.data as RefreshTokenAuthResponse;
+    return {
+      token: responseData.access_token,
+      refreshToken: refreshToken,
+    }
+  } catch (e) {
+    (e as Error).message = `failed to log in: ${(e as Error).message}`;
+    logger.error(e);
+    return null;
+  }
 }
 
 export async function login(host: string, getRefreshToken: boolean, useRefreshToken?: string): Promise<number> {
   const logger = getLogger();
-  const authResponse = await authenticate(logger, getRefreshToken)
+  let authResponse: AuthenticationResponse | null;
+  if (useRefreshToken) {
+    authResponse = await authenticateWithRefreshToken(logger, useRefreshToken);
+  } else {
+    authResponse = await authenticate(logger, getRefreshToken)
+  }
   if (authResponse === null) {
     return 1;
   }
@@ -154,6 +190,9 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
     };
     writeCredentials(credentials)
     logger.info(`Successfully logged in as ${credentials.userName}!`);
+    if (getRefreshToken) {
+      logger.info(`Refresh token: ${authResponse.refreshToken}`)
+    }
   } catch (e) {
     const errorLabel = `Failed to login`;
     const axiosError = e as AxiosError;
