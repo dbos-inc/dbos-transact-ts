@@ -92,11 +92,11 @@ export async function authenticate(logger: Logger): Promise<AuthenticationRespon
     method: 'POST',
     url: `https://${Auth0Domain}/oauth/token`,
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    data: new URLSearchParams({
+    data: {
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
       device_code: deviceCodeResponse.device_code,
       client_id: DBOSClientID
-    })
+    }
   };
   let tokenResponse: TokenResponse | undefined;
   let elapsedTimeSec = 0;
