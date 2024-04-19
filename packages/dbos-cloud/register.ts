@@ -1,8 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials } from "./cloudutils.js";
 import readline from 'readline';
-import { authenticate } from "./login.js";
 import validator from 'validator';
+import { authenticate } from "./authentication.js";
 
 const rl = readline.createInterface({
   input: process.stdin,
