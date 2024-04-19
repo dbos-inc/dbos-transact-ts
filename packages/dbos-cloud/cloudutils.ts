@@ -85,6 +85,7 @@ export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
   };
   if (isTokenExpired(credentials.token)) {
     if (credentials.refreshToken) {
+      logger.info("Refreshing access token with refresh token")
       const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
       if (authResponse === null) {
         process.exit(1);
