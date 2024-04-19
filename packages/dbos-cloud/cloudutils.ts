@@ -88,6 +88,8 @@ export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
       logger.info("Refreshing access token with refresh token")
       const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
       if (authResponse === null) {
+        logger.error("Error: Refreshing access token with refresh token failed.  Logging out...");
+        deleteCredentials();
         process.exit(1);
       }
       credentials.token = authResponse.token;
