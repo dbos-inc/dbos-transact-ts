@@ -33,7 +33,7 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
     writeCredentials(credentials)
     logger.info(`Successfully logged in as ${credentials.userName}!`);
     if (getRefreshToken) {
-      logger.info(`Refresh token: ${authResponse.refreshToken}`)
+      logger.info(`Refresh token saved to .dbos/credentials`)
     }
   } catch (e) {
     const errorLabel = `Failed to login`;
