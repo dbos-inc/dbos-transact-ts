@@ -3,7 +3,7 @@ import { readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
-import { DBOSRuntimeConfig } from "./runtime";
+import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
@@ -189,7 +189,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     // Take care of duplicates, if any
     entrypoints.push(...new Set(configFile.runtimeConfig?.entrypoints));
   } else {
-    entrypoints.push('dist/operations.ts')
+    entrypoints.push(defaultEntryPoint)
   }
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints,

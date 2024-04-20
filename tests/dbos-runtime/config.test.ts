@@ -4,7 +4,7 @@ import * as utils from "../../src/utils";
 import { UserDatabaseName } from "../../src/user_database";
 import { PoolConfig } from "pg";
 import { parseConfigFile } from "../../src/dbos-runtime/config";
-import { DBOSRuntimeConfig } from "../../src/dbos-runtime/runtime";
+import { DBOSRuntimeConfig, defaultEntryPoint } from "../../src/dbos-runtime/runtime";
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
 import { DBOSExecutor, DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContextImpl } from "../../src/workflow";
@@ -18,11 +18,6 @@ describe("dbos-config", () => {
         username: 'some user'
         password: \${PGPASSWORD}
         app_db_name: 'some DB'
-      runtimeConfig:
-        port: 1234
-        entrypoints:
-          - a
-          - b
       application:
         payments_url: 'http://somedomain.com/payment'
         foo: \${FOO}
@@ -69,14 +64,32 @@ describe("dbos-config", () => {
 
       // local runtime config
       expect(runtimeConfig).toBeDefined();
-      expect(runtimeConfig?.port).toBe(1234);
+      expect(runtimeConfig.entrypoints).toBeDefined();
+      expect(runtimeConfig.entrypoints).toBeInstanceOf(Array);
+      expect(runtimeConfig.entrypoints).toHaveLength(1);
+      expect(runtimeConfig.entrypoints[0]).toBe(defaultEntryPoint);
+    });
 
+    test("runtime config contains default entrypoint if none provided", () => {
+      const mockDBOSConfigWithEntryPoints = mockDBOSConfigYamlString + `\n
+      runtimeConfig:
+        port: 1234
+        entrypoints:
+          - a
+          - b
+      `;
+      jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigWithEntryPoints);
+
+      const [_, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+
+      expect(runtimeConfig).toBeDefined();
+      expect(runtimeConfig?.port).toBe(1234);
       expect(runtimeConfig.entrypoints).toBeDefined();
       expect(runtimeConfig.entrypoints).toBeInstanceOf(Array);
       expect(runtimeConfig.entrypoints).toHaveLength(2);
       expect(runtimeConfig.entrypoints[0]).toBe("a");
       expect(runtimeConfig.entrypoints[1]).toBe("b");
-    });
+    })
 
     test("fails to read config file", () => {
       jest.spyOn(utils, "readFileSync").mockImplementation(() => {

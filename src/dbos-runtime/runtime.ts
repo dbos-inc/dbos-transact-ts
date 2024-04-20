@@ -17,6 +17,7 @@ export interface DBOSRuntimeConfig {
   entrypoints: string[];
   port: number;
 }
+export const defaultEntryPoint = "dist/operations.js";
 
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
