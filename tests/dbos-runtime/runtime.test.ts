@@ -37,9 +37,9 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
       const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
     } catch (error) {
-      console.error("Error sending test request")
-      console.error(`status: ${(error as AxiosError).response?.status}`);
-      console.error(`statusText: ${(error as AxiosError).response?.statusText}`);
+      const errMsg =
+        `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
+      console.error(errMsg)
       throw error;
     }
   } finally {
