@@ -191,9 +191,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   } else {
     entrypoints.push('dist/operations.ts')
   }
-  console.log(cliOptions);
-  console.log(configFile.runtimeConfig?.entrypoints);
-  console.log(entrypoints);
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints,
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
