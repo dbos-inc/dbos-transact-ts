@@ -74,8 +74,8 @@ describe("dbos-config", () => {
       expect(runtimeConfig.entrypoints).toBeDefined();
       expect(runtimeConfig.entrypoints).toBeInstanceOf(Array);
       expect(runtimeConfig.entrypoints).toHaveLength(2);
-      expect(runtimeConfig.entrypoints[0]).toBe("a.js");
-      expect(runtimeConfig.entrypoints[1]).toBe("b.js");
+      expect(runtimeConfig.entrypoints[0]).toBe("a");
+      expect(runtimeConfig.entrypoints[1]).toBe("b");
     });
 
     test("fails to read config file", () => {

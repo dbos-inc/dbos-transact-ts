@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
@@ -37,7 +37,9 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
       const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
     } catch (error) {
-      console.error(error);
+      console.error("Error sending test request")
+      console.error(`status: ${(error as AxiosError).response?.status}`);
+      console.error(`statusText: ${(error as AxiosError).response?.statusText}`);
       throw error;
     }
   } finally {
@@ -105,7 +107,8 @@ database:
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
 runtimeConfig:
-  entrypoint: dist/entrypoint.js
+  entrypoints:
+    - dist/entrypoint.js
 `;
     const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);

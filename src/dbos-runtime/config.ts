@@ -181,9 +181,21 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
-  const defaultEntrypoint = cliOptions?.entrypoint || "dist/operations.js";
+  const entrypoints: string[] = []
+  // CLI overrides configuration
+  if (cliOptions?.entrypoint) {
+    entrypoints.push(cliOptions.entrypoint);
+  } else if (configFile.runtimeConfig?.entrypoints) {
+    // Take care of duplicates, if any
+    entrypoints.push(...new Set(configFile.runtimeConfig?.entrypoints));
+  } else {
+    entrypoints.push('dist/operations.ts')
+  }
+  console.log(cliOptions);
+  console.log(configFile.runtimeConfig?.entrypoints);
+  console.log(entrypoints);
   const runtimeConfig: DBOSRuntimeConfig = {
-    entrypoints: Array.from(new Set(configFile.runtimeConfig?.entrypoints?.concat(defaultEntrypoint))) || [defaultEntrypoint],
+    entrypoints,
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 
