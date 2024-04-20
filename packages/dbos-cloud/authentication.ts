@@ -158,3 +158,23 @@ export async function authenticateWithRefreshToken(logger: Logger, refreshToken:
     return null;
   }
 }
+
+export async function revokeRefreshToken(logger: Logger, refreshToken: string): Promise<number> {
+  const request = {
+    method: 'POST',
+    url: `https://${Auth0Domain}/oauth/revoke`,
+    headers: {'content-type': 'application/json'},
+    data: {
+      client_id: DBOSClientID,
+      token: refreshToken
+    }
+  };
+  try {
+    await axios.request(request);
+    return 0;
+  } catch (e) {
+    (e as Error).message = `Failed to revoke refresh token: ${(e as Error).message}`;
+    logger.error(e);
+    return 1;
+  }
+}
