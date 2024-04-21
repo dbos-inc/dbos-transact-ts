@@ -24,7 +24,7 @@ export async function getAppLogs(host: string, last: number, pagesize:number): P
   }
 
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   const appName = retrieveApplicationName(logger);
   const url = `https://${host}/v1alpha1/${userCredentials.userName}/logs/applications/${appName}`;

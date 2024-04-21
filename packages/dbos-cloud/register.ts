@@ -1,8 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials } from "./cloudutils.js";
 import readline from 'readline';
-import { authenticate } from "./login.js";
 import validator from 'validator';
+import { authenticate } from "./authentication.js";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -32,17 +32,17 @@ export async function registerUser(username: string, host: string): Promise<numb
     givenName = await prompt("Enter First/Given Name: ");
     familyName = await prompt("Enter Last/Family Name: ");
     company = await prompt("Enter Company: ");
-    const bearerToken = await authenticate(logger);
-    if (bearerToken === null) {
+    const authResponse = await authenticate(logger);
+    if (authResponse === null) {
       return 1
     }
     const credentials: DBOSCloudCredentials = {
-      token: bearerToken,
+      token: authResponse.token,
       userName: username,
     };
     writeCredentials(credentials)
   } else {
-    const userCredentials = getCloudCredentials();
+    const userCredentials = await getCloudCredentials();
     if (userCredentials.userName !== username) {
       logger.error(`You are trying to register ${username}, but are currently authenticated as ${userCredentials.userName}. Please run "npx dbos-cloud logout".`)
       return 1;
@@ -51,7 +51,7 @@ export async function registerUser(username: string, host: string): Promise<numb
     }
   }
 
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   const loginName = userCredentials.userName;
   try {

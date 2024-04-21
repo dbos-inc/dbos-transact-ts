@@ -58,7 +58,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
 export async function deployAppCode(host: string, rollback: boolean, verbose: boolean): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   logger.debug("  ... got cloud credentials");
 
