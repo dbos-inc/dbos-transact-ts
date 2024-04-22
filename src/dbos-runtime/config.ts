@@ -185,9 +185,13 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   // CLI overrides configuration
   if (cliOptions?.entrypoint) {
     entrypoints.push(cliOptions.entrypoint);
-  } else if (configFile.runtimeConfig?.entrypoints) {
+  } else if (configFile.runtimeConfig?.entrypoints || configFile.runtimeConfig?.entrypoint) {
     // Take care of duplicates, if any
     entrypoints.push(...new Set(configFile.runtimeConfig?.entrypoints));
+    // Support for deprecated `entrypoint` property
+    if (configFile.runtimeConfig?.entrypoint) {
+      entrypoints.push(configFile.runtimeConfig.entrypoint);
+    }
   } else {
     entrypoints.push(defaultEntryPoint)
   }

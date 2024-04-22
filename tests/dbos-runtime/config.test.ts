@@ -70,13 +70,14 @@ describe("dbos-config", () => {
       expect(runtimeConfig.entrypoints[0]).toBe(defaultEntryPoint);
     });
 
-    test("runtime config contains default entrypoint if none provided", () => {
+    test("runtime config correctly parses entrypoints", () => {
       const mockDBOSConfigWithEntryPoints = mockDBOSConfigYamlString + `\n
       runtimeConfig:
         port: 1234
         entrypoints:
           - a
           - b
+        entrypoint: c
       `;
       jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigWithEntryPoints);
 
@@ -86,9 +87,10 @@ describe("dbos-config", () => {
       expect(runtimeConfig?.port).toBe(1234);
       expect(runtimeConfig.entrypoints).toBeDefined();
       expect(runtimeConfig.entrypoints).toBeInstanceOf(Array);
-      expect(runtimeConfig.entrypoints).toHaveLength(2);
+      expect(runtimeConfig.entrypoints).toHaveLength(3);
       expect(runtimeConfig.entrypoints[0]).toBe("a");
       expect(runtimeConfig.entrypoints[1]).toBe("b");
+      expect(runtimeConfig.entrypoints[2]).toBe("c");
     })
 
     test("fails to read config file", () => {
