@@ -14,7 +14,6 @@ interface ModuleExports {
 }
 
 export interface DBOSRuntimeConfig {
-  entrypoint?: string; // DEPRECATED
   entrypoints: string[];
   port: number;
 }
