@@ -36,15 +36,8 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
-      const classes: object[] = [];
-      for (const entrypoint of this.runtimeConfig.entrypoints) {
-        this.dbosExec.logger.debug(`Loading classes from entrypoint ${entrypoint}`);
-        const loadedClasses = await DBOSRuntime.loadClasses(entrypoint);
-        classes.push(...loadedClasses);
-      }
-      if (classes.length === 0) {
-        throw new DBOSFailLoadOperationsError("operations not found");
-      }
+      this.dbosExec.logger.debug(`Loading classes from entrypoints ${this.runtimeConfig.entrypoints}`);
+      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
       await this.dbosExec.init(...classes);
       const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
@@ -68,22 +61,29 @@ export class DBOSRuntime {
   /**
    * Load an application's workflow functions, assumed to be in src/operations.ts (which is compiled to dist/operations.js).
    */
-  static async loadClasses(entrypoint: string): Promise<object[]> {
-    const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
-    let exports: ModuleExports;
-    if (fs.existsSync(operations)) {
-      const operationsURL = pathToFileURL(operations).href;
-      exports = (await import(operationsURL)) as Promise<ModuleExports>;
-    } else {
-      throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
-    }
-    const classes: object[] = [];
-    for (const key in exports) {
-      if (isObject(exports[key])) {
-        classes.push(exports[key] as object);
+  static async loadClasses(entrypoints: string[]): Promise<object[]> {
+    const allClasses: object[] = [];
+    for (const entrypoint of entrypoints) {
+      const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
+      let exports: ModuleExports;
+      if (fs.existsSync(operations)) {
+        const operationsURL = pathToFileURL(operations).href;
+        exports = (await import(operationsURL)) as Promise<ModuleExports>;
+      } else {
+        throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
       }
+      const classes: object[] = [];
+      for (const key in exports) {
+        if (isObject(exports[key])) {
+          classes.push(exports[key] as object);
+        }
+      }
+      allClasses.push(...classes);
     }
-    return classes;
+    if (allClasses.length === 0) {
+      throw new DBOSFailLoadOperationsError("operations not found");
+    }
+    return allClasses;
   }
 
   onSigterm(): void {
