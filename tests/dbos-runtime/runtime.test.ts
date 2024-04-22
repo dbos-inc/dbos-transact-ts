@@ -90,14 +90,14 @@ describe("runtime-entrypoint-tests", () => {
   });
 
   test("runtime-hello using entrypoints CLI option", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "-E", "dist/entrypoint.js"], {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "--entrypoints", "dist/entrypoint.js"], {
       env: process.env,
     });
     await waitForMessageTest(command, "1234");
   });
 
   test("runtime-hello using deprecated entrypoint CLI option", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "-e", "dist/entrypoint.js"], {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "--entrypoint", "dist/entrypoint.js"], {
       env: process.env,
     });
     await waitForMessageTest(command, "1234");
