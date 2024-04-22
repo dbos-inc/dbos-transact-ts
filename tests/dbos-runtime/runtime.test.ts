@@ -67,7 +67,7 @@ async function dropHelloSystemDB() {
 }
 
 function configureHelloExample() {
-  execSync("npm i");
+  execSync("npm ci");
   execSync("npm run build");
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = "dbos";
