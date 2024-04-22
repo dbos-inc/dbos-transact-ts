@@ -181,22 +181,28 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
-  const entrypoints: string[] = []
+  const entrypoints = new Set<string>();
   // CLI overrides configuration
-  if (cliOptions?.entrypoint) {
-    entrypoints.push(cliOptions.entrypoint);
+  if (cliOptions?.entrypoints || cliOptions?.entrypoint) {
+    if (cliOptions.entrypoints) {
+      cliOptions.entrypoints.forEach(entry => entrypoints.add(entry));
+    }
+    if (cliOptions.entrypoint) {
+      entrypoints.add(cliOptions.entrypoint)
+    }
   } else if (configFile.runtimeConfig?.entrypoints || configFile.runtimeConfig?.entrypoint) {
     // Take care of duplicates, if any
-    entrypoints.push(...new Set(configFile.runtimeConfig?.entrypoints));
-    // Support for deprecated `entrypoint` property
-    if (configFile.runtimeConfig?.entrypoint) {
-      entrypoints.push(configFile.runtimeConfig.entrypoint);
+    if (configFile.runtimeConfig.entrypoints) {
+      configFile.runtimeConfig.entrypoints.forEach(entry => entrypoints.add(entry));
+    }
+    if (configFile.runtimeConfig.entrypoint) {
+      entrypoints.add(configFile.runtimeConfig.entrypoint);
     }
   } else {
-    entrypoints.push(defaultEntryPoint);
+    entrypoints.add(defaultEntryPoint);
   }
   const runtimeConfig: DBOSRuntimeConfig = {
-    entrypoints,
+    entrypoints: [...entrypoints],
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 

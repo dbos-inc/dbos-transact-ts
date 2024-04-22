@@ -77,6 +77,7 @@ describe("dbos-config", () => {
         entrypoints:
           - a
           - b
+          - b
         entrypoint: c
       `;
       jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigWithEntryPoints);

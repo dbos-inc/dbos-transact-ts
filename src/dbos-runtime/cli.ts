@@ -20,7 +20,8 @@ export interface DBOSCLIStartOptions {
   port?: number,
   loglevel?: string,
   configfile?: string,
-  entrypoint?: string,
+  entrypoint?: string, // DEPRECATED
+  entrypoints?: string[],
 }
 
 export interface DBOSConfigureOptions {
