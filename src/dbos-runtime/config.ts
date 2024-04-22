@@ -42,14 +42,14 @@ export interface ConfigFile {
 }
 
 /*
-* Substitute environment variables using a regex for matching.
-* Will find anything in curly braces.
-* TODO: Use a more robust solution.
-*/
+ * Substitute environment variables using a regex for matching.
+ * Will find anything in curly braces.
+ * TODO: Use a more robust solution.
+ */
 export function substituteEnvVars(content: string): string {
-  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
+  const regex = /\${([^}]+)}/g; // Regex to match ${VAR_NAME} style placeholders
   return content.replace(regex, (_, g1: string) => {
-    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+    return process.env[g1] || ""; // If the env variable is not set, return an empty string.
   });
 }
 
@@ -183,19 +183,9 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /*************************************/
   const entrypoints = new Set<string>();
   // CLI overrides configuration
-  if (cliOptions?.entrypoints || cliOptions?.entrypoint) {
-    if (cliOptions.entrypoints) {
-      cliOptions.entrypoints.forEach(entry => entrypoints.add(entry));
-    }
-    if (cliOptions.entrypoint) {
-      entrypoints.add(cliOptions.entrypoint)
-    }
-  } else if (configFile.runtimeConfig?.entrypoints || configFile.runtimeConfig?.entrypoint) {
+  if (configFile.runtimeConfig?.entrypoints) {
     if (configFile.runtimeConfig.entrypoints) {
-      configFile.runtimeConfig.entrypoints.forEach(entry => entrypoints.add(entry));
-    }
-    if (configFile.runtimeConfig.entrypoint) {
-      entrypoints.add(configFile.runtimeConfig.entrypoint);
+      configFile.runtimeConfig.entrypoints.forEach((entry) => entrypoints.add(entry));
     }
   } else {
     entrypoints.add(defaultEntryPoint);
