@@ -3,7 +3,7 @@ import { readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
-import { DBOSRuntimeConfig } from "./runtime";
+import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
@@ -42,14 +42,14 @@ export interface ConfigFile {
 }
 
 /*
-* Substitute environment variables using a regex for matching.
-* Will find anything in curly braces.
-* TODO: Use a more robust solution.
-*/
+ * Substitute environment variables using a regex for matching.
+ * Will find anything in curly braces.
+ * TODO: Use a more robust solution.
+ */
 export function substituteEnvVars(content: string): string {
-  const regex = /\${([^}]+)}/g;  // Regex to match ${VAR_NAME} style placeholders
+  const regex = /\${([^}]+)}/g; // Regex to match ${VAR_NAME} style placeholders
   return content.replace(regex, (_, g1: string) => {
-    return process.env[g1] || "";  // If the env variable is not set, return an empty string.
+    return process.env[g1] || ""; // If the env variable is not set, return an empty string.
   });
 }
 
@@ -118,12 +118,12 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
   } else if (poolConfig.host != "localhost" && poolConfig.host != "127.0.0.1") {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
-    poolConfig.ssl = { rejectUnauthorized: false }
+    poolConfig.ssl = { rejectUnauthorized: false };
   } else {
     // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
-    poolConfig.ssl = false
+    poolConfig.ssl = false;
   }
-  return poolConfig
+  return poolConfig;
 }
 
 /*
@@ -143,7 +143,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile, useProxy)
+  const poolConfig = constructPoolConfig(configFile, useProxy);
 
   /***************************/
   /* Handle telemetry config */
@@ -181,8 +181,14 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /*************************************/
   /* Build final runtime Configuration */
   /*************************************/
+  const entrypoints = new Set<string>();
+  if (configFile.runtimeConfig?.entrypoints) {
+    configFile.runtimeConfig.entrypoints.forEach((entry) => entrypoints.add(entry));
+  } else {
+    entrypoints.add(defaultEntryPoint);
+  }
   const runtimeConfig: DBOSRuntimeConfig = {
-    entrypoint: cliOptions?.entrypoint || configFile.runtimeConfig?.entrypoint || "dist/operations.js",
+    entrypoints: [...entrypoints],
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 

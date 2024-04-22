@@ -17,38 +17,34 @@ const program = new Command();
 ////////////////////////
 
 export interface DBOSCLIStartOptions {
-  port?: number,
-  loglevel?: string,
-  configfile?: string,
-  entrypoint?: string,
+  port?: number;
+  loglevel?: string;
+  configfile?: string;
 }
 
 export interface DBOSConfigureOptions {
-  host?: string,
-  port?: number,
-  username?: string,
+  host?: string;
+  port?: number;
+  username?: string;
 }
 
-
 interface DBOSDebugOptions {
-  uuid: string, // Workflow UUID
-  proxy: string,
-  loglevel?: string,
-  configfile?: string,
-  entrypoint?: string,
+  uuid: string; // Workflow UUID
+  proxy: string;
+  loglevel?: string;
+  configfile?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson = require('../../../package.json') as { version: string };
+const packageJson = require("../../../package.json") as { version: string };
 program.version(packageJson.version);
 
 program
-  .command('start')
-  .description('Start the server')
-  .option('-p, --port <number>', 'Specify the port number')
-  .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
-  .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
+  .command("start")
+  .description("Start the server")
+  .option("-p, --port <number>", "Specify the port number")
+  .option("-l, --loglevel <string>", "Specify log level")
+  .option("-c, --configfile <string>", "Specify the config file path", dbosConfigFilePath)
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -56,15 +52,14 @@ program
   });
 
 program
-  .command('debug')
-  .description('Debug a workflow')
-  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL for debugging cloud traces')
-  .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
-  .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-c, --configfile <string>', 'Specify the config file path', dbosConfigFilePath)
-  .option('-e, --entrypoint <string>', 'Specify the entrypoint file path')
+  .command("debug")
+  .description("Debug a workflow")
+  .option("-x, --proxy <string>", "Specify the time-travel debug proxy URL for debugging cloud traces")
+  .requiredOption("-u, --uuid <string>", "Specify the workflow UUID to replay")
+  .option("-l, --loglevel <string>", "Specify log level")
+  .option("-c, --configfile <string>", "Specify the config file path", dbosConfigFilePath)
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, (options.proxy !== undefined));
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, options.proxy !== undefined);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
   });
 
@@ -75,7 +70,6 @@ program
   .action((_options: { appName: string }) => {
     console.log("NOTE: This command has been removed in favor of `npx @dbos-inc/create` or `npm create @dbos-inc`");
   });
-
 
 program
   .command('configure')

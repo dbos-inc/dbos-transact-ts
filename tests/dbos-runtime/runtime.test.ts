@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
@@ -37,7 +37,8 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
       const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
     } catch (error) {
-      console.error(error);
+      const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
+      console.error(errMsg);
       throw error;
     }
   } finally {
@@ -65,7 +66,7 @@ async function dropHelloSystemDB() {
 }
 
 function configureHelloExample() {
-  execSync("npm i");
+  execSync("npm ci");
   execSync("npm run build");
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = "dbos";
@@ -87,13 +88,6 @@ describe("runtime-entrypoint-tests", () => {
     process.chdir("../../../..");
   });
 
-  test("runtime-hello using entrypoint CLI option", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234", "--entrypoint", "dist/entrypoint.js"], {
-      env: process.env,
-    });
-    await waitForMessageTest(command, "1234");
-  });
-
   test("runtime-hello using entrypoint runtimeConfig", async () => {
     const mockDBOSConfigYamlString = `
 database:
@@ -105,7 +99,8 @@ database:
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
 runtimeConfig:
-  entrypoint: dist/entrypoint.js
+  entrypoints:
+    - dist/entrypoint.js
 `;
     const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
@@ -136,7 +131,7 @@ describe("runtime-tests", () => {
   });
 
   test("runtime-hello-jest", () => {
-    execSync("npm run test", { env: process.env });  // Make sure the hello example passes its own tests.
+    execSync("npm run test", { env: process.env }); // Make sure the hello example passes its own tests.
   });
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!

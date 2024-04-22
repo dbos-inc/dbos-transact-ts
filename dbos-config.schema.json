@@ -109,8 +109,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "entrypoint": {
-          "type": "string"
+        "entrypoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "port": {
           "type": "number"
