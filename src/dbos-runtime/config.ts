@@ -193,7 +193,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
       entrypoints.push(configFile.runtimeConfig.entrypoint);
     }
   } else {
-    entrypoints.push(defaultEntryPoint)
+    entrypoints.push(defaultEntryPoint);
   }
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints,
