@@ -11,6 +11,13 @@ export interface DBOSCloudCredentials {
   userName: string;
 }
 
+export interface UserProfile {
+  Name: string;
+  Email: string;
+  Organization: string;
+  SubscriptionPlan: string;
+}
+
 export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
