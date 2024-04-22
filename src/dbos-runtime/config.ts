@@ -182,7 +182,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /* Build final runtime Configuration */
   /*************************************/
   const entrypoints = new Set<string>();
-  // CLI overrides configuration
   if (configFile.runtimeConfig?.entrypoints) {
     configFile.runtimeConfig.entrypoints.forEach((entry) => entrypoints.add(entry));
   } else {
