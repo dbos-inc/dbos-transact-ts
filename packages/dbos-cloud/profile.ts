@@ -3,7 +3,7 @@ import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorRespons
 
 export async function profile(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
