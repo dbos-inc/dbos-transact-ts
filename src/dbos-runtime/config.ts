@@ -191,7 +191,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
       entrypoints.add(cliOptions.entrypoint)
     }
   } else if (configFile.runtimeConfig?.entrypoints || configFile.runtimeConfig?.entrypoint) {
-    // Take care of duplicates, if any
     if (configFile.runtimeConfig.entrypoints) {
       configFile.runtimeConfig.entrypoints.forEach(entry => entrypoints.add(entry));
     }
