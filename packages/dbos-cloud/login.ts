@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { DBOSCloudCredentials, getLogger, handleAPIErrors, isCloudAPIErrorResponse, writeCredentials } from "./cloudutils.js";
+import { DBOSCloudCredentials, UserProfile, getLogger, handleAPIErrors, isCloudAPIErrorResponse, writeCredentials } from "./cloudutils.js";
 import { AuthenticationResponse, authenticate, authenticateWithRefreshToken } from "./authentication.js";
 
 export async function login(host: string, getRefreshToken: boolean, useRefreshToken?: string): Promise<number> {
@@ -16,7 +16,7 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
   const bearerToken = "Bearer " + authResponse.token;
   try {
     const response = await axios.get(
-      `https://${host}/v1alpha1/user`, // TODO: Change to /user/profile endpoint
+      `https://${host}/v1alpha1/user/profile`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -24,11 +24,11 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
         },
       }
     );
-    const username = response.data as string;
+    const profile = response.data as UserProfile;
     const credentials: DBOSCloudCredentials = {
       token: authResponse.token,
       refreshToken: authResponse.refreshToken,
-      userName: username,
+      userName: profile.Name,
     };
     writeCredentials(credentials)
     logger.info(`Successfully logged in as ${credentials.userName}!`);
