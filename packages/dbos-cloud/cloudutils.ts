@@ -3,9 +3,11 @@ import fs from "fs";
 import { AxiosError } from "axios";
 import jwt from 'jsonwebtoken';
 import path from "node:path";
+import { authenticateWithRefreshToken } from "./authentication.js";
 
 export interface DBOSCloudCredentials {
   token: string;
+  refreshToken?: string;
   userName: string;
 }
 
@@ -76,7 +78,7 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-export function getCloudCredentials(): DBOSCloudCredentials {
+export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
   const logger = getLogger();
   if (!credentialsExist()) {
     logger.error("Error: not logged in")
@@ -85,11 +87,25 @@ export function getCloudCredentials(): DBOSCloudCredentials {
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
   const credentials =  {
     userName: userCredentials.userName,
+    refreshToken: userCredentials.refreshToken,
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
   };
   if (isTokenExpired(credentials.token)) {
-    logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login'")
-    process.exit(1)
+    if (credentials.refreshToken) {
+      logger.info("Refreshing access token with refresh token")
+      const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
+      if (authResponse === null) {
+        logger.error("Error: Refreshing access token with refresh token failed.  Logging out...");
+        deleteCredentials();
+        process.exit(1);
+      }
+      credentials.token = authResponse.token;
+      writeCredentials(credentials);
+      return await getCloudCredentials();
+    } else {
+      logger.error("Error: Login expired. Please log in again with 'npx dbos-cloud login'");
+      process.exit(1);
+    }
   }
   return credentials
 }

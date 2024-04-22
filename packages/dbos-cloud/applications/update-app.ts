@@ -4,7 +4,7 @@ import { Application } from "./types.js";
 
 export async function updateApp(host: string): Promise<number> {
   const logger =  getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   const appName = retrieveApplicationName(logger);

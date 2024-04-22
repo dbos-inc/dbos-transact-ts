@@ -11,7 +11,7 @@ export interface UserDBInstance {
 
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -57,7 +57,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
 
 export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean) {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
   try {
@@ -88,7 +88,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
 
 export async function deleteUserDb(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -114,7 +114,7 @@ export async function deleteUserDb(host: string, dbName: string) {
 
 export async function unlinkUserDB(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -169,7 +169,7 @@ export async function listUserDB(host: string, json: boolean) {
   const logger = getLogger();
 
   try {
-    const userCredentials = getCloudCredentials();
+    const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
   
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases`, {
@@ -208,7 +208,7 @@ export async function listUserDB(host: string, json: boolean) {
 }
 
 export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
@@ -223,7 +223,7 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
 
 export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
   const logger = getLogger();
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {

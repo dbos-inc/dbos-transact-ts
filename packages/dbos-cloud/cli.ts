@@ -13,7 +13,7 @@ import { login } from "./login.js";
 import { registerUser } from "./register.js";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB } from "./userdb.js";
 import { launchDashboard, getDashboardURL } from "./dashboards.js";
-import { DBOSCloudHost, credentialsExist, deleteCredentials } from "./cloudutils.js";
+import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
@@ -22,6 +22,7 @@ import { fileURLToPath } from 'url';
 import path from "path";
 import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./profile.js";
+import { revokeRefreshToken } from "./authentication.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -61,8 +62,10 @@ program.version(packageJson.version);
 program
   .command('login')
   .description('Log in to DBOS cloud')
-  .action(async () => {
-    const exitCode = await login(DBOSCloudHost);
+  .option('--get-refresh-token', 'Get a refresh token you can use to programatically log in')
+  .option('--with-refresh-token <token>', 'Use a refresh token to programatically log in')
+  .action(async (options: { getRefreshToken?: boolean, withRefreshToken?: string }) => {
+    const exitCode = await login(DBOSCloudHost, options.getRefreshToken || false, options.withRefreshToken);
     process.exit(exitCode);
   });
 
@@ -93,6 +96,15 @@ program
       deleteCredentials();
     }
     process.exit(0);
+  });
+
+  program
+  .command('revoke')
+  .description('Revoke a refresh token')
+  .argument('<token>', 'Token to revoke')
+  .action(async (token: string) => {
+    const exitCode = await revokeRefreshToken(getLogger(), token);
+    process.exit(exitCode);
   });
 
 /////////////////////////////
@@ -173,8 +185,9 @@ applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
-  .action(async (options: { last: number }) => {
-    const exitCode = await getAppLogs(DBOSCloudHost, options.last);
+  .option('-p, --pagesize <integer>', 'How many lines to fetch at once when paginating. Default is 1000', parseInt)
+  .action(async (options: { last: number, pagesize: number}) => {
+    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize);
     process.exit(exitCode);
   });
 

@@ -3,7 +3,7 @@ import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogge
 
 export async function deleteApp(host: string, dropdb: boolean, appName?: string): Promise<number> {
   const logger = getLogger()
-  const userCredentials = getCloudCredentials();
+  const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger);

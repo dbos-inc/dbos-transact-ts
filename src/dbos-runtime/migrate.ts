@@ -44,7 +44,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
       const migrateCommandOutput = execSync(cmd).toString();
-      logger.info(migrateCommandOutput);
+      logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
     logger.error("Error running migration");
