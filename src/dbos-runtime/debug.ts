@@ -8,7 +8,7 @@ export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSR
   const logger = new GlobalLogger();
   try {
     const dbosExec = new DBOSExecutor(dbosConfig);
-    dbosExec.logger.debug(`Loading classes from entrypoints ${runtimeConfig.entrypoints}`);
+    dbosExec.logger.debug(`Loading classes from entrypoints: ${JSON.stringify(runtimeConfig.entrypoints)}`);
     const classes = await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
     await dbosExec.init(...classes);
 

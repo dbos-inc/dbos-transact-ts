@@ -37,7 +37,7 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
-      this.dbosExec.logger.debug(`Loading classes from entrypoints ${this.runtimeConfig.entrypoints}`);
+      this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
       const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
       await this.dbosExec.init(...classes);
       const server = new DBOSHttpServer(this.dbosExec);
