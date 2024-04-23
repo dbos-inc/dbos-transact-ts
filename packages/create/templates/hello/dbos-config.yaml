@@ -11,6 +11,7 @@ database:
   app_db_name: hello
   connectionTimeoutMillis: 3000
   app_db_client: knex
+  ssl: false
   migrate:
     - npx knex migrate:latest
   rollback:
