@@ -18,6 +18,7 @@ describe("dbos-config", () => {
         username: 'some user'
         password: \${PGPASSWORD}
         app_db_name: 'some DB'
+        ssl: false
       application:
         payments_url: 'http://somedomain.com/payment'
         foo: \${FOO}
@@ -49,6 +50,7 @@ describe("dbos-config", () => {
       expect(poolConfig.password).toBe(process.env.PGPASSWORD);
       expect(poolConfig.connectionTimeoutMillis).toBe(3000);
       expect(poolConfig.database).toBe("some DB");
+      expect(poolConfig.ssl).toBe(false);
 
       expect(dbosConfig.userDbclient).toBe(UserDatabaseName.KNEX);
 
@@ -202,6 +204,61 @@ describe("dbos-config", () => {
       // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
+    });
+
+    test("ssl true enables ssl", async () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'localhost'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          app_db_name: 'some DB'
+          ssl: true
+        env:
+          FOOFOO: barbar
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.ssl).toEqual({ rejectUnauthorized: false });
+    });
+
+    test("ssl defaults off for localhost", async () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'localhost'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          app_db_name: 'some DB'
+        env:
+          FOOFOO: barbar
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.ssl).toBe(false);
+    });
+
+    test("ssl defaults on for not-localhost", async () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          app_db_name: 'some DB'
+        env:
+          FOOFOO: barbar
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.ssl).toEqual({ rejectUnauthorized: false });
     });
 
     test("getConfig throws when it finds a value of different type than the default", async () => {
