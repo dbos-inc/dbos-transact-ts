@@ -14,13 +14,15 @@ const program = new Command();
 
 program
   .command("generate")
-  .argument('<entrypoint>', 'Specify the entrypoint file path')
-  .action(async (entrypoint: string) => {
-    const openapi = await generateOpenApi(entrypoint);
-    if (openapi) {
-      const filename = path.join(path.dirname(entrypoint), "openapi.yaml");
-      const yaml = `# OpenApi specification generated for application\n\n` + YAML.stringify(openapi, { aliasDuplicateObjects: false });
-      await fs.writeFile(filename, yaml, { encoding: 'utf-8' });
+  .argument('<entrypoints...>', 'Specify entrypoints file path')
+  .action(async (entrypoints: string[]) => {
+    for (const entrypoint of entrypoints) {
+      const openapi = await generateOpenApi(entrypoint);
+      if (openapi) {
+        const filename = path.join(path.dirname(entrypoint), "openapi.yaml");
+        const yaml = `# OpenApi specification generated for application\n\n` + YAML.stringify(openapi, { aliasDuplicateObjects: false });
+        await fs.writeFile(filename, yaml, { encoding: 'utf-8' });
+      }
     }
   });
 
