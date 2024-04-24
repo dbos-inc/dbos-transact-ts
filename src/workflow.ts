@@ -319,12 +319,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         // Record the execution, commit, and return.
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
-          const guardOutput: BufferedResult = {
+          const readOutput: BufferedResult = {
             output: result,
             txn_snapshot: txn_snapshot!,
             created_at: Date.now(),
           }
-          this.resultBuffer.set(funcId, guardOutput);
+          this.resultBuffer.set(funcId, readOutput);
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
           const pg_txn_id = await this.recordOutput<R>(client, funcId, result);
