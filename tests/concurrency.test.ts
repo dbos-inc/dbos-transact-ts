@@ -7,9 +7,9 @@ import { PoolClient } from "pg";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
+const testTableName = "dbos_concurrency_test_kv";
 
 describe("concurrency-tests", () => {
-  const testTableName = "dbos_concurrency_test_kv";
 
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
@@ -114,9 +114,9 @@ class ConcurrTestClass {
     ConcurrTestClass.resolve2 = r;
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
-  static async testReadWriteFunction(_txnCtxt: TestTransactionContext, id: number) {
+  static async testReadWriteFunction(txnCtxt: TestTransactionContext, id: number) {
+    await txnCtxt.client.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
     ConcurrTestClass.cnt++;
     return id;
   }
