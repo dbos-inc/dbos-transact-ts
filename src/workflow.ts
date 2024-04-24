@@ -320,7 +320,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           // Buffer the output of read-only transactions instead of synchronously writing it.
           const readOutput: BufferedResult = {
             output: result,
-            txn_snapshot: txn_snapshot!,
+            txn_snapshot: txn_snapshot,
             created_at: Date.now(),
           }
           this.resultBuffer.set(funcId, readOutput);
