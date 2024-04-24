@@ -207,10 +207,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Write a operation's output to the database.
    */
-  async recordOutput<R>(client: UserDatabaseClient, funcID: number, output: R): Promise<string> {
+  async recordOutput<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
     try {
       const serialOutput = JSON.stringify(output);
-      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text), $4) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, Date.now());
+      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now());
       return rows[0].txn_id;
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
@@ -225,11 +225,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Record an error in an operation to the database.
    */
-  async recordError(client: UserDatabaseClient, funcID: number, err: Error): Promise<string> {
+  async recordError(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     try {
       const serialErr = JSON.stringify(serializeError(err));
-      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), (select pg_current_snapshot()::text), $4) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, Date.now());
-      return rows[0].txn_id;
+      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now());
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
@@ -285,6 +284,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     );
     // eslint-disable-next-line no-constant-condition
     while (true) {
+      let txn_snapshot = "invalid";
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         const tCtxt = new TransactionContextImpl(
           this.#dbosExec.userDatabase.getName(), client, this,
@@ -293,7 +293,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
-        let txn_snapshot: string;
         if (this.presetUUID) {
           const check: BufferedResult = await this.checkExecution<R>(client, funcId);
           txn_snapshot = check.txn_snapshot;
@@ -303,8 +302,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
             this.#dbosExec.tracer.endSpan(tCtxt.span);
             return check.output as R;
           }
-        } else if (readOnly) {
-          // Collect snapshot information for read-only transactions, if not already collected above
+        } else {
+          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
           txn_snapshot = await this.retrieveSnapshot(client);
         }
 
@@ -327,7 +326,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           this.resultBuffer.set(funcId, readOutput);
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
-          const pg_txn_id = await this.recordOutput<R>(client, funcId, result);
+          const pg_txn_id = await this.recordOutput<R>(client, funcId, txn_snapshot, result);
           tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
           this.resultBuffer.clear();
         }
@@ -355,7 +354,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         const e: Error = err as Error;
         await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
-          await this.recordError(client, funcId, e);
+          await this.recordError(client, funcId, txn_snapshot, e);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
