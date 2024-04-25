@@ -117,3 +117,233 @@ describe('week-day-names-conversion', () => {
 /////////////
 // Validation tests
 /////////////
+
+describe('pattern-validation', () => {
+    describe('validate day of month', () => {
+        it('should fail with invalid day of month', () => {
+            expect(() => {
+                validate('* * 32 * *');
+            }).toThrow('32 is a invalid expression for day of month');
+        });
+
+        it('should not fail with valid day of month', () => {
+            expect(() => {
+                validate('0 * * 15 * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with * for day of month', () => {
+            expect(() => {
+                validate('* * * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2 for day of month', () => {
+            expect(() => {
+                validate('* * */2 * *');
+            }).not.toThrow();
+        });
+    });
+});
+
+describe('pattern-validation', () => {
+    describe('validate hour', () => {
+        it('should fail with invalid hour', () => {
+            expect(() => {
+                validate('* 25 * * *');
+            }).toThrow('25 is a invalid expression for hour');
+        });
+
+        it('should not fail with valid hour', () => {
+            expect(() => {
+                validate('* 12 * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with * for hour', () => {
+            expect(() => {
+                validate('* * * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2 for hour', () => {
+            expect(() => {
+                validate('* */2 * * *');
+            }).not.toThrow();
+        });
+
+        it('should accept range for hours', () => {
+            expect(() => {
+                validate('* 3-20 * * *');
+            }).not.toThrow();
+        });
+    });
+});
+
+describe('pattern-validation', () => {
+    describe('validate minutes', () => {
+        it('should fail with invalid minute', () => {
+            expect(() => {
+                validate('63 * * * *');
+            }).toThrow('63 is a invalid expression for minute');
+        });
+
+        it('should not fail with valid minute', () => {
+            expect(() => {
+                validate('30 * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with *', () => {
+            expect(() => {
+                validate('* * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2', () => {
+            expect(() => {
+                validate('*/2 * * * *');
+            }).not.toThrow();
+        });
+    });
+});
+
+describe('pattern-validation',  () => {
+    describe('validate month',  () => {
+        it('should fail with invalid month',  () => {
+            expect( () => {
+                validate('* * * 13 *');
+            }).toThrow('13 is a invalid expression for month');
+        });
+
+        it('should fail with invalid month name',  () => {
+            expect( () => {
+                validate('* * * foo *');
+            }).toThrow('foo is a invalid expression for month');
+        });
+
+        it('should not fail with valid month',  () => {
+            expect( () => {
+                validate('* * * 10 *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with valid month name',  () => {
+            expect( () => {
+                validate('* * * September *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with * for month',  () => {
+            expect( () => {
+                validate('* * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2 for month',  () => {
+            expect( () => {
+                validate('* * * */2 *');
+            }).not.toThrow();
+        });
+    });
+});
+
+describe('pattern-validation', () => {
+    describe('validate seconds', () => {
+        it('should fail with invalid second', () => {
+            expect(() => {
+                validate('63 * * * * *');
+            }).toThrow('63 is a invalid expression for second');
+        });
+
+        it('should not fail with valid second', () => {
+            expect(() => {
+                validate('30 * * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with * for second', () => {
+            expect(() => {
+                validate('* * * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2 for second', () => {
+            expect(() => {
+                validate('*/2 * * * * *');
+            }).not.toThrow();
+        });
+    });
+});
+
+describe('pattern-validation', () => {
+    it('should succeed with a valid expression', () =>  {
+        expect(() => {
+            validate('59 * * * *');
+        }).not.toThrow();
+    });
+
+    it('should fail with an invalid expression', () =>  {
+        expect(() => {
+            validate('60 * * * *');
+        }).toThrow('60 is a invalid expression for minute');
+    });
+
+    it('should fail without a string', () =>  {
+        expect(() => {
+            validate(50 as unknown as string);
+        }).toThrow('pattern must be a string!');
+    });
+});
+
+describe('pattern-validation', () => {
+    describe('validate week day', () => {
+        it('should fail with invalid week day', () => {
+            expect(() => {
+                validate('* * * * 9');
+            }).toThrow('9 is a invalid expression for week day');
+        });
+
+        it('should fail with invalid week day name', () => {
+            expect(() => {
+                validate('* * * * foo');
+            }).toThrow('foo is a invalid expression for week day');
+        });
+
+        it('should not fail with valid week day', () => {
+            expect(() => {
+                validate('* * * * 5');
+            }).not.toThrow();
+        });
+
+        it('should not fail with valid week day name', () => {
+            expect(() => {
+                validate('* * * * Friday');
+            }).not.toThrow();
+        });
+
+        it('should not fail with * for week day', () => {
+            expect(() => {
+                validate('* * * * *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with */2 for week day', () => {
+            expect(() => {
+                validate('* * * */2 *');
+            }).not.toThrow();
+        });
+
+        it('should not fail with Monday-Sunday for week day', () => {
+            expect(() => {
+                validate('* * * * Monday-Sunday');
+            }).not.toThrow();
+        });
+
+        it('should not fail with 1-7 for week day', () => {
+            expect(() => {
+                validate('0 0 1 1 1-7');
+            }).not.toThrow();
+        });
+    });
+});
