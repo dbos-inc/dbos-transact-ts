@@ -44,6 +44,7 @@ export class DBOSRuntime {
       this.dbosExec.logRegisteredHTTPUrls();
       this.kafka = new DBOSKafka(this.dbosExec);
       await this.kafka.initKafka();
+      this.kafka.logRegisteredKafkaEndpoints();
     } catch (error) {
       this.dbosExec?.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {

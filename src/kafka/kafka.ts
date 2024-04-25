@@ -113,4 +113,16 @@ export class DBOSKafka{
       await consumer.disconnect();
     }
   }
+
+  logRegisteredKafkaEndpoints() {
+    const logger = this.dbosExec.logger;
+    logger.info("Kafka endpoints supported:");
+    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+      const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
+      if (ro.kafkaTopic) {
+        const defaults = ro.defaults as KafkaDefaults;
+        logger.info(`    ${ro.kafkaTopic} -> ${defaults.name}.${ro.name}`);
+      }
+    });
+  }
 }
