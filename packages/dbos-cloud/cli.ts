@@ -139,9 +139,9 @@ applicationCommands
   .command('deploy')
   .description('Deploy this application to the cloud and run associated database migration commands')
   .option('--verbose', 'Verbose log of deployment step')
-  .option('-v, --target-version <string>', 'Specify a target version to restore')
-  .action(async (options: {verbose?: boolean, targetVersion?: string}) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.targetVersion ?? null, options.verbose ?? false);
+  .option('-p, --previous-version <string>', 'Specify a previous version to restore')
+  .action(async (options: {verbose?: boolean, previousVersion?: string}) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false);
     process.exit(exitCode);
   });
 

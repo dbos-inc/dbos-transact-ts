@@ -55,7 +55,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     return buffer.toString('base64');
 }
 
-export async function deployAppCode(host: string, rollback: boolean, targetVersion: string | null, verbose: boolean): Promise<number> {
+export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials();
@@ -79,13 +79,13 @@ export async function deployAppCode(host: string, rollback: boolean, targetVersi
   logger.debug("  ... package-lock.json exists.");
 
   try {
-    const body: {application_archive?: string, target_version?: string} = {}
-    if (targetVersion === null) {
+    const body: {application_archive?: string, previous_version?: string} = {}
+    if (previousVersion === null) {
       logger.debug("Creating application zip ...");
       body.application_archive = await createZipData(logger);
       logger.debug("  ... application zipped.");
     } else {
-      body.target_version = targetVersion
+      body.previous_version = previousVersion
     }
 
     // Submit the deploy request
