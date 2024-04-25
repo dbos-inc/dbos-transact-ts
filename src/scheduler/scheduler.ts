@@ -1,4 +1,5 @@
 import { WorkflowContext } from "..";
+import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, registerAndWrapFunction } from "../decorators";
 
 ////
@@ -42,3 +43,65 @@ export function Scheduled(schedulerConfig: SchedulerConfig) {
     }
     return scheddec;
 }
+
+///////////////////////////
+// Scheduler Management
+///////////////////////////
+
+export class DBOSScheduler{
+    constructor(readonly dbosExec: DBOSExecutor) {}
+  
+    initScheduler() {
+        for (const registeredOperation of this.dbosExec.registeredOperations) {
+            const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
+            if (ro.schedulerConfig) { /*
+            const defaults = ro.defaults as KafkaDefaults;
+            if (!ro.txnConfig && !ro.workflowConfig) {
+                throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: A Kafka decorator can only be assigned to a transaction or workflow!`)
+            }
+            if (!defaults.kafkaConfig) {
+                throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
+            }
+            const kafka = new KafkaJS(defaults.kafkaConfig);
+            const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
+            const consumer = kafka.consumer(consumerConfig);
+            await consumer.connect()
+            await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
+            await consumer.run({
+                eachMessage: async ({ topic, partition, message }) => {
+                // This combination uniquely identifies a message for a given Kafka cluster
+                const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
+                const wfParams = { workflowUUID: workflowUUID };
+                // All operations annotated with Kafka decorators must take in these three arguments
+                const args: KafkaArgs = [topic, partition, message]
+                // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+                if (ro.txnConfig) {
+                    // Execute the transaction
+                    await this.dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
+                } else if (ro.workflowConfig) {
+                    // Safely start the workflow
+                    await this.dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
+                }
+                },
+            })
+            this.consumers.push(consumer);
+            */
+            }
+        }
+    }
+  
+    destroyScheduler() {
+    }
+  
+    logRegisteredSchedulerEndpoints() {
+        const logger = this.dbosExec.logger;
+        logger.info("Scheduled endpoints:");
+        this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+            const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
+            if (ro.schedulerConfig) {
+                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab ?? '* * * * *'}; ${ro.schedulerConfig.mode ?? 'Exactly Once Per Interval'}`);
+            }
+        });
+    }
+}
+  
