@@ -23,7 +23,7 @@ function removeExtraSpaces(str: string): string {
 
 function prependSecondExpression(expressions: string[]) : string[]
 {
-    if(expressions.length === 5){
+    if (expressions.length === 5) {
         return ['0'].concat(expressions);
     }
     return expressions;
@@ -35,7 +35,7 @@ const shortMonths = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug',
         'sep', 'oct', 'nov', 'dec'];
 
 function convertMonthNameI(expression:string, items:string[]) : string {
-    for(let i = 0; i < items.length; i++){
+    for (let i = 0; i < items.length; i++){
         expression = expression.replace(new RegExp(items[i], 'gi'), `${i + 1}`);
     }
     return expression;
@@ -53,7 +53,7 @@ const shortWeekDays = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function convertWeekDayName(weekExpression: string, items: string[]){
     for(let i = 0; i < items.length; i++){
-        weekExpression = weekExpression.replace(new RegExp(items[i], 'gi'), `${i+1}`);
+        weekExpression = weekExpression.replace(new RegExp(items[i], 'gi'), `${i}`);
     }
     return weekExpression;
 }
