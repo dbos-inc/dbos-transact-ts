@@ -81,6 +81,39 @@ describe('range-conversion', () => {
         expect(expression).toBe('0,1,2,10,11,12,13,14,15,16,17,18,19,20,21,22,23');
     });
 });
+
+describe('step-values-conversion', () => {
+    it('should convert step values', () => {
+        const expression = '1,2,3,4,5,6,7,8,9,10/2 0,1,2,3,4,5,6,7,8,9/5 */3 * * *';
+        const expressions = conversion(expression).split(' ');
+        expect(expressions[0]).toBe('2,4,6,8,10');
+        expect(expressions[1]).toBe('0,5');
+        expect(expressions[2]).toBe('0,3,6,9,12,15,18,21');
+    });
+
+    it('should throw an error if step value is not a number', () => {
+        const expressions = '1,2,3,4,5,6,7,8,9,10/someString 0,1,2,3,4,5,6,7,8,9/5 * * * *';
+        expect(() => conversion(expressions)).toThrow('someString is not a valid step value');
+    });
+});
+
+describe('week-day-names-conversion', () => {
+    it('should convert week day names names', () => {
+        const weekDays = conversion('* * * * Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday').split(' ')[5];
+        expect(weekDays).toBe('1,2,3,4,5,6,0');
+    });
+
+    it('should convert short week day names names', () => {
+        const weekDays = conversion('* * * * Mon,Tue,Wed,Thu,Fri,Sat,Sun').split(' ')[5];
+        expect(weekDays).toBe('1,2,3,4,5,6,0');
+    });
+
+    it('should convert 7 to 0', () => {
+        const weekDays = conversion('* * * * 7').split(' ')[5];
+        expect(weekDays).toBe('0');
+    });
+});
+
 /////////////
 // Validation tests
 /////////////

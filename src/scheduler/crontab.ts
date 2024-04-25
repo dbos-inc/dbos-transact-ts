@@ -118,7 +118,7 @@ function convertAllRanges(expressions: string[]){
 
 function convertSteps(expressions: string[]){
     const stepValuePattern = /^(.+)\/(\w+)$/;
-    for(let i = 0; i < expressions.length; i++){
+    for (let i = 0; i < expressions.length; i++){
         const match = stepValuePattern.exec(expressions[i]);
         const isStepValue = match !== null && match.length > 0;
         if (isStepValue){
@@ -127,12 +127,12 @@ function convertSteps(expressions: string[]){
                 throw new Error(baseDivider + ' is not a valid step value');
             }
             const values = match[1].split(',');
-            const stepValues = [];
+            const stepValues: string[] = [];
             const divider = parseInt(baseDivider, 10);
             for (let j = 0; j <= values.length; j++) {
                 const value = parseInt(values[j], 10);
                 if (value % divider === 0){
-                    stepValues.push(value.toString());
+                    stepValues.push(`${value}`);
                 }
             }
             expressions[i] = stepValues.join(',');
