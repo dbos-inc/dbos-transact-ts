@@ -294,11 +294,27 @@ export class TimeMatcher {
         const runOnSecond = matchPattern(this.expressions[0], date.getSeconds());
         const runOnMinute = matchPattern(this.expressions[1], date.getMinutes());
         const runOnHour = matchPattern(this.expressions[2], date.getHours());
+        const runOnDay = this.runsThisDay(date);
+
+        return runOnSecond && runOnMinute && runOnHour && runOnDay;
+    }
+
+    private runsThisDay(date: Date) {
         const runOnDay = matchPattern(this.expressions[3], date.getDate());
         const runOnMonth = matchPattern(this.expressions[4], date.getMonth() + 1);
         const runOnWeekDay = matchPattern(this.expressions[5], date.getDay());
 
-        return runOnSecond && runOnMinute && runOnHour && runOnDay && runOnMonth && runOnWeekDay;
+        return runOnDay && runOnMonth && runOnWeekDay;
+    }
+
+    nextOccurrence(date: Date) {
+        let msec = Math.round(date.getTime());
+        // This can be optimized by skipping ahead, but unit test first
+        for (;;) {
+            msec += 1000;
+            const nd = new Date(msec);
+            if (this.match(nd)) return nd;
+        }
     }
 
     apply(date: Date){
