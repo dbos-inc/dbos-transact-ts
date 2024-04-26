@@ -1,6 +1,7 @@
 import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, registerAndWrapFunction } from "../decorators";
+import { TimeMatcher } from "./crontab";
 
 ////
 // Configuration
@@ -115,29 +116,46 @@ class DetachableLoop {
     private isRunning: boolean = false;
     private resolveCompletion?: (value: void | PromiseLike<void>) => void;
     private interruptResolve?: () => void;
+    private lastExec: Date;
+    private timeMatcher: TimeMatcher;
 
-    constructor() {
-        // TODO Function and crontab and executor...
+    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly mtd: SchedulerRegistration<unknown, unknown[], unknown>) {
+        this.lastExec = new Date();
+        // TODO: Get the exec time out of durable storage
+        this.lastExec.setMilliseconds(0);
+        this.timeMatcher = new TimeMatcher(crontab);
     }
 
     async startLoop(): Promise<void> {
         this.isRunning = true;
         while (this.isRunning) {
-            const sleepTime = 1000;
+            const nextExecTime = this.timeMatcher.nextWakeupTime(this.lastExec);
+            const sleepTime = nextExecTime.getTime() - new Date().getTime();
             console.log(`Loop iteration with sleep time: ${sleepTime}ms`);
 
-            // Wait for either the timeout or an interruption
-            await Promise.race([
-                this.sleep(sleepTime),
-                new Promise<void>((_, reject) => this.interruptResolve = reject)
-            ])
-            .catch(); // Interrupt sleep throws
+            if (sleepTime > 0) {
+                // Wait for either the timeout or an interruption
+                await Promise.race([
+                    this.sleep(sleepTime),
+                    new Promise<void>((_, reject) => this.interruptResolve = reject)
+                ])
+                .catch(); // Interrupt sleep throws
+            }
 
             if (!this.isRunning) {
                 break;
             }
 
             // TODO: Check crontab
+            this.lastExec = nextExecTime;
+            if (!this.timeMatcher.match(this.lastExec)) {
+                continue;
+            }
+
+            // TODO: Init workflow
+            console.log ("Time to run task!");
+
+            // TODO: Record the time
         }
 
         if (this.resolveCompletion) {
