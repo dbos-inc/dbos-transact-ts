@@ -309,5 +309,3 @@ export class TimeMatcher {
         return date;
     }
 }
-
-module.exports = TimeMatcher;
