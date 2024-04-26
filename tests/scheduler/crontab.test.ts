@@ -17,7 +17,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-import {validateCrontab as validate, convertExpression as conversion} from '../../src/scheduler/crontab';
+import {validateCrontab as validate, convertExpression as conversion, TimeMatcher} from '../../src/scheduler/crontab';
 
 //////////////////
 // Conversion tests
@@ -345,5 +345,252 @@ describe('pattern-validation', () => {
                 validate('0 0 1 1 1-7');
             }).not.toThrow();
         });
+    });
+});
+
+/////////
+// Time matcher
+/////////
+
+describe('TimeMatcher', () => {
+    describe('wildcard', () => {
+        it('should accept wildcard for second', () => {
+            const matcher = new TimeMatcher('* * * * * *');
+            expect(matcher.match(new Date())).toBe(true);
+        });
+
+        it('should accept wildcard for minute', () => {
+            const matcher = new TimeMatcher('0 * * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 10, 20, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 10, 20, 1))).toBe(false);
+        });
+
+        it('should accept wildcard for hour', () => {
+            const matcher = new TimeMatcher('0 0 * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 10, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 10, 1, 0))).toBe(false);
+        });
+
+        it('should accept wildcard for day', () => {
+            const matcher = new TimeMatcher('0 0 0 * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 1, 0, 0))).toBe(false);
+        });
+
+        it('should accept wildcard for month', () => {
+            const matcher = new TimeMatcher('0 0 0 1 * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 2, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept wildcard for week day', () => {
+            const matcher = new TimeMatcher('0 0 0 1 4 *');
+            expect(matcher.match(new Date(2018, 3, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 3, 2, 0, 0, 0))).toBe(false);
+        });
+    });
+
+    describe('single value', () => {
+        it('should accept single value for second', () => {
+            const matcher = new TimeMatcher('5 * * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(false);
+        });
+
+        it('should accept single value for minute', () => {
+            const matcher = new TimeMatcher('0 5 * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(false);
+        });
+
+        it('should accept single value for hour', () => {
+            const matcher = new TimeMatcher('0 0 5 * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(false);
+        });
+
+        it('should accept single value for day', () => {
+            const matcher = new TimeMatcher('0 0 0 5 * *');
+            expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept single value for month', () => {
+            const matcher = new TimeMatcher('0 0 0 1 5 *');
+            expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept single value for week day', () => {
+            const matcher = new TimeMatcher('0 0 0 * * monday');
+            expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(false);
+        });
+    });
+
+    describe('multiple values', () => {
+        it('should accept multiple values for second', () => {
+            const matcher = new TimeMatcher('5,6 * * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(false);
+        });
+
+        it('should accept multiple values for minute', () => {
+            const matcher = new TimeMatcher('0 5,6 * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(false);
+        });
+        
+        it('should accept multiple values for hour', () => {
+            const matcher = new TimeMatcher('0 0 5,6 * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(false);
+        });
+
+        it('should accept multiple values for day', () => {
+            const matcher = new TimeMatcher('0 0 0 5,6 * *');
+            expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept multiple values for month', () => {
+            const matcher = new TimeMatcher('0 0 0 1 may,june *');
+            expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept multiple values for week day', () => {
+            const matcher = new TimeMatcher('0 0 0 * * monday,tue');
+            expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(false);
+        });
+    });
+
+    describe('range', () => {
+        it('should accept range for second', () => {
+            const matcher = new TimeMatcher('5-7 * * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 8))).toBe(false);
+        });
+
+        it('should accept range for minute', () => {
+            const matcher = new TimeMatcher('0 5-7 * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 8, 0))).toBe(false);
+        });
+
+        it('should accept range for hour', () => {
+            const matcher = new TimeMatcher('0 0 5-7 * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 8, 0, 0))).toBe(false);
+        });
+
+        it('should accept range for day', () => {
+            const matcher = new TimeMatcher('0 0 0 5-7 * *');
+            expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 8, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept range for month', () => {
+            const matcher = new TimeMatcher('0 0 0 1 may-july *');
+            expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 7, 1, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept range for week day', () => {
+            const matcher = new TimeMatcher('0 0 0 * * monday-wed');
+            expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 10, 0, 0, 0))).toBe(false);
+        });
+    });
+
+    describe('step values', () => {
+        it('should accept step values for second', () => {
+            const matcher = new TimeMatcher('*/2 * * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 2))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(false);
+        });
+
+        it('should accept step values for minute', () => {
+            const matcher = new TimeMatcher('0 */2 * * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 0, 2, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(false);
+        });
+        
+        it('should accept step values for hour', () => {
+            const matcher = new TimeMatcher('0 0 */2 * * *');
+            expect(matcher.match(new Date(2018, 0, 1, 2, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(false);
+        });
+
+        it('should accept step values for day', () => {
+            const matcher = new TimeMatcher('0 0 0 */2 * *');
+            expect(matcher.match(new Date(2018, 0, 2, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept step values for month', () => {
+            const matcher = new TimeMatcher('0 0 0 1 */2 *');
+            expect(matcher.match(new Date(2018, 1, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(false);
+        });
+
+        it('should accept step values for week day', () => {
+            const matcher = new TimeMatcher('0 0 0 * * */2');
+            expect(matcher.match(new Date(2018, 4, 6, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
+            expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(false);
+        });
+    });
+
+    describe('timezone', ()=>{
+        it('should match with timezone America/Sao_Paulo', () => {
+            const matcher = new TimeMatcher('0 0 0 * * *', 'America/Sao_Paulo');
+            const utcTime = new Date('Thu Oct 11 2018 03:00:00Z');
+            expect(matcher.match(utcTime)).toBe(true); 
+        });
+
+        it('should match with timezone Europe/Rome', () => {
+            const matcher = new TimeMatcher('0 0 0 * * *', 'Europe/Rome');
+            const utcTime = new Date('Thu Oct 11 2018 22:00:00Z');
+            expect(matcher.match(utcTime)).toBe(true);
+        });
+
+        /*
+        it('should match with all available timezone of moment-timezone', () => {
+            const allTimeZone = moment.tz.names();
+            for (const zone in allTimeZone) {
+                const tmp = moment();
+                const expected = moment.tz(tmp,allTimeZone[zone]);
+                const pattern = expected.second() + ' ' + expected.minute() + ' ' + expected.hour() + ' ' + expected.date() + ' ' + (expected.month()+1) + ' ' + expected.day();
+                const matcher = new TimeMatcher(pattern, allTimeZone[zone]);
+                const utcTime = new Date(tmp.year(), tmp.month(), tmp.date(), tmp.hour(), tmp.minute(), tmp.second(), tmp.millisecond());
+                expect(matcher.match(utcTime));
+            }
+        });
+        */
     });
 });
