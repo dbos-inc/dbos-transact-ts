@@ -50,6 +50,8 @@ export function Scheduled(schedulerConfig: SchedulerConfig) {
 
 export class DBOSScheduler{
     constructor(readonly dbosExec: DBOSExecutor) {}
+
+    schedLoops: DetachableLoop[] = [];
   
     initScheduler() {
         for (const registeredOperation of this.dbosExec.registeredOperations) {
@@ -90,7 +92,11 @@ export class DBOSScheduler{
         }
     }
   
-    destroyScheduler() {
+    async destroyScheduler() {
+        for (const l of this.schedLoops) {
+            await l.stopLoop();
+        }
+        this.schedLoops = [];
     }
   
     logRegisteredSchedulerEndpoints() {
@@ -104,4 +110,53 @@ export class DBOSScheduler{
         });
     }
 }
-  
+
+class DetachableLoop {
+    private isRunning: boolean = false;
+    private resolveCompletion?: (value: void | PromiseLike<void>) => void;
+    private interruptResolve?: () => void;
+
+    constructor() {
+        // TODO Function and crontab and executor...
+    }
+
+    async startLoop(): Promise<void> {
+        this.isRunning = true;
+        while (this.isRunning) {
+            const sleepTime = 1000;
+            console.log(`Loop iteration with sleep time: ${sleepTime}ms`);
+
+            // Wait for either the timeout or an interruption
+            await Promise.race([
+                this.sleep(sleepTime),
+                new Promise<void>((_, reject) => this.interruptResolve = reject)
+            ])
+            .catch(); // Interrupt sleep throws
+
+            if (!this.isRunning) {
+                break;
+            }
+
+            // TODO: Check crontab
+        }
+
+        if (this.resolveCompletion) {
+            this.resolveCompletion();
+        }
+    }
+
+    stopLoop(): Promise<void> {
+        if (!this.isRunning) return Promise.resolve();
+        this.isRunning = false;
+        if (this.interruptResolve) {
+            this.interruptResolve(); // Trigger the interruption
+        }
+        return new Promise((resolve) => {
+            this.resolveCompletion = resolve;
+        });
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}

@@ -103,7 +103,7 @@ export class DBOSRuntime {
    * Shut down the HTTP server and destroy workflow executor.
    */
   async destroy() {
-    this.scheduler?.destroyScheduler();
+    await this.scheduler?.destroyScheduler();
     await this.kafka?.destroyKafka();
     if (this.servers) {
       this.servers.appServer.close();
