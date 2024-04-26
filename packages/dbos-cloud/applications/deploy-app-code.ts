@@ -85,6 +85,7 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
       body.application_archive = await createZipData(logger);
       logger.debug("  ... application zipped.");
     } else {
+      logger.debug(`Restoring previous version ${previousVersion}`);
       body.previous_version = previousVersion
     }
 
