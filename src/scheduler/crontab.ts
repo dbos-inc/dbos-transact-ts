@@ -307,14 +307,16 @@ export class TimeMatcher {
         return runOnDay && runOnMonth && runOnWeekDay;
     }
 
-    nextOccurrence(date: Date) {
+    nextWakeupTime(date: Date) {
+        // This is conservative.  Some schedules never occur, such as the 30th of February, but you can ask for them
         let msec = Math.round(date.getTime());
         // This can be optimized by skipping ahead, but unit test first
-        for (;;) {
+        for (let maxIters = 3600; --maxIters; maxIters > 0) {
             msec += 1000;
             const nd = new Date(msec);
             if (this.match(nd)) return nd;
         }
+        return new Date(msec);
     }
 
     apply(date: Date){
