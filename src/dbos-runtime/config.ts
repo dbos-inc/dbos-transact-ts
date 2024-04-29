@@ -22,6 +22,7 @@ export interface ConfigFile {
     connectionTimeoutMillis?: number;
     app_db_name: string;
     sys_db_name?: string;
+    ssl?: boolean;
     ssl_ca?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
@@ -113,15 +114,18 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
-  if (configFile.database.ssl_ca) {
+  if (configFile.database.ssl === false) {
+    // If SSL is set to false, do not use TLS
+    poolConfig.ssl = false
+  } else if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else if (poolConfig.host != "localhost" && poolConfig.host != "127.0.0.1") {
+  } else if (configFile.database.ssl === undefined && (poolConfig.host === "localhost" || poolConfig.host === "127.0.0.1")) {
+    // For local development only, do not use TLS unless it is specifically asked for (to support Dockerized Postgres, which does not support SSL connections)
+    poolConfig.ssl = false;
+  } else {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
     poolConfig.ssl = { rejectUnauthorized: false };
-  } else {
-    // For local development only, do not use TLS (to support Dockerized Postgres, which does not support SSL connections)
-    poolConfig.ssl = false;
   }
   return poolConfig;
 }

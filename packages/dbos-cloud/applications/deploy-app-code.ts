@@ -55,7 +55,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     return buffer.toString('base64');
 }
 
-export async function deployAppCode(host: string, rollback: boolean, verbose: boolean): Promise<number> {
+export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials();
@@ -79,9 +79,15 @@ export async function deployAppCode(host: string, rollback: boolean, verbose: bo
   logger.debug("  ... package-lock.json exists.");
 
   try {
-    logger.debug("Creating application zip ...");
-    const zipData = await createZipData(logger);
-    logger.debug("  ... application zipped.");
+    const body: {application_archive?: string, previous_version?: string} = {}
+    if (previousVersion === null) {
+      logger.debug("Creating application zip ...");
+      body.application_archive = await createZipData(logger);
+      logger.debug("  ... application zipped.");
+    } else {
+      logger.debug(`Restoring previous version ${previousVersion}`);
+      body.previous_version = previousVersion
+    }
 
     // Submit the deploy request
     let url = '';
@@ -94,9 +100,7 @@ export async function deployAppCode(host: string, rollback: boolean, verbose: bo
     logger.info(`Submitting deploy request for ${appName}`)
     const response = await axios.post(
       url,
-      {
-        application_archive: zipData,
-      },
+      body,
       {
         headers: {
           "Content-Type": "application/json",

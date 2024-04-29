@@ -139,8 +139,9 @@ applicationCommands
   .command('deploy')
   .description('Deploy this application to the cloud and run associated database migration commands')
   .option('--verbose', 'Verbose log of deployment step')
-  .action(async (options: {verbose?: boolean}) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.verbose ?? false);
+  .option('-p, --previous-version <string>', 'Specify a previous version to restore')
+  .action(async (options: {verbose?: boolean, previousVersion?: string}) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false);
     process.exit(exitCode);
   });
 
@@ -148,7 +149,7 @@ applicationCommands
   .command('rollback')
   .description('Deploy this application to the cloud and run associated database rollback commands')
   .action(async () => {
-    const exitCode = await deployAppCode(DBOSCloudHost, true, false);
+    const exitCode = await deployAppCode(DBOSCloudHost, true, null, false);
     process.exit(exitCode);
   });
 
