@@ -160,8 +160,8 @@ class DetachableLoop {
             }
 
             // Init workflow
-            console.log ("Time to run task!");
             const workflowUUID = `sched-${this.mtd.name}-${nextExecTime.toISOString()}`;
+            this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Scheduled decorators must take in these four
             const args: ScheduledArgs = [nextExecTime, new Date(), 0, 0]; // TODO calculate outstanding numbers
