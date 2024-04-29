@@ -31,4 +31,3 @@ class DBOSSchedTestClass {
     static async scheduledDefault(_ctxt: WorkflowContext, _schedTime: Date, _startTime: Date, _nRunning: number, _nRunningHere: number) {
     }
 }
-  

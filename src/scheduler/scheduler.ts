@@ -2,6 +2,7 @@ import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, registerAndWrapFunction } from "../decorators";
 import { TimeMatcher } from "./crontab";
+import { Workflow } from "../workflow";
 
 ////
 // Configuration
@@ -158,8 +159,21 @@ class DetachableLoop {
                 continue;
             }
 
-            // TODO: Init workflow
+            // Init workflow
             console.log ("Time to run task!");
+            const workflowUUID = `sched-${this.mtd.name}-${nextExecTime.toISOString()}`;
+            const wfParams = { workflowUUID: workflowUUID };
+            // All operations annotated with Scheduled decorators must take in these four
+            const args: ScheduledArgs = [nextExecTime, new Date(), 0, 0]; // TODO calculate outstanding numbers
+
+            // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+            if (this.mtd.workflowConfig) {
+                // Execute the transaction
+                await this.dbosExec.workflow(this.mtd.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
+            }
+            else {
+                this.dbosExec.logger.error(`Function ${this.mtd.name} is @scheduled but not a workflow`);
+            }
 
             // TODO: Record the time
         }
