@@ -82,17 +82,17 @@ export class DBOSKafka{
           throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
+        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`};
         const consumer = kafka.consumer(consumerConfig);
-        await consumer.connect()
-        await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
+        await consumer.connect();
+        await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true});
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message]
+            const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (ro.txnConfig) {
               // Execute the transaction
