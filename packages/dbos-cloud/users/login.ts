@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { DBOSCloudCredentials, UserProfile, getLogger, handleAPIErrors, isCloudAPIErrorResponse, writeCredentials } from "./cloudutils.js";
+import { DBOSCloudCredentials, UserProfile, getLogger, handleAPIErrors, isCloudAPIErrorResponse, writeCredentials } from "../cloudutils.js";
 import { AuthenticationResponse, authenticate, authenticateWithRefreshToken } from "./authentication.js";
 
 export async function login(host: string, getRefreshToken: boolean, useRefreshToken?: string): Promise<number> {

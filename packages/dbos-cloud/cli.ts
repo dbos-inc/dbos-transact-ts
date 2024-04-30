@@ -8,10 +8,10 @@ import {
   getAppLogs,
 } from "./applications/index.js";
 import { Command } from 'commander';
-import { login } from "./login.js";
-import { registerUser } from "./register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB } from "./userdb.js";
-import { launchDashboard, getDashboardURL } from "./dashboards.js";
+import { login } from "./users/login.js";
+import { registerUser } from "./users/register.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB } from "./databases/databases.js";
+import { launchDashboard, getDashboardURL } from "./dashboards/dashboards.js";
 import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from 'prompt-sync';
@@ -20,8 +20,8 @@ import fs from "fs";
 import { fileURLToPath } from 'url';
 import path from "path";
 import updateNotifier, { Package } from "update-notifier";
-import { profile } from "./profile.js";
-import { revokeRefreshToken } from "./authentication.js";
+import { profile } from "./users/profile.js";
+import { revokeRefreshToken } from "./users/authentication.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));

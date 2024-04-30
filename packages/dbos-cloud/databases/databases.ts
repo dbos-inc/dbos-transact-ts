@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleep } from "./cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleep } from "../cloudutils.js";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
