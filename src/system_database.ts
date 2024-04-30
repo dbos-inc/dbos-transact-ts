@@ -40,6 +40,19 @@ export interface SystemDatabase {
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
+
+  // Scheduler queries
+  //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
+  //getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
+  //setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
+
+  // For status tracking, and telling the WF how many outstanding WF there were before it started its main work
+  //  This is designed to allow you to have "at most one" in the cluster hence it is conservative, we set it if there might be one.
+  //   After the WF start record, we do the insert, then we query
+  //   After the user WF ends but before setting completion, then we delete
+  //getOutstandingScheduledWorkflows(wfn: string): Promise<number>; // Number of (potentially) outstanding runs at the time this started
+  //scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void>; // We are now starting this (how to ensure it gets cleaned)
+  //scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void>; // We are now sure we have completed this run
 }
 
 // For internal use, not serialized status.
