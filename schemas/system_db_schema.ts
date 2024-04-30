@@ -34,3 +34,14 @@ export interface workflow_inputs {
   workflow_uuid: string;
   inputs: string;
 }
+
+export interface scheduler_state {
+  wf_function: string;
+  last_wf_sched_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
+}
+
+export interface scheduled_wf_running {
+  wf_function: string;
+  scheduled_time: number;
+  actual_time: number;
+}
