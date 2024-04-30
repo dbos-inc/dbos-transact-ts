@@ -5,7 +5,7 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
+import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
 import { sleep, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
@@ -609,20 +609,53 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   /* SCHEDULER */
-  getLastScheduledTime(_wfn: string): Promise<number | null> {
-    return Promise.resolve(null);
-  }
-  setLastScheduledTime(_wfn: string, _invtime: number): Promise<number | null> {
-    return Promise.resolve(null);
+  async getLastScheduledTime(wfn: string): Promise<number | null> {
+    const res = await this.pool.query<scheduler_state>(`
+      SELECT last_wf_sched_time
+      FROM scheduler_state
+      WHERE wf_function = $1;
+    `, [wfn]);
+
+    let v = res.rows[0]?.last_wf_sched_time ?? null;
+    if (v!== null) v = parseInt(`${v}`);
+    return v;
   }
 
-  getOutstandingScheduledWorkflows(_wfn: string): Promise<number> {
-    return Promise.resolve(0);
+  async setLastScheduledTime(wfn: string, invtime: number): Promise<number | null> {
+    const res = await this.pool.query<scheduler_state>(`
+      INSERT INTO scheduler_state (wf_function, last_wf_sched_time)
+      VALUES ($1, $2)
+      ON CONFLICT (wf_function)
+      DO UPDATE SET last_wf_sched_time = GREATEST(EXCLUDED.last_wf_sched_time, scheduler_state.last_wf_sched_time)
+      RETURNING last_wf_sched_time;
+    `, [wfn, invtime]);
+    
+    return parseInt(`${res.rows[0].last_wf_sched_time}`);
   }
-  scheduledWorkflowStarted(_wfn: string, _invtime: number): Promise<void> {
-    return Promise.resolve();
+
+  async getOutstandingScheduledWorkflows(wfn: string): Promise<number> {
+    const res = await this.pool.query<CountResult>(`
+      SELECT COUNT(scheduled_time) AS count
+      FROM scheduled_wf_running
+      WHERE wf_function = $1 AND scheduled_time IS NOT NULL;
+    `, [wfn]);
+    return parseInt(`${res.rows[0].count}`); // Returns the count of scheduled times
   }
-  scheduledWorkflowComplete(_wfn: string, _invtime: number): Promise<void> {
-    return Promise.resolve();
+  async scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO scheduled_wf_running (wf_function, scheduled_time, actual_time)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (wf_function) DO NOTHING;
+    `, [wfn, `${invtime}`, `${new Date().getTime()}`]);
   }
+  async scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void> {
+    await this.pool.query(`
+      DELETE FROM scheduled_wf_running
+      WHERE wf_function = $1 AND scheduled_time = $2;
+    `, [wfn, `${invtime}`]);
+  }
+}
+
+interface CountResult {
+  count: string | number; // PostgreSQL returns numbers as strings
 }
