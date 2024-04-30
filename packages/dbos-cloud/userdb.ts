@@ -228,7 +228,7 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
 
   try {
     await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/credentials`,
-    { Name: dbName, Password: appDBPassword },
+    { Password: appDBPassword },
     {
       headers: {
         "Content-Type": "application/json",

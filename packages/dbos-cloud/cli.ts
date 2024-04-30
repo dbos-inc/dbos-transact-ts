@@ -2,7 +2,6 @@
 
 import {
   registerApp,
-  updateApp,
   listApps,
   deleteApp,
   deployAppCode,
@@ -124,14 +123,6 @@ applicationCommands
   .requiredOption('-d, --database <string>', 'Specify a Postgres database instance for this application')
   .action(async (options: { database: string }) => {
     const exitCode = await registerApp(options.database, DBOSCloudHost);
-    process.exit(exitCode);
-  });
-
-applicationCommands
-  .command('update')
-  .description('Update this application')
-  .action(async () => {
-    const exitCode = await updateApp(DBOSCloudHost);
     process.exit(exitCode);
   });
 
