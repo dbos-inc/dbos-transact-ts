@@ -270,5 +270,20 @@ describe("dbos-config", () => {
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
+
+    test("parseConfigFile throws on an invalid config", async () => {
+      const localMockDBOSConfigYamlString = `
+      database:
+        hosffftname: 'some host'
+        porfft: 1234
+        userffname: 'some user'
+        passffword: \${PGPASSWORD}
+        connfectionTimeoutMillis: 3000
+        app_dfb_name: 'some DB'
+    `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
   });
 });
