@@ -10,7 +10,7 @@ import {
 import { Command } from 'commander';
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB } from "./databases/databases.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB } from "./databases/databases.js";
 import { launchDashboard, getDashboardURL } from "./dashboards/dashboards.js";
 import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
@@ -247,6 +247,17 @@ databaseCommands
   .action((async (dbname: string) => {
     const exitCode = await deleteUserDb(DBOSCloudHost, dbname)
     process.exit(exitCode);
+  }))
+
+databaseCommands
+  .command('restore')
+  .description("Restore a Postgres database instance to a specified time")
+  .argument('<name>', 'database instance name')
+  .requiredOption('-t, --restore-time <string>', 'Specify the timestamp to restore from, must be in RFC3339 format. Example: 2009-09-07T23:45:00Z')
+  .requiredOption('-n, --target-name <string>', 'Specify the new database instance name')
+  .action((async (dbname: string, options: { restoreTime: string, targetName: string}) => {
+    const exitCode = await restoreUserDB(DBOSCloudHost, dbname, options.targetName, options.restoreTime, true);
+    process.exit(exitCode)
   }))
 
 databaseCommands
