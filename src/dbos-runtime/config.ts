@@ -148,7 +148,8 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
 
   const validator = ajv.compile(dbosConfigSchema);
   if (!validator(configFile)) {
-    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. Errors: ${JSON.stringify(validator.errors)}`);
+    const errorMessages = validator.errors!.map(error => error.message).join(', ');
+    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. Errors: ${errorMessages}`);
   }
 
   setApplicationVersion(configFile.version);
