@@ -9,13 +9,13 @@ import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
 import { writeFileSync } from "fs";
-import Ajv from 'ajv';
+import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
 const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath) as string) as object;
-const ajv = new Ajv();
+const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
   version: string;
@@ -135,6 +135,16 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
   return poolConfig;
 }
 
+function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
+  return validate.errors!.map(error => {
+    let message = `Error: ${error.message}`;
+    if (error.params && error.keyword === 'additionalProperties') {
+      message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
+    }
+    return message;
+  }).join(', ');
+}
+
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
@@ -148,8 +158,8 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
 
   const validator = ajv.compile(dbosConfigSchema);
   if (!validator(configFile)) {
-    const errorMessages = validator.errors!.map(error => error.message).join(', ');
-    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. Errors: ${errorMessages}`);
+    const errorMessages = prettyPrintAjvErrors(validator);
+    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
 
   setApplicationVersion(configFile.version);
