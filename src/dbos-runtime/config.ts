@@ -138,6 +138,7 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
 function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
   return validate.errors!.map(error => {
     let message = `Error: ${error.message}`;
+    if (error.schemaPath) message += ` (schema path: ${error.schemaPath})`;
     if (error.params && error.keyword === 'additionalProperties') {
       message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
     }
