@@ -13,7 +13,6 @@ dbos-config.yaml
 tsconfig.json
 tsconfig.*.json
 version.json
-dbos-config.schema.json
 dbos-test-config.yaml
 
 # repo folders that shouldn't be published

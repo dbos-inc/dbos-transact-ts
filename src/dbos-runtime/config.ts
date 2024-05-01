@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from "../error";
-import { readFileSync } from "../utils";
+import { findPackageRoot, readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
@@ -9,8 +9,13 @@ import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
 import { writeFileSync } from "fs";
+import Ajv from 'ajv';
+import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
+const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
+const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath) as string) as object;
+const ajv = new Ajv();
 
 export interface ConfigFile {
   version: string;
@@ -139,6 +144,11 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
+  }
+
+  const validator = ajv.compile(dbosConfigSchema);
+  if (!validator(configFile)) {
+    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. Errors: ${JSON.stringify(validator.errors)}`);
   }
 
   setApplicationVersion(configFile.version);
