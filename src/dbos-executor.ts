@@ -45,6 +45,7 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
+import { SchedulerRegistrationConfig } from './scheduler/scheduler';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -70,6 +71,11 @@ export interface DBOSConfig {
 interface WorkflowInfo {
   workflow: Workflow<any, any>;
   config: WorkflowConfig;
+}
+
+class WorkflowStats {
+  currentlyExecuting: number = 0;
+  nStarted: number = 0;
 }
 
 interface TransactionInfo {
@@ -126,6 +132,8 @@ export class DBOSExecutor {
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
+
+  readonly workflowStats: Map<string, WorkflowStats> = new Map();
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -258,7 +266,7 @@ export class DBOSExecutor {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, ro.workflowConfig);
+        this.#registerWorkflow(wf, {registration: ro, ...ro.workflowConfig});
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as Transaction<any, any>;
@@ -423,8 +431,23 @@ export class DBOSExecutor {
 
     const runWorkflow = async () => {
       let result: R;
+      // Track concurrent executions of the WF
+      if (!this.workflowStats.has(wf.name)) {
+        this.workflowStats.set(wf.name, new WorkflowStats());
+      }
+      const wfs = this.workflowStats.get(wf.name)!;
+      wfs.currentlyExecuting++;
+      wfs.nStarted++;
+
       // Execute the workflow.
       try {
+        // If this is a scheduled workflow, do the pre-workflow things
+        if (wInfo.config.registration && (wInfo.config.registration as SchedulerRegistrationConfig).schedulerConfig) {
+          const inargs = args as unknown as [string, string, number, number]; // You would think this is a Date but it is a string.
+          await this.systemDatabase.scheduledWorkflowStarted(wf.name, new Date(inargs[0]).getTime());
+          const nRunningGlobally = await this.systemDatabase.getOutstandingScheduledWorkflows(wf.name);
+          args = [inargs[0], inargs[1], nRunningGlobally, wfs.currentlyExecuting] as unknown as T;
+        }
         result = await wf(wCtxt, ...args);
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
@@ -453,6 +476,14 @@ export class DBOSExecutor {
         }
       } finally {
         this.tracer.endSpan(wCtxt.span);
+        wfs.currentlyExecuting--;
+
+        // If this is a scheduled workflow, do the post-workflow things
+        if (wInfo.config.registration && (wInfo.config.registration as SchedulerRegistrationConfig).schedulerConfig) {
+          const inargs = args as unknown as [string, string, number, number];
+          await this.systemDatabase.scheduledWorkflowComplete(wf.name, new Date(inargs[0]).getTime());
+        }
+        
         if (wCtxt.tempWfOperationType === TempWorkflowType.transaction) {
           // For single-transaction workflows, asynchronously record inputs.
           // We must buffer inputs after workflow status is buffered/flushed because workflow_inputs table has a foreign key reference to the workflow_status table.

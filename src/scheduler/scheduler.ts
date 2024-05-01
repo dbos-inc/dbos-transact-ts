@@ -22,10 +22,16 @@ export class SchedulerConfig {
 ////
 
 // Scheduled Time. Actual Time, number running globally, number running locally
-type ScheduledArgs = [Date, Date, number, number]
+export type ScheduledArgs = [Date, Date, number, number]
 
-export class SchedulerRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-    schedulerConfig?: SchedulerConfig;  
+export interface SchedulerRegistrationConfig {
+    schedulerConfig?: SchedulerConfig;
+}
+
+export class SchedulerRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return>
+    implements SchedulerRegistrationConfig
+{
+    schedulerConfig?: SchedulerConfig;
     constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
         super(origFunc);
     }

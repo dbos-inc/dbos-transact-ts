@@ -645,7 +645,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.query(`
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running (wf_function, scheduled_time, actual_time)
       VALUES ($1, $2, $3)
-      ON CONFLICT (wf_function) DO NOTHING;
+      ON CONFLICT (wf_function, scheduled_time) DO NOTHING;
     `, [wfn, `${invtime}`, `${new Date().getTime()}`]);
   }
   async scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void> {
