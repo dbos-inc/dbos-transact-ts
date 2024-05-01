@@ -612,7 +612,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getLastScheduledTime(wfn: string): Promise<number | null> {
     const res = await this.pool.query<scheduler_state>(`
       SELECT last_wf_sched_time
-      FROM scheduler_state
+      FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
       WHERE wf_function = $1;
     `, [wfn]);
 
@@ -623,7 +623,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async setLastScheduledTime(wfn: string, invtime: number): Promise<number | null> {
     const res = await this.pool.query<scheduler_state>(`
-      INSERT INTO scheduler_state (wf_function, last_wf_sched_time)
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduler_state (wf_function, last_wf_sched_time)
       VALUES ($1, $2)
       ON CONFLICT (wf_function)
       DO UPDATE SET last_wf_sched_time = GREATEST(EXCLUDED.last_wf_sched_time, scheduler_state.last_wf_sched_time)
@@ -636,21 +636,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getOutstandingScheduledWorkflows(wfn: string): Promise<number> {
     const res = await this.pool.query<CountResult>(`
       SELECT COUNT(scheduled_time) AS count
-      FROM scheduled_wf_running
+      FROM ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running
       WHERE wf_function = $1 AND scheduled_time IS NOT NULL;
     `, [wfn]);
     return parseInt(`${res.rows[0].count}`); // Returns the count of scheduled times
   }
   async scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void> {
     await this.pool.query(`
-      INSERT INTO scheduled_wf_running (wf_function, scheduled_time, actual_time)
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running (wf_function, scheduled_time, actual_time)
       VALUES ($1, $2, $3)
       ON CONFLICT (wf_function) DO NOTHING;
     `, [wfn, `${invtime}`, `${new Date().getTime()}`]);
   }
   async scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void> {
     await this.pool.query(`
-      DELETE FROM scheduled_wf_running
+      DELETE FROM ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running
       WHERE wf_function = $1 AND scheduled_time = $2;
     `, [wfn, `${invtime}`]);
   }

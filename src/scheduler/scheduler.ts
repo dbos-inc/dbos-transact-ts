@@ -128,12 +128,17 @@ class DetachableLoop {
 
     constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly mtd: SchedulerRegistration<unknown, unknown[], unknown>) {
         this.lastExec = new Date();
-        // TODO: Get the exec time out of durable storage
         this.lastExec.setMilliseconds(0);
         this.timeMatcher = new TimeMatcher(crontab);
     }
 
     async startLoop(): Promise<void> {
+        // See if the exec time is available in durable storage...
+        const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.mtd.name);
+        if (lasttm) {
+            this.lastExec = new Date(lasttm);
+        }
+
         this.isRunning = true;
         while (this.isRunning) {
             const nextExecTime = this.timeMatcher.nextWakeupTime(this.lastExec);
@@ -153,9 +158,9 @@ class DetachableLoop {
                 break;
             }
 
-            // TODO: Check crontab
-            this.lastExec = nextExecTime;
-            if (!this.timeMatcher.match(this.lastExec)) {
+            // Check crontab
+            if (!this.timeMatcher.match(nextExecTime)) {
+                this.lastExec = nextExecTime;
                 continue;
             }
 
@@ -175,7 +180,10 @@ class DetachableLoop {
                 this.dbosExec.logger.error(`Function ${this.mtd.name} is @scheduled but not a workflow`);
             }
 
-            // TODO: Record the time
+            // Record the time of the wf kicked off
+            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.mtd.name, nextExecTime.getTime());
+            if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
+            this.lastExec = nextExecTime;
         }
 
         if (this.resolveCompletion) {
