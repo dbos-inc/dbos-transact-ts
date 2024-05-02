@@ -85,11 +85,12 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
       body.application_archive = await createZipData(logger);
       logger.debug("  ... application zipped.");
     } else {
-      logger.debug(`Restoring previous version ${previousVersion}`);
+      logger.info(`Restoring previous version ${previousVersion}`);
       body.previous_version = previousVersion
     }
 
     if (targetDatabaseName !== null) {
+      logger.info(`Changing database instance for ${appName} to ${targetDatabaseName} and redeploying`)
       body.target_database_name = targetDatabaseName;
     }
 
