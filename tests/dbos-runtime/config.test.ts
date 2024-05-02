@@ -285,5 +285,22 @@ describe("dbos-config", () => {
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
+
+    test("parseConfigFile disallows the user to be dbos", async () => {
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'dbos'
+          password: \${PGPASSWORD}
+          connectionTimeoutMillis: 3000
+          app_db_name: 'some DB'
+        env:
+          FOOFOO: barbar
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
   });
 });
