@@ -89,7 +89,7 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
       body.previous_version = previousVersion
     }
 
-    if (targetDatabaseName != null) {
+    if (targetDatabaseName !== null) {
       body.target_database_name = targetDatabaseName;
     }
 
@@ -97,7 +97,7 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
     let url = '';
     if (rollback) {
       url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/rollback`;
-    } else if (targetDatabaseName != null) {
+    } else if (targetDatabaseName !== null) {
       url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/changedbinstance`;
     } else {
       url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`;
