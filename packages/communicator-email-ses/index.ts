@@ -5,11 +5,6 @@ import { SES } from '@aws-sdk/client-ses';
 class SendEmailCommunicator
 {
     @Communicator()
-    static getCurrentDate(_ctx: CommunicatorContext) : Promise<Date> {
-        return Promise.resolve(new Date());
-    }
-
-    @Communicator()
     static getCurrentTime(_ctx: CommunicatorContext) : Promise<number> {
         return Promise.resolve(new Date().getTime());
     }
