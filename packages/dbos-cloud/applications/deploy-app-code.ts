@@ -55,7 +55,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     return buffer.toString('base64');
 }
 
-export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean): Promise<number> {
+export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean, targetDatabaseName: string | null = null): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials();
@@ -79,7 +79,7 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
   logger.debug("  ... package-lock.json exists.");
 
   try {
-    const body: {application_archive?: string, previous_version?: string} = {}
+    const body: {application_archive?: string, previous_version?: string, target_database_name?: string} = {}
     if (previousVersion === null) {
       logger.debug("Creating application zip ...");
       body.application_archive = await createZipData(logger);
@@ -89,10 +89,16 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
       body.previous_version = previousVersion
     }
 
+    if (targetDatabaseName != null) {
+      body.target_database_name = targetDatabaseName;
+    }
+
     // Submit the deploy request
     let url = '';
     if (rollback) {
       url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/rollback`;
+    } else if (targetDatabaseName != null) {
+      url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/changedbinstance`;
     } else {
       url = `https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`;
     }
