@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from "./cloudutils.js";
+import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from "../cloudutils.js";
 import open from 'open';
 
 export async function launchDashboard(host: string): Promise<number> {

@@ -3,7 +3,7 @@ import fs from "fs";
 import { AxiosError } from "axios";
 import jwt from 'jsonwebtoken';
 import path from "node:path";
-import { authenticateWithRefreshToken } from "./authentication.js";
+import { authenticateWithRefreshToken } from "./users/authentication.js";
 
 export interface DBOSCloudCredentials {
   token: string;
