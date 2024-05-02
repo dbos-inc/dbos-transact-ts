@@ -3,7 +3,7 @@ import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 
-describe("kafka-tests", () => {
+describe("scheduled-wf-tests", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
   

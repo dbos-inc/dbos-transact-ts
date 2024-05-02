@@ -118,7 +118,6 @@ class DetachableLoop {
         while (this.isRunning) {
             const nextExecTime = this.timeMatcher.nextWakeupTime(this.lastExec);
             const sleepTime = nextExecTime.getTime() - new Date().getTime();
-            console.log(`Loop iteration with sleep time: ${sleepTime}ms`);
 
             if (sleepTime > 0) {
                 // Wait for either the timeout or an interruption
