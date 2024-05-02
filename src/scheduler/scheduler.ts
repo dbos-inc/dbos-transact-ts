@@ -69,37 +69,6 @@ export class DBOSScheduler{
                 const loop = new DetachableLoop(this.dbosExec, ro.schedulerConfig.crontab ?? '* * * * *', ro);
                 this.schedLoops.push(loop);
                 this.schedTasks.push(loop.startLoop());
-                /*
-                if (!ro.txnConfig && !ro.workflowConfig) {
-                    throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: A Kafka decorator can only be assigned to a transaction or workflow!`)
-                }
-                if (!defaults.kafkaConfig) {
-                    throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
-                }
-                const kafka = new KafkaJS(defaults.kafkaConfig);
-                const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
-                const consumer = kafka.consumer(consumerConfig);
-                await consumer.connect()
-                await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
-                await consumer.run({
-                    eachMessage: async ({ topic, partition, message }) => {
-                    // This combination uniquely identifies a message for a given Kafka cluster
-                    const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-                    const wfParams = { workflowUUID: workflowUUID };
-                    // All operations annotated with Kafka decorators must take in these three arguments
-                    const args: KafkaArgs = [topic, partition, message]
-                    // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-                    if (ro.txnConfig) {
-                        // Execute the transaction
-                        await this.dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
-                    } else if (ro.workflowConfig) {
-                        // Safely start the workflow
-                        await this.dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
-                    }
-                    },
-                })
-                this.consumers.push(consumer);
-                */
             }
         }
     }
