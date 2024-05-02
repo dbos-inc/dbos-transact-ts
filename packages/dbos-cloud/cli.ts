@@ -251,9 +251,9 @@ databaseCommands
 
 databaseCommands
   .command('restore')
-  .description("Restore a Postgres database instance to a specified time")
+  .description("Restore a Postgres database instance to a specified point in time")
   .argument('<name>', 'database instance name')
-  .requiredOption('-t, --restore-time <string>', 'Specify the timestamp to restore from, must be in RFC3339 format. Example: 2009-09-07T23:45:00Z')
+  .requiredOption('-t, --restore-time <string>', 'Specify the point in time to which to restore the database. Must be a timestamp in RFC 3339 format. Example: 2009-09-07T23:45:00Z')
   .requiredOption('-n, --target-name <string>', 'Specify the new database instance name')
   .action((async (dbname: string, options: { restoreTime: string, targetName: string}) => {
     const exitCode = await restoreUserDB(DBOSCloudHost, dbname, options.targetName, options.restoreTime, true);
