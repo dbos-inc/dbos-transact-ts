@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials } from "./cloudutils.js";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials } from "../cloudutils.js";
 import readline from 'readline';
 import validator from 'validator';
 import { authenticate } from "./authentication.js";
