@@ -50,7 +50,7 @@ class DBOSSchedTestClass {
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
         DBOSSchedTestClass.maxConc = Math.max(DBOSSchedTestClass.maxConc, nRunning);
-        DBOSSchedTestClass.maxConc = Math.max(DBOSSchedTestClass.maxConc, nRunningHere);
+        DBOSSchedTestClass.maxConcLocal = Math.max(DBOSSchedTestClass.maxConcLocal, nRunningHere);
 
         await ctxt.sleep(2);
     }
