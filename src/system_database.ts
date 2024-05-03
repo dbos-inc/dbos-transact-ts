@@ -48,8 +48,6 @@ export interface SystemDatabase {
 
   // For status tracking, and telling the WF how many outstanding WF there were before it started its main work
   //  This is designed to allow you to have "at most one" in the cluster hence it is conservative, we set it if there might be one.
-  //   After the WF start record, we do the insert, then we query
-  //   After the user WF ends but before setting completion, then we delete
   getOutstandingScheduledWorkflows(wfn: string): Promise<number>; // Number of (potentially) outstanding runs at the time this started
   scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void>; // We are now starting this (how to ensure it gets cleaned)
   scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void>; // We are now sure we have completed this run
@@ -642,6 +640,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return parseInt(`${res.rows[0].count}`); // Returns the count of scheduled times
   }
   async scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void> {
+    // if another node scheduled execution for this time slot, or it is a re-execute from a crashed run, this will do nothing
     await this.pool.query(`
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running (wf_function, scheduled_time, actual_time)
       VALUES ($1, $2, $3)

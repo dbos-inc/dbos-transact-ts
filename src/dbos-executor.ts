@@ -45,7 +45,7 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
-import { SchedulerRegistrationConfig } from './scheduler/scheduler';
+import { ScheduledArgsAsSerialized, SchedulerRegistrationConfig } from './scheduler/scheduler';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -266,7 +266,7 @@ export class DBOSExecutor {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, {registration: ro, ...ro.workflowConfig});
+        this.#registerWorkflow(wf, {registrationObject: ro, ...ro.workflowConfig});
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as Transaction<any, any>;
@@ -441,9 +441,9 @@ export class DBOSExecutor {
 
       // Execute the workflow.
       try {
-        // If this is a scheduled workflow, do the pre-workflow things
-        if (wInfo.config.registration && (wInfo.config.registration as SchedulerRegistrationConfig).schedulerConfig) {
-          const inargs = args as unknown as [string, string, number, number]; // You would think this is a Date but it is a string.
+        // If this is a scheduled workflow, do the pre-workflow recordkeeping
+        if (wInfo.config.registrationObject && (wInfo.config.registrationObject as SchedulerRegistrationConfig).schedulerConfig) {
+          const inargs = args as unknown as ScheduledArgsAsSerialized;
           await this.systemDatabase.scheduledWorkflowStarted(wf.name, new Date(inargs[0]).getTime());
           const nRunningGlobally = await this.systemDatabase.getOutstandingScheduledWorkflows(wf.name);
           args = [inargs[0], inargs[1], nRunningGlobally, wfs.currentlyExecuting] as unknown as T;
@@ -478,9 +478,9 @@ export class DBOSExecutor {
         this.tracer.endSpan(wCtxt.span);
         wfs.currentlyExecuting--;
 
-        // If this is a scheduled workflow, do the post-workflow things
-        if (wInfo.config.registration && (wInfo.config.registration as SchedulerRegistrationConfig).schedulerConfig) {
-          const inargs = args as unknown as [string, string, number, number];
+        // If this is a scheduled workflow, do the post-workflow recordkeeping
+        if (wInfo.config.registrationObject && (wInfo.config.registrationObject as SchedulerRegistrationConfig).schedulerConfig) {
+          const inargs = args as unknown as ScheduledArgsAsSerialized;
           await this.systemDatabase.scheduledWorkflowComplete(wf.name, new Date(inargs[0]).getTime());
         }
         

@@ -13,7 +13,7 @@ export enum SchedulerConcurrencyMode {
 }
 
 export class SchedulerConfig {
-    crontab ?: string = '* * * * *'; // Every minute
+    crontab: string = '* * * * *'; // Every minute
     mode ?: SchedulerConcurrencyMode = SchedulerConcurrencyMode.ExactlyOncePerInterval;
 }
 
@@ -23,6 +23,7 @@ export class SchedulerConfig {
 
 // Scheduled Time. Actual Time, number running globally, number running locally
 export type ScheduledArgs = [Date, Date, number, number]
+export type ScheduledArgsAsSerialized = [string, string, number, number]; // You would think this is a Date but json doesn't have dates, so it is a string.
 
 export interface SchedulerRegistrationConfig {
     schedulerConfig?: SchedulerConfig;
@@ -88,7 +89,7 @@ export class DBOSScheduler{
         this.dbosExec.registeredOperations.forEach((registeredOperation) => {
             const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
             if (ro.schedulerConfig) {
-                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab ?? '* * * * *'}; ${ro.schedulerConfig.mode ?? 'Exactly Once Per Interval'}`);
+                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? 'Exactly Once Per Interval'}`);
             }
         });
     }
@@ -101,7 +102,7 @@ class DetachableLoop {
     private lastExec: Date;
     private timeMatcher: TimeMatcher;
 
-    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly mtd: SchedulerRegistration<unknown, unknown[], unknown>) {
+    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly scheduledMethod: SchedulerRegistration<unknown, unknown[], unknown>) {
         this.lastExec = new Date();
         this.lastExec.setMilliseconds(0);
         this.timeMatcher = new TimeMatcher(crontab);
@@ -109,7 +110,7 @@ class DetachableLoop {
 
     async startLoop(): Promise<void> {
         // See if the exec time is available in durable storage...
-        const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.mtd.name);
+        const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethod.name);
         if (lasttm) {
             this.lastExec = new Date(lasttm);
         }
@@ -139,23 +140,23 @@ class DetachableLoop {
             }
 
             // Init workflow
-            const workflowUUID = `sched-${this.mtd.name}-${nextExecTime.toISOString()}`;
+            const workflowUUID = `sched-${this.scheduledMethod.name}-${nextExecTime.toISOString()}`;
             this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Scheduled decorators must take in these four
             const args: ScheduledArgs = [nextExecTime, new Date(), 0, 0]; // TODO calculate outstanding numbers
 
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-            if (this.mtd.workflowConfig) {
+            if (this.scheduledMethod.workflowConfig) {
                 // Execute the transaction
-                await this.dbosExec.workflow(this.mtd.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
+                await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
             }
             else {
-                this.dbosExec.logger.error(`Function ${this.mtd.name} is @scheduled but not a workflow`);
+                this.dbosExec.logger.error(`Function ${this.scheduledMethod.name} is @scheduled but not a workflow`);
             }
 
             // Record the time of the wf kicked off
-            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.mtd.name, nextExecTime.getTime());
+            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.scheduledMethod.name, nextExecTime.getTime());
             if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
             this.lastExec = nextExecTime;
         }

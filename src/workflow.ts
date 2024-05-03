@@ -33,7 +33,7 @@ export interface WorkflowParams {
 }
 
 export interface WorkflowConfig {
-  registration?: MethodRegistrationBase;
+  registrationObject?: MethodRegistrationBase;
 }
 
 export interface WorkflowStatus {
