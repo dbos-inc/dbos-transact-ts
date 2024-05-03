@@ -57,8 +57,7 @@ export class DBOSContextImpl implements DBOSContext {
   }
 
   /*** Application configuration ***/
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  applicationConfig?: any;
+  applicationConfig?: object;
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
@@ -91,13 +90,11 @@ export class InitContext {
 
   // All private Not exposed
   private userDatabase: UserDatabase;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private application: any;
+  private application?: object;
 
   constructor(readonly dbosExec: DBOSExecutor) {
     this.logger = dbosExec.logger;
     this.userDatabase = dbosExec.userDatabase;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.application = dbosExec.config.application;
   }
 

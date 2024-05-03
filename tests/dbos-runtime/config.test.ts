@@ -8,6 +8,7 @@ import { DBOSRuntimeConfig, defaultEntryPoint } from "../../src/dbos-runtime/run
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from "../../src/error";
 import { DBOSExecutor, DBOSConfig } from "../../src/dbos-executor";
 import { WorkflowContextImpl } from "../../src/workflow";
+import { get } from "lodash";
 
 describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
@@ -55,14 +56,14 @@ describe("dbos-config", () => {
       expect(dbosConfig.userDbclient).toBe(UserDatabaseName.KNEX);
 
       // Application config
-      const applicationConfig: any = dbosConfig.application;
-      expect(applicationConfig.payments_url).toBe("http://somedomain.com/payment");
-      expect(applicationConfig.foo).toBe(process.env.FOO);
-      expect(applicationConfig.bar).toBe(process.env.BAR);
-      expect(applicationConfig.nested.baz).toBe(process.env.BAZ);
-      expect(applicationConfig.nested.a).toBeInstanceOf(Array);
-      expect(applicationConfig.nested.a).toHaveLength(3);
-      expect(applicationConfig.nested.a[2].b.c).toBe(process.env.C);
+      const applicationConfig: object = dbosConfig.application || {};
+      expect(get(applicationConfig, 'payments_url')).toBe("http://somedomain.com/payment");
+      expect(get(applicationConfig, 'foo')).toBe(process.env.FOO);
+      expect(get(applicationConfig, 'bar')).toBe(process.env.BAR);
+      expect(get(applicationConfig, 'nested.baz')).toBe(process.env.BAZ);
+      expect(get(applicationConfig, 'nested.a')).toBeInstanceOf(Array);
+      expect(get(applicationConfig, 'nested.a')).toHaveLength(3);
+      expect(get(applicationConfig, 'nested.a[2].b.c')).toBe(process.env.C);
 
       // local runtime config
       expect(runtimeConfig).toBeDefined();

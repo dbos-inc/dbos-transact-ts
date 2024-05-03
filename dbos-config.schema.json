@@ -147,7 +147,18 @@
     },
     "application": {},
     "env": {},
-    "dbClientMetadata": {},
+    "dbClientMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "version": {
       "type": "string"
     }
