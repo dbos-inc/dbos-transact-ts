@@ -24,9 +24,10 @@ describe("scheduled-wf-tests", () => {
     }, 10000);
   
     test("wf-scheduled", async () => {
-        await sleep(3);
+        await sleep(3000);
         expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
-        expect(DBOSSchedTestClass.nTooEarly).toBeGreaterThanOrEqual(0);
+        expect(DBOSSchedTestClass.nTooEarly).toBe(0);
+        expect(DBOSSchedTestClass.nTooLate).toBe(0);
         expect(DBOSSchedTestClass.maxConc).toBeGreaterThanOrEqual(2);
         expect(DBOSSchedTestClass.maxConcLocal).toBeGreaterThanOrEqual(2);
     });
@@ -43,6 +44,8 @@ class DBOSSchedTestClass {
     @Scheduled({crontab: '* * * * * *'})
     @Workflow()
     static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date, nRunning: number, nRunningHere: number) {
+        DBOSSchedTestClass.nCalls++;
+
         if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
