@@ -76,10 +76,15 @@ export class DBOSScheduler{
   
     async destroyScheduler() {
         for (const l of this.schedLoops) {
-            await l.stopLoop();
+            l.setStopLoopFlag();
         }
         this.schedLoops = [];
-        await Promise.all(this.schedTasks);
+        try {
+           await Promise.allSettled(this.schedTasks);
+        }
+        catch (e) {
+           // Throws do not matter
+        }
         this.schedTasks = [];
     }
   
@@ -160,21 +165,14 @@ class DetachableLoop {
             if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
             this.lastExec = nextExecTime;
         }
-
-        if (this.resolveCompletion) {
-            this.resolveCompletion();
-        }
     }
 
-    stopLoop(): Promise<void> {
-        if (!this.isRunning) return Promise.resolve();
+    setStopLoopFlag() {
+        if (!this.isRunning) return;
         this.isRunning = false;
         if (this.interruptResolve) {
             this.interruptResolve(); // Trigger the interruption
         }
-        return new Promise((resolve) => {
-            this.resolveCompletion = resolve;
-        });
     }
 
     private sleep(ms: number): Promise<void> {
