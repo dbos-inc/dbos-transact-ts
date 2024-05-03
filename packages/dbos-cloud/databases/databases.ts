@@ -41,7 +41,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
         status = userDBInfo.Status;
       }
     }
-    logger.info(`Database successfully provisioned!`)
+    logger.info(`Database successfully provisioned!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to create database ${dbName}`;
@@ -239,6 +239,49 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
     return 0;
   } catch (e) {
     const errorLabel = `Failed to reset user password for database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function restoreUserDB(host: string, dbName: string, targetName: string, restoreTime: string, sync: boolean) {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/restore`,
+    { RestoreName: targetName, RestoreTimestamp: restoreTime },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    logger.info(`Successfully started restoring database: ${dbName}! New database name: ${targetName}, restore time: ${restoreTime}`);
+
+    if (sync) {
+      let status = "";
+      while (status != "available" && status != "backing-up") {
+        if (status === "") {
+          await sleep(5000); // First time sleep 5 sec
+        } else {
+          await sleep(30000); // Otherwise, sleep 30 sec
+        }
+        const userDBInfo = await getUserDBInfo(host, targetName);
+        logger.info(userDBInfo);
+        status = userDBInfo.Status;
+      }
+    }
+    logger.info(`Database successfully restored! New database name: ${targetName}, restore time: ${restoreTime}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to restore database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
         handleAPIErrors(errorLabel, axiosError);
