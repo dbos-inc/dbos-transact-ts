@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from "../error";
-import { readFileSync } from "../utils";
+import { findPackageRoot, readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
@@ -9,8 +9,13 @@ import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { setApplicationVersion } from "./applicationVersion";
 import { writeFileSync } from "fs";
+import Ajv, { ValidateFunction } from 'ajv';
+import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
+const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
+const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath) as string) as object;
+const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
   version: string;
@@ -130,6 +135,17 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
   return poolConfig;
 }
 
+function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
+  return validate.errors!.map(error => {
+    let message = `Error: ${error.message}`;
+    if (error.schemaPath) message += ` (schema path: ${error.schemaPath})`;
+    if (error.params && error.keyword === 'additionalProperties') {
+      message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
+    }
+    return message;
+  }).join(', ');
+}
+
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
@@ -139,6 +155,12 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
+  }
+
+  const validator = ajv.compile(dbosConfigSchema);
+  if (!validator(configFile)) {
+    const errorMessages = prettyPrintAjvErrors(validator);
+    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
 
   setApplicationVersion(configFile.version);
