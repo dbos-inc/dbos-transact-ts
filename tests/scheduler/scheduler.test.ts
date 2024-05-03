@@ -1,10 +1,8 @@
-import exp from "constants";
 import { Scheduled, TestingRuntime, Workflow, WorkflowContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { sleep } from "../../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { start } from "repl";
 
 describe("scheduled-wf-tests", () => {
     let config: DBOSConfig;
