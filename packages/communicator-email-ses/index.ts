@@ -17,17 +17,25 @@ export class SendEmailCommunicator
 
     @Communicator()
     static async sendEmail(
-        _ctx: CommunicatorContext,
-        _cfg:{stage: string, awscfg: string},
-        _mail:{to?:string[], cc?:string[], bcc?:string, from:string, body:string})
+        ctx: CommunicatorContext,
+        mail: {to?:string[], cc?:string[], bcc?:string[], from:string, subject: string, bodyHtml?:string, bodyText?:string},
+        config?: {
+            configName?: string,
+            workflowStage?: string,
+        }
+    )
     {
-        /*
-        await ses.sendEmail({
-        Source:"",
-        Destination: {ToAddresses: [""], CcAddresses: [], BccAddresses: []},
-        Message: {Subject: {Data: ""}, Body: {Html: {Data: ""}, Text: {Data: "", Charset: 'utf-8'}}}
+        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+        const ses = SendEmailCommunicator.createSES(cfg);
+        return await ses.sendEmail({
+            Source:"",
+            Destination: {ToAddresses: mail.to, CcAddresses: mail.cc, BccAddresses: mail.bcc},
+            Message: {
+                Subject: {Data: mail.subject},
+                Body: {Html: (mail.bodyHtml ? {Data: mail.bodyHtml} : undefined),
+                       Text: (mail.bodyText ? {Data: "", Charset: 'utf-8'}: undefined)}
+            }
         });
-        */
     }
 
     @Communicator()
