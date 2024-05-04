@@ -18,7 +18,10 @@
         },
         "username": {
           "type": "string",
-          "description": "The username to use when connecting to the application database"
+          "description": "The username to use when connecting to the application database",
+          "not": {
+            "enum": ["dbos"]
+          }
         },
         "password": {
           "type": "string",

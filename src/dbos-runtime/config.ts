@@ -142,6 +142,9 @@ function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
     if (error.params && error.keyword === 'additionalProperties') {
       message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
     }
+    if (error.data && error.keyword === 'not') {
+      message += `; the value ${JSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
+    }
     return message;
   }).join(', ');
 }
