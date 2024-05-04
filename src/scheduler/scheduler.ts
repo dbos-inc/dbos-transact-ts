@@ -83,7 +83,7 @@ export class DBOSScheduler{
            await Promise.allSettled(this.schedTasks);
         }
         catch (e) {
-           // Throws do not matter
+           //  What gets caught here is the loop stopping, which is what we wanted.
         }
         this.schedTasks = [];
     }
