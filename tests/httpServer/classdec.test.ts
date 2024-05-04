@@ -92,23 +92,21 @@ describe("httpserver-defsec-tests", () => {
     );
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async function authTestMiddleware(ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
       const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        const err = new DBOSNotAuthorizedError("Not logged in.", 401);
-        throw err;
+        return Promise.reject(new DBOSNotAuthorizedError("Not logged in.", 401));
       } else {
         if (uid === "go_away") {
-          throw new DBOSNotAuthorizedError("Go away.", 401);
+          return Promise.reject(new DBOSNotAuthorizedError("Go away.", 401));
         }
-        return {
+        return Promise.resolve({
           authenticatedUser: uid,
           authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
-        };
+        });
       }
     }
     return;
