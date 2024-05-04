@@ -1,6 +1,6 @@
 import {Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
-import { SES } from '@aws-sdk/client-ses';
+import { SES, SendTemplatedEmailCommand } from '@aws-sdk/client-ses';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscfg';
 
 export class SendEmailCommunicator
@@ -40,39 +40,33 @@ export class SendEmailCommunicator
 
     @Communicator()
     static async sendTemplatedEmail(
-        _ctx: CommunicatorContext,
-        _cfg:{stage: string, awscfg: string},
-        _template:{recipients:string[], from:string, template:string, templateDataJSON:string}
+        ctx: CommunicatorContext,
+        templatedMail: {to?: string[], cc?: string[], bcc?: string[], from: string,
+            templateName: string,
+            templateDataJSON:string /*Record<string, string>*/
+        },
+        config?: {
+            configName?: string,
+            workflowStage?: string,
+        }
     )
     {
-        /*
-        export async function sendTemplatedEmail(
-            ctxt: DBOSContext,
-            recipient: string,
-            templateData: Record<string, string>
-            ): Promise<void> {
-            const ses = new SES({
-              region: SES_REGION,
-              credentials: {
-                accessKeyId: ctxt.getConfig('access_key_id') ?? '',
-                secretAccessKey: ctxt.getConfig('secret_access_key') ?? '',
-              },
-            });
-            const sourceEmail = ctxt.getConfig('source_email') as string;
-            const params = {
+        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+        const ses = SendEmailCommunicator.createSES(cfg);
+        const command = new SendTemplatedEmailCommand(
+            {
                 Destination: {
-                    ToAddresses: [recipient], // Must be verified in SES
+                    ToAddresses: templatedMail.to,
+                    CcAddresses: templatedMail.cc,
+                    BccAddresses: templatedMail.bcc,
                 },
-                Source: sourceEmail, // Must be verified in SES
-                Template: VERIFICATION_LINK_TEMPLATE,
-                TemplateData: JSON.stringify(templateData),
-            };
-        
-            const command = new SendTemplatedEmailCommand(params);
-            const _result = await ses.send(command);
-        */
+                Source: templatedMail.from, // Must be verified in SES
+                Template: templatedMail.templateName,
+                TemplateData: templatedMail.templateDataJSON,
+            }
+        );
+        return await ses.send(command);
     }
-
 
     // Could also consider ...
     // sendBulkTemplatedEmail, sendRawEmail, sendCustomVerificationEmail
