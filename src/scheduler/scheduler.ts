@@ -153,7 +153,7 @@ class DetachableLoop {
 
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (this.scheduledMethod.workflowConfig) {
-                // Execute the transaction
+                // Execute the workflow
                 await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
             }
             else {
