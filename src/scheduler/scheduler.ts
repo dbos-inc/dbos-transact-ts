@@ -151,9 +151,9 @@ class DetachableLoop {
             // All operations annotated with Scheduled decorators must take in these four
             const args: ScheduledArgs = [nextExecTime, new Date(), 0, 0]; // TODO calculate outstanding numbers
 
-            // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+            // We currently only support scheduled workflows
             if (this.scheduledMethod.workflowConfig) {
-                // Execute the transaction
+                // Execute the workflow
                 await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
             }
             else {
