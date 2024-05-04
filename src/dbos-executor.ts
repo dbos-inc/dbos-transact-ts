@@ -48,9 +48,6 @@ import { serializeError } from 'serialize-error';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
-export interface DbClientMetadata {
-  entities?: Array<string>;
-}
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -60,7 +57,6 @@ export interface DBOSConfig {
   readonly system_database: string;
   readonly env?: Record<string, string>
   readonly application?: object;
-  readonly dbClientMetadata?: DbClientMetadata;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
   readonly http?: {

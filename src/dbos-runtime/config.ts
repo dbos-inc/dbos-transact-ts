@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from "../error";
 import { findPackageRoot, readFileSync } from "../utils";
-import { DBOSConfig, DbClientMetadata } from "../dbos-executor";
+import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
 import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
@@ -42,7 +42,6 @@ export interface ConfigFile {
   application: object;
   env: Record<string, string>;
   runtimeConfig?: DBOSRuntimeConfig;
-  dbClientMetadata?: DbClientMetadata;
 }
 
 /*
@@ -197,10 +196,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     application: configFile.application || undefined,
     env: configFile.env || {},
-    http: configFile.http,
-    dbClientMetadata: {
-      entities: configFile.dbClientMetadata?.entities,
-    },
+    http: configFile.http
   };
 
   /*************************************/
