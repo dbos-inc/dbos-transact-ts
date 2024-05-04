@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { GlobalLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
-import { has, get } from "lodash";
+import { get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
@@ -61,22 +61,12 @@ export class DBOSContextImpl implements DBOSContext {
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    // If there is no application config at all, or the key is missing, return the default value or undefined.
-    if (!this.applicationConfig || !has(this.applicationConfig, key)) {
-      if (defaultValue) {
-        return defaultValue;
-      }
-      return undefined;
-    }
-
+    const value = get(this.applicationConfig, key, defaultValue);
     // If the key is found and the default value is provided, check whether the value is of the same type.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const value = get(this.applicationConfig, key);
-    if (defaultValue && typeof value !== typeof defaultValue) {
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
-
-    return value as T;
+    return value;
   }
 }
 
@@ -107,28 +97,17 @@ export class InitContext {
   }
 
   queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.userDatabase.query(sql, ...params);
   }
 
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    // If there is no application config at all, or the key is missing, return the default value or undefined.
-    if (!this.application || !has(this.application, key)) {
-      if (defaultValue) {
-        return defaultValue;
-      }
-      return undefined;
-    }
-
+    const value = get(this.application, key, defaultValue);
     // If the key is found and the default value is provided, check whether the value is of the same type.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const value = get(this.dbosExec.config.application, key);
-    if (defaultValue && typeof value !== typeof defaultValue) {
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
-
-    return value as T;
+    return value;
   }
 }

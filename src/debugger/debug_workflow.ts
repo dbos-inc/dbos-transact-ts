@@ -42,9 +42,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
-    if (dbosExec.config.application) {
-      this.applicationConfig = dbosExec.config.application;
-    }
+    this.applicationConfig = dbosExec.config.application;
   }
 
   functionIDGetIncrement(): number {
