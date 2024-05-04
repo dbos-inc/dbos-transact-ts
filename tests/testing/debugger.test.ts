@@ -65,10 +65,9 @@ describe("debugger-test", () => {
       return funcResult;
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Communicator()
     static async testCommunicator(_ctxt: CommunicatorContext) {
-      return ++DebuggerTest.cnt;
+      return Promise.resolve(++DebuggerTest.cnt);
     }
 
     @Workflow()
@@ -110,11 +109,10 @@ describe("debugger-test", () => {
     }
 
     // Workflow with different results.
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Workflow()
     static async diffWorkflow(_ctxt: WorkflowContext, num: number) {
       DebuggerTest.cnt += num;
-      return DebuggerTest.cnt;
+      return Promise.resolve(DebuggerTest.cnt);
     }
 
     // Workflow that sleep

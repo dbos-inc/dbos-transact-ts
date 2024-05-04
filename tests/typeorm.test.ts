@@ -50,12 +50,11 @@ class KVController {
     return res.id;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction({ readOnly: true })
   static async readTxn(txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
     const kvp = await txnCtxt.client.findOneBy(KV, {id: id});
-    return kvp?.value || "<Not Found>";
+    return Promise.resolve(kvp?.value || "<Not Found>");
   }
 }
 
@@ -133,11 +132,10 @@ class UserManager {
     return res;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return {messge: "hello "+hCtxt.authenticatedUser};
+    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {

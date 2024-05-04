@@ -51,7 +51,6 @@ try {
 
 const program = new Command();
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 program.version(packageJson.version);
 
 /////////////////////

@@ -195,7 +195,6 @@ describe("httpserver-tests", () => {
     });
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async function testAuthMiddlware(ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
       const { userid } = ctx.koaContext.request.query;
@@ -208,10 +207,10 @@ describe("httpserver-tests", () => {
         if (uid === "go_away") {
           throw new DBOSNotAuthorizedError("Go away.", 401);
         }
-        return {
+        return Promise.resolve({
           authenticatedUser: uid,
           authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
-        };
+        });
       }
     }
     return;
@@ -219,7 +218,6 @@ describe("httpserver-tests", () => {
 
   type TestTransactionContext = TransactionContext<PoolClient>;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @Authentication(testAuthMiddlware)
   @KoaBodyParser(bodyParser({
     extendTypes: {
@@ -228,46 +226,41 @@ describe("httpserver-tests", () => {
     encoding: "utf-8"
   }))
   class TestEndpoints {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      return { message: "hello!" };
+      return Promise.resolve({ message: "hello!" });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello/:id")
     static async helloUrl(ctx: HandlerContext, id: string) {
       // Customize status code and response.
       ctx.koaContext.body = `wow ${id}`;
       ctx.koaContext.status = 301;
-      return `hello ${id}`;
+      return Promise.resolve(`hello ${id}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/redirect")
     static async redirectUrl(ctx: HandlerContext) {
       const url = ctx.request.url || "bad url"; // Get the raw url from request.
       ctx.koaContext.redirect(url + "-dbos");
+      return Promise.resolve();
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/query")
     static async helloQuery(ctx: HandlerContext, name: string) {
       ctx.logger.info(`query with name ${name}`); // Test logging.
-      return `hello ${name}`;
+      return Promise.resolve(`hello ${name}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/testpost")
     static async testpost(_ctx: HandlerContext, name: string) {
-      return `hello ${name}`;
+      return Promise.resolve(`hello ${name}`);
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/dbos-error")
     @Transaction()
     static async dbosErr(_ctx: TestTransactionContext) {
-      throw new DBOSResponseError("customize error", 503);
+      return Promise.reject(new DBOSResponseError("customize error", 503));
     }
 
     @GetApi("/handler/:name")
@@ -287,11 +280,10 @@ describe("httpserver-tests", () => {
       return `hello ${rows[0].id}`;
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/communicator/:input")
     @Communicator()
     static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
-      return input;
+      return Promise.resolve(input);
     }
 
     @PostApi("/workflow")
@@ -310,7 +302,6 @@ describe("httpserver-tests", () => {
       return res;
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/requireduser")
     @RequiredRole(["user"])
     static async testAuth(ctxt: HandlerContext, name: string) {
@@ -323,7 +314,7 @@ describe("httpserver-tests", () => {
       if (ctxt.assumedRole !== "user") {
         throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
       }
-      return `Please say hello to ${name}`;
+      return Promise.resolve(`Please say hello to ${name}`);
     }
   }
 });

@@ -12,7 +12,6 @@ const program = new Command();
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json")).toString()) as Package;
