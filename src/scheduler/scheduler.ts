@@ -154,7 +154,7 @@ class DetachableLoop {
             // We currently only support scheduled workflows
             if (this.scheduledMethod.workflowConfig) {
                 // Execute the workflow
-                await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<[Date, Date, number, number], unknown>, wfParams, ...args);
+                await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>, wfParams, ...args);
             }
             else {
                 this.dbosExec.logger.error(`Function ${this.scheduledMethod.name} is @scheduled but not a workflow`);
