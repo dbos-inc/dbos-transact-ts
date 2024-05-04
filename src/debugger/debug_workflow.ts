@@ -248,11 +248,10 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async sleep(_: number): Promise<void> {
     // Need to increment function ID for faithful replay.
     this.functionIDGetIncrement();
-    return;
+    return Promise.resolve();
   }
 }
 

@@ -25,11 +25,10 @@ export class TelemetryCollector {
   // Signals buffer management
   private readonly signals: SignalsQueue = new SignalsQueue();
   private readonly signalBufferID: NodeJS.Timeout;
-  
-  // We iterate on an interval and export whatever has accumulated so far 
+
+  // We iterate on an interval and export whatever has accumulated so far
   private readonly processAndExportSignalsIntervalMs = 100;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(readonly exporter?: ITelemetryExporter) {
     this.signalBufferID = setInterval(() => {
       void this.processAndExportSignals();

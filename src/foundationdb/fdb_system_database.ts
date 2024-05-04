@@ -60,9 +60,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
 
   async init(): Promise<void> {}
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(): Promise<void> {
     this.dbRoot.close();
+    return Promise.resolve()
   }
 
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<R | DBOSNull> {
@@ -161,7 +161,6 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   async flushWorkflowInputsBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowInputsBuffer);
     this.workflowInputsBuffer.clear();
-    // eslint-disable-next-line @typescript-eslint/require-await
     await this.workflowInputsDB.doTransaction(async (txn) => {
       for (const [workflowUUID, args] of localBuffer) {
         const inputs = await txn.get(workflowUUID);

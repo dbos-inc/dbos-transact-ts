@@ -146,11 +146,10 @@ class PUserManager {
     return res;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return {messge: "hello "+hCtxt.authenticatedUser};
+    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {

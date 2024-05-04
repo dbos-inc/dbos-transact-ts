@@ -251,21 +251,18 @@ describe("http-cors-tests", () => {
   });
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class TestEndpointsDefCORS {
-  // eslint-disable-next-line @typescript-eslint/require-await
   @GetApi("/hellod")
   static async hello(_ctx: HandlerContext) {
-    return { message: "hello!" };
+    return Promise.resolve({ message: "hello!" });
   }
 }
 
 @KoaCors(cors())
 class TestEndpointsRegCORS {
-  // eslint-disable-next-line @typescript-eslint/require-await
   @GetApi("/hellor")
   static async hello(_ctx: HandlerContext) {
-    return { message: "hello!" };
+    return Promise.resolve({ message: "hello!" });
   }
 }
 
@@ -283,9 +280,8 @@ class TestEndpointsRegCORS {
   allowMethods: 'GET,OPTIONS', // Need to have options for preflight.
 }))
 class TestEndpointsSpecCORS {
-  // eslint-disable-next-line @typescript-eslint/require-await
   @GetApi("/hellos")
   static async hello(_ctx: HandlerContext) {
-    return { message: "hello!" };
+    return Promise.resolve({ message: "hello!" });
   }
 }

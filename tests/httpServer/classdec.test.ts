@@ -126,22 +126,19 @@ describe("httpserver-defsec-tests", () => {
     await next();
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(["user"])
   @Authentication(authTestMiddleware)
   @KoaMiddleware(testMiddleware, testMiddleware2)
   class TestEndpointDefSec {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      return { message: "hello!" };
+      return Promise.resolve({ message: "hello!" });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/requireduser")
     static async testAuth(_ctxt: HandlerContext, name: string) {
-      return `Please say hello to ${name}`;
+      return Promise.resolve(`Please say hello to ${name}`);
     }
 
     @Transaction()

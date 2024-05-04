@@ -107,7 +107,6 @@ class DBOSTestClass {
     DBOSTestClass.wfResolve = r;
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
@@ -115,9 +114,9 @@ class DBOSTestClass {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve()
     }
+    return this.txnPromise;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @KafkaConsume(wfTopic)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
@@ -125,5 +124,6 @@ class DBOSTestClass {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve()
     }
+    return this.wfPromise;
   }
 }
