@@ -297,7 +297,7 @@ class DBOSTestClass {
   @Communicator()
   static async testCommunicator(ctxt: CommunicatorContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
-    return Promise.resolve((DBOSTestClass.cnt++));
+    return Promise.resolve(DBOSTestClass.cnt++);
   }
 
   @Workflow()
