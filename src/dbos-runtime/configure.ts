@@ -4,7 +4,7 @@ import { ConfigFile, dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 
 export async function configure(host: string | undefined, port: number | undefined, username: string | undefined) {
-  const configFileContent = readFileSync(dbosConfigFilePath) as string;
+  const configFileContent = readFileSync(dbosConfigFilePath);
   const config = YAML.parse(configFileContent) as ConfigFile;
 
   if (!host) {

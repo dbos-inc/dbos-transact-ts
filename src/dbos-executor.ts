@@ -57,7 +57,6 @@ export interface DBOSConfig {
   readonly system_database: string;
   readonly env?: Record<string, string>
   readonly application?: object;
-  readonly dbClientMetadata?: any;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
   readonly http?: {

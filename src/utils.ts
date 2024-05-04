@@ -7,7 +7,7 @@ import path from "path";
  * - the file does not exist
  * - the file is not a valid file
  **/
-export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
+export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string {
   // First, check the file
   fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
     if (error) {
@@ -18,8 +18,7 @@ export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): s
   });
 
   // Then, read its content
-  const fileContent: string = fs.readFileSync(path, { encoding } );
-  return fileContent;
+  return fs.readFileSync(path, { encoding } );
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
