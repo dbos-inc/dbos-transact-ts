@@ -102,7 +102,6 @@ export class DBOSScheduler{
 
 class DetachableLoop {
     private isRunning: boolean = false;
-    private resolveCompletion?: (value: void | PromiseLike<void>) => void;
     private interruptResolve?: () => void;
     private lastExec: Date;
     private timeMatcher: TimeMatcher;
