@@ -97,9 +97,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     this.#server = new DBOSHttpServer(dbosExec);
     this.#kafka = new DBOSKafka(dbosExec);
     await this.#kafka.initKafka();
-    if (dbosExec.config.application) {
-      this.#applicationConfig = dbosExec.config.application;
-    }
+    this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
 
