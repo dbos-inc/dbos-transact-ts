@@ -382,115 +382,108 @@ describe("httpserver-datavalidation-tests", () => {
   });
   */
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
   class TestEndpointDataVal {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      return { message: "hello!" };
+      return Promise.resolve({ message: "hello!" });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/string")
     static async checkStringG(_ctx: HandlerContext, v: string) {
       if (typeof v !== "string") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice string: ${v}` };
+      return Promise.resolve({ message: `This is a really nice string: ${v}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/string")
     static async checkStringP(_ctx: HandlerContext, v: string) {
       if (typeof v !== "string") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice string: ${v}` };
+      return Promise.resolve({ message: `This is a really nice string: ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/varchar")
     static async checkVarcharG(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
       if (typeof v !== "string") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice string (limited length): ${v}` };
+      return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/varchar")
     static async checkVarcharP(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
       if (typeof v !== "string") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice string (limited length): ${v}` };
+      return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/number")
     static async checkNumberG(_ctx: HandlerContext, v: number) {
       if (typeof v !== "number") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice number: ${v}` };
+      return Promise.resolve({ message: `This is a really nice number: ${v}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/number")
     static async checkNumberP(_ctx: HandlerContext, v: number) {
       if (typeof v !== "number") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice number: ${v}` };
+      return Promise.resolve({ message: `This is a really nice number: ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/bigint")
     static async checkBigintG(_ctx: HandlerContext, v: bigint) {
       if (typeof v !== "bigint") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice bigint: ${v}` };
+      return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/bigint")
     static async checkBigintP(_ctx: HandlerContext, v: bigint) {
       if (typeof v !== "bigint") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice bigint: ${v}` };
+      return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/date")
     static async checkDateG(_ctx: HandlerContext, @ArgDate() v: Date) {
       if (!(v instanceof Date)) {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice date: ${v.toISOString()}` };
+      return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/date")
     static async checkDateP(_ctx: HandlerContext, @ArgDate() v: Date) {
       if (!(v instanceof Date)) {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice date: ${v.toISOString()}` };
+      return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
     }
 
     // This is in honor of Harry
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/boolean")
     static async checkBooleanG(_ctx: HandlerContext, v: boolean) {
       if (typeof v !== "boolean") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice boolean: ${v}` };
+      return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
+
     @PostApi("/boolean")
     static async checkBooleanP(_ctx: HandlerContext, v: boolean) {
       if (typeof v !== "boolean") {
-        throw new Error("THIS SHOULD NEVER HAPPEN");
+        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
       }
-      return { message: `This is a really nice boolean: ${v}` };
+      return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
     }
 
     // Types saved for another day - even the decorators are not there yet:
@@ -502,81 +495,71 @@ describe("httpserver-datavalidation-tests", () => {
 
   @DefaultArgRequired
   class DefaultArgToRequired {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/rrequired")
     @Debug()
     static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/roptional")
     @Debug()
     static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/rdefault")
     @Debug()
     static async checkDefValueR(_ctx: HandlerContext, v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
   }
 
   @DefaultArgOptional
   class DefaultArgToOptional {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/orequired")
     @Debug()
     static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/ooptional")
     @Debug()
     static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/odefault")
     @Debug()
     static async checkDefValueO(_ctx: HandlerContext, v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
   }
 
   class DefaultArgToDefault {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/drequired")
     @Debug()
     static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/doptional")
     @Debug()
     static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @PostApi("/ddefault")
     @Debug()
     static async checkDefValueD(_ctx: HandlerContext, v?: string) {
-      return { message: `Got string ${v}` };
+      return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Workflow()
     static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
     {
-      return {message: v};
+      return Promise.resolve({message: v});
     }
-    
+
     @PostApi("/doworkflow")
     static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string)
     {

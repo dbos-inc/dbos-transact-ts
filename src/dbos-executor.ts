@@ -114,8 +114,10 @@ export class DBOSExecutor {
     [
       DBOSExecutor.tempWorkflowName,
       {
-        // eslint-disable-next-line @typescript-eslint/require-await
-        workflow: async () => this.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
+        workflow: async () => {
+          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow")
+          return Promise.resolve()
+        },
         config: {},
       },
     ],
@@ -484,7 +486,6 @@ export class DBOSExecutor {
   /**
    * DEBUG MODE workflow execution, skipping all the recording
    */
-  // eslint-disable-next-line @typescript-eslint/require-await
   async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     // In debug mode, we must have a specific workflow UUID.
     if (!params.workflowUUID) {
