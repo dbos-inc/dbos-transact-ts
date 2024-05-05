@@ -63,7 +63,6 @@ const consoleFormat = format.combine(
 
     const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return `${ts} [${level}]: ${messageString} ${stack ? "\n" + formattedStack : ""}`;
   })
 );

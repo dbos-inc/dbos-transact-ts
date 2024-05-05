@@ -114,8 +114,10 @@ export class DBOSExecutor {
     [
       DBOSExecutor.tempWorkflowName,
       {
-        // eslint-disable-next-line @typescript-eslint/require-await
-        workflow: async () => this.logger.error("UNREACHABLE: Indirect invoke of temp workflow"),
+        workflow: async () => {
+          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow")
+          return Promise.resolve()
+        },
         config: {},
       },
     ],

@@ -98,7 +98,6 @@ describe("oaoo-tests", () => {
 
     @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(wfCtxt.getConfig<number>("counter")).toBe(3);
       const funcResult: number = await wfCtxt.invoke(WorkflowOAOO).testInsertTx(name);
       const checkResult: number = await wfCtxt.invoke(WorkflowOAOO).testReadTx(funcResult);

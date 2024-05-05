@@ -35,9 +35,6 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;
     this.backoffRate = params.backoffRate ?? 2;
-    if (workflowContext.applicationConfig) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = workflowContext.applicationConfig;
-    }
+    this.applicationConfig = workflowContext.applicationConfig;
   }
 }
