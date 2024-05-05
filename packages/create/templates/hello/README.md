@@ -6,23 +6,21 @@ This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/db
 
 Before you can launch your app, you need a database.
 DBOS works with any Postgres database, but to make things easier, we've provided a script that starts a Docker Postgres container and creates a database.
-On Linux or Mac, run:
+Run:
 
 ```bash
-export PGPASSWORD=dbos
-./start_postgres_docker.sh
-```
-
-On Windows (cmd), run:
-
-```cmd
-set PGPASSWORD=dbos
-start_postgres_docker.bat
+node start_postgres_docker.js
 ```
 
 If successful, the script should print `Database started successfully!`.
 
-Then, let's run a schema migration to create some tables:
+Next, build the app:
+
+```bash
+npm run build
+```
+
+Then, run a schema migration to create some tables:
 
 ```bash
 npx dbos-sdk migrate
@@ -30,10 +28,9 @@ npx dbos-sdk migrate
 
 If successful, the migration should print `Migration successful!`.
 
-Next, build and run the app:
+Finally, run the app:
 
 ```bash
-npm run build
 npx dbos-sdk start
 ```
 
