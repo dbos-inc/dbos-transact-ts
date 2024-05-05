@@ -23,7 +23,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "../../../..",
+    "@dbos-inc/dbos-sdk": "file:../../../..",
     "typeorm": "^0.3.20"
   }
 }
