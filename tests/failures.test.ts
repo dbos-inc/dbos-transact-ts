@@ -146,7 +146,7 @@ class FailureTestClass {
   static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
     const err = code
       ? new DBOSError("test dbos error with code.", code)
-      : new DBOSError("test dbos error with code.")
+      : new DBOSError("test dbos error without code.")
     return Promise.reject(err)
   }
 
