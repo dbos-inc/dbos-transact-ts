@@ -1,7 +1,6 @@
 {
-  "name": "hello-function",
-  "version": "1.0.0",
-  "description": "Simple functions",
+  "name": "dbos-hello-typeorm",
+  "version": "0.0.1",
   "scripts": {
     "build": "tsc",
     "test": "npx dbos rollback && npx dbos migrate && jest",
