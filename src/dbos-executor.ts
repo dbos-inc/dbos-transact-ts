@@ -45,6 +45,7 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
+import { sleep } from './utils';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -332,7 +333,14 @@ export class DBOSExecutor {
       await Promise.allSettled(this.pendingWorkflowMap.values());
     }
     clearInterval(this.flushBufferID);
-    await this.flushWorkflowBuffers();
+    if (!this.debugMode && !this.isFlushingBuffers) {
+      // Don't flush the buffers if we're already flushing them in the background.
+      await this.flushWorkflowBuffers();
+    }
+    while (this.isFlushingBuffers) {
+      this.logger.info("Waiting for result buffers to be exported.");
+      await sleep(1000);
+    }
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
     await this.logger.destroy();
