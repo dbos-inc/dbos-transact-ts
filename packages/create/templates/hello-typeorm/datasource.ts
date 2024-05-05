@@ -8,7 +8,7 @@ const AppDataSource = new DataSource({
     host: dbosConfig.poolConfig.host,
     port: dbosConfig.poolConfig.port,
     username: dbosConfig.poolConfig.user,
-    password: dbosConfig.poolConfig.password,
+    password: dbosConfig.poolConfig.password as string,
     database: dbosConfig.poolConfig.database,
     entities: ['dist/entities/*.js'],
     migrations: ['dist/migrations/*.js'],
