@@ -44,7 +44,7 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code."));
   });
 
   test("readonly-error", async () => {
