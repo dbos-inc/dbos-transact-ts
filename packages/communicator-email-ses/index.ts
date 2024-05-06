@@ -1,9 +1,9 @@
-import {Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
+import {ArgOptional, Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
 import { SES, SendTemplatedEmailCommand } from '@aws-sdk/client-ses';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscfg';
 
-export class SendEmailCommunicator
+class SendEmailCommunicator
 {
     static AWS_SES_CONFIGURATIONS = 'aws_ses_configurations';
     static AWS_SES_API_VERSION = '2010-12-01';
@@ -19,23 +19,31 @@ export class SendEmailCommunicator
     static async sendEmail(
         ctx: CommunicatorContext,
         mail: {to?:string[], cc?:string[], bcc?:string[], from:string, subject: string, bodyHtml?:string, bodyText?:string},
+        @ArgOptional
         config?: {
             configName?: string,
             workflowStage?: string,
         }
     )
     {
-        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
-        const ses = SendEmailCommunicator.createSES(cfg);
-        return await ses.sendEmail({
-            Source:"",
-            Destination: {ToAddresses: mail.to, CcAddresses: mail.cc, BccAddresses: mail.bcc},
-            Message: {
-                Subject: {Data: mail.subject},
-                Body: {Html: (mail.bodyHtml ? {Data: mail.bodyHtml} : undefined),
-                       Text: (mail.bodyText ? {Data: "", Charset: 'utf-8'}: undefined)}
-            }
-        });
+        try {
+            const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+            const ses = SendEmailCommunicator.createSES(cfg);
+
+            return await ses.sendEmail({
+                Source: mail.from,
+                Destination: {ToAddresses: mail.to, CcAddresses: mail.cc, BccAddresses: mail.bcc},
+                Message: {
+                    Subject: {Data: mail.subject},
+                    Body: {Html: (mail.bodyHtml ? {Data: mail.bodyHtml} : undefined),
+                        Text: (mail.bodyText ? {Data: mail.bodyText, Charset: 'utf-8'}: undefined)}
+                }
+            });
+        }
+        catch (e) {
+            ctx.logger.error(e);
+            throw e;
+        }
     }
 
     @Communicator()
@@ -45,6 +53,7 @@ export class SendEmailCommunicator
             templateName: string,
             templateDataJSON:string /*Record<string, string>*/
         },
+        @ArgOptional
         config?: {
             configName?: string,
             workflowStage?: string,
@@ -109,4 +118,8 @@ export class SendEmailCommunicator
         const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, cfgname);
         return await this.createEmailTemplateFunction(cfg, templateName, subject, text);
     }
+}
+
+export {
+    SendEmailCommunicator
 }

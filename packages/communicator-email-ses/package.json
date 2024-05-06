@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "echo 'No tests'",
+    "testemail": "npm run build && jest --detectOpenHandles",
     "setversion": "grunt setversion"
   },
   "dependencies": {

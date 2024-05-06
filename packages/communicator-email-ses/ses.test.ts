@@ -32,20 +32,14 @@ describe("ses-tests", () => {
       console.log("SES unavailable, skipping SES tests");
       return;
     }
-    try {
-        console.log("Starting the test");
-        const ser = await testRuntime.invoke(SendEmailCommunicator).sendEmail(
-            {
-                to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
-                from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
-                subject: 'Test email from DBOS SES Unit Test',
-                bodyText: 'Check mailbox to see if it worked.'
-            },
-        );
-        expect(ser.MessageId).toBeDefined();
-    }
-    catch (e) {
-        console.log(e);
-    }
+    const ser = await testRuntime.invoke(SendEmailCommunicator).sendEmail(
+        {
+            to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
+            from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
+            subject: 'Test email from DBOS SES Unit Test',
+            bodyText: 'Check mailbox to see if it worked.'
+        },
+    );
+    expect(ser.MessageId).toBeDefined();
   });
 });
