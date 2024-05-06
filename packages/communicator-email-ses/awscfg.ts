@@ -11,9 +11,6 @@
  *  aws_region: us-east-2
  *  aws_access_key_id: ${AWS_ACCESS_KEY_ID}
  *  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
- *  aws_timeout: (optional, is defaulted in the code for the communicator)
- *  aws_connect_timeout: (optional, is defaulted in the code for the communicator)
- *  aws_max_retries: (optional, is defaulted in the code for the communicator)
  *
  * Then, each communicator module will support a list of AWS configurations, for
  *  example:
@@ -55,9 +52,6 @@ export interface AWSCfgFileItem
     aws_region?: string,
     aws_access_key_id?: string,
     aws_secret_access_key?: string,
-    aws_timeout?: number,
-    aws_connect_timeout?: number,
-    aws_max_retries?: number,
 }
 
 export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig {
