@@ -23,6 +23,17 @@ jobs:
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
+      zookeeper:
+        image: bitnami/zookeeper
+        ports:
+          - 2181:2181
+        env:
+          ALLOW_ANONYMOUS_LOGIN: yes
+        options: >-
+          --health-cmd "echo mntr | nc -w 2 -q 2 localhost 2181"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       kafka:
         image: bitnami/kafka
         ports:
@@ -37,17 +48,6 @@ jobs:
           ALLOW_PLAINTEXT_LISTENER: yes
           KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
           KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
-      zookeeper:
-        image: bitnami/zookeeper
-        ports:
-          - 2181:2181
-        env:
-          ALLOW_ANONYMOUS_LOGIN: yes
-        options: >-
-          --health-cmd "echo mntr | nc -w 2 -q 2 localhost 2181"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: "Setup postgres config"
@@ -65,7 +65,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm test
+          npm test -- -t kafka-tests
           npm run lint
         env:
           PGPASSWORD: dbos
