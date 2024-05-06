@@ -62,6 +62,7 @@ async function dropHelloSystemDB() {
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm_dbos_sys;`);
   await pgSystemClient.end();
 }
 
@@ -71,7 +72,7 @@ function configureHelloExample() {
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = "dbos";
   }
-  execSync("npx dbos-sdk migrate", { env: process.env });
+  execSync("npx dbos migrate", { env: process.env });
 }
 
 describe("runtime-entrypoint-tests", () => {
@@ -175,5 +176,29 @@ runtimeConfig:
       fs.copyFileSync(`${filePath}.bak`, filePath);
       fs.unlinkSync(`${filePath}.bak`);
     }
+  });
+});
+
+describe("runtime-tests-typeorm", () => {
+  beforeAll(async () => {
+    await dropHelloSystemDB();
+    process.chdir("packages/create/templates/hello-typeorm");
+    configureHelloExample();
+  });
+
+  afterAll(() => {
+    process.chdir("../../../..");
+  });
+
+  test("test hello-typeorm tests", () => {
+    execSync("npm run test", { env: process.env }); // Make sure hello-typeorm passes its own tests.
+  });
+
+  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
+  test("test hello-typeorm runtime", async () => {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "3000");
   });
 });

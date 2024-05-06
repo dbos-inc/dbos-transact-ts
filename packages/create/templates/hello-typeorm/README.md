@@ -1,6 +1,6 @@
-# DBOS Hello
+# DBOS Hello with TypeORM
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init`.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init` and using [TypeORM](https://docs.dbos.dev/tutorials/using-typeorm).
 
 ## Getting Started
 
@@ -20,7 +20,9 @@ Next, build the app:
 npm run build
 ```
 
-Then, run a schema migration to create some tables:
+Then, run a schema migration to create some tables.
+TypeORM provides rich support for [schema migrations](https://typeorm.io/migrations), including automatic generation of migration files from entity files.
+Fore more information, see [our docs](https://docs.dbos.dev/tutorials/using-typeorm).
 
 ```bash
 npx dbos-sdk migrate
@@ -42,6 +44,7 @@ Congratulations! You just launched a DBOS application.
 
 ## Next Steps
 
+- For more information on using TypeORM with DBOS, check out [our docs](https://docs.dbos.dev/tutorials/using-typeorm).
 - To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it.  Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
 - For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
 - To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
