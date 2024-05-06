@@ -51,7 +51,6 @@ try {
 
 const program = new Command();
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 program.version(packageJson.version);
 
 /////////////////////
@@ -141,6 +140,17 @@ applicationCommands
   .description('Deploy this application to the cloud and run associated database rollback commands')
   .action(async () => {
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false);
+    process.exit(exitCode);
+  });
+
+applicationCommands
+  .command('change-database-instance')
+  .description('Change this application\'s database instance and redeploy it')
+  .option('--verbose', 'Verbose log of deployment step')
+  .option('-p, --previous-version <string>', 'Specify a previous version to restore')
+  .requiredOption('-d, --database <string>', 'Specify the new database instance name for this application')
+  .action(async (options: {verbose?: boolean, previousVersion?: string, database: string}) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, options.database);
     process.exit(exitCode);
   });
 

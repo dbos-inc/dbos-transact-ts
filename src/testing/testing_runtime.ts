@@ -13,7 +13,7 @@ import { Workflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
-import { get, set, has } from "lodash";
+import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSKafka } from "../kafka/kafka";
 
@@ -83,7 +83,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #kafka: DBOSKafka | null = null;
-  #applicationConfig: object | undefined = undefined;
+  #applicationConfig: object = {};
   #isInitialized = false;
 
   /**
@@ -119,23 +119,15 @@ export class TestingRuntimeImpl implements TestingRuntime {
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    if (!this.#applicationConfig || !has(this.#applicationConfig, key)) {
-      if (defaultValue) {
-        return defaultValue;
-      }
-      return undefined;
-    }
-
-    // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment
-    const value = get(this.#applicationConfig, key);
-    if (defaultValue && typeof value !== typeof defaultValue) {
+    const value = get(this.#applicationConfig, key, defaultValue);
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
-    return value as T;
+    return value;
   }
 
   setConfig<T>(key: string, newValue: T): void {
-    set(this.#applicationConfig!, key, newValue);
+    set(this.#applicationConfig, key, newValue);
   }
 
   /**

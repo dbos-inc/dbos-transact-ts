@@ -130,11 +130,10 @@ class ConcurrTestClass {
     await ctxt.invoke(ConcurrTestClass).testReadWriteFunction(1);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator()
   static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
     ConcurrTestClass.cnt++;
-    return id;
+    return Promise.resolve(id);
   }
 
   @Workflow()

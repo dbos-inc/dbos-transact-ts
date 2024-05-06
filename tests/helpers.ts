@@ -34,9 +34,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugMode?: 
     },
     system_database: "dbostest_dbos_sys",
     userDbclient: dbClient || UserDatabaseName.PGNODE,
-    dbClientMetadata: {
-      entities: ["KV"],
-    },
     debugProxy: debugProxy,
     debugMode: debugMode,
   };

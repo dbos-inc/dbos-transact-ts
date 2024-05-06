@@ -39,10 +39,9 @@ describe("oaoo-tests", () => {
     static get counter() {
       return CommunicatorOAOO.#counter;
     }
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Communicator()
     static async testCommunicator(_commCtxt: CommunicatorContext) {
-      return CommunicatorOAOO.#counter++;
+      return Promise.resolve(CommunicatorOAOO.#counter++);
     }
 
     @Workflow()
@@ -99,14 +98,12 @@ describe("oaoo-tests", () => {
 
     @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(wfCtxt.getConfig<number>("counter")).toBe(3);
       const funcResult: number = await wfCtxt.invoke(WorkflowOAOO).testInsertTx(name);
       const checkResult: number = await wfCtxt.invoke(WorkflowOAOO).testReadTx(funcResult);
       return checkResult;
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
       return wfCtxt.childWorkflow(WorkflowOAOO.testTxWorkflow, name).then((x) => x.getResult());
@@ -200,7 +197,7 @@ describe("oaoo-tests", () => {
     // Receive twice with the same UUID.  Each should get the same result of true.
     const recvHandle1 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
     const recvHandle2 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
-  
+
     // Send twice with the same idempotency key.  Only one message should be sent.
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();

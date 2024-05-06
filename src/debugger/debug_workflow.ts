@@ -42,10 +42,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
-    if (dbosExec.config.application) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = dbosExec.config.application;
-    }
+    this.applicationConfig = dbosExec.config.application;
   }
 
   functionIDGetIncrement(): number {
@@ -248,11 +245,10 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async sleep(_: number): Promise<void> {
     // Need to increment function ID for faithful replay.
     this.functionIDGetIncrement();
-    return;
+    return Promise.resolve();
   }
 }
 
