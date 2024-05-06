@@ -30,6 +30,8 @@ import { TelemetryConfig } from './telemetry';
 import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
+import { TlsOptions } from "tls";
+
 import {
   PGNodeUserDatabase,
   PrismaUserDatabase,
@@ -201,32 +203,46 @@ export class DBOSExecutor {
     this.initialized = false;
   }
 
-  configureDbClient() {
+  async configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const { PrismaClient } = require("@prisma/client");
+      const PrismaClient = await import("@prisma/client");
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-      this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+      this.userDatabase = new PrismaUserDatabase(new PrismaClient.PrismaClient());
       this.logger.debug("Loaded Prisma user database");
-    } else if (userDbClient === UserDatabaseName.TYPEORM) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const DataSourceExports = require("typeorm");
+    } else
+    if (userDbClient === UserDatabaseName.TYPEORM) {
+      const { DataSource } = await import("typeorm");
       try {
+        let ssl: true | TlsOptions | undefined;
+        if (userDBConfig.ssl){
+          if (userDBConfig.ssl === true){
+            ssl = true;
+          } else {
+            delete userDBConfig.ssl.pskCallback;
+            ssl = userDBConfig;
+          }
+        }
+
         this.userDatabase = new TypeORMDatabase(
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-          new DataSourceExports.DataSource({
+          new DataSource({
             type: "postgres", // perhaps should move to config file
             host: userDBConfig.host,
             port: userDBConfig.port,
             username: userDBConfig.user,
-            password: userDBConfig.password,
+            password: async () => {
+              if (!userDBConfig.password) return '';
+              if (typeof userDBConfig.password === "string") {
+                return Promise.resolve(userDBConfig.password)
+              }
+              return await userDBConfig.password()
+            },
             database: userDBConfig.database,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             entities: this.entities,
-            ssl: userDBConfig.ssl,
+            ssl: ssl
           })
         );
       } catch (s) {
@@ -290,7 +306,7 @@ export class DBOSExecutor {
         }
       }
 
-      this.configureDbClient();
+      await this.configureDbClient();
 
       if (!this.userDatabase) {
         this.logger.error("No user database configured!");
