@@ -1,5 +1,6 @@
 .dbos/
 .vscode/
+!packages/create/templates/**/.vscode
 
 # Logs
 logs
