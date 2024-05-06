@@ -208,7 +208,7 @@ export class DBOSExecutor {
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
-      const PrismaClient = await import("@prisma/client");
+      const PrismaClient = (await import("@prisma/client")).default;
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       this.userDatabase = new PrismaUserDatabase(new PrismaClient.PrismaClient());
       this.logger.debug("Loaded Prisma user database");
@@ -240,7 +240,6 @@ export class DBOSExecutor {
               return await userDBConfig.password()
             },
             database: userDBConfig.database,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
             entities: this.entities,
             ssl: ssl
           })
