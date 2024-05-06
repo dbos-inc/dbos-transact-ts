@@ -48,19 +48,19 @@ describe("kafka-tests", () => {
     } finally {
       await producer.disconnect();
     }
-  });
+  }, 20000);
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       testRuntime = await createInternalTestRuntime([DBOSTestClass], config);
     }
-  });
+  }, 20000);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
       await testRuntime.destroy();
     }
-  }, 10000);
+  }, 20000);
 
   test("txn-kafka", async () => {
     if (!kafkaIsAvailable) {
