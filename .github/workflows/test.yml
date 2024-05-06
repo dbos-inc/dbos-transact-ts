@@ -23,6 +23,7 @@ jobs:
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
+      # Zookeeper service container (required by Kafka)
       zookeeper:
         image: bitnami/zookeeper
         ports:
@@ -34,6 +35,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Kafka service container
       kafka:
         image: bitnami/kafka
         ports:
