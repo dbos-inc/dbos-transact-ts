@@ -76,8 +76,7 @@ export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSSe
         throw new DBOSConfigKeyTypeError(`${cfgname}.aws_secret_access_key`, 'string', typeof(cfgstrs.aws_secret_access_key));
     }
 
-    return {name: cfgname, region: '', credentials: {accessKeyId: "", secretAccessKey:""}};
-
+    return {name: cfgname, region: cfgstrs.aws_region, credentials: {accessKeyId: cfgstrs.aws_access_key_id, secretAccessKey: cfgstrs.aws_secret_access_key}};
 }
 
 export function loadAWSCongfigsByNames(ctx: ConfigProvider, cfgnames: string) {
