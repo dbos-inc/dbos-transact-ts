@@ -20,7 +20,9 @@ Next, build the app:
 npm run build
 ```
 
-Then, run a schema migration to create some tables:
+Then, run a schema migration to create some tables.
+TypeORM provides rich support for [schema migrations](https://typeorm.io/migrations), including automatic generation of migration files from entity files.
+Fore more information, see [our docs](https://docs.dbos.dev/tutorials/using-typeorm).
 
 ```bash
 npx dbos-sdk migrate
