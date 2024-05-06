@@ -116,7 +116,7 @@ class SendEmailCommunicator
     @Communicator()
     static async createEmailTemplate(ctx:CommunicatorContext, cfgname:string, templateName: string, subject: string, text: string) {
         const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, cfgname);
-        return await this.createEmailTemplateFunction(cfg, templateName, subject, text);
+        return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, subject, text);
     }
 }
 
