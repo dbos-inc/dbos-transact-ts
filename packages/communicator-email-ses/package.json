@@ -13,8 +13,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo 'No tests'",
-    "testemail": "npm run build && jest --detectOpenHandles",
+    "test": "npm run build && jest --detectOpenHandles",
     "setversion": "grunt setversion"
   },
   "dependencies": {
