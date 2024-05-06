@@ -65,7 +65,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm test -- -t kafka-tests
+          npm test
           npm run lint
         env:
           PGPASSWORD: dbos
