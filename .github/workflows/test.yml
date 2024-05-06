@@ -7,9 +7,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # Service container for Postgres
     services:
-      # Label used to access the service container.
+      # Postgres service container
       postgres:
         image: postgres:16.1
         env:
@@ -24,6 +23,35 @@ jobs:
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
+      # Kafka service container
+      kafka:
+        image: bitnami/kafka:latest
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_LISTENERS: INTERNAL://:9093,EXTERNAL://:9092
+          KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9093,EXTERNAL://localhost:9092
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+          ALLOW_PLAINTEXT_LISTENER: "yes"
+        options: >-
+          --health-cmd "timeout 5 nc -z localhost 9092"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 9092:9092
+      # Zookeeper service container, required for Kafka
+      zookeeper:
+        image: bitnami/zookeeper:latest
+        env:
+          ALLOW_ANONYMOUS_LOGIN: "yes"
+        options: >-
+          --health-cmd "timeout 5 nc -z localhost 2181"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 2181:2181
 
     steps:
       - name: "Setup postgres config"
