@@ -89,11 +89,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       ip: koaContext.request.ip,
       requestID: requestID,
     };
-
-    if (dbosExec.config.application) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this.applicationConfig = dbosExec.config.application;
-    }
+    this.applicationConfig = dbosExec.config.application;
     this.#dbosExec = dbosExec;
   }
 

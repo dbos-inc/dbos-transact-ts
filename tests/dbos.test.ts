@@ -251,16 +251,14 @@ class DBOSTestClass {
     return funcResult;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testVoidFunction(_txnCtxt: TestTransactionContext) {
-    return;
+    return Promise.resolve();
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testNameFunction(_txnCtxt: TestTransactionContext, name: string) {
-    return name;
+    return Promise.resolve(name);
   }
 
   @Workflow()
@@ -296,11 +294,10 @@ class DBOSTestClass {
     return checkResult;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator()
   static async testCommunicator(ctxt: CommunicatorContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
-    return DBOSTestClass.cnt++;
+    return Promise.resolve(DBOSTestClass.cnt++);
   }
 
   @Workflow()

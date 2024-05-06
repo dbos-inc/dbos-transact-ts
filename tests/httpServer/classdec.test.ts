@@ -92,23 +92,21 @@ describe("httpserver-defsec-tests", () => {
     );
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async function authTestMiddleware(ctx: MiddlewareContext) {
     if (ctx.requiredRole.length > 0) {
       const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        const err = new DBOSNotAuthorizedError("Not logged in.", 401);
-        throw err;
+        return Promise.reject(new DBOSNotAuthorizedError("Not logged in.", 401));
       } else {
         if (uid === "go_away") {
-          throw new DBOSNotAuthorizedError("Go away.", 401);
+          return Promise.reject(new DBOSNotAuthorizedError("Go away.", 401));
         }
-        return {
+        return Promise.resolve({
           authenticatedUser: uid,
           authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
-        };
+        });
       }
     }
     return;
@@ -126,22 +124,19 @@ describe("httpserver-defsec-tests", () => {
     await next();
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   @DefaultRequiredRole(["user"])
   @Authentication(authTestMiddleware)
   @KoaMiddleware(testMiddleware, testMiddleware2)
   class TestEndpointDefSec {
-    // eslint-disable-next-line @typescript-eslint/require-await
     @RequiredRole([])
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
-      return { message: "hello!" };
+      return Promise.resolve({ message: "hello!" });
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @GetApi("/requireduser")
     static async testAuth(_ctxt: HandlerContext, name: string) {
-      return `Please say hello to ${name}`;
+      return Promise.resolve(`Please say hello to ${name}`);
     }
 
     @Transaction()

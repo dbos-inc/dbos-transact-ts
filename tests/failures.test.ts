@@ -44,7 +44,7 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code"));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code."));
   });
 
   test("readonly-error", async () => {
@@ -124,7 +124,6 @@ describe("failures-tests", () => {
     expect(FailureTestClass.cnt).toBe(1);
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   test("no-registration", async () => {
     // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
 
@@ -143,21 +142,18 @@ class FailureTestClass {
   static cnt = 0;
   static success: string = "";
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator({ retriesAllowed: false })
   static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
-    if (code) {
-      throw new DBOSError("test dbos error with code.", code);
-    } else {
-      throw new DBOSError("test dbos error without code");
-    }
+    const err = code
+      ? new DBOSError("test dbos error with code.", code)
+      : new DBOSError("test dbos error without code.")
+    return Promise.reject(err)
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction({ readOnly: true })
   static async testReadonlyError(_txnCtxt: TestTransactionContext) {
     FailureTestClass.cnt++;
-    throw new Error("test error");
+    return Promise.reject(new Error("test error"));
   }
 
   @Transaction()
@@ -168,16 +164,15 @@ class FailureTestClass {
     return rows[0];
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testSerialError(_ctxt: TestTransactionContext, maxRetry: number) {
     if (FailureTestClass.cnt !== maxRetry) {
       const err = new DatabaseError("serialization error", 10, "error");
       err.code = "40001";
       FailureTestClass.cnt += 1;
-      throw err;
+      return Promise.reject(err);
     }
-    return maxRetry;
+    return Promise.resolve(maxRetry);
   }
 
   @Workflow()
@@ -185,37 +180,32 @@ class FailureTestClass {
     return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator({ intervalSeconds: 1, maxAttempts: 2 })
   static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
     }
-    return FailureTestClass.cnt;
+    return Promise.resolve(FailureTestClass.cnt);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator({ retriesAllowed: false })
   static async testNoRetry(_ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
-    throw new Error("failed no retry");
+    return Promise.reject(new Error("failed no retry"));
   }
 
   // Test decorator registration works.
-  // eslint-disable-next-line @typescript-eslint/require-await
   static async noRegComm(_ctxt: CommunicatorContext, code: number) {
-    return code + 1;
+    return Promise.resolve(code + 1);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   static async noRegTransaction(_ctxt: TestTransactionContext, code: number) {
-    return code + 1;
+    return Promise.resolve(code + 1);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   static async noRegWorkflow(_ctxt: WorkflowContext, code: number) {
-    return code + 1;
+    return Promise.resolve(code + 1);
   }
 
   @Workflow()

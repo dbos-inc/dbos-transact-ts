@@ -139,42 +139,37 @@ class FdbTestClass {
   static cnt = 0;
   static wfCnt = 0;
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testFunction(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
-    return 5;
+    return Promise.resolve(5);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testErrorFunction(_txnCtxt: PGTransactionContext) {
     if (FdbTestClass.cnt++ === 0) {
-      throw new Error("fail");
+      return Promise.reject(new Error("fail"));
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator()
   static async testCommunicator(_commCtxt: CommunicatorContext) {
-    return FdbTestClass.cnt++;
+    return Promise.resolve(FdbTestClass.cnt++);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
   static async testErrorCommunicator(ctxt: CommunicatorContext) {
     FdbTestClass.cnt++;
     if (FdbTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
     }
-    return "success";
+    return Promise.resolve("success");
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Communicator({ retriesAllowed: false })
   static async noRetryComm(_ctxt: CommunicatorContext, id: number) {
     FdbTestClass.cnt++;
-    return id;
+    return Promise.resolve(id);
   }
 
   static innerResolve: () => void;
@@ -187,11 +182,10 @@ class FdbTestClass {
     FdbTestClass.outerResolve = r;
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   @Transaction()
   static async testStatusFunc(_txnCtxt: PGTransactionContext) {
     FdbTestClass.cnt++;
-    return 3;
+    return Promise.resolve(3);
   }
 
   @Workflow()

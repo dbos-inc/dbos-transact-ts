@@ -14,7 +14,7 @@ import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
-const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath) as string) as object;
+const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
@@ -39,12 +39,9 @@ export interface ConfigFile {
     allowed_origins?: string[];
   };
   telemetry?: TelemetryConfig;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  application: any;
+  application: object;
   env: Record<string, string>;
   runtimeConfig?: DBOSRuntimeConfig;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  dbClientMetadata?: any;
 }
 
 /*
@@ -62,7 +59,7 @@ export function substituteEnvVars(content: string): string {
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
     const configFileContent = readFileSync(configFilePath);
-    const interpolatedConfig = substituteEnvVars(configFileContent as string);
+    const interpolatedConfig = substituteEnvVars(configFileContent);
     const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
     return configFile;
   } catch (e) {
@@ -197,14 +194,9 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     application: configFile.application || undefined,
     env: configFile.env || {},
-    http: configFile.http,
-    dbClientMetadata: {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      entities: configFile.dbClientMetadata?.entities,
-    },
+    http: configFile.http
   };
 
   /*************************************/
