@@ -40,6 +40,7 @@ import {
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, ClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
+import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
@@ -221,9 +222,8 @@ export class DBOSExecutor {
       return new PrismaUserDatabase(new PrismaClient.PrismaClient());
   }
 
-  async configureKnexClient(config: DBOSPoolConfig) {
-    const { knex } = await import('knex');
-    return new KnexUserDatabase(knex({
+  configureKnexClient(config: DBOSPoolConfig) {
+    const knexConfig: Knex.Config = {
       client: "postgres",
       connection: {
         host: config.host,
@@ -232,8 +232,9 @@ export class DBOSExecutor {
         password: config.password,
         database: config.database,
         ssl: config.ssl,
-      }
-    }));
+      },
+    };
+    return new KnexUserDatabase(knex(knexConfig));
   }
 
   async configureTypeOrmClient(config: DBOSPoolConfig, classRegistrations: ClassRegistration<AnyConstructor>[]) {
@@ -278,7 +279,7 @@ export class DBOSExecutor {
         }
         break;
       case 'knex':
-        this.userDatabase = await this.configureKnexClient(userDBConfig);
+        this.userDatabase = this.configureKnexClient(userDBConfig);
         this.logger.debug("Loaded Knex user database");
         break;
       case 'pg-node':
