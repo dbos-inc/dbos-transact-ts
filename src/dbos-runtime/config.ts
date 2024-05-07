@@ -42,6 +42,7 @@ export interface ConfigFile {
   application: object;
   env: Record<string, string>;
   runtimeConfig?: DBOSRuntimeConfig;
+  skip_missed_scheduled_workflows?:boolean;
 }
 
 /*
@@ -195,6 +196,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     telemetry: configFile.telemetry || undefined,
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     application: configFile.application || undefined,
+    skipMissedScheduledWorkflows: configFile.skip_missed_scheduled_workflows ?? false,
     env: configFile.env || {},
     http: configFile.http
   };

@@ -114,9 +114,11 @@ class DetachableLoop {
 
     async startLoop(): Promise<void> {
         // See if the exec time is available in durable storage...
-        const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethod.name);
-        if (lasttm) {
-            this.lastExec = new Date(lasttm);
+        if (!this.dbosExec.config.skipMissedScheduledWorkflows) {
+            const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethod.name);
+            if (lasttm) {
+                this.lastExec = new Date(lasttm);
+            }
         }
 
         this.isRunning = true;

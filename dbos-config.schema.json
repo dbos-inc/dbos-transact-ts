@@ -145,6 +145,9 @@
         }
       }
     },
+    "skip_missed_scheduled_workflows": {
+      "type": "boolean"
+    },
     "application": {},
     "env": {},
     "version": {

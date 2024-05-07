@@ -61,6 +61,7 @@ export interface DBOSConfig {
   readonly application?: object;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
+  readonly skipMissedScheduledWorkflows?: boolean;
   readonly http?: {
     readonly cors_middleware?: boolean;
     readonly credentials?: boolean;
