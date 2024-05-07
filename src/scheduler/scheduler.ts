@@ -23,7 +23,6 @@ export class SchedulerConfig {
 
 // Scheduled Time. Actual Time, number running globally, number running locally
 export type ScheduledArgs = [Date, Date]
-export type ScheduledArgsAsSerialized = [string, string]; // You would think this is a Date but json doesn't have dates, so it is a string.
 
 export interface SchedulerRegistrationConfig {
     schedulerConfig?: SchedulerConfig;
