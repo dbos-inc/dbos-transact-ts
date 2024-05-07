@@ -39,18 +39,22 @@ describe("ses-tests", () => {
             subject: 'Test email from DBOS SES Unit Test',
             bodyText: 'Check mailbox to see if it worked.'
         },
+        {configName: 'aws_config_alt'}
     );
     expect(ser.MessageId).toBeDefined();
 
     await testRuntime.invoke(SendEmailCommunicator).createEmailTemplate(
-        "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."}
+        "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."},
+        {configName: 'aws_config_alt'}
     );
     const ser2 = await testRuntime.invoke(SendEmailCommunicator).sendTemplatedEmail({
         to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
         from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
         templateName: "unitTestTemplate",
         templateDataJSON: JSON.stringify({todaydate: new Date().toISOString()}),
-    });
+    },
+    {configName: 'aws_config_alt'}
+    );
     expect(ser2.MessageId).toBeDefined();
   });
 });

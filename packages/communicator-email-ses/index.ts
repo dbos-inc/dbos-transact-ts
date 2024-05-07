@@ -109,10 +109,28 @@ class SendEmailCommunicator
                 TextPart: template.bodyText,
                 HtmlPart: template.bodyHtml,
             },
+            
         };
-        
+
+        // Check for existing template
+        let existingTemplate = false;
+        try {
+            const exists = await ses.getTemplate({TemplateName: templateName});
+            if (exists.Template?.SubjectPart) {
+                existingTemplate = true;
+            }
+        }
+        catch (e) {
+            // Doesn't exist, or the next error is more important
+        }
+
         // Send call to create the email template
-        await ses.createTemplate(params);
+        if (!existingTemplate) {
+            await ses.createTemplate(params);
+        }
+        else {
+            await ses.updateTemplate(params);
+        }
     }
 
     /*
@@ -128,7 +146,6 @@ class SendEmailCommunicator
             configName?: string,
             workflowStage?: string,
         }
-
     ) {
         const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
         return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, template);
