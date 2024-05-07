@@ -27,10 +27,8 @@ import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
-import { PoolConfig } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
-import { TlsOptions } from "tls";
 
 import {
   PGNodeUserDatabase,
@@ -47,14 +45,28 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
-import { sleep } from './utils';
+import { exaustiveCheckGuard, sleep } from './utils';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
 
+interface DBOSTlsConfig {
+  rejectUnauthorized: boolean;
+  ca?: string[] | undefined;
+}
+export interface DBOSPoolConfig {
+  database: string;
+  host: string;
+  port: number;
+  user: string;
+  password?: string | undefined;
+  connectionTimeoutMillis?: number | undefined;
+  ssl?: boolean | DBOSTlsConfig | undefined;
+}
+
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  readonly poolConfig: PoolConfig;
+  readonly poolConfig: DBOSPoolConfig;
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
@@ -203,69 +215,72 @@ export class DBOSExecutor {
     this.initialized = false;
   }
 
+  async configurePrimaClient() {
+      // TODO: make Prisma work with debugger proxy.
+      const PrismaClient = await import("@prisma/client");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+      return new PrismaUserDatabase(new PrismaClient.PrismaClient());
+  }
+
+  configureKnexClient(config: DBOSPoolConfig) {
+    const knexConfig: Knex.Config = {
+      client: "postgres",
+      connection: config,
+    };
+    return new KnexUserDatabase(knex(knexConfig));
+  }
+
+  async configureTypeOrmClient(config: DBOSPoolConfig) {
+    const { DataSource } = await import("typeorm");
+    return  new TypeORMDatabase(
+      new DataSource({
+        type: "postgres", // perhaps should move to config file
+        host: config.host,
+        port: config.port,
+        username: config.user,
+        password: config.password,
+        database: config.database,
+        entities: this.entities,
+        ssl: config.ssl,
+      })
+    );
+  }
+
   async configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
-    if (userDbClient === UserDatabaseName.PRISMA) {
-      // TODO: make Prisma work with debugger proxy.
-      const PrismaClient = (await import("@prisma/client")).default;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-      this.userDatabase = new PrismaUserDatabase(new PrismaClient.PrismaClient());
-      this.logger.debug("Loaded Prisma user database");
-    } else
-    if (userDbClient === UserDatabaseName.TYPEORM) {
-      const { DataSource } = await import("typeorm");
-      try {
-        let ssl: true | TlsOptions | undefined;
-        if (userDBConfig.ssl){
-          if (userDBConfig.ssl === true){
-            ssl = true;
-          } else {
-            delete userDBConfig.ssl.pskCallback;
-            ssl = userDBConfig;
-          }
+    switch (userDbClient) {
+      case 'prisma':
+        this.userDatabase = await this.configurePrimaClient();
+        this.logger.debug("Loaded Prisma user database");
+        break;
+      case 'typeorm':
+        try {
+          this.userDatabase = await this.configureTypeOrmClient(userDBConfig);
+          this.logger.debug("Loaded TypeORM user database");
+        } catch (s) {
+          (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
+          this.logger.error(s);
         }
-
-        this.userDatabase = new TypeORMDatabase(
-          new DataSource({
-            type: "postgres", // perhaps should move to config file
-            host: userDBConfig.host,
-            port: userDBConfig.port,
-            username: userDBConfig.user,
-            password: async () => {
-              if (!userDBConfig.password) return '';
-              if (typeof userDBConfig.password === "string") {
-                return Promise.resolve(userDBConfig.password)
-              }
-              return await userDBConfig.password()
-            },
-            database: userDBConfig.database,
-            entities: this.entities,
-            ssl: ssl
-          })
-        );
-      } catch (s) {
-        (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
-        this.logger.error(s);
-      }
-      this.logger.debug("Loaded TypeORM user database");
-    } else if (userDbClient === UserDatabaseName.KNEX) {
-      const knexConfig: Knex.Config = {
-        client: "postgres",
-        connection: {
-          host: userDBConfig.host,
-          port: userDBConfig.port,
-          user: userDBConfig.user,
-          password: userDBConfig.password,
-          database: userDBConfig.database,
-          ssl: userDBConfig.ssl,
-        },
-      };
-      this.userDatabase = new KnexUserDatabase(knex(knexConfig));
-      this.logger.debug("Loaded Knex user database");
-    } else {
-      this.userDatabase = new PGNodeUserDatabase(userDBConfig);
-      this.logger.debug("Loaded Postgres user database");
+        break;
+      case 'knex':
+        this.userDatabase = this.configureKnexClient(userDBConfig);
+        this.logger.debug("Loaded Knex user database");
+        break;
+      case 'pg-node':
+        this.userDatabase = new PGNodeUserDatabase(userDBConfig);
+        this.logger.debug("Loaded Postgres user database");
+        break;
+      case undefined:
+        this.userDatabase = new PGNodeUserDatabase(userDBConfig);
+        this.logger.debug("Loaded Postgres user database");
+        break;
+      default:
+        exaustiveCheckGuard(userDbClient)
+    }
+    if (!this.userDatabase) {
+      this.logger.error("No user database configured!");
+      throw new DBOSInitializationError("No user database configured!");
     }
   }
 
@@ -306,11 +321,6 @@ export class DBOSExecutor {
       }
 
       await this.configureDbClient();
-
-      if (!this.userDatabase) {
-        this.logger.error("No user database configured!");
-        throw new DBOSInitializationError("No user database configured!");
-      }
 
       for (const cls of classes) {
         this.#registerClass(cls);

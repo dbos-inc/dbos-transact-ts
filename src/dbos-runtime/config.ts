@@ -1,7 +1,6 @@
 import { DBOSInitializationError } from "../error";
 import { findPackageRoot, readFileSync } from "../utils";
-import { DBOSConfig } from "../dbos-executor";
-import { PoolConfig } from "pg";
+import { DBOSConfig, DBOSPoolConfig } from "../dbos-executor";
 import YAML from "yaml";
 import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
@@ -89,7 +88,7 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
     throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
   }
 
-  const poolConfig: PoolConfig = {
+  const poolConfig: DBOSPoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
