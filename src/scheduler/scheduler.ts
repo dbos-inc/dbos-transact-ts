@@ -129,7 +129,7 @@ class DetachableLoop {
             if (sleepTime > 0) {
                 // Wait for either the timeout or an interruption
                 await Promise.race([
-                    this.sleep(sleepTime),
+                    this.sleepms(sleepTime),
                     new Promise<void>((_, reject) => this.interruptResolve = reject)
                 ])
                 .catch(); // Interrupt sleep throws
@@ -176,7 +176,7 @@ class DetachableLoop {
         }
     }
 
-    private sleep(ms: number): Promise<void> {
+    private sleepms(ms: number): Promise<void> {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 }
