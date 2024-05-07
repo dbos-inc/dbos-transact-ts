@@ -19,13 +19,13 @@ export function prettyPrintApplication(app: Application) {
 }
 
 export type ApplicationVersion = {
-  application_name: string;
-  version: string;
-  creation_time: string;
+  ApplicationName: string;
+  Version: string;
+  CreationTime: string;
 }
 
 export function prettyPrintApplicationVersion(version: ApplicationVersion) {
-  console.log(`Application Name: ${version.application_name}`);
-  console.log(`Version: ${version.version}`);
-  console.log(`Creation Timestamp: ${version.creation_time}`);
+  console.log(`Application Name: ${version.ApplicationName}`);
+  console.log(`Version: ${version.Version}`);
+  console.log(`Creation Timestamp: ${version.CreationTime}`);
 }
