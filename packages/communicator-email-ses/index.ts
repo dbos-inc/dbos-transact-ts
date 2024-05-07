@@ -93,7 +93,11 @@ class SendEmailCommunicator
     /*
      * Create SES Email Template - This is the non-communicator version
      */
-    static async createEmailTemplateFunction(cfg: AWSServiceConfig, templateName: string, subject: string, text: string) {
+    static async createEmailTemplateFunction(
+        cfg: AWSServiceConfig,
+        templateName: string,
+        template: {subject: string, bodyHtml?:string, bodyText?:string}
+    ) {
         // Create SES
         const ses = SendEmailCommunicator.createSES(cfg);
     
@@ -101,8 +105,9 @@ class SendEmailCommunicator
         const params = {
             Template: {
                 TemplateName: templateName,
-                SubjectPart: subject,
-                TextPart: text,
+                SubjectPart: template.subject,
+                TextPart: template.bodyText,
+                HtmlPart: template.bodyHtml,
             },
         };
         
@@ -114,9 +119,19 @@ class SendEmailCommunicator
      * Create SES Email template - Communicator version
      */
     @Communicator()
-    static async createEmailTemplate(ctx:CommunicatorContext, cfgname:string, templateName: string, subject: string, text: string) {
-        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, cfgname);
-        return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, subject, text);
+    static async createEmailTemplate(
+        ctx:CommunicatorContext,
+        templateName:string,
+        template: {subject: string, bodyHtml?:string, bodyText?:string},
+        @ArgOptional
+        config?: {
+            configName?: string,
+            workflowStage?: string,
+        }
+
+    ) {
+        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+        return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, template);
     }
 }
 

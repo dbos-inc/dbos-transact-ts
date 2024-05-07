@@ -43,7 +43,7 @@ describe("ses-tests", () => {
     expect(ser.MessageId).toBeDefined();
 
     await testRuntime.invoke(SendEmailCommunicator).createEmailTemplate(
-        "", "unitTestTemplate", "Email from unit test template", "Today's date is {{todaydate}}."
+        "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."}
     );
     const ser2 = await testRuntime.invoke(SendEmailCommunicator).sendTemplatedEmail({
         to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
