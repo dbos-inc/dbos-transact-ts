@@ -2,7 +2,7 @@ import axios , { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 import { ApplicationVersion, prettyPrintApplicationVersion } from "./types.js";
 
-export async function getAppVersions(host: string, json: boolean, appName?: string): Promise<number> {
+export async function listAppVersions(host: string, json: boolean, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;

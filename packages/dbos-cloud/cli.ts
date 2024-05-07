@@ -22,7 +22,7 @@ import path from "path";
 import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
-import { getAppVersions } from "./applications/get-app-versions.js";
+import { listAppVersions } from "./applications/list-app-versions.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -190,7 +190,7 @@ applicationCommands
   .argument('[string]', 'application name')
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
-    const exitCode = await getAppVersions(DBOSCloudHost, options.json, appName);
+    const exitCode = await listAppVersions(DBOSCloudHost, options.json, appName);
     process.exit(exitCode);
   });
 
