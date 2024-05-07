@@ -45,7 +45,6 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
-import { ScheduledArgsAsSerialized, SchedulerRegistrationConfig } from './scheduler/scheduler';
 import { sleep } from './utils';
 
 export interface DBOSNull { }
