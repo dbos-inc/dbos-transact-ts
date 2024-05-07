@@ -48,6 +48,7 @@ import { serializeError } from 'serialize-error';
 import { exaustiveCheckGuard, sleep } from './utils';
 
 export interface DBOSNull { }
+
 export const dbosNull: DBOSNull = {};
 
 interface DBOSTlsConfig {
