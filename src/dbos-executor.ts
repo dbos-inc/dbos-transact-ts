@@ -38,9 +38,8 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, ClassRegistration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
-import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
@@ -114,6 +113,8 @@ const TempWorkflowType = {
   send: "send",
 } as const;
 
+type AnyConstructor = new (...args: unknown[]) => object;
+
 export class DBOSExecutor {
   initialized: boolean;
   // User Database
@@ -156,8 +157,6 @@ export class DBOSExecutor {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  entities: Function[] = [];
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
@@ -222,15 +221,30 @@ export class DBOSExecutor {
       return new PrismaUserDatabase(new PrismaClient.PrismaClient());
   }
 
-  configureKnexClient(config: DBOSPoolConfig) {
-    const knexConfig: Knex.Config = {
+  async configureKnexClient(config: DBOSPoolConfig) {
+    const { knex } = await import('knex');
+    return new KnexUserDatabase(knex({
       client: "postgres",
-      connection: config,
-    };
-    return new KnexUserDatabase(knex(knexConfig));
+      connection: {
+        host: config.host,
+        port: config.port,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        ssl: config.ssl,
+      }
+    }));
   }
 
-  async configureTypeOrmClient(config: DBOSPoolConfig) {
+  async configureTypeOrmClient(config: DBOSPoolConfig, classRegistrations: ClassRegistration<AnyConstructor>[]) {
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    const entities: Function[]  = [];
+    for (const reg of classRegistrations) {
+      if (reg.ormEntities.length > 0) {
+        entities.push(...reg.ormEntities);
+      }
+    }
+    this.logger.debug(`Loaded ${entities.length} ORM entities`);
     const { DataSource } = await import("typeorm");
     return  new TypeORMDatabase(
       new DataSource({
@@ -240,13 +254,13 @@ export class DBOSExecutor {
         username: config.user,
         password: config.password,
         database: config.database,
-        entities: this.entities,
         ssl: config.ssl,
+        entities: entities,
       })
     );
   }
 
-  async configureDbClient() {
+  configureDbClient = async (classRegistrations: ClassRegistration<AnyConstructor>[]) => {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
     switch (userDbClient) {
@@ -256,7 +270,7 @@ export class DBOSExecutor {
         break;
       case 'typeorm':
         try {
-          this.userDatabase = await this.configureTypeOrmClient(userDBConfig);
+          this.userDatabase = await this.configureTypeOrmClient(userDBConfig, classRegistrations);
           this.logger.debug("Loaded TypeORM user database");
         } catch (s) {
           (s as Error).message = `Error loading TypeORM user database: ${(s as Error).message}`;
@@ -264,7 +278,7 @@ export class DBOSExecutor {
         }
         break;
       case 'knex':
-        this.userDatabase = this.configureKnexClient(userDBConfig);
+        this.userDatabase = await this.configureKnexClient(userDBConfig);
         this.logger.debug("Loaded Knex user database");
         break;
       case 'pg-node':
@@ -311,20 +325,14 @@ export class DBOSExecutor {
     }
 
     try {
-      type AnyConstructor = new (...args: unknown[]) => object;
+      const registeredClasses: ClassRegistration<AnyConstructor>[] = [];
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
-        if (reg.ormEntities.length > 0) {
-          this.entities = this.entities.concat(reg.ormEntities);
-          this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
-        }
-      }
-
-      await this.configureDbClient();
-
-      for (const cls of classes) {
+        registeredClasses.push(reg);
         this.#registerClass(cls);
       }
+
+      await this.configureDbClient(registeredClasses);
 
       // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
       await this.userDatabase.init(this.debugMode);
