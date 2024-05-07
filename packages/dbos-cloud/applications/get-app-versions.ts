@@ -22,11 +22,17 @@ export async function getAppVersions(host: string, json: boolean, appName?: stri
         Authorization: bearerToken,
       }
     });
-    const app = res.data as ApplicationVersion
+    const versions = res.data as ApplicationVersion[]
     if (json) {
-      console.log(JSON.stringify(app));
+      console.log(JSON.stringify(versions));
     } else {
-      prettyPrintApplicationVersion(app);
+      if (versions.length === 0) {
+        logger.info("No versions found");
+      }
+      versions.forEach(version => {
+        prettyPrintApplicationVersion(version);
+        console.log('-------------------------');
+      });
     }
     return 0;
   } catch (e) {
