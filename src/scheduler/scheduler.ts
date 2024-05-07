@@ -22,8 +22,8 @@ export class SchedulerConfig {
 ////
 
 // Scheduled Time. Actual Time, number running globally, number running locally
-export type ScheduledArgs = [Date, Date, number, number]
-export type ScheduledArgsAsSerialized = [string, string, number, number]; // You would think this is a Date but json doesn't have dates, so it is a string.
+export type ScheduledArgs = [Date, Date]
+export type ScheduledArgsAsSerialized = [string, string]; // You would think this is a Date but json doesn't have dates, so it is a string.
 
 export interface SchedulerRegistrationConfig {
     schedulerConfig?: SchedulerConfig;
@@ -37,7 +37,7 @@ export class SchedulerRegistration<This, Args extends unknown[], Return> extends
         super(origFunc);
     }
 }
-  
+
 export function Scheduled(schedulerConfig: SchedulerConfig) {
     function scheddec<This, Ctx extends WorkflowContext, Return>(
         target: object,
@@ -62,7 +62,7 @@ export class DBOSScheduler{
 
     schedLoops: DetachableLoop[] = [];
     schedTasks: Promise<void> [] = [];
-  
+
     initScheduler() {
         for (const registeredOperation of this.dbosExec.registeredOperations) {
             const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
@@ -73,7 +73,7 @@ export class DBOSScheduler{
             }
         }
     }
-  
+
     async destroyScheduler() {
         for (const l of this.schedLoops) {
             l.setStopLoopFlag();
@@ -87,7 +87,7 @@ export class DBOSScheduler{
         }
         this.schedTasks = [];
     }
-  
+
     logRegisteredSchedulerEndpoints() {
         const logger = this.dbosExec.logger;
         logger.info("Scheduled endpoints:");
@@ -148,7 +148,7 @@ class DetachableLoop {
             this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Scheduled decorators must take in these four
-            const args: ScheduledArgs = [nextExecTime, new Date(), 0, 0]; // TODO calculate outstanding numbers
+            const args: ScheduledArgs = [nextExecTime, new Date()];
 
             // We currently only support scheduled workflows
             if (this.scheduledMethod.workflowConfig) {

@@ -45,12 +45,6 @@ export interface SystemDatabase {
   //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
   getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
   setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
-
-  // For status tracking, and telling the WF how many outstanding WF there were before it started its main work
-  //  This is designed to allow you to have "at most one" in the cluster hence it is conservative, we set it if there might be one.
-  getOutstandingScheduledWorkflows(wfn: string): Promise<number>; // Number of (potentially) outstanding runs at the time this started
-  scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void>; // We are now starting this (how to ensure it gets cleaned)
-  scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void>; // We are now sure we have completed this run
 }
 
 // For internal use, not serialized status.
@@ -627,34 +621,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       DO UPDATE SET last_wf_sched_time = GREATEST(EXCLUDED.last_wf_sched_time, scheduler_state.last_wf_sched_time)
       RETURNING last_wf_sched_time;
     `, [wfn, invtime]);
-    
+
     return parseInt(`${res.rows[0].last_wf_sched_time}`);
   }
-
-  async getOutstandingScheduledWorkflows(wfn: string): Promise<number> {
-    const res = await this.pool.query<CountResult>(`
-      SELECT COUNT(scheduled_time) AS count
-      FROM ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running
-      WHERE wf_function = $1 AND scheduled_time IS NOT NULL;
-    `, [wfn]);
-    return parseInt(`${res.rows[0].count}`); // Returns the count of scheduled times
-  }
-  async scheduledWorkflowStarted(wfn: string, invtime: number): Promise<void> {
-    // if another node scheduled execution for this time slot, or it is a re-execute from a crashed run, this will do nothing
-    await this.pool.query(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running (wf_function, scheduled_time, actual_time)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (wf_function, scheduled_time) DO NOTHING;
-    `, [wfn, `${invtime}`, `${new Date().getTime()}`]);
-  }
-  async scheduledWorkflowComplete(wfn: string, invtime: number): Promise<void> {
-    await this.pool.query(`
-      DELETE FROM ${DBOSExecutor.systemDBSchemaName}.scheduled_wf_running
-      WHERE wf_function = $1 AND scheduled_time = $2;
-    `, [wfn, `${invtime}`]);
-  }
-}
-
-interface CountResult {
-  count: string | number; // PostgreSQL returns numbers as strings
 }

@@ -26,8 +26,6 @@ describe("scheduled-wf-tests", () => {
         expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
         expect(DBOSSchedTestClass.nTooEarly).toBe(0);
         expect(DBOSSchedTestClass.nTooLate).toBe(0);
-        expect(DBOSSchedTestClass.maxConc).toBeGreaterThanOrEqual(2);
-        expect(DBOSSchedTestClass.maxConcLocal).toBeGreaterThanOrEqual(2);
     });
 });
 
@@ -35,20 +33,15 @@ class DBOSSchedTestClass {
     static nCalls = 0;
     static nTooEarly = 0;
     static nTooLate = 0;
-    static maxConc = 0;
-    static maxConcLocal = 0;
 
     // eslint-disable-next-line @typescript-eslint/require-await
     @Scheduled({crontab: '* * * * * *'})
     @Workflow()
-    static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date, nRunning: number, nRunningHere: number) {
+    static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date) {
         DBOSSchedTestClass.nCalls++;
 
         if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
-
-        DBOSSchedTestClass.maxConc = Math.max(DBOSSchedTestClass.maxConc, nRunning);
-        DBOSSchedTestClass.maxConcLocal = Math.max(DBOSSchedTestClass.maxConcLocal, nRunningHere);
 
         await ctxt.sleep(2);
     }
