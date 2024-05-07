@@ -245,8 +245,7 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 }
 
-export interface TypeORMDataSource {
-
+interface TypeORMDataSource {
   readonly isInitialized: boolean;
   readonly manager: TypeORMEntityManager;
   initialize(): Promise<this>;
@@ -257,12 +256,12 @@ export interface TypeORMDataSource {
   dropDatabase(): Promise<void>;
 }
 
-export interface TypeORMEntityManager {
+interface TypeORMEntityManager {
   query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>
   transaction<R>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>): Promise<R>
 }
 
-export interface QueryFailedError<T> {
+interface QueryFailedError<T> {
   driverError: T
 }
 

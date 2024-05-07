@@ -1,0 +1,21 @@
+{
+    // Automatically configure the VSCode debugger for DBOS projects.
+    // Documentation on launch.json: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "Local Debug",
+        "command": "npx dbos start",
+        "preLaunchTask": "npm: build",
+      },
+      {
+        "type": "node-terminal",
+        "request": "launch",
+        "name": "Time Travel Debug",
+        "command": "npx dbos debug -x ${command:dbos-ttdbg.get-proxy-url} -u ${command:dbos-ttdbg.pick-workflow-id}",
+        "preLaunchTask": "npm: build"
+      }
+    ]
+  }

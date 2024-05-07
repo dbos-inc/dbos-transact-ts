@@ -89,10 +89,12 @@ export class InitContext {
   }
 
   createUserSchema(): Promise<void> {
+    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations")
     return this.userDatabase.createSchema();
   }
 
   dropUserSchema(): Promise<void> {
+    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations")
     return this.userDatabase.dropSchema();
   }
 
