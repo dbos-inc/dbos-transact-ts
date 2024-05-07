@@ -1,4 +1,5 @@
 import { SendEmailCommunicator } from "./index";
+export { SendEmailCommunicator };
 import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
 
 describe("ses-tests", () => {
