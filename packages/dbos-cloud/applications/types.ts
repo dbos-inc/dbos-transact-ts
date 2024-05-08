@@ -17,3 +17,15 @@ export function prettyPrintApplication(app: Application) {
   console.log(`Version: ${app.Version}`);
   console.log(`App URL: ${app.AppURL}`);
 }
+
+export type ApplicationVersion = {
+  ApplicationName: string;
+  Version: string;
+  CreationTime: string;
+}
+
+export function prettyPrintApplicationVersion(version: ApplicationVersion) {
+  console.log(`Application Name: ${version.ApplicationName}`);
+  console.log(`Version: ${version.Version}`);
+  console.log(`Creation Timestamp: ${version.CreationTime}`);
+}
