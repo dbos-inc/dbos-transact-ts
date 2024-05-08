@@ -1,9 +1,9 @@
 exports.up = function(knex) {
   return knex.schema.withSchema('dbos')
     .createTable('scheduler_state', function(table) {
-        table.text('wf_function').notNullable();
-        table.bigInteger('last_wf_sched_time').notNullable();
-        table.primary(['wf_function']);
+        table.text('workflow_fn_name').notNullable();
+        table.bigInteger('last_run_time').notNullable();
+        table.primary(['workflow_fn_name']);
     })
 };
 

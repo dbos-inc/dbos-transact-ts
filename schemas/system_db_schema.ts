@@ -36,6 +36,6 @@ export interface workflow_inputs {
 }
 
 export interface scheduler_state {
-  wf_function: string;
-  last_wf_sched_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
+  workflow_fn_name: string;
+  last_run_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
 }

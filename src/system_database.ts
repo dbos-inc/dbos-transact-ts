@@ -603,25 +603,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
   /* SCHEDULER */
   async getLastScheduledTime(wfn: string): Promise<number | null> {
     const res = await this.pool.query<scheduler_state>(`
-      SELECT last_wf_sched_time
+      SELECT last_run_time
       FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
-      WHERE wf_function = $1;
+      WHERE workflow_fn_name = $1;
     `, [wfn]);
 
-    let v = res.rows[0]?.last_wf_sched_time ?? null;
+    let v = res.rows[0]?.last_run_time ?? null;
     if (v!== null) v = parseInt(`${v}`);
     return v;
   }
 
   async setLastScheduledTime(wfn: string, invtime: number): Promise<number | null> {
     const res = await this.pool.query<scheduler_state>(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduler_state (wf_function, last_wf_sched_time)
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduler_state (workflow_fn_name, last_run_time)
       VALUES ($1, $2)
-      ON CONFLICT (wf_function)
-      DO UPDATE SET last_wf_sched_time = GREATEST(EXCLUDED.last_wf_sched_time, scheduler_state.last_wf_sched_time)
-      RETURNING last_wf_sched_time;
+      ON CONFLICT (workflow_fn_name)
+      DO UPDATE SET last_run_time = GREATEST(EXCLUDED.last_run_time, scheduler_state.last_run_time)
+      RETURNING last_run_time;
     `, [wfn, invtime]);
 
-    return parseInt(`${res.rows[0].last_wf_sched_time}`);
+    return parseInt(`${res.rows[0].last_run_time}`);
   }
 }
