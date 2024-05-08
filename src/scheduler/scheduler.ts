@@ -8,13 +8,14 @@ import { Workflow } from "../workflow";
 // Configuration
 ////
 
-export enum SchedulerConcurrencyMode {
+export enum SchedulerMode {
     ExactlyOncePerInterval = 'ExactlyOncePerInterval',
+    ExactlyOncePerIntervalWhenActive = 'ExactlyOncePerIntervalWhenActive',
 }
 
 export class SchedulerConfig {
     crontab: string = '* * * * *'; // Every minute
-    mode ?: SchedulerConcurrencyMode = SchedulerConcurrencyMode.ExactlyOncePerInterval;
+    mode ?: SchedulerMode = SchedulerMode.ExactlyOncePerInterval;
 }
 
 ////
@@ -66,7 +67,12 @@ export class DBOSScheduler{
         for (const registeredOperation of this.dbosExec.registeredOperations) {
             const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
             if (ro.schedulerConfig) {
-                const loop = new DetachableLoop(this.dbosExec, ro.schedulerConfig.crontab ?? '* * * * *', ro);
+                const loop = new DetachableLoop(
+                    this.dbosExec,
+                    ro.schedulerConfig.crontab ?? '* * * * *',
+                    ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval,
+                    ro
+                );
                 this.schedLoops.push(loop);
                 this.schedTasks.push(loop.startLoop());
             }
@@ -105,7 +111,9 @@ class DetachableLoop {
     private lastExec: Date;
     private timeMatcher: TimeMatcher;
 
-    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly scheduledMethod: SchedulerRegistration<unknown, unknown[], unknown>) {
+    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly schedMode:SchedulerMode,
+                readonly scheduledMethod: SchedulerRegistration<unknown, unknown[], unknown>)
+    {
         this.lastExec = new Date();
         this.lastExec.setMilliseconds(0);
         this.timeMatcher = new TimeMatcher(crontab);
@@ -113,7 +121,10 @@ class DetachableLoop {
 
     async startLoop(): Promise<void> {
         // See if the exec time is available in durable storage...
-        if (!this.dbosExec.config.skipMissedScheduledWorkflows) {
+        if (!this.dbosExec.config.skipMissedScheduledWorkflows ||
+            this.schedMode !== SchedulerMode.ExactlyOncePerInterval
+        )
+        {
             const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethod.name);
             if (lasttm) {
                 this.lastExec = new Date(lasttm);

@@ -1,4 +1,4 @@
-import { Scheduled, TestingRuntime, Workflow, WorkflowContext } from "../../src";
+import { Scheduled, SchedulerMode, TestingRuntime, Workflow, WorkflowContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { sleep } from "../../src/utils";
@@ -34,7 +34,7 @@ class DBOSSchedTestClass {
     static nTooEarly = 0;
     static nTooLate = 0;
 
-    @Scheduled({crontab: '* * * * * *'})
+    @Scheduled({crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive})
     @Workflow()
     static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date) {
         DBOSSchedTestClass.nCalls++;

@@ -96,7 +96,7 @@ export {
 } from "./kafka/kafka";
 
 export {
-  SchedulerConcurrencyMode,
+  SchedulerMode,
   SchedulerConfig,
   Scheduled,
 } from "./scheduler/scheduler";
