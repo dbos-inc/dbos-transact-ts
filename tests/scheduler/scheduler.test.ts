@@ -34,7 +34,6 @@ class DBOSSchedTestClass {
     static nTooEarly = 0;
     static nTooLate = 0;
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @Scheduled({crontab: '* * * * * *'})
     @Workflow()
     static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date) {
