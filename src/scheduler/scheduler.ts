@@ -99,7 +99,7 @@ export class DBOSScheduler{
         this.dbosExec.registeredOperations.forEach((registeredOperation) => {
             const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
             if (ro.schedulerConfig) {
-                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? 'Exactly Once Per Interval'}`);
+                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval}`);
             }
         });
     }
