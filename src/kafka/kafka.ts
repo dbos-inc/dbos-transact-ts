@@ -1,10 +1,11 @@
-import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage } from "kafkajs";
+import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
 import { DBOSContext } from "..";
 import { ClassRegistration, MethodRegistration, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
 import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import { DBOSError } from "../error";
+import { sleep } from "../utils";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -85,7 +86,24 @@ export class DBOSKafka{
         const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect()
-        await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
+        // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+        // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+        // However, it has a bug where it won't. Thus, we retry instead.
+        const maxRetries = 5;
+        for (let i = 0; i < maxRetries; i++) {
+          try {
+            await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true});
+            break;
+            } catch (error) {
+              const e = error as KafkaJSProtocolError;
+              if (e.code === 3 && i + 1 < maxRetries) { //UNKNOWN_TOPIC_OR_PARTITION
+                await sleep(1000);
+                continue;
+              } else {
+                throw e
+              }
+            }
+        }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
