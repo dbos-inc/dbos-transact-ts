@@ -153,7 +153,6 @@ class DBOSTestClass {
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == txnTopic && message.value?.toString() === txnMessage) {
-      console.log('received txn message')
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve();
     }

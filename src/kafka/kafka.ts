@@ -6,63 +6,22 @@ import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import { DBOSError } from "../error";
 import { sleep } from "../utils";
-import { randomUUID } from "crypto";
 
-/**
- * ${1:Description placeholder}
- *
- * @typedef {KafkaArgs}
- */
 type KafkaArgs = [string, number, KafkaMessage]
 
 /////////////////////////////
 /* Kafka Method Decorators */
 /////////////////////////////
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @class KafkaRegistration
- * @typedef {KafkaRegistration}
- * @template This
- * @template {unknown[]} Args
- * @template Return
- * @extends {MethodRegistration<This, Args, Return>}
- */
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  /**
- * ${1:Description placeholder}
- *
- * @type {?(string | RegExp | Array<string | RegExp>)}
- */
-kafkaTopic?: string | RegExp | Array<string | RegExp>;
-  /**
- * ${1:Description placeholder}
- *
- * @type {?ConsumerConfig}
- */
-consumerConfig?: ConsumerConfig;
+  kafkaTopic?: string | RegExp | Array<string | RegExp>;
+  consumerConfig?: ConsumerConfig;
 
-  /**
- * Creates an instance of KafkaRegistration.
- *
- * @constructor
- * @param {(this: This, ...args: Args) => Promise<Return>} origFunc
- */
-constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
     super(origFunc);
   }
 }
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @param {(string | RegExp | Array<string | RegExp>)} topic
- * @param {?ConsumerConfig} [consumerConfig]
- * @returns {<This, Ctx extends DBOSContext, Return>(target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, args_0: string, args_1: number, args_2: KafkaMessage) => Promise<Return>>) => any}
- */
 export function KafkaConsume(topic: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
   function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
@@ -83,59 +42,18 @@ export function KafkaConsume(topic: string | RegExp | Array<string | RegExp>, co
 /* Kafka Class Decorators  */
 /////////////////////////////
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @interface KafkaDefaults
- * @typedef {KafkaDefaults}
- * @extends {RegistrationDefaults}
- */
 export interface KafkaDefaults extends RegistrationDefaults {
-  /**
- * ${1:Description placeholder}
- *
- * @type {?KafkaConfig}
- */
-kafkaConfig?: KafkaConfig;
+  kafkaConfig?: KafkaConfig;
 }
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @class KafkaClassRegistration
- * @typedef {KafkaClassRegistration}
- * @template {{ new(...args: unknown[]): object }} CT
- * @extends {ClassRegistration<CT>}
- * @implements {KafkaDefaults\}
- */
 export class KafkaClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements KafkaDefaults {
-  /**
- * ${1:Description placeholder}
- *
- * @type {?KafkaConfig}
- */
-kafkaConfig?: KafkaConfig;
+  kafkaConfig?: KafkaConfig;
 
-  /**
- * Creates an instance of KafkaClassRegistration.
- *
- * @constructor
- * @param {CT} ctor
- */
-constructor(ctor: CT) {
+  constructor(ctor: CT) {
     super(ctor);
   }
 }
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @param {KafkaConfig} kafkaConfig
- * @returns {<T extends new (...args: {}) => object>(ctor: T) => void\}
- */
 export function Kafka(kafkaConfig: KafkaConfig) {
   function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as KafkaClassRegistration<T>;
@@ -148,37 +66,12 @@ export function Kafka(kafkaConfig: KafkaConfig) {
 /* Kafka Management  */
 ///////////////////////
 
-/**
- * ${1:Description placeholder}
- *
- * @export
- * @class DBOSKafka
- * @typedef {DBOSKafka}
- */
 export class DBOSKafka {
-  /**
- * ${1:Description placeholder}
- *
- * @readonly
- * @type {Consumer[]}
- */
-readonly consumers: Consumer[] = [];
+  readonly consumers: Consumer[] = [];
 
-  /**
- * Creates an instance of DBOSKafka.
- *
- * @constructor
- * @param {DBOSExecutor} dbosExec
- */
-constructor(readonly dbosExec: DBOSExecutor) { }
+  constructor(readonly dbosExec: DBOSExecutor) { }
 
-  /**
- * ${1:Description placeholder}
- *
- * @async
- * @returns {*}
- */
-async initKafka() {
+  async initKafka() {
     for (const registeredOperation of this.dbosExec.registeredOperations) {
       const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
       if (ro.kafkaTopic) {
@@ -197,8 +90,7 @@ async initKafka() {
           topics.push(ro.kafkaTopic)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
-        const uuid = randomUUID()
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${uuid}` };
+        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${topics.join('-')}` };
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -207,7 +99,6 @@ async initKafka() {
         const maxRetries = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.retries ?? 5 : 5;
         let retryTime = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.maxRetryTime ?? 300 : 300;
         const multiplier = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.multiplier ?? 2 : 2;
-        console.log(topics)
         for (let i = 0; i < maxRetries; i++) {
           try {
             const subscribeOpts: ConsumerSubscribeTopics = {
@@ -219,7 +110,6 @@ async initKafka() {
           } catch (error) {
             const e = error as KafkaJSProtocolError;
             if (e.code === 3 && i + 1 < maxRetries) { // UNKNOWN_TOPIC_OR_PARTITION
-              console.log(`received error. Retrying after ${retryTime}`)
               await sleep(retryTime);
               retryTime *= multiplier;
               continue;
@@ -250,22 +140,13 @@ async initKafka() {
     }
   }
 
-  /**
- * ${1:Description placeholder}
- *
- * @async
- * @returns {*}
- */
-async destroyKafka() {
+  async destroyKafka() {
     for (const consumer of this.consumers) {
       await consumer.disconnect();
     }
   }
 
-  /**
- * ${1:Description placeholder}
- */
-logRegisteredKafkaEndpoints() {
+  logRegisteredKafkaEndpoints() {
     const logger = this.dbosExec.logger;
     logger.info("Kafka endpoints supported:");
     this.dbosExec.registeredOperations.forEach((registeredOperation) => {
