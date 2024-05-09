@@ -20,6 +20,7 @@ export interface DBOSCLIStartOptions {
   port?: number;
   loglevel?: string;
   configfile?: string;
+  appDir?: string;
 }
 
 export interface DBOSConfigureOptions {
@@ -44,7 +45,8 @@ program
   .description("Start the server")
   .option("-p, --port <number>", "Specify the port number")
   .option("-l, --loglevel <string>", "Specify log level")
-  .option("-c, --configfile <string>", "Specify the config file path", dbosConfigFilePath)
+  .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
+  .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (options: DBOSCLIStartOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -57,7 +59,8 @@ program
   .option("-x, --proxy <string>", "Specify the time-travel debug proxy URL for debugging cloud traces")
   .requiredOption("-u, --uuid <string>", "Specify the workflow UUID to replay")
   .option("-l, --loglevel <string>", "Specify log level")
-  .option("-c, --configfile <string>", "Specify the config file path", dbosConfigFilePath)
+  .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
+  .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (options: DBOSDebugOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, options.proxy !== undefined);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
