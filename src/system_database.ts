@@ -5,7 +5,7 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
-import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs } from "../schemas/system_db_schema";
+import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
 import { sleep, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
@@ -40,6 +40,11 @@ export interface SystemDatabase {
 
   setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
+
+  // Scheduler queries
+  //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
+  getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
+  setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
 }
 
 // For internal use, not serialized status.
@@ -593,5 +598,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     };
     this.notificationsClient.on("notification", handler);
+  }
+
+  /* SCHEDULER */
+  async getLastScheduledTime(wfn: string): Promise<number | null> {
+    const res = await this.pool.query<scheduler_state>(`
+      SELECT last_run_time
+      FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
+      WHERE workflow_fn_name = $1;
+    `, [wfn]);
+
+    let v = res.rows[0]?.last_run_time ?? null;
+    if (v!== null) v = parseInt(`${v}`);
+    return v;
+  }
+
+  async setLastScheduledTime(wfn: string, invtime: number): Promise<number | null> {
+    const res = await this.pool.query<scheduler_state>(`
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduler_state (workflow_fn_name, last_run_time)
+      VALUES ($1, $2)
+      ON CONFLICT (workflow_fn_name)
+      DO UPDATE SET last_run_time = GREATEST(EXCLUDED.last_run_time, scheduler_state.last_run_time)
+      RETURNING last_run_time;
+    `, [wfn, invtime]);
+
+    return parseInt(`${res.rows[0].last_run_time}`);
   }
 }

@@ -16,6 +16,7 @@ import { SystemDatabase } from "../system_database";
 import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSKafka } from "../kafka/kafka";
+import { DBOSScheduler } from "../scheduler/scheduler";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -83,6 +84,7 @@ export async function createInternalTestRuntime(userClasses: object[], testConfi
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #kafka: DBOSKafka | null = null;
+  #scheduler: DBOSScheduler | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
 
@@ -97,6 +99,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     this.#server = new DBOSHttpServer(dbosExec);
     this.#kafka = new DBOSKafka(dbosExec);
     await this.#kafka.initKafka();
+    this.#scheduler = new DBOSScheduler(dbosExec);
+    this.#scheduler.initScheduler();
     this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
@@ -107,6 +111,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
+      await this.#scheduler?.destroyScheduler();
       await this.#kafka?.destroyKafka();
       await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;
