@@ -14,7 +14,7 @@ import { Knex } from "knex";
 version: "3.7"
 services:
   broker:
-      image: public.ecr.aws/bitnami/kafka:3.6.2-debian-12-r3
+      image: bitnami/kafka:latest
       hostname: broker
       container_name: broker
       ports:
