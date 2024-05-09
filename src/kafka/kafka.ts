@@ -14,7 +14,7 @@ type KafkaArgs = [string, number, KafkaMessage]
 /////////////////////////////
 
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  kafkaTopic?: string;
+  kafkaTopic?: string | RegExp;
   consumerConfig?: ConsumerConfig;
 
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
@@ -22,7 +22,7 @@ export class KafkaRegistration<This, Args extends unknown[], Return> extends Met
   }
 }
 
-export function KafkaConsume(topic: string, consumerConfig?: ConsumerConfig) {
+export function KafkaConsume(topic: string | RegExp, consumerConfig?: ConsumerConfig) {
   function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
     propertyKey: string,
