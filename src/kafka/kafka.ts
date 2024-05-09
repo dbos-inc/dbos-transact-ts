@@ -14,7 +14,7 @@ type KafkaArgs = [string, number, KafkaMessage]
 /////////////////////////////
 
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  kafkaTopic?: string | RegExp | Array<string | RegExp>;
+  kafkaTopics?: string | RegExp | Array<string | RegExp>;
   consumerConfig?: ConsumerConfig;
 
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
@@ -22,7 +22,7 @@ export class KafkaRegistration<This, Args extends unknown[], Return> extends Met
   }
 }
 
-export function KafkaConsume(topic: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
+export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
   function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
     propertyKey: string,
@@ -30,7 +30,7 @@ export function KafkaConsume(topic: string | RegExp | Array<string | RegExp>, co
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     const kafkaRegistration = registration as unknown as KafkaRegistration<This, KafkaArgs, Return>;
-    kafkaRegistration.kafkaTopic = topic;
+    kafkaRegistration.kafkaTopics = topics;
     kafkaRegistration.consumerConfig = consumerConfig;
 
     return descriptor;
@@ -74,7 +74,7 @@ export class DBOSKafka {
   async initKafka() {
     for (const registeredOperation of this.dbosExec.registeredOperations) {
       const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
-      if (ro.kafkaTopic) {
+      if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
         if (!ro.txnConfig && !ro.workflowConfig) {
           throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: A Kafka decorator can only be assigned to a transaction or workflow!`)
@@ -83,11 +83,11 @@ export class DBOSKafka {
           throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
         }
         const topics: Array<string | RegExp> = [];
-        if (Array.isArray(ro.kafkaTopic) ) {
-          topics.push(...ro.kafkaTopic)
+        if (Array.isArray(ro.kafkaTopics) ) {
+          topics.push(...ro.kafkaTopics)
         } else
-        if (ro.kafkaTopic) {
-          topics.push(ro.kafkaTopic)
+        if (ro.kafkaTopics) {
+          topics.push(ro.kafkaTopics)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
         const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${topics.join('-')}` };
@@ -151,14 +151,14 @@ export class DBOSKafka {
     logger.info("Kafka endpoints supported:");
     this.dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
-      if (ro.kafkaTopic) {
+      if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
-        if (Array.isArray(ro.kafkaTopic)) {
-          ro.kafkaTopic.forEach( kafkaTopic => {
+        if (Array.isArray(ro.kafkaTopics)) {
+          ro.kafkaTopics.forEach( kafkaTopic => {
             logger.info(`    ${kafkaTopic} -> ${defaults.name}.${ro.name}`);
           });
         } else {
-          logger.info(`    ${ro.kafkaTopic} -> ${defaults.name}.${ro.name}`);
+          logger.info(`    ${ro.kafkaTopics} -> ${defaults.name}.${ro.name}`);
         }
       }
     });
