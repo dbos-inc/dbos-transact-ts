@@ -1,10 +1,11 @@
-import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage } from "kafkajs";
+import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
 import { DBOSContext } from "..";
 import { ClassRegistration, MethodRegistration, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
 import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import { DBOSError } from "../error";
+import { sleep } from "../utils";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -13,7 +14,7 @@ type KafkaArgs = [string, number, KafkaMessage]
 /////////////////////////////
 
 export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  kafkaTopic?: string;
+  kafkaTopic?: string | RegExp;
   consumerConfig?: ConsumerConfig;
 
   constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
@@ -21,7 +22,7 @@ export class KafkaRegistration<This, Args extends unknown[], Return> extends Met
   }
 }
 
-export function KafkaConsume(topic: string, consumerConfig?: ConsumerConfig) {
+export function KafkaConsume(topic: string | RegExp, consumerConfig?: ConsumerConfig) {
   function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
     propertyKey: string,
@@ -65,10 +66,10 @@ export function Kafka(kafkaConfig: KafkaConfig) {
 /* Kafka Management  */
 ///////////////////////
 
-export class DBOSKafka{
+export class DBOSKafka {
   readonly consumers: Consumer[] = [];
 
-  constructor(readonly dbosExec: DBOSExecutor) {}
+  constructor(readonly dbosExec: DBOSExecutor) { }
 
   async initKafka() {
     for (const registeredOperation of this.dbosExec.registeredOperations) {
@@ -82,17 +83,37 @@ export class DBOSKafka{
           throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}`}
+        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}` };
         const consumer = kafka.consumer(consumerConfig);
-        await consumer.connect()
-        await consumer.subscribe({topic: ro.kafkaTopic, fromBeginning: true})
+        await consumer.connect();
+        // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
+        // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+        // However, it has a bug where it won't. Thus, we retry instead.
+        const maxRetries = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.retries ?? 5 : 5;
+        let retryTime = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.maxRetryTime ?? 300 : 300;
+        const multiplier = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.multiplier ?? 2 : 2;
+        for (let i = 0; i < maxRetries; i++) {
+          try {
+            await consumer.subscribe({ topic: ro.kafkaTopic, fromBeginning: true });
+            break;
+          } catch (error) {
+            const e = error as KafkaJSProtocolError;
+            if (e.code === 3 && i + 1 < maxRetries) { // UNKNOWN_TOPIC_OR_PARTITION
+              await sleep(retryTime);
+              retryTime *= multiplier;
+              continue;
+            } else {
+              throw e
+            }
+          }
+        }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message]
+            const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (ro.txnConfig) {
               // Execute the transaction
@@ -112,5 +133,17 @@ export class DBOSKafka{
     for (const consumer of this.consumers) {
       await consumer.disconnect();
     }
+  }
+
+  logRegisteredKafkaEndpoints() {
+    const logger = this.dbosExec.logger;
+    logger.info("Kafka endpoints supported:");
+    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+      const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
+      if (ro.kafkaTopic) {
+        const defaults = ro.defaults as KafkaDefaults;
+        logger.info(`    ${ro.kafkaTopic} -> ${defaults.name}.${ro.name}`);
+      }
+    });
   }
 }

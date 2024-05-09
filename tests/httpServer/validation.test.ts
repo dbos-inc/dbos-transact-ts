@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, Debug, ArgRequired, ArgOptional, TestingRuntime, Workflow } from "../../src";
+import { GetApi, PostApi, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, ArgRequired, ArgOptional, TestingRuntime, Workflow } from "../../src";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
@@ -496,19 +496,16 @@ describe("httpserver-datavalidation-tests", () => {
   @DefaultArgRequired
   class DefaultArgToRequired {
     @PostApi("/rrequired")
-    @Debug()
     static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/roptional")
-    @Debug()
     static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/rdefault")
-    @Debug()
     static async checkDefValueR(_ctx: HandlerContext, v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
@@ -517,19 +514,16 @@ describe("httpserver-datavalidation-tests", () => {
   @DefaultArgOptional
   class DefaultArgToOptional {
     @PostApi("/orequired")
-    @Debug()
     static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/ooptional")
-    @Debug()
     static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/odefault")
-    @Debug()
     static async checkDefValueO(_ctx: HandlerContext, v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
@@ -537,19 +531,16 @@ describe("httpserver-datavalidation-tests", () => {
 
   class DefaultArgToDefault {
     @PostApi("/drequired")
-    @Debug()
     static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/doptional")
-    @Debug()
     static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @PostApi("/ddefault")
-    @Debug()
     static async checkDefValueD(_ctx: HandlerContext, v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }

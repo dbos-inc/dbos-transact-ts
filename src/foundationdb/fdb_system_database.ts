@@ -388,7 +388,15 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
 
-  async sleep(workflowUUID: string, functionID: number, durationSec: number): Promise<void> {
+  async sleep(_workflowUUID: string, _functionID: number, durationSec: number): Promise<void> {
     await sleep(durationSec * 1000); // TODO: Implement
+  }
+
+  /* SCHEDULER */
+  getLastScheduledTime(_wfn: string): Promise<number | null> {
+    return Promise.resolve(null);
+  }
+  setLastScheduledTime(_wfn: string, _invtime: number): Promise<number | null> {
+    return Promise.resolve(null);
   }
 }

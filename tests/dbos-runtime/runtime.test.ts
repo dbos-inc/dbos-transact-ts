@@ -150,6 +150,18 @@ describe("runtime-tests", () => {
     await waitForMessageTest(command, "1234");
   });
 
+  test("runtime hello with appDir provided as CLI parameter", async () => {
+    process.chdir("../../../..");
+    try {
+      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello"], {
+        env: process.env,
+      });
+      await waitForMessageTest(command, "3000");
+    } finally {
+      process.chdir("packages/create/templates/hello");
+    }
+  });
+
   test("runtime hello with port provided in configuration file", async () => {
     const mockDBOSConfigYamlString = `
 database:

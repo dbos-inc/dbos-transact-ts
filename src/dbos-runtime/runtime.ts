@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSKafka } from '../kafka/kafka';
+import { DBOSScheduler } from '../scheduler/scheduler';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +25,7 @@ export class DBOSRuntime {
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private kafka: DBOSKafka | null = null;
+  private scheduler: DBOSScheduler | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -44,6 +46,10 @@ export class DBOSRuntime {
       this.dbosExec.logRegisteredHTTPUrls();
       this.kafka = new DBOSKafka(this.dbosExec);
       await this.kafka.initKafka();
+      this.kafka.logRegisteredKafkaEndpoints();
+      this.scheduler = new DBOSScheduler(this.dbosExec);
+      this.scheduler.initScheduler();
+      this.scheduler.logRegisteredSchedulerEndpoints();
     } catch (error) {
       this.dbosExec?.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
@@ -97,6 +103,7 @@ export class DBOSRuntime {
    * Shut down the HTTP server and destroy workflow executor.
    */
   async destroy() {
+    await this.scheduler?.destroyScheduler();
     await this.kafka?.destroyKafka();
     if (this.servers) {
       this.servers.appServer.close();

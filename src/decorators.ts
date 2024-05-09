@@ -170,7 +170,6 @@ implements MethodRegistrationBase
   {
     this.origFunction = origFunc;
   }
-  debug: boolean = false;
   needInitialized: boolean = true;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
@@ -463,19 +462,6 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
 ///////////////////////
 /* METHOD DECORATORS */
 ///////////////////////
-
-export function Debug() {
-  function logdec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.debug = true;
-    return descriptor;
-  }
-  return logdec;
-}
 
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
