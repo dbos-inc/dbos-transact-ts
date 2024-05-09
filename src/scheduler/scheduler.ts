@@ -148,6 +148,11 @@ class DetachableLoop {
             }
 
             // Check crontab
+            // If this "wake up" time is not on the schedule, we shouldn't execute.
+            //  (While ATOW this wake-up time is a scheduled run time, it is not
+            //   contractually obligated to be so.  If this is obligated to be a
+            //   scheduled execution time, then we could make this an assertion
+            //   instead of a check.)
             if (!this.timeMatcher.match(nextExecTime)) {
                 this.lastExec = nextExecTime;
                 continue;
