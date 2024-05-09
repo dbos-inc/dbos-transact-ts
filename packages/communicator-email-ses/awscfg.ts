@@ -24,7 +24,7 @@
  *   be specified to the call.  The default will be the first in the list.
  */
 
-import { DBOSConfigKeyTypeError, DBOSError } from "../../src/error";
+import { Error as DBOSError } from "@dbos-inc/dbos-sdk";
 
 interface ConfigProvider
 {
@@ -57,17 +57,17 @@ export interface AWSCfgFileItem
 export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig {
     const cfgstrs = ctx.getConfig<AWSCfgFileItem|undefined>(cfgname, undefined);
     if (!cfgstrs) {
-        throw new DBOSConfigKeyTypeError(cfgname, 'AWSCfgFileItem', 'null');
+        throw new DBOSError.DBOSConfigKeyTypeError(cfgname, 'AWSCfgFileItem', 'null');
     }
 
     if (!cfgstrs.aws_region || typeof(cfgstrs.aws_region) !== 'string') {
-        throw new DBOSConfigKeyTypeError(`${cfgname}.aws_region`, 'string', typeof(cfgstrs.aws_region));
+        throw new DBOSError.DBOSConfigKeyTypeError(`${cfgname}.aws_region`, 'string', typeof(cfgstrs.aws_region));
     }
     if (!cfgstrs.aws_access_key_id || typeof(cfgstrs.aws_access_key_id) !== 'string') {
-        throw new DBOSConfigKeyTypeError(`${cfgname}.aws_access_key_id`, 'string', typeof(cfgstrs.aws_access_key_id));
+        throw new DBOSError.DBOSConfigKeyTypeError(`${cfgname}.aws_access_key_id`, 'string', typeof(cfgstrs.aws_access_key_id));
     }
     if (!cfgstrs.aws_secret_access_key || typeof(cfgstrs.aws_secret_access_key) !== 'string') {
-        throw new DBOSConfigKeyTypeError(`${cfgname}.aws_secret_access_key`, 'string', typeof(cfgstrs.aws_secret_access_key));
+        throw new DBOSError.DBOSConfigKeyTypeError(`${cfgname}.aws_secret_access_key`, 'string', typeof(cfgstrs.aws_secret_access_key));
     }
 
     return {name: cfgname, region: cfgstrs.aws_region, credentials: {accessKeyId: cfgstrs.aws_access_key_id, secretAccessKey: cfgstrs.aws_secret_access_key}};
@@ -99,7 +99,7 @@ export function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string, 
         for (const cfg of cfgs) {
             if (cfg.name.toLowerCase() === cfgname || !cfgname) return cfg;
         }
-        throw new DBOSError(`Configuration '${cfgname}' does not exist in service '${svccfgname}'`);
+        throw new DBOSError.DBOSError(`Configuration '${cfgname}' does not exist in service '${svccfgname}'`);
     }
     return loadAWSConfigByName(ctx, cfgname || 'aws_config');
 }
