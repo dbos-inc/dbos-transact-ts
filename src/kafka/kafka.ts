@@ -89,7 +89,9 @@ export class DBOSKafka {
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
         // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
         // However, it has a bug where it won't. Thus, we retry instead.
-        const maxRetries = 5;
+        const maxRetries = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.retries ?? 5 : 5;
+        let retryTime = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.maxRetryTime ?? 300 : 300;
+        const multiplier = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.multiplier ?? 2 : 2;
         for (let i = 0; i < maxRetries; i++) {
           try {
             await consumer.subscribe({ topic: ro.kafkaTopic, fromBeginning: true });
@@ -97,7 +99,8 @@ export class DBOSKafka {
           } catch (error) {
             const e = error as KafkaJSProtocolError;
             if (e.code === 3 && i + 1 < maxRetries) { // UNKNOWN_TOPIC_OR_PARTITION
-              await sleep(1000);
+              await sleep(retryTime);
+              retryTime *= multiplier;
               continue;
             } else {
               throw e
