@@ -8,7 +8,36 @@ import { Knex } from "knex";
 
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
-// Quick guide on setting it up: https://kafka.js.org/docs/running-kafka-in-development
+// Here's a docker-compose script you can use to set up local Kafka:
+
+`
+version: "3.7"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 2181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+`
 
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
@@ -114,7 +143,7 @@ class DBOSTestClass {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve()
     }
-    return this.txnPromise;
+    await DBOSTestClass.txnPromise;
   }
 
   @KafkaConsume(wfTopic)
@@ -124,6 +153,6 @@ class DBOSTestClass {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve()
     }
-    return this.wfPromise;
+    await DBOSTestClass.wfPromise;
   }
 }
