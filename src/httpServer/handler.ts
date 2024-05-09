@@ -23,6 +23,8 @@ type HandlerWfFuncs<T> = {
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
+  runWorkflow<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -129,6 +131,34 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
+        : undefined;
+    }
+    return proxy as InvokeFuncs<T>;
+  }
+
+  startWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
+    const ops = getRegisteredOperations(object);
+    const proxy: any = {};
+    const params = { workflowUUID: workflowUUID, parentCtx: this };
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.workflowConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
+        : undefined;
+    }
+    return proxy as InvokeFuncs<T>;
+  }
+
+  runWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
+    const ops = getRegisteredOperations(object);
+    const proxy: any = {};
+    const params = { workflowUUID: workflowUUID, parentCtx: this };
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.workflowConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args).then((handle) => handle.getResult())
         : undefined;
     }
     return proxy as InvokeFuncs<T>;

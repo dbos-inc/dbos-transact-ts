@@ -115,6 +115,19 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
+  test("endpoint-testRunWorkflow", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/testRunWorkflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+
+  test("endpoint-testStartWorkflow", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/testStartWorkflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
   // This feels unclean, but supertest doesn't expose the error message the people we want. See:
   //   https://github.com/ladjs/supertest/issues/95
   interface Res {
@@ -271,6 +284,16 @@ describe("httpserver-tests", () => {
         .invoke(TestEndpoints, workflowUUID)
         .testWorkflow(name)
         .then((x) => x.getResult());
+    }
+
+    @GetApi("/testRunWorkflow/:name")
+    static async testRunWorkflow(ctxt: HandlerContext, name: string) {
+      return ctxt.startWorkflow(TestEndpoints).testWorkflow(name).then((x) => x.getResult());
+    }
+
+    @GetApi("/testStartWorkflow/:name")
+    static async testStartWorkflow(ctxt: HandlerContext, name: string) {
+      return ctxt.runWorkflow(TestEndpoints).testWorkflow(name);
     }
 
     @PostApi("/transaction/:name")
