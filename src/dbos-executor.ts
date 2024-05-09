@@ -260,7 +260,7 @@ export class DBOSExecutor {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, ro.workflowConfig);
+        this.#registerWorkflow(wf, {...ro.workflowConfig});
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as Transaction<any, any>;
@@ -432,6 +432,7 @@ export class DBOSExecutor {
 
     const runWorkflow = async () => {
       let result: R;
+
       // Execute the workflow.
       try {
         result = await wf(wCtxt, ...args);

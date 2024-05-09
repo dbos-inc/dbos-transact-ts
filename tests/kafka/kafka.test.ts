@@ -8,7 +8,27 @@ import { Knex } from "knex";
 
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
-// Quick guide on setting it up: https://kafka.js.org/docs/running-kafka-in-development
+// Here's a docker-compose script you can use to set up local Kafka:
+
+`
+version: "3.7"
+services:
+  broker:
+      image: bitnami/kafka:latest
+      hostname: broker
+      container_name: broker
+      ports:
+        - '9092:9092'
+      environment:
+        KAFKA_CFG_NODE_ID: 1
+        KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+        KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT_HOST://localhost:9092,PLAINTEXT://broker:19092'
+        KAFKA_CFG_PROCESS_ROLES: 'broker,controller'
+        KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
+        KAFKA_CFG_LISTENERS: 'CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092'
+        KAFKA_CFG_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+        KAFKA_CFG_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+`
 
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
@@ -20,6 +40,9 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
+const patternTopic = new RegExp(/dbos-test-.*/);
+let patternTopicCounter = 0;
+
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
 let txnCounter = 0;
@@ -91,6 +114,8 @@ describe("kafka-tests", () => {
     expect(txnCounter).toBe(1);
     await DBOSTestClass.wfPromise;
     expect(wfCounter).toBe(1);
+    await DBOSTestClass.patternTopicPromise;
+    expect(patternTopicCounter).toBe(2);
   }, 30000);
 });
 
@@ -107,14 +132,19 @@ class DBOSTestClass {
     DBOSTestClass.wfResolve = r;
   });
 
+  static patternTopicResolve: () => void;
+  static patternTopicPromise = new Promise<void>((r) => {
+    DBOSTestClass.patternTopicResolve = r;
+  });
+
   @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == txnTopic && message.value?.toString() === txnMessage) {
       txnCounter = txnCounter + 1;
-      DBOSTestClass.txnResolve()
+      DBOSTestClass.txnResolve();
     }
-    return this.txnPromise;
+    await DBOSTestClass.txnPromise;
   }
 
   @KafkaConsume(wfTopic)
@@ -122,8 +152,22 @@ class DBOSTestClass {
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
-      DBOSTestClass.wfResolve()
+      DBOSTestClass.wfResolve();
     }
-    return this.wfPromise;
+    await DBOSTestClass.wfPromise;
+  }
+
+  @KafkaConsume(patternTopic)
+  @Workflow()
+  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    if ( isWfMessage || isTxnMessage ) {
+      patternTopicCounter = patternTopicCounter + 1;
+      if (patternTopicCounter === 2) {
+        DBOSTestClass.patternTopicResolve();
+      }
+    }
+    await DBOSTestClass.patternTopicPromise;
   }
 }
