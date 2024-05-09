@@ -144,11 +144,7 @@ class DBOSTestClass {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve();
     }
-<<<<<<< HEAD
     await DBOSTestClass.txnPromise;
-=======
-    return DBOSTestClass.txnPromise;
->>>>>>> 24a256c (add suport for subscribing to topics by regex)
   }
 
   @KafkaConsume(wfTopic)
@@ -158,22 +154,20 @@ class DBOSTestClass {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
     }
-<<<<<<< HEAD
     await DBOSTestClass.wfPromise;
-=======
-    return DBOSTestClass.wfPromise;
   }
 
   @KafkaConsume(patternTopic)
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == wfTopic && message.value?.toString() === wfMessage || topic == txnTopic && message.value?.toString() === txnMessage) {
+    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    if ( isWfMessage || isTxnMessage ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
         DBOSTestClass.patternTopicResolve();
       }
     }
     return DBOSTestClass.patternTopicPromise;
->>>>>>> 24a256c (add suport for subscribing to topics by regex)
   }
 }
