@@ -52,7 +52,7 @@ let wfCounter = 0;
 const patternTopic = new RegExp(/dbos-test-.*/);
 let patternTopicCounter = 0;
 
-const arrayTopics = [txnTopic, wfTopic];
+const arrayTopics = [txnTopic, new RegExp(/dbos-test-wf-topic/)];
 let arrayTopicsCounter = 0;
 
 describe("kafka-tests", () => {
