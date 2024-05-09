@@ -33,7 +33,6 @@ export interface WorkflowParams {
 }
 
 export interface WorkflowConfig {
-  // TODO: add workflow config here.
 }
 
 export interface WorkflowStatus {

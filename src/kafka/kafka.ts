@@ -83,9 +83,9 @@ export class DBOSKafka {
           throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}` }
+        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${ro.kafkaTopic}` };
         const consumer = kafka.consumer(consumerConfig);
-        await consumer.connect()
+        await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
         // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
         // However, it has a bug where it won't. Thus, we retry instead.
@@ -113,7 +113,7 @@ export class DBOSKafka {
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
             const wfParams = { workflowUUID: workflowUUID };
             // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message]
+            const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (ro.txnConfig) {
               // Execute the transaction
@@ -133,5 +133,17 @@ export class DBOSKafka {
     for (const consumer of this.consumers) {
       await consumer.disconnect();
     }
+  }
+
+  logRegisteredKafkaEndpoints() {
+    const logger = this.dbosExec.logger;
+    logger.info("Kafka endpoints supported:");
+    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+      const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
+      if (ro.kafkaTopic) {
+        const defaults = ro.defaults as KafkaDefaults;
+        logger.info(`    ${ro.kafkaTopic} -> ${defaults.name}.${ro.name}`);
+      }
+    });
   }
 }
