@@ -22,6 +22,7 @@ import path from "path";
 import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
+import { listAppVersions } from "./applications/list-app-versions.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -180,6 +181,16 @@ applicationCommands
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
     const exitCode = await getAppInfo(DBOSCloudHost, options.json, appName);
+    process.exit(exitCode);
+  });
+
+applicationCommands
+  .command('versions')
+  .description("Retrieve a list of an application's versions")
+  .argument('[string]', 'application name')
+  .option('--json', 'Emit JSON output')
+  .action(async (appName: string | undefined, options: { json: boolean }) => {
+    const exitCode = await listAppVersions(DBOSCloudHost, options.json, appName);
     process.exit(exitCode);
   });
 
