@@ -40,6 +40,9 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
+const patternTopic = new RegExp(/dbos-test-.*/);
+let patternTopicCounter = 0;
+
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
 let txnCounter = 0;
@@ -111,6 +114,8 @@ describe("kafka-tests", () => {
     expect(txnCounter).toBe(1);
     await DBOSTestClass.wfPromise;
     expect(wfCounter).toBe(1);
+    await DBOSTestClass.patternTopicPromise;
+    expect(patternTopicCounter).toBe(2);
   }, 30000);
 });
 
@@ -127,12 +132,17 @@ class DBOSTestClass {
     DBOSTestClass.wfResolve = r;
   });
 
+  static patternTopicResolve: () => void;
+  static patternTopicPromise = new Promise<void>((r) => {
+    DBOSTestClass.patternTopicResolve = r;
+  });
+
   @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == txnTopic && message.value?.toString() === txnMessage) {
       txnCounter = txnCounter + 1;
-      DBOSTestClass.txnResolve()
+      DBOSTestClass.txnResolve();
     }
     await DBOSTestClass.txnPromise;
   }
@@ -142,8 +152,22 @@ class DBOSTestClass {
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
-      DBOSTestClass.wfResolve()
+      DBOSTestClass.wfResolve();
     }
     await DBOSTestClass.wfPromise;
+  }
+
+  @KafkaConsume(patternTopic)
+  @Workflow()
+  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    if ( isWfMessage || isTxnMessage ) {
+      patternTopicCounter = patternTopicCounter + 1;
+      if (patternTopicCounter === 2) {
+        DBOSTestClass.patternTopicResolve();
+      }
+    }
+    await DBOSTestClass.patternTopicPromise;
   }
 }
