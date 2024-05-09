@@ -76,19 +76,19 @@ describe("kafka-tests", () => {
     } finally {
       await producer.disconnect();
     }
-  }, 60000);
+  }, 30000);
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       testRuntime = await createInternalTestRuntime([DBOSTestClass], config);
     }
-  }, 60000);
+  }, 30000);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
       await testRuntime.destroy();
     }
-  }, 60000);
+  }, 30000);
 
   test("txn-kafka", async () => {
     if (!kafkaIsAvailable) {
@@ -123,7 +123,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 60000);
+  }, 30000);
 });
 
 @Kafka(kafkaConfig)
