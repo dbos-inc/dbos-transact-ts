@@ -12,31 +12,22 @@ import { Knex } from "knex";
 
 `
 version: "3.7"
-
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - 2181:2181
-
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    depends_on:
-      - zookeeper
-    ports:
-      - 9092:9092
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      KAFKA_LISTENERS: PLAINTEXT://:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+  broker:
+      image: public.ecr.aws/bitnami/kafka:3.6.2-debian-12-r3
+      hostname: broker
+      container_name: broker
+      ports:
+        - '9092:9092'
+      environment:
+        KAFKA_CFG_NODE_ID: 1
+        KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+        KAFKA_CFG_ADVERTISED_LISTENERS: 'PLAINTEXT_HOST://localhost:9092,PLAINTEXT://broker:19092'
+        KAFKA_CFG_PROCESS_ROLES: 'broker,controller'
+        KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
+        KAFKA_CFG_LISTENERS: 'CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092'
+        KAFKA_CFG_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+        KAFKA_CFG_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
 `
 
 const kafkaConfig: KafkaConfig = {
