@@ -293,7 +293,7 @@ describe("httpserver-tests", () => {
 
     @GetApi("/testStartWorkflow/:name")
     static async testStartWorkflow(ctxt: HandlerContext, name: string) {
-      return ctxt.runWorkflow(TestEndpoints).testWorkflow(name);
+      return ctxt.invokeWorkflow(TestEndpoints).testWorkflow(name);
     }
 
     @PostApi("/transaction/:name")
