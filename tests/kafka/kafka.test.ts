@@ -194,7 +194,7 @@ class DBOSTestClass {
         DBOSTestClass.arrayTopicsResolve();
       }
     }
-    return DBOSTestClass.arrayTopicsPromise;
+    await DBOSTestClass.arrayTopicsPromise;
   }
 
 }
