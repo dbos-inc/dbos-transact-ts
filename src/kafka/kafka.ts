@@ -1,4 +1,4 @@
-import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError, ConsumerSubscribeTopics } from "kafkajs";
+import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
 import { DBOSContext } from "..";
 import { ClassRegistration, MethodRegistration, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
 import { DBOSExecutor } from "../dbos-executor";
@@ -101,11 +101,7 @@ export class DBOSKafka {
         const multiplier = defaults.kafkaConfig.retry ? defaults.kafkaConfig.retry.multiplier ?? 2 : 2;
         for (let i = 0; i < maxRetries; i++) {
           try {
-            const subscribeOpts: ConsumerSubscribeTopics = {
-              topics: topics,
-              fromBeginning: true
-            }
-            await consumer.subscribe(subscribeOpts);
+            await consumer.subscribe({ topics: topics, fromBeginning: true });
             break;
           } catch (error) {
             const e = error as KafkaJSProtocolError;
