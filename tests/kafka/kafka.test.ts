@@ -40,7 +40,7 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
-const patternTopic = /dbos-test-.*/;
+const patternTopic = new RegExp(/dbos-test-.*/);
 let patternTopicCounter = 0;
 
 const txnTopic = 'dbos-test-txn-topic';
@@ -168,6 +168,6 @@ class DBOSTestClass {
         DBOSTestClass.patternTopicResolve();
       }
     }
-    return DBOSTestClass.patternTopicPromise;
+    await DBOSTestClass.patternTopicPromise;
   }
 }
