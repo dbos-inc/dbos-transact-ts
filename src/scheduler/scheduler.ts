@@ -22,7 +22,7 @@ export class SchedulerConfig {
 // Method Decorator
 ////
 
-// Scheduled Time. Actual Time, number running globally, number running locally
+// Scheduled Time. Actual Time.
 export type ScheduledArgs = [Date, Date]
 
 export interface SchedulerRegistrationConfig {
