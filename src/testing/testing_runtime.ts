@@ -141,7 +141,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, sync: boolean): InvokeFuncs<T> {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
@@ -156,67 +156,39 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.txnConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
-        : op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
-        : op.commConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
-        : undefined;
+      if (sync) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.txnConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
+          : op.workflowConfig
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+            : op.commConfig
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+              ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+              : undefined;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
+          : undefined;
+      }
     }
     return proxy as InvokeFuncs<T>;
+  }
+
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, params, true);
   }
 
   startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T> {
-    const dbosExec = this.getDBOSExec();
-    const ops = getRegisteredOperations(object);
-
-    const proxy: any = {};
-
-    // Creates a context to pass in necessary info.
-    const span = dbosExec.tracer.startSpan("test");
-    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
-    oc.authenticatedUser = params?.authenticatedUser ?? "";
-    oc.request = params?.request ?? {};
-    oc.authenticatedRoles = params?.authenticatedRoles ?? [];
-
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
-        : undefined;
-    }
-    return proxy as InvokeFuncs<T>;
+    return this.mainInvoke(object, workflowUUID, params, true);
   }
 
   invokeWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T> {
-    const dbosExec = this.getDBOSExec();
-    const ops = getRegisteredOperations(object);
-
-    const proxy: any = {};
-
-    // Creates a context to pass in necessary info.
-    const span = dbosExec.tracer.startSpan("test");
-    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
-    oc.authenticatedUser = params?.authenticatedUser ?? "";
-    oc.request = params?.request ?? {};
-    oc.authenticatedRoles = params?.authenticatedRoles ?? [];
-
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
-        : undefined;
-    }
-    return proxy as InvokeFuncs<T>;
+    return this.mainInvoke(object, workflowUUID, params, false);
   }
 
   /**
