@@ -132,7 +132,7 @@ describe("oaoo-tests", () => {
 
     for (let i = 0; i < 10; i++) {
       const workflowHandle = await testRuntime
-        .invoke(WorkflowOAOO)
+        .startWorkflow(WorkflowOAOO)
         .testTxWorkflow(username);
       const workflowUUID: string = workflowHandle.getWorkflowUUID()
       uuidArray.push(workflowUUID);
@@ -190,8 +190,8 @@ describe("oaoo-tests", () => {
     const idempotencyKey = "test-suffix";
 
     // Receive twice with the same UUID.  Each should get the same result of true.
-    const recvHandle1 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
-    const recvHandle2 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+    const recvHandle1 = await testRuntime.startWorkflow(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+    const recvHandle2 = await testRuntime.startWorkflow(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
 
     // Send twice with the same idempotency key.  Only one message should be sent.
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();

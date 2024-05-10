@@ -31,7 +31,7 @@ describe("dbos-tests", () => {
   });
 
   test("simple-function", async () => {
-    const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(DBOSTestClass).testWorkflow(username);
+    const workflowHandle: WorkflowHandle<string> = await testRuntime.startWorkflow(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
   });
@@ -69,13 +69,13 @@ describe("dbos-tests", () => {
     await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow('1234567')).rejects.toThrow('Sent to non-existent destination workflow UUID');
 
     const workflowUUID = uuidv1();
-    const handle = await testRuntime.invoke(DBOSTestClass, workflowUUID).receiveWorkflow();
+    const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
     await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test("simple-workflow-events", async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.invoke(DBOSTestClass).setEventWorkflow();
+    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
@@ -189,7 +189,7 @@ describe("dbos-tests", () => {
   test("retrieve-workflowstatus", async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await testRuntime.invoke(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
+    const workflowHandle = await testRuntime.startWorkflow(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({

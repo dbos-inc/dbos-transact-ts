@@ -115,15 +115,14 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
-  test("endpoint-testRunWorkflow", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/testRunWorkflow/alice");
+  test("endpoint-testStartWorkflow", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/testStartWorkflow/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
 
-
-  test("endpoint-testStartWorkflow", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/testStartWorkflow/alice");
+  test("endpoint-testInvokeWorkflow", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/testInvokeWorkflow/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello 1");
   });
@@ -286,13 +285,13 @@ describe("httpserver-tests", () => {
         .then((x) => x.getResult());
     }
 
-    @GetApi("/testRunWorkflow/:name")
-    static async testRunWorkflow(ctxt: HandlerContext, name: string) {
+    @GetApi("/testStartWorkflow/:name")
+    static async testStartWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
       return ctxt.startWorkflow(TestEndpoints).testWorkflow(name).then((x) => x.getResult());
     }
 
-    @GetApi("/testStartWorkflow/:name")
-    static async testStartWorkflow(ctxt: HandlerContext, name: string) {
+    @GetApi("/testInvokeWorkflow/:name")
+    static async testInvokeWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
       return ctxt.invokeWorkflow(TestEndpoints).testWorkflow(name);
     }
 
