@@ -43,7 +43,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   try {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
-      const migrateCommandOutput = execSync(cmd, {encoding: 'utf8'});
+      const migrateCommandOutput = execSync(cmd, {encoding: 'utf-8'});
       logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
