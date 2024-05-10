@@ -115,52 +115,44 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
     const proxy: any = {};
     const params = { workflowUUID: workflowUUID, parentCtx: this };
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.txnConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#transaction(op.registeredFunction as Transaction<any[], any>, params, ...args)
-        : op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
-        : op.commConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
-        : undefined;
+      if (asyncWf) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.txnConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.#transaction(op.registeredFunction as Transaction<any[], any>, params, ...args)
+          : op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
+          : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
+          : undefined;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args).then((handle) => handle.getResult())
+          : undefined;
+      }
     }
     return proxy as InvokeFuncs<T>;
+  }
+
+  invoke<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, true);
   }
 
   startWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
-    const proxy: any = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this };
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
-        : undefined;
-    }
-    return proxy as InvokeFuncs<T>;
+    return this.mainInvoke(object, workflowUUID, true);
   }
 
   invokeWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
-    const proxy: any = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this };
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args).then((handle) => handle.getResult())
-        : undefined;
-    }
-    return proxy as InvokeFuncs<T>;
+    return this.mainInvoke(object, workflowUUID, false);
   }
 
   //////////////////////

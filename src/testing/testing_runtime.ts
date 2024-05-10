@@ -141,7 +141,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, sync: boolean): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
@@ -156,7 +156,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
     for (const op of ops) {
-      if (sync) {
+      if (asyncWf) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
