@@ -10,6 +10,7 @@ import chalk from "chalk";
 type DeployOutput = {
   ApplicationName: string;
   ApplicationVersion: string;
+  OrgName: string;
 }
 
 function convertPathForGlob(p: string) {
@@ -153,7 +154,8 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
     }
     await sleep(5000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`)
-    logger.info(`Access your application at https://${userCredentials.userName}-${appName}.${host}/`)
+    // logger.info(`Access your application at https://${userCredentials.userName}-${appName}.${host}/`)
+    logger.info(`Access your application at https://${deployOutput.OrgName}-${appName}.${host}/`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
