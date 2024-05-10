@@ -45,7 +45,7 @@ describe("dbos-tests", () => {
 
   test("tight-loop", async () => {
     for (let i = 0; i < 100; i++) {
-      await expect(testRuntime.invoke(DBOSTestClass).testNameWorkflow(username).then((x) => x.getResult())).resolves.toBe(username);
+      await expect(testRuntime.invokeWorkflow(DBOSTestClass).testNameWorkflow(username)).resolves.toBe(username);
     }
   });
 

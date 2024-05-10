@@ -16,7 +16,7 @@ import { APITypes, ArgSources } from "./handlerTypes";
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
 
-type HandlerWfFuncs<T> = {
+export type HandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
@@ -117,7 +117,6 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    */
   invoke<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-
     const proxy: any = {};
     const params = { workflowUUID: workflowUUID, parentCtx: this };
     for (const op of ops) {

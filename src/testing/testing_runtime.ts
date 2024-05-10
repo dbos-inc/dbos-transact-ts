@@ -4,7 +4,7 @@ import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
-import { InvokeFuncs } from "../httpServer/handler";
+import { HandlerWfFuncs, InvokeFuncs } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
@@ -50,6 +50,8 @@ export interface WorkflowInvokeParams {
 
 export interface TestingRuntime {
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -164,6 +166,54 @@ export class TestingRuntimeImpl implements TestingRuntime {
         : op.commConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+        : undefined;
+    }
+    return proxy as InvokeFuncs<T>;
+  }
+
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T> {
+    const dbosExec = this.getDBOSExec();
+    const ops = getRegisteredOperations(object);
+
+    const proxy: any = {};
+
+    // Creates a context to pass in necessary info.
+    const span = dbosExec.tracer.startSpan("test");
+    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
+    oc.authenticatedUser = params?.authenticatedUser ?? "";
+    oc.request = params?.request ?? {};
+    oc.authenticatedRoles = params?.authenticatedRoles ?? [];
+
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.workflowConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+        : undefined;
+    }
+    return proxy as InvokeFuncs<T>;
+  }
+
+  invokeWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): HandlerWfFuncs<T> {
+    const dbosExec = this.getDBOSExec();
+    const ops = getRegisteredOperations(object);
+
+    const proxy: any = {};
+
+    // Creates a context to pass in necessary info.
+    const span = dbosExec.tracer.startSpan("test");
+    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
+    oc.authenticatedUser = params?.authenticatedUser ?? "";
+    oc.request = params?.request ?? {};
+    oc.authenticatedRoles = params?.authenticatedRoles ?? [];
+
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.workflowConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
         : undefined;
     }
     return proxy as InvokeFuncs<T>;
