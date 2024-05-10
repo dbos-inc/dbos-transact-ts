@@ -90,7 +90,7 @@ export class DBOSKafka {
           topics.push(ro.kafkaTopics)
         }
         const kafka = new KafkaJS(defaults.kafkaConfig);
-        const consumerConfig = ro.consumerConfig ?? { groupId: `dbos-kafka-group-${this.safeGroupName(topics)}` };
+        const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(topics)}` };
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -143,7 +143,11 @@ export class DBOSKafka {
   }
 
   safeGroupName(topics: Array<string | RegExp>) {
-    return  topics.map(r => r.toString()).map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, '')).join('-');
+    const safeGroupIdPart =  topics
+      .map(r => r.toString())
+      .map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, ''))
+      .join('-');
+    return `dbos-kafka-group-${safeGroupIdPart}`.slice(0, 255);
   }
 
   logRegisteredKafkaEndpoints() {
