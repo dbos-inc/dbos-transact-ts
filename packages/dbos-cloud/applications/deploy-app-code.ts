@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { existsSync, readFileSync } from 'fs';
-import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleep, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath, CloudAPIErrorResponse, CLILogger } from "../cloudutils.js";
+import { handleAPIErrors, dbosConfigFilePath, getCloudCredentials, getLogger, checkReadFile, sleepms, isCloudAPIErrorResponse, retrieveApplicationName, dbosEnvPath, CloudAPIErrorResponse, CLILogger } from "../cloudutils.js";
 import path from "path";
 import { Application } from "./types.js";
 import JSZip from "jszip";
@@ -149,9 +149,9 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
           applicationAvailable = true
         }
       }
-      await sleep(1000);
+      await sleepms(1000);
     }
-    await sleep(5000); // Leave time for route cache updates
+    await sleepms(5000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`)
     logger.info(`Access your application at https://${userCredentials.userName}-${appName}.${host}/`)
     return 0;

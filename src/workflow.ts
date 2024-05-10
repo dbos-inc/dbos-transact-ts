@@ -5,7 +5,7 @@ import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
-import { sleep } from "./utils";
+import { sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -71,7 +71,9 @@ export interface WorkflowContext extends DBOSContext {
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 
-  sleep(durationSec: number): Promise<void>;
+  sleepsecs(durationSec: number): Promise<void>;
+  sleepms(durationMS: number): Promise<void>;
+  sleep(durationSec: number): Promise<void>; // Deprecated
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -339,7 +341,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
           // Retry serialization failures.
-          await sleep(retryWaitMillis);
+          await sleepms(retryWaitMillis);
           retryWaitMillis *= backoffFactor;
           retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
           continue;
@@ -424,7 +426,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             // Cap at the maximum allowed retry interval.
-            await sleep(intervalSeconds * 1000);
+            await sleepms(intervalSeconds * 1000);
             intervalSeconds *= ctxt.backoffRate;
             intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
           }
@@ -541,14 +543,21 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Sleep for the duration.
    */
-  async sleep(durationSec: number): Promise<void> {
-    if (durationSec <= 0) {
+  async sleepms(durationMS: number): Promise<void> {
+    if (durationMS <= 0) {
       return;
     }
     const functionID = this.functionIDGetIncrement()
-    return await this.#dbosExec.systemDatabase.sleep(this.workflowUUID, functionID, durationSec);
+    return await this.#dbosExec.systemDatabase.sleepms(this.workflowUUID, functionID, durationMS);
   }
 
+  async sleepsecs(durationSec: number): Promise<void> {
+    return this.sleepms(durationSec * 1000);
+  }
+
+  async sleep(durationSec: number): Promise<void> {
+    return this.sleepms(durationSec * 1000);
+  }
 }
 
 /**

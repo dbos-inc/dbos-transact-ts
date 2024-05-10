@@ -45,7 +45,7 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
-import { sleep } from './utils';
+import { sleepms } from './utils';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -339,7 +339,7 @@ export class DBOSExecutor {
     }
     while (this.isFlushingBuffers) {
       this.logger.info("Waiting for result buffers to be exported.");
-      await sleep(1000);
+      await sleepms(1000);
     }
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();

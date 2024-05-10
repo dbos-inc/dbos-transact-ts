@@ -111,7 +111,7 @@ describe("oaoo-tests", () => {
 
     @Workflow()
     static async sleepWorkflow(wfCtxt: WorkflowContext, durationSec: number) {
-      await wfCtxt.sleep(durationSec);
+      await wfCtxt.sleepsecs(durationSec);
       return;
     }
   }
