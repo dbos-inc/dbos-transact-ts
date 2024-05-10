@@ -22,7 +22,7 @@ import { DBOSScheduler } from "../scheduler/scheduler";
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
-  const [ dbosConfig ] = parseConfigFile({configfile: configFilePath});
+  const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
 
   if (dropSysDB) {
     // Drop system database. Testing runtime always uses Postgres for local testing.
@@ -162,12 +162,12 @@ export class TestingRuntimeImpl implements TestingRuntime {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
           : op.workflowConfig
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
-            : op.commConfig
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-              ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
-              : undefined;
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+          : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+          : undefined;
       } else {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
