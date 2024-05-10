@@ -173,7 +173,7 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
@@ -187,7 +187,7 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       arrayTopicsCounter = arrayTopicsCounter + 1;
       if (arrayTopicsCounter === 2) {
@@ -196,5 +196,4 @@ class DBOSTestClass {
     }
     await DBOSTestClass.arrayTopicsPromise;
   }
-
 }

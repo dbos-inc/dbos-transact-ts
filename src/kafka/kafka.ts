@@ -143,9 +143,7 @@ export class DBOSKafka {
   }
 
   safeGroupName(topics: Array<string | RegExp>) {
-    const res= topics.map(r => r.toString()).map( r=> r.replaceAll(/[^a-zA-Z0-9\\-]/g, '')).join('-');
-    console.log(res)
-    return res;
+    return  topics.map(r => r.toString()).map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, '')).join('-');
   }
 
   logRegisteredKafkaEndpoints() {
