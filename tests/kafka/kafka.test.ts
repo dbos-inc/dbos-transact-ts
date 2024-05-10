@@ -40,15 +40,20 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
-const patternTopic = new RegExp(/dbos-test-.*/);
-let patternTopicCounter = 0;
 
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
 let txnCounter = 0;
+
 const wfTopic = 'dbos-test-wf-topic';
 const wfMessage = 'dbos-wf'
 let wfCounter = 0;
+
+const patternTopic = new RegExp(/dbos-test-.*/);
+let patternTopicCounter = 0;
+
+const arrayTopics = [txnTopic, new RegExp(/dbos-test-wf-topic/)];
+let arrayTopicsCounter = 0;
 
 describe("kafka-tests", () => {
   let config: DBOSConfig;
@@ -116,6 +121,8 @@ describe("kafka-tests", () => {
     expect(wfCounter).toBe(1);
     await DBOSTestClass.patternTopicPromise;
     expect(patternTopicCounter).toBe(2);
+    await DBOSTestClass.arrayTopicsPromise;
+    expect(arrayTopicsCounter).toBe(2);
   }, 30000);
 });
 
@@ -135,6 +142,11 @@ class DBOSTestClass {
   static patternTopicResolve: () => void;
   static patternTopicPromise = new Promise<void>((r) => {
     DBOSTestClass.patternTopicResolve = r;
+  });
+
+  static arrayTopicsResolve: () => void;
+  static arrayTopicsPromise = new Promise<void>((r) => {
+    DBOSTestClass.arrayTopicsResolve = r;
   });
 
   @KafkaConsume(txnTopic)
@@ -161,7 +173,7 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = txnTopic && message.value?.toString() === txnMessage;
+    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
@@ -169,5 +181,19 @@ class DBOSTestClass {
       }
     }
     await DBOSTestClass.patternTopicPromise;
+  }
+
+  @KafkaConsume(arrayTopics)
+  @Workflow()
+  static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
+    if ( isWfMessage || isTxnMessage ) {
+      arrayTopicsCounter = arrayTopicsCounter + 1;
+      if (arrayTopicsCounter === 2) {
+        DBOSTestClass.arrayTopicsResolve();
+      }
+    }
+    await DBOSTestClass.arrayTopicsPromise;
   }
 }
