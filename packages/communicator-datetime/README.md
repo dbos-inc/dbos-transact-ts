@@ -1,4 +1,4 @@
-# DBOS Random Communicator
+# DBOS Date/Time Communicator
 
 This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for getting the current date / time.
 

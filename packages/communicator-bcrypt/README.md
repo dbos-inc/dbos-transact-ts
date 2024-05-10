@@ -1,4 +1,4 @@
-# DBOS Random Communicator
+# DBOS `bcrypt` Communicator
 
 This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating bcrypt hashes.
 
