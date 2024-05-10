@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, SpawnSyncReturns } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
 import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
@@ -43,25 +43,13 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   try {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
-      const migrateCommandOutput = execSync(cmd).toString();
+      const migrateCommandOutput = execSync(cmd, {encoding: 'utf8'});
       logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
     logger.error("Error running migration");
-    if (e instanceof Error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      const stderr = (e as any).stderr;
-      if (stderr && Buffer.isBuffer(stderr) && stderr.length > 0) {
-        logger.error(`Standard Error: ${stderr.toString().trim()}`);
-      }
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      const stdout = (e as any).stdout;
-      if (stdout && Buffer.isBuffer(stdout) && stdout.length > 0) {
-        logger.error(`Standard Output: ${stdout.toString().trim()}`);
-      }
-      if (e.message) {
-        logger.error(e.message);
-      }
+    if (e instanceof Error && isExecSyncError(e)) {
+      logMigrationError(e, logger)
     } else {
       logger.error(e);
     }
@@ -99,8 +87,7 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await
-export async function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
+export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
   logger.info("Starting Migration Rollback");
 
   let dbType = configFile.database.app_db_client;
@@ -113,10 +100,16 @@ export async function rollbackMigration(configFile: ConfigFile, logger: GlobalLo
   try {
     rollbackcommands?.forEach((cmd) => {
       logger.info("Executing " + cmd);
-      execSync(cmd);
+      const migrateCommandOutput = execSync(cmd, {encoding: 'utf-8'});
+      logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
-    logger.error("Error rolling back migration. ");
+    logger.error("Error rolling back migration.");
+    if (e instanceof Error && isExecSyncError(e)) {
+      logMigrationError(e, logger)
+    } else {
+      logger.error(e);
+    }
     return 1;
   }
   return 0;
@@ -166,5 +159,36 @@ async function createDBOSTables(configFile: ConfigFile) {
   } finally {
     await pgSystemClient.end();
     await pgUserClient.end();
+  }
+}
+
+type SpawnSyncError<T> = Error & SpawnSyncReturns<T>;
+
+function isExecSyncError(e: Error): e is SpawnSyncError<string | Buffer> {
+  if (
+    //Safeguard against NaN. NaN type is number but NaN !== NaN
+    "pid" in e && (typeof e.pid === 'number' && e.pid === e.pid) &&
+    "stdout" in e && (Buffer.isBuffer(e.stdout) || typeof e.stdout === 'string')&&
+    "stderr" in e && (Buffer.isBuffer(e.stderr) || typeof e.stderr === 'string')
+  ) {
+    return true;
+  }
+  return false
+}
+
+function logMigrationError(e: SpawnSyncError<string | Buffer>, logger: GlobalLogger) {
+  const stderr = e.stderr;
+  if (e.stderr.length > 0) {
+    logger.error(`Standard Error: ${stderr.toString().trim()}`);
+  }
+  const stdout = e.stdout;
+  if (stdout.length > 0) {
+    logger.error(`Standard Output: ${stdout.toString().trim()}`);
+  }
+  if (e.message) {
+    logger.error(e.message);
+  }
+  if (e.error?.message) {
+    logger.error(e.error?.message);
   }
 }

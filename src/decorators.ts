@@ -9,6 +9,7 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
+import { UserDatabaseClient } from "./user_database";
 
 /**
  * Any column type column can be.
@@ -490,12 +491,11 @@ export function Workflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function Transaction(config: TransactionConfig={}) {
+export function Transaction<T extends UserDatabaseClient>(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<T>, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
@@ -533,7 +533,6 @@ export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
@@ -548,7 +547,6 @@ export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
