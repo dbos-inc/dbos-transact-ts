@@ -106,7 +106,7 @@ describe("oaoo-tests", () => {
 
     @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
-      return await wfCtxt.invokeWorkflow(WorkflowOAOO.testTxWorkflow, name);
+      return await wfCtxt.invokeChildWorkflow(WorkflowOAOO.testTxWorkflow, name);
     }
 
     @Workflow()
@@ -248,7 +248,7 @@ describe("oaoo-tests", () => {
       }
 
       // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO.setEventWorkflow);
+      const invokedHandle = await ctxt.startChildWorkflow(EventStatusOAOO.setEventWorkflow);
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
