@@ -117,7 +117,7 @@ describe("debugger-test", () => {
     // Workflow that sleep
     @Workflow()
     static async sleepWorkflow(ctxt: WorkflowContext, num: number) {
-      await ctxt.sleepsecs(1)
+      await ctxt.sleep(1)
       const funcResult = await ctxt.invoke(DebuggerTest).testReadOnlyFunction(num);
       return funcResult;
     }

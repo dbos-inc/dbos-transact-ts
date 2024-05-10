@@ -387,10 +387,6 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return value;
   }
 
-
-  async sleepsecs(workflowUUID: string, functionID: number, durationSec: number): Promise<void> {
-    return this.sleepms(workflowUUID, functionID, durationSec * 1000);
-  }
   async sleepms(_workflowUUID: string, _functionID: number, durationMS: number): Promise<void> {
     await sleepms(durationMS); // TODO: Implement
   }

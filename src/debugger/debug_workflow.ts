@@ -250,9 +250,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.functionIDGetIncrement();
     return Promise.resolve();
   }
-  async sleepsecs(s: number): Promise<void> {
-    return this.sleepms(s*1000);
-  }
   async sleep(s: number): Promise<void> {
     return this.sleepms(s*1000);
   }

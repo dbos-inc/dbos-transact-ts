@@ -42,6 +42,6 @@ class DBOSSchedTestClass {
         if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
-        await ctxt.sleepsecs(2);
+        await ctxt.sleepms(2000);
     }
 }
