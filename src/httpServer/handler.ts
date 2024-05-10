@@ -14,17 +14,21 @@ import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
-export type InvokeFuncs<T> = WFInvokeFuncs<T> & HandlerWfFuncs<T>;
+export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 
-export type HandlerWfFuncs<T> = {
+export type AsyncHandlerWfFuncs<T> = {
   [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
+}
+
+export type SyncHandlerWfFuncs<T> = {
+  [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<Awaited<ReturnType<T[P]>>> : never;
 }
 
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): HandlerWfFuncs<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): HandlerWfFuncs<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -147,12 +151,12 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.mainInvoke(object, workflowUUID, true);
   }
 
-  startWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
+  startWorkflow<T extends object>(object: T, workflowUUID?: string): AsyncHandlerWfFuncs<T> {
     return this.mainInvoke(object, workflowUUID, true);
   }
 
-  invokeWorkflow<T extends object>(object: T, workflowUUID?: string): InvokeFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, false);
+  invokeWorkflow<T extends object>(object: T, workflowUUID?: string): SyncHandlerWfFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, false) as unknown as SyncHandlerWfFuncs<T>;
   }
 
   //////////////////////

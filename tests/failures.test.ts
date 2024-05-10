@@ -95,9 +95,8 @@ describe("failures-tests", () => {
     // Should succeed after retrying 10 times.
     await expect(
       testRuntime
-        .invoke(FailureTestClass)
+        .invokeWorkflow(FailureTestClass)
         .testSerialWorkflow(10)
-        .then((x) => x.getResult())
     ).resolves.toBe(10);
     expect(FailureTestClass.cnt).toBe(10);
   });
@@ -134,7 +133,7 @@ describe("failures-tests", () => {
     expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrow();
 
     // Invoke an unregistered communicator in a workflow.
-    await expect(testRuntime.invoke(FailureTestClass).testCommWorkflow().then(x => x.getResult())).rejects.toThrow();
+    await expect(testRuntime.invokeWorkflow(FailureTestClass).testCommWorkflow()).rejects.toThrow();
   });
 });
 
