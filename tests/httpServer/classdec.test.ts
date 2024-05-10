@@ -154,9 +154,8 @@ describe("httpserver-defsec-tests", () => {
     @GetApi("/workflow")
     static async testWfEndpoint(ctxt: HandlerContext, name: string) {
       return ctxt
-        .invoke(TestEndpointDefSec)
+        .invokeWorkflow(TestEndpointDefSec)
         .testWorkflow(name)
-        .then((x) => x.getResult());
     }
 
     @GetApi("/transaction")
