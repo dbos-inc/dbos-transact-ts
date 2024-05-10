@@ -162,9 +162,9 @@ async function createDBOSTables(configFile: ConfigFile) {
   }
 }
 
-type SpawnSyncError<T> = Error & SpawnSyncReturns<T>;
+type ExecSyncError<T> = Error & SpawnSyncReturns<T>;
 
-function isExecSyncError(e: Error): e is SpawnSyncError<string | Buffer> {
+function isExecSyncError(e: Error): e is ExecSyncError<string | Buffer> {
   if (
     //Safeguard against NaN. NaN type is number but NaN !== NaN
     "pid" in e && (typeof e.pid === 'number' && e.pid === e.pid) &&
@@ -176,7 +176,7 @@ function isExecSyncError(e: Error): e is SpawnSyncError<string | Buffer> {
   return false
 }
 
-function logMigrationError(e: SpawnSyncError<string | Buffer>, logger: GlobalLogger) {
+function logMigrationError(e: ExecSyncError<string | Buffer>, logger: GlobalLogger) {
   const stderr = e.stderr;
   if (e.stderr.length > 0) {
     logger.error(`Standard Error: ${stderr.toString().trim()}`);
