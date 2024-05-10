@@ -23,8 +23,8 @@ type HandlerWfFuncs<T> = {
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): HandlerWfFuncs<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): HandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
