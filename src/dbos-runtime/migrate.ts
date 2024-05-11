@@ -43,16 +43,11 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   try {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
-      const migrateCommandOutput = execSync(cmd, {encoding: 'utf-8'});
+      const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
       logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
-    logger.error("Error running migration");
-    if (e instanceof Error && isExecSyncError(e)) {
-      logMigrationError(e, logger)
-    } else {
-      logger.error(e);
-    }
+    logMigrationError(e, logger, "Error running migration")
     return 1;
   }
 
@@ -100,16 +95,11 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
   try {
     rollbackcommands?.forEach((cmd) => {
       logger.info("Executing " + cmd);
-      const migrateCommandOutput = execSync(cmd, {encoding: 'utf-8'});
+      const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
       logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
-    logger.error("Error rolling back migration.");
-    if (e instanceof Error && isExecSyncError(e)) {
-      logMigrationError(e, logger)
-    } else {
-      logger.error(e);
-    }
+    logMigrationError(e, logger, "Error rolling back migration.");
     return 1;
   }
   return 0;
@@ -163,12 +153,12 @@ async function createDBOSTables(configFile: ConfigFile) {
 }
 
 type ExecSyncError<T> = Error & SpawnSyncReturns<T>;
-
+//Test to determine if e can be treated as an ExecSyncError.
 function isExecSyncError(e: Error): e is ExecSyncError<string | Buffer> {
   if (
     //Safeguard against NaN. NaN type is number but NaN !== NaN
     "pid" in e && (typeof e.pid === 'number' && e.pid === e.pid) &&
-    "stdout" in e && (Buffer.isBuffer(e.stdout) || typeof e.stdout === 'string')&&
+    "stdout" in e && (Buffer.isBuffer(e.stdout) || typeof e.stdout === 'string') &&
     "stderr" in e && (Buffer.isBuffer(e.stderr) || typeof e.stderr === 'string')
   ) {
     return true;
@@ -176,19 +166,24 @@ function isExecSyncError(e: Error): e is ExecSyncError<string | Buffer> {
   return false
 }
 
-function logMigrationError(e: ExecSyncError<string | Buffer>, logger: GlobalLogger) {
-  const stderr = e.stderr;
-  if (e.stderr.length > 0) {
-    logger.error(`Standard Error: ${stderr.toString().trim()}`);
-  }
-  const stdout = e.stdout;
-  if (stdout.length > 0) {
-    logger.error(`Standard Output: ${stdout.toString().trim()}`);
-  }
-  if (e.message) {
-    logger.error(e.message);
-  }
-  if (e.error?.message) {
-    logger.error(e.error?.message);
+function logMigrationError(e: unknown, logger: GlobalLogger, title: string) {
+  logger.error(title);
+  if (e instanceof Error && isExecSyncError(e)) {
+    const stderr = e.stderr;
+    if (e.stderr.length > 0) {
+      logger.error(`Standard Error: ${stderr.toString().trim()}`);
+    }
+    const stdout = e.stdout;
+    if (stdout.length > 0) {
+      logger.error(`Standard Output: ${stdout.toString().trim()}`);
+    }
+    if (e.message) {
+      logger.error(e.message);
+    }
+    if (e.error?.message) {
+      logger.error(e.error?.message);
+    }
+  } else {
+    logger.error(e);
   }
 }
