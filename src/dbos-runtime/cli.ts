@@ -104,7 +104,7 @@ if (!process.argv.slice(2).length) {
 //If otel exporter is specified in configFile, adds it to the logger and flushes it after.
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
-export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number>) {
+export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
   let logger = new GlobalLogger();
   const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
   if (!configFile) {
