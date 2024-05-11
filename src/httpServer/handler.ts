@@ -78,9 +78,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     this.request = {
       headers: koaContext.request.headers,
       rawHeaders: koaContext.req.rawHeaders,
-       
       params: koaContext.params,
-       
       body: koaContext.request.body,
       rawBody: koaContext.request.rawBody,
       query: koaContext.request.query,

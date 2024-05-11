@@ -224,7 +224,6 @@ export class DBOSExecutor {
             username: userDBConfig.user,
             password: userDBConfig.password,
             database: userDBConfig.database,
-             
             entities: this.entities,
             ssl: userDBConfig.ssl,
           })

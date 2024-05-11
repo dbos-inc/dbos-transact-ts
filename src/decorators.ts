@@ -1,5 +1,3 @@
-
-
 import "reflect-metadata";
 
 import * as crypto from "crypto";
