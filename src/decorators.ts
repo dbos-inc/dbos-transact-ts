@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-
 import "reflect-metadata";
 
 import * as crypto from "crypto";

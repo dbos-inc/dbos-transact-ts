@@ -147,7 +147,6 @@ const consoleFormat = format.combine(
     const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? "\n" + formattedStack : ""}`;
   })
 );
@@ -214,8 +213,6 @@ class OTLPLogQueueTransport extends TransportStream {
         applicationID: this.applicationID,
         executorID: this.executorID,
       } as LogAttributes,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      // context: span?.spanContext() || undefined,
     });
 
     callback();
