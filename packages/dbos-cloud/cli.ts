@@ -120,45 +120,49 @@ const applicationCommands = program
 applicationCommands
   .command('register')
   .description('Register this application')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-d, --database <string>', 'Specify a Postgres database instance for this application')
-  .action(async (options: { database: string }) => {
-    const exitCode = await registerApp(options.database, DBOSCloudHost);
+  .action(async (appName: string | undefined, options: { database: string }) => {
+    const exitCode = await registerApp(options.database, DBOSCloudHost, appName);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('deploy')
   .description('Deploy this application to the cloud and run associated database migration commands')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('--verbose', 'Verbose log of deployment step')
   .option('-p, --previous-version <string>', 'Specify a previous version to restore')
-  .action(async (options: {verbose?: boolean, previousVersion?: string}) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false);
+  .action(async (appName: string | undefined, options: {verbose?: boolean, previousVersion?: string}) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('rollback')
   .description('Deploy this application to the cloud and run associated database rollback commands')
-  .action(async () => {
-    const exitCode = await deployAppCode(DBOSCloudHost, true, null, false);
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .action(async (appName: string | undefined) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('change-database-instance')
   .description('Change this application\'s database instance and redeploy it')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('--verbose', 'Verbose log of deployment step')
   .option('-p, --previous-version <string>', 'Specify a previous version to restore')
   .requiredOption('-d, --database <string>', 'Specify the new database instance name for this application')
-  .action(async (options: {verbose?: boolean, previousVersion?: string, database: string}) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, options.database);
+  .action(async (appName: string | undefined, options: {verbose?: boolean, previousVersion?: string, database: string}) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, options.database, appName);
     process.exit(exitCode);
   });
 
 applicationCommands
   .command('delete')
   .description('Delete this application')
-  .argument('[string]', 'application name')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('--dropdb', 'Drop application database')
   .action(async (appName: string | undefined, options: { dropdb: boolean }) => {
     const exitCode = await deleteApp(DBOSCloudHost, options.dropdb, appName);
@@ -177,7 +181,7 @@ applicationCommands
 applicationCommands
   .command('status')
   .description("Retrieve this application's status")
-  .argument('[string]', 'application name')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
     const exitCode = await getAppInfo(DBOSCloudHost, options.json, appName);
@@ -187,7 +191,7 @@ applicationCommands
 applicationCommands
   .command('versions')
   .description("Retrieve a list of an application's versions")
-  .argument('[string]', 'application name')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
     const exitCode = await listAppVersions(DBOSCloudHost, options.json, appName);
@@ -197,10 +201,11 @@ applicationCommands
 applicationCommands
   .command('logs')
   .description("Print this application's logs")
+  .argument('[string]', 'application name (Default: name from package.json)')
   .option('-l, --last <integer>', 'How far back to query, in seconds from current time. By default, we retrieve all data', parseInt)
   .option('-p, --pagesize <integer>', 'How many lines to fetch at once when paginating. Default is 1000', parseInt)
-  .action(async (options: { last: number, pagesize: number}) => {
-    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize);
+  .action(async (appName: string | undefined, options: { last: number, pagesize: number}) => {
+    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
     process.exit(exitCode);
   });
 
