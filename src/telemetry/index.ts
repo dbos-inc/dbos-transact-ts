@@ -2,20 +2,16 @@ import { LoggerConfig } from "./logs";
 import { OTLPExporterConfig } from "./exporters";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { LogRecord } from "@opentelemetry/api-logs";
+import { TelemetrySignal } from "./collector";
 
-// We could implement our own types and avoid having `any`, but this has likely little value
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function isTraceSignal(signal: any): signal is Span {
+export function isTraceSignal(signal: TelemetrySignal): signal is Span {
   // Span is an interface that has a property 'kind'
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return signal && 'kind' in signal;
+  return 'kind' in signal;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function isLogSignal(signal: any): signal is LogRecord {
+export function isLogSignal(signal: TelemetrySignal): signal is LogRecord {
   // LogRecord is an interface that has a property 'severityText' and 'severityNumber'
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  return signal && 'severityText' in signal && 'severityNumber' in signal;
+  return 'severityText' in signal && 'severityNumber' in signal;
 }
 
 export interface TelemetryConfig {

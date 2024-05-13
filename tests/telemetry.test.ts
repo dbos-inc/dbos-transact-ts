@@ -83,9 +83,7 @@ describe("dbos-telemetry", () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");
       // traceId should be the same, spanId should be different (ID of the last operation's span)
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.headers.traceparent).toContain("00-4bf92f3577b34da6a3ce929d0e0e4736");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
     });
 
@@ -95,7 +93,6 @@ describe("dbos-telemetry", () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.body.message).toBe("hello!");
       // traceId should be the same, spanId should be different (ID of the last operation's span)
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(response.headers.traceparent).not.toBe(null);
     });
   });

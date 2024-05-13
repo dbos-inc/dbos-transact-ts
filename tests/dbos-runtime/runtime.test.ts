@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import axios, { AxiosError } from "axios";
 import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";

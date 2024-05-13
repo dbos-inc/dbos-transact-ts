@@ -8,7 +8,7 @@ type LogResponse = {
 };
 
 
-export async function getAppLogs(host: string, last: number, pagesize:number): Promise<number> {
+export async function getAppLogs(host: string, last: number, pagesize:number, appName: string | undefined): Promise<number> {
   if (last != undefined && (isNaN(last) || last <= 0)) {
     throw new Error('The --last parmameter must be an integer greater than 0');
   }
@@ -26,7 +26,11 @@ export async function getAppLogs(host: string, last: number, pagesize:number): P
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
-  const appName = retrieveApplicationName(logger);
+  appName = appName || retrieveApplicationName(logger);
+  if (!appName) {
+    return 1;
+  }
+
   const url = `https://${host}/v1alpha1/${userCredentials.userName}/logs/applications/${appName}`;
   const headers = {
     "Content-Type": "application/json",
@@ -36,9 +40,6 @@ export async function getAppLogs(host: string, last: number, pagesize:number): P
     last: last,
     limit: pagesize,
     format: 'json'
-  }
-  if (!appName) {
-    return 1;
   }
   try {
     const res = await axios.get(url, {headers: headers, params: params});

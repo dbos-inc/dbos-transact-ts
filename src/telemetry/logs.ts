@@ -55,8 +55,7 @@ export class GlobalLogger {
   }
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  info(logEntry: any, metadata?: ContextualMetadata): void {
+  info(logEntry: unknown, metadata?: ContextualMetadata): void {
     if (typeof logEntry === "string") {
       this.logger.info(logEntry, metadata);
     } else {
@@ -64,8 +63,7 @@ export class GlobalLogger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug(logEntry: any, metadata?: ContextualMetadata): void {
+  debug(logEntry: unknown, metadata?: ContextualMetadata): void {
     if (typeof logEntry === "string") {
       this.logger.debug(logEntry, metadata);
     } else {
@@ -73,8 +71,7 @@ export class GlobalLogger {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn(logEntry: any, metadata?: ContextualMetadata): void {
+  warn(logEntry: unknown, metadata?: ContextualMetadata): void {
     if (typeof logEntry === "string") {
       this.logger.warn(logEntry, metadata);
     } else {
@@ -83,8 +80,7 @@ export class GlobalLogger {
   }
 
   // metadata can have both ContextualMetadata and the error stack trace
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error(inputError: any, metadata?: ContextualMetadata & StackTrace): void {
+  error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     if (inputError instanceof Error) {
       this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
     } else if (typeof inputError === "string") {
@@ -113,23 +109,19 @@ export class Logger {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  info(logEntry: any): void {
+  info(logEntry: unknown): void {
     this.globalLogger.info(logEntry, this.metadata);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug(logEntry: any): void {
+  debug(logEntry: unknown): void {
     this.globalLogger.debug(logEntry, this.metadata);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn(logEntry: any): void {
+  warn(logEntry: unknown): void {
     this.globalLogger.warn(logEntry, this.metadata);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error(inputError: any): void {
+  error(inputError: unknown): void {
     this.globalLogger.error(inputError, this.metadata);
   }
 }
@@ -155,7 +147,6 @@ const consoleFormat = format.combine(
     const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? "\n" + formattedStack : ""}`;
   })
 );
@@ -222,8 +213,6 @@ class OTLPLogQueueTransport extends TransportStream {
         applicationID: this.applicationID,
         executorID: this.executorID,
       } as LogAttributes,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      // context: span?.spanContext() || undefined,
     });
 
     callback();

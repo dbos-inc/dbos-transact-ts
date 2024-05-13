@@ -2,12 +2,12 @@ import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse } from "../cloudutils.js";
 import chalk from 'chalk';
 
-export async function registerApp(dbname: string, host: string): Promise<number> {
+export async function registerApp(dbname: string, host: string, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const appName = retrieveApplicationName(logger);
+  appName = appName || retrieveApplicationName(logger);
   if (!appName) {
     return 1;
   }
