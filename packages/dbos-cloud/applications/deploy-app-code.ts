@@ -55,7 +55,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     return buffer.toString('base64');
 }
 
-export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean, targetDatabaseName: string | null = null): Promise<number> {
+export async function deployAppCode(host: string, rollback: boolean, previousVersion: string | null, verbose: boolean, targetDatabaseName: string | null = null, appName: string | undefined): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials();
@@ -63,7 +63,7 @@ export async function deployAppCode(host: string, rollback: boolean, previousVer
   logger.debug("  ... got cloud credentials");
 
   logger.debug("Retrieving app name...");
-  const appName = retrieveApplicationName(logger);
+  appName = appName || retrieveApplicationName(logger);
   if (!appName) {
     logger.error("Failed to get app name.");
     return 1;

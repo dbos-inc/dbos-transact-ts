@@ -78,9 +78,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     this.request = {
       headers: koaContext.request.headers,
       rawHeaders: koaContext.req.rawHeaders,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       params: koaContext.params,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       body: koaContext.request.body,
       rawBody: koaContext.request.rawBody,
       query: koaContext.request.query,

@@ -212,13 +212,11 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.prisma.$queryRawUnsafe<R, T>(sql, ...params);
   }
 
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const prismaClient = client as PrismaClient;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return prismaClient.$queryRawUnsafe<R, T>(sql, ...params);
   }
 
@@ -406,7 +404,6 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.queryWithClient(this.knex, sql, ...params);
   }
 

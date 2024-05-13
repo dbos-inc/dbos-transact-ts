@@ -137,7 +137,6 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerRecoveryEndpoint(dbosExec: DBOSExecutor, router: Router) {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const executorIDs = koaCtxt.request.body as string[];
       dbosExec.logger.info("Recovering workflows for executors: " + executorIDs.toString());
       const recoverHandles = await dbosExec.recoverPendingWorkflows(executorIDs);
