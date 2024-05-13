@@ -6,7 +6,7 @@ import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } fro
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
 import { StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
-import { sleep, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
+import { sleepms, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from 'knex';
@@ -33,7 +33,7 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
-  sleep(workflowUUID: string, functionID: number, duration: number): Promise<void>;
+  sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -348,16 +348,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async sleep(workflowUUID: string, functionID: number, durationSec: number): Promise<void> {
+  async sleepms(workflowUUID: string, functionID: number, durationMS: number): Promise<void> {
     const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
     if (rows.length > 0) {
       const endTimeMs = JSON.parse(rows[0].output) as number;
-      await sleep(Math.max(endTimeMs - Date.now(), 0))
+      await sleepms(Math.max(endTimeMs - Date.now(), 0))
       return;
     } else {
-      const endTimeMs = Date.now() + durationSec * 1000;
+      const endTimeMs = Date.now() + durationMS;
       await this.pool.query<operation_outputs>(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`, [workflowUUID, functionID, JSON.stringify(endTimeMs)]);
-      await sleep(Math.max(endTimeMs - Date.now(), 0))
+      await sleepms(Math.max(endTimeMs - Date.now(), 0))
       return;
     }
   }
@@ -573,7 +573,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           throw deserializeError(JSON.parse(rows[0].error));
         }
       }
-      await sleep(pollingIntervalMs);
+      await sleepms(pollingIntervalMs);
     }
   }
 

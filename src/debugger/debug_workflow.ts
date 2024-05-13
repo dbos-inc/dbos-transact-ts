@@ -254,10 +254,13 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
-  async sleep(_: number): Promise<void> {
+  async sleepms(_: number): Promise<void> {
     // Need to increment function ID for faithful replay.
     this.functionIDGetIncrement();
     return Promise.resolve();
+  }
+  async sleep(s: number): Promise<void> {
+    return this.sleepms(s*1000);
   }
 }
 

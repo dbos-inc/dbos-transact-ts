@@ -5,7 +5,7 @@ import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import { DBOSError } from "../error";
-import { sleep } from "../utils";
+import { sleepms } from "../utils";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -106,7 +106,7 @@ export class DBOSKafka {
           } catch (error) {
             const e = error as KafkaJSProtocolError;
             if (e.code === 3 && i + 1 < maxRetries) { // UNKNOWN_TOPIC_OR_PARTITION
-              await sleep(retryTime);
+              await sleepms(retryTime);
               retryTime *= multiplier;
               continue;
             } else {

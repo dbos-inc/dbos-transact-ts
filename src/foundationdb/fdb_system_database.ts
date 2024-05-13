@@ -7,7 +7,7 @@ import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
-import { sleep } from "../utils";
+import { sleepms } from "../utils";
 
 interface OperationOutput<R> {
   output: R;
@@ -387,9 +387,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return value;
   }
 
-
-  async sleep(_workflowUUID: string, _functionID: number, durationSec: number): Promise<void> {
-    await sleep(durationSec * 1000); // TODO: Implement
+  async sleepms(_workflowUUID: string, _functionID: number, durationMS: number): Promise<void> {
+    await sleepms(durationMS); // TODO: Implement
   }
 
   /* SCHEDULER */

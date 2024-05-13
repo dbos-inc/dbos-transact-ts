@@ -21,7 +21,7 @@ export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): s
   return fs.readFileSync(path, { encoding } );
 }
 
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
 

@@ -1,7 +1,7 @@
 import { Scheduled, SchedulerMode, TestingRuntime, Workflow, WorkflowContext } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
-import { sleep } from "../../src/utils";
+import { sleepms } from "../../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 
 describe("scheduled-wf-tests", () => {
@@ -22,7 +22,7 @@ describe("scheduled-wf-tests", () => {
     }, 10000);
   
     test("wf-scheduled", async () => {
-        await sleep(3000);
+        await sleepms(3000);
         expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
         expect(DBOSSchedTestClass.nTooEarly).toBe(0);
         expect(DBOSSchedTestClass.nTooLate).toBe(0);
@@ -42,6 +42,6 @@ class DBOSSchedTestClass {
         if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
-        await ctxt.sleep(2);
+        await ctxt.sleepms(2000);
     }
 }

@@ -9,7 +9,7 @@ const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
 const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
 const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
 const DBOSCloudIdentifier = 'dbos-cloud-api';
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DeviceCodeResponse {
   device_code: string;
@@ -114,7 +114,7 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
   let elapsedTimeSec = 0;
   while (elapsedTimeSec < deviceCodeResponse.expires_in) {
     try {
-      await sleep(deviceCodeResponse.interval * 1000)
+      await sleepms(deviceCodeResponse.interval * 1000)
       elapsedTimeSec += deviceCodeResponse.interval;
       const response = await axios.request(tokenRequest);
       tokenResponse = response.data as TokenResponse;
