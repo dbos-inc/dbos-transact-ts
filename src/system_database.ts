@@ -33,7 +33,6 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
 
-  sleepsecs(workflowUUID: string, functionID: number, duration: number): Promise<void>;
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
   send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
@@ -347,10 +346,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw err;
       }
     }
-  }
-
-  async sleepsecs(workflowUUID: string, functionID: number, durationSec: number): Promise<void> {
-    return this.sleepms(workflowUUID, functionID, durationSec*1000);
   }
 
   async sleepms(workflowUUID: string, functionID: number, durationMS: number): Promise<void> {
