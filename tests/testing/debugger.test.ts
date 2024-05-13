@@ -127,17 +127,15 @@ describe("debugger-test", () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     const res = await testRuntime
-      .invoke(DebuggerTest, wfUUID)
-      .testWorkflow(username)
-      .then((x) => x.getResult());
+      .invokeWorkflow(DebuggerTest, wfUUID)
+      .testWorkflow(username);
     expect(res).toBe(1);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
     const debugRes = await debugRuntime
-      .invoke(DebuggerTest, wfUUID)
-      .testWorkflow(username)
-      .then((x) => x.getResult());
+      .invokeWorkflow(DebuggerTest, wfUUID)
+      .testWorkflow(username);
     expect(debugRes).toBe(1);
 
     // Execute again with the provided UUID.
@@ -157,24 +155,21 @@ describe("debugger-test", () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     const res = await testRuntime
-      .invoke(DebuggerTest, wfUUID)
-      .sleepWorkflow(2)
-      .then((x) => x.getResult());
+      .invokeWorkflow(DebuggerTest, wfUUID)
+      .sleepWorkflow(2);
     expect(res).toBe(3);
     await testRuntime.destroy();
 
     // Execute again in debug mode, should return the correct value
     const debugRes = await debugRuntime
-      .invoke(DebuggerTest, wfUUID)
-      .sleepWorkflow(2)
-      .then((x) => x.getResult());
+      .invokeWorkflow(DebuggerTest, wfUUID)
+      .sleepWorkflow(2);
     expect(debugRes).toBe(3);
 
     // Proxy mode should return the same result
     const debugProxyRes = await debugProxyRuntime
-      .invoke(DebuggerTest, wfUUID)
-      .sleepWorkflow(2)
-      .then((x) => x.getResult());
+      .invokeWorkflow(DebuggerTest, wfUUID)
+      .sleepWorkflow(2);
     expect(debugProxyRes).toBe(3);
   });
 
@@ -265,33 +260,32 @@ describe("debugger-test", () => {
     const sendUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     const handle = await testRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow();
-    await expect(testRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
+    await expect(testRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow().then((x) => x.getResult())).resolves.toBe(true);
-    await expect(debugRuntime.invoke(DebuggerTest, sendUUID).sendWorkflow(recvUUID, ).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, recvUUID).receiveWorkflow()).resolves.toBe(true);
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID, )).resolves.toBeFalsy();
   });
 
   test("debug-workflow-events", async() => {
     const getUUID = uuidv1();
     const setUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
-    await expect(testRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID, ).then((x) => x.getResult())).resolves.toBe("value1-value2");
+    await expect(testRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
+    await expect(testRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID, )).resolves.toBe("value1-value2");
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, setUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
-    await expect(debugRuntime.invoke(DebuggerTest, getUUID).getEventWorkflow(setUUID).then((x) => x.getResult())).resolves.toBe("value1-value2");
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe("value1-value2");
   });
 
   test("debug-workflow-input-output", async() => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    const res = await testRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(1)
-      .then((x) => x.getResult());
+    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).diffWorkflow(1);
     expect(res).toBe(1);
     await testRuntime.destroy();
 

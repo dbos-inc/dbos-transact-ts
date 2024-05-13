@@ -55,22 +55,20 @@ describe("oaoo-tests", () => {
     const workflowUUID: string = uuidv1();
 
     let result: number = await testRuntime
-      .invoke(CommunicatorOAOO, workflowUUID)
-      .testCommWorkflow()
-      .then((x) => x.getResult());
+      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .testCommWorkflow();
     expect(result).toBe(0);
     expect(CommunicatorOAOO.counter).toBe(1);
 
     // Test OAOO. Should return the original result.
     result = await testRuntime
-      .invoke(CommunicatorOAOO, workflowUUID)
-      .testCommWorkflow()
-      .then((x) => x.getResult());
+      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .testCommWorkflow();
     expect(result).toBe(0);
     expect(CommunicatorOAOO.counter).toBe(1);
 
     // Should be a new run.
-    await expect(testRuntime.invoke(CommunicatorOAOO).testCommWorkflow().then(x => x.getResult())).resolves.toBe(1);
+    await expect(testRuntime.invokeWorkflow(CommunicatorOAOO).testCommWorkflow()).resolves.toBe(1);
     expect(CommunicatorOAOO.counter).toBe(2);
   });
 
@@ -106,7 +104,7 @@ describe("oaoo-tests", () => {
 
     @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
-      return wfCtxt.childWorkflow(WorkflowOAOO.testTxWorkflow, name).then((x) => x.getResult());
+      return await wfCtxt.invokeChildWorkflow(WorkflowOAOO.testTxWorkflow, name);
     }
 
     @Workflow()
@@ -119,12 +117,12 @@ describe("oaoo-tests", () => {
   test("workflow-sleep-oaoo", async () => {
     const workflowUUID = uuidv1();
     const initTime = Date.now();
-    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(2).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
     expect(Date.now() - initTime).toBeGreaterThanOrEqual(1500);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
-    await expect(testRuntime.invoke(WorkflowOAOO, workflowUUID).sleepWorkflow(2).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
     expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
   });
 
@@ -134,7 +132,7 @@ describe("oaoo-tests", () => {
 
     for (let i = 0; i < 10; i++) {
       const workflowHandle = await testRuntime
-        .invoke(WorkflowOAOO)
+        .startWorkflow(WorkflowOAOO)
         .testTxWorkflow(username);
       const workflowUUID: string = workflowHandle.getWorkflowUUID()
       uuidArray.push(workflowUUID);
@@ -146,9 +144,8 @@ describe("oaoo-tests", () => {
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
       const workflowResult: number = await testRuntime
-        .invoke(WorkflowOAOO, workflowUUID)
-        .testTxWorkflow(username)
-        .then((x) => x.getResult());
+        .invokeWorkflow(WorkflowOAOO, workflowUUID)
+        .testTxWorkflow(username);
       expect(workflowResult).toEqual(i + 1);
     }
   });
@@ -160,15 +157,13 @@ describe("oaoo-tests", () => {
     const workflowUUID = uuidv1();
     await expect(
       testRuntime
-        .invoke(WorkflowOAOO, workflowUUID)
+        .invokeWorkflow(WorkflowOAOO, workflowUUID)
         .nestedWorkflow(username)
-        .then((x) => x.getResult())
     ).resolves.toBe(1);
     await expect(
       testRuntime
-        .invoke(WorkflowOAOO, workflowUUID)
+        .invokeWorkflow(WorkflowOAOO, workflowUUID)
         .nestedWorkflow(username)
-        .then((x) => x.getResult())
     ).resolves.toBe(1);
 
     // Retrieve output of the child workflow.
@@ -195,8 +190,8 @@ describe("oaoo-tests", () => {
     const idempotencyKey = "test-suffix";
 
     // Receive twice with the same UUID.  Each should get the same result of true.
-    const recvHandle1 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
-    const recvHandle2 = await testRuntime.invoke(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+    const recvHandle1 = await testRuntime.startWorkflow(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
+    const recvHandle2 = await testRuntime.startWorkflow(NotificationOAOO, recvWorkflowUUID).receiveOaooWorkflow("testTopic", 1);
 
     // Send twice with the same idempotency key.  Only one message should be sent.
     await expect(testRuntime.send(recvWorkflowUUID, 123, "testTopic", idempotencyKey)).resolves.not.toThrow();
@@ -206,7 +201,7 @@ describe("oaoo-tests", () => {
     await expect(recvHandle2.getResult()).resolves.toBe(true)
 
     // A receive with a different UUID should return false.
-    await expect(testRuntime.invoke(NotificationOAOO).receiveOaooWorkflow("testTopic", 0).then((x) => x.getResult())).resolves.toBe(false);
+    await expect(testRuntime.invokeWorkflow(NotificationOAOO).receiveOaooWorkflow("testTopic", 0)).resolves.toBe(false);
   });
 
   /**
@@ -248,7 +243,7 @@ describe("oaoo-tests", () => {
       }
 
       // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.childWorkflow(EventStatusOAOO.setEventWorkflow);
+      const invokedHandle = await ctxt.startChildWorkflow(EventStatusOAOO.setEventWorkflow);
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
@@ -274,7 +269,7 @@ describe("oaoo-tests", () => {
     const getUUID = uuidv1();
     const setUUID = getUUID + "-2";
 
-    await expect(testRuntime.invoke(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-PENDING");
+    await expect(testRuntime.invokeWorkflow(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID)).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(2);
     await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
 
@@ -285,10 +280,10 @@ describe("oaoo-tests", () => {
     await expect(handle.getResult()).rejects.toThrow("Failed workflow");
 
     // Run without UUID, should get the new result.
-    await expect(testRuntime.invoke(EventStatusOAOO).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("value1-ERROR-ERROR");
+    await expect(testRuntime.invokeWorkflow(EventStatusOAOO).getEventRetrieveWorkflow(setUUID)).resolves.toBe("value1-ERROR-ERROR");
 
     // Test OAOO for getEvent and getWorkflowStatus.
-    await expect(testRuntime.invoke(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID).then(x => x.getResult())).resolves.toBe("valueNull-statusNull-PENDING");
+    await expect(testRuntime.invokeWorkflow(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID)).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(6);  // Should re-execute the workflow because we're not flushing the result buffer.
   });
 

@@ -63,7 +63,7 @@ describe("foundationdb-dbos", () => {
 
   test("fdb-workflow-status", async () => {
     const uuid = uuidv1();
-    const invokedHandle = testRuntime.invoke(FdbTestClass, uuid).testStatusWorkflow();
+    const invokedHandle = testRuntime.startWorkflow(FdbTestClass, uuid).testStatusWorkflow();
     await FdbTestClass.outerPromise;
     const retrievedHandle = testRuntime.retrieveWorkflow(uuid);
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -83,21 +83,21 @@ describe("foundationdb-dbos", () => {
 
   test("fdb-notifications", async () => {
     const workflowUUID = uuidv1();
-    const handle = await testRuntime.invoke(FdbTestClass, workflowUUID).receiveWorkflow();
-    await testRuntime.invoke(FdbTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult());
+    const handle = await testRuntime.startWorkflow(FdbTestClass, workflowUUID).receiveWorkflow();
+    await testRuntime.invokeWorkflow(FdbTestClass).sendWorkflow(handle.getWorkflowUUID());
     expect(await handle.getResult()).toBe(true);
-    const retry = await testRuntime.invoke(FdbTestClass, workflowUUID).receiveWorkflow().then((x) => x.getResult());
+    const retry = await testRuntime.invokeWorkflow(FdbTestClass, workflowUUID).receiveWorkflow();
     expect(retry).toBe(true);
   });
 
   test("fdb-simple-workflow-events", async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.invoke(FdbTestClass).setEventWorkflow();
+    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(FdbTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
     await handle.getResult();
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).setEventWorkflow().then((x) => x.getResult())).resolves.toBe(0);
+    await expect(testRuntime.invokeWorkflow(FdbTestClass, workflowUUID).setEventWorkflow()).resolves.toBe(0);
   });
 
   test("fdb-duplicate-communicator", async () => {
@@ -118,8 +118,8 @@ describe("foundationdb-dbos", () => {
     // Run two send/recv concurrently with the same UUID, both should succeed.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      testRuntime.invoke(FdbTestClass, recvUUID).receiveTopicworkflow("testTopic", 2).then((x) => x.getResult()),
-      testRuntime.invoke(FdbTestClass, recvUUID).receiveTopicworkflow("testTopic", 2).then((x) => x.getResult()),
+      testRuntime.invokeWorkflow(FdbTestClass, recvUUID).receiveTopicworkflow("testTopic", 2),
+      testRuntime.invokeWorkflow(FdbTestClass, recvUUID).receiveTopicworkflow("testTopic", 2),
     ]);
 
     // Send would trigger both to receive, but only one can delete the message.

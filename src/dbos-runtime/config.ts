@@ -151,9 +151,6 @@ function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
 export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
-  if (cliOptions?.configfile) {
-    console.warn('\x1b[33m%s\x1b[0m', "The --configfile option is deprecated. Please use --appDir instead.");
-  }
   if (cliOptions?.appDir) {
     process.chdir(cliOptions.appDir)
   }

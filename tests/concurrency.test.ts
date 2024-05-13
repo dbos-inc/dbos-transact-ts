@@ -49,9 +49,8 @@ describe("concurrency-tests", () => {
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
     await testRuntime
-      .invoke(ConcurrTestClass, uuid)
-      .testWorkflow()
-      .then((x) => x.getResult());
+      .invokeWorkflow(ConcurrTestClass, uuid)
+      .testWorkflow();
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
@@ -83,8 +82,8 @@ describe("concurrency-tests", () => {
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2).then((x) => x.getResult()),
-      testRuntime.invoke(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2).then((x) => x.getResult()),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.

@@ -4,7 +4,7 @@ import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
-import { InvokeFuncs } from "../httpServer/handler";
+import { AsyncHandlerWfFuncs, InvokeFuncs, SyncHandlerWfFuncs } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
@@ -22,7 +22,7 @@ import { DBOSScheduler } from "../scheduler/scheduler";
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
 export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
-  const [ dbosConfig ] = parseConfigFile({configfile: configFilePath});
+  const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
 
   if (dropSysDB) {
     // Drop system database. Testing runtime always uses Postgres for local testing.
@@ -50,6 +50,8 @@ export interface WorkflowInvokeParams {
 
 export interface TestingRuntime {
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -139,7 +141,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
@@ -154,19 +156,39 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.txnConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
-        : op.workflowConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
-        : op.commConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
-        : undefined;
+      if (asyncWf) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.txnConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
+          : op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+          : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+          : undefined;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        proxy[op.name] = op.workflowConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
+          : undefined;
+      }
     }
     return proxy as InvokeFuncs<T>;
+  }
+
+  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, params, true);
+  }
+
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, params, true);
+  }
+
+  invokeWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T> {
+    return this.mainInvoke(object, workflowUUID, params, false) as unknown as SyncHandlerWfFuncs<T>;
   }
 
   /**

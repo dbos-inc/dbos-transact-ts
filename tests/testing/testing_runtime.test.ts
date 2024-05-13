@@ -21,9 +21,8 @@ describe("testruntime-test", () => {
   test("simple-workflow", async () => {
     const uuid = uuidv1();
     const res = await testRuntime
-      .invoke(TestClass, uuid)
-      .testWorkflow(username)
-      .then((x) => x.getResult());
+      .invokeWorkflow(TestClass, uuid)
+      .testWorkflow(username);
     const expectName = testRuntime.getConfig<string>("testvalue"); // Read application config.
     expect(JSON.parse(res)).toEqual({ current_user: expectName });
 
