@@ -15,7 +15,7 @@ describe("ses-tests", () => {
 
   beforeEach(async () => {
     if (sesIsAvailable) {
-      testRuntime = await createTestingRuntime([SendEmailCommunicator]);
+      testRuntime = await createTestingRuntime([SendEmailCommunicator],'ses-test-dbos-config.yaml');
     }
     else {
       console.log("SES Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SES_FROM_ADDRESS, and SES_TO_ADDRESS");
