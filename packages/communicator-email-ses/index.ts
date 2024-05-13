@@ -9,7 +9,7 @@ class SendEmailCommunicator
     static AWS_SES_API_VERSION = '2010-12-01';
 
     @DBOSInitializer()
-    static checkConfig(ctx: InitContext) : Promise<void> {
+    static checkConfig(ctx: InitContext): Promise<void> {
         // Get the config and call the validation
         getAWSConfigs(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS);
         return Promise.resolve();
