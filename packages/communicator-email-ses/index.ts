@@ -1,6 +1,6 @@
 import {ArgOptional, Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
-import { SES, SendTemplatedEmailCommand } from '@aws-sdk/client-ses';
+import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscfg';
 
 class SendEmailCommunicator
@@ -31,12 +31,14 @@ class SendEmailCommunicator
             const ses = SendEmailCommunicator.createSES(cfg);
 
             return await ses.sendEmail({
-                Source: mail.from,
+                FromEmailAddress: mail.from,
                 Destination: {ToAddresses: mail.to, CcAddresses: mail.cc, BccAddresses: mail.bcc},
-                Message: {
-                    Subject: {Data: mail.subject},
-                    Body: {Html: (mail.bodyHtml ? {Data: mail.bodyHtml} : undefined),
-                        Text: (mail.bodyText ? {Data: mail.bodyText, Charset: 'utf-8'}: undefined)}
+                Content: {
+                    Simple: {
+                        Subject: {Data: mail.subject},
+                        Body: {Html: (mail.bodyHtml ? {Data: mail.bodyHtml} : undefined),
+                            Text: (mail.bodyText ? {Data: mail.bodyText, Charset: 'utf-8'}: undefined)}
+                    }
                 }
             });
         }
@@ -62,16 +64,20 @@ class SendEmailCommunicator
     {
         const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
         const ses = SendEmailCommunicator.createSES(cfg);
-        const command = new SendTemplatedEmailCommand(
+        const command = new SendEmailCommand(
             {
                 Destination: {
                     ToAddresses: templatedMail.to,
                     CcAddresses: templatedMail.cc,
                     BccAddresses: templatedMail.bcc,
                 },
-                Source: templatedMail.from, // Must be verified in SES
-                Template: templatedMail.templateName,
-                TemplateData: templatedMail.templateDataJSON,
+                FromEmailAddress: templatedMail.from, // Must be verified in SES
+                Content: {
+                    Template: {
+                        TemplateName: templatedMail.templateName,
+                        TemplateData: templatedMail.templateDataJSON,
+                    }
+                }
             }
         );
         return await ses.send(command);
@@ -81,7 +87,7 @@ class SendEmailCommunicator
     // sendBulkTemplatedEmail, sendRawEmail, sendCustomVerificationEmail
 
     static createSES(cfg: AWSServiceConfig) {
-        return new SES({
+        return new SESv2({
             region: cfg.region,
             credentials: cfg.credentials,
             maxAttempts: cfg.maxRetries,
@@ -103,20 +109,19 @@ class SendEmailCommunicator
     
         // Define the email template
         const params = {
-            Template: {
-                TemplateName: templateName,
-                SubjectPart: template.subject,
-                TextPart: template.bodyText,
-                HtmlPart: template.bodyHtml,
-            },
-            
+            TemplateName: templateName,
+            TemplateContent: {
+                Subject: template.subject,
+                Text: template.bodyText,
+                Html: template.bodyHtml,
+            }
         };
 
         // Check for existing template
         let existingTemplate = false;
         try {
-            const exists = await ses.getTemplate({TemplateName: templateName});
-            if (exists.Template?.SubjectPart) {
+            const exists = await ses.getEmailTemplate({TemplateName: templateName});
+            if (exists.TemplateContent?.Subject) {
                 existingTemplate = true;
             }
         }
@@ -126,10 +131,10 @@ class SendEmailCommunicator
 
         // Send call to create the email template
         if (!existingTemplate) {
-            await ses.createTemplate(params);
+            await ses.createEmailTemplate(params);
         }
         else {
-            await ses.updateTemplate(params);
+            await ses.updateEmailTemplate(params);
         }
     }
 

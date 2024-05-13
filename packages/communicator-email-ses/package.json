@@ -16,9 +16,6 @@
     "test": "npm run build && jest --detectOpenHandles",
     "setversion": "grunt setversion"
   },
-  "dependencies": {
-    "@aws-sdk/client-ses": "^3.533.0"
-  },
   "devDependencies": {
     "grunt": "^1.6.1",
     "nerdbank-gitversioning": "^3.6.133",
@@ -26,5 +23,8 @@
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.574.0"
   }
 }
