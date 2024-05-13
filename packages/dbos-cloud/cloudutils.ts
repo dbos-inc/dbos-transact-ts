@@ -9,6 +9,7 @@ export interface DBOSCloudCredentials {
   token: string;
   refreshToken?: string;
   userName: string;
+  organization: string;
 }
 
 export interface UserProfile {
@@ -88,6 +89,7 @@ export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
     userName: userCredentials.userName,
     refreshToken: userCredentials.refreshToken,
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
+    organization: userCredentials.organization,
   };
   if (isTokenExpired(credentials.token)) {
     if (credentials.refreshToken) {
@@ -106,7 +108,7 @@ export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
       process.exit(1);
     }
   }
-  return credentials
+  return credentials;
 }
 
 export function credentialsExist(): boolean {

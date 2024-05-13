@@ -8,32 +8,30 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
   if (useRefreshToken) {
     authResponse = await authenticateWithRefreshToken(logger, useRefreshToken);
   } else {
-    authResponse = await authenticate(logger, getRefreshToken)
+    authResponse = await authenticate(logger, getRefreshToken);
   }
   if (authResponse === null) {
     return 1;
   }
   const bearerToken = "Bearer " + authResponse.token;
   try {
-    const response = await axios.get(
-      `https://${host}/v1alpha1/user/profile`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: bearerToken,
-        },
-      }
-    );
+    const response = await axios.get(`https://${host}/v1alpha1/user/profile`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
     const profile = response.data as UserProfile;
     const credentials: DBOSCloudCredentials = {
       token: authResponse.token,
       refreshToken: authResponse.refreshToken,
       userName: profile.Name,
+      organization: profile.Organization,
     };
-    writeCredentials(credentials)
+    writeCredentials(credentials);
     logger.info(`Successfully logged in as ${credentials.userName}!`);
     if (getRefreshToken) {
-      logger.info(`Refresh token saved to .dbos/credentials`)
+      logger.info(`Refresh token saved to .dbos/credentials`);
     }
   } catch (e) {
     const errorLabel = `Failed to login`;
