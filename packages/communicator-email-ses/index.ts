@@ -6,7 +6,6 @@ import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscf
 class SendEmailCommunicator
 {
     static AWS_SES_CONFIGURATIONS = 'aws_ses_configurations';
-    static AWS_SES_API_VERSION = '2010-12-01';
 
     @DBOSInitializer()
     static checkConfig(ctx: InitContext): Promise<void> {
@@ -91,7 +90,6 @@ class SendEmailCommunicator
             region: cfg.region,
             credentials: cfg.credentials,
             maxAttempts: cfg.maxRetries,
-            //apiVersion: SendEmailCommunicator.AWS_SES_API_VERSION,
             //logger: console,
         });
     }
