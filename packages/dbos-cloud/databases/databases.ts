@@ -75,6 +75,12 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(dbPassword)) {
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, /, \\, \", ', and spaces")
+    return 1
+  }
+
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
   try {
     await axios.post(
