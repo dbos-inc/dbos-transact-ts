@@ -62,7 +62,7 @@ describe("foundationdb-recovery", () => {
     // This test simulates a "local" environment because the request parameter does not have an dbos-executor-id header.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const handle = await testRuntime.invoke(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
 
     const recoverHandles = await dbosExec.recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
@@ -121,10 +121,10 @@ describe("foundationdb-recovery", () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const localHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
+    const localHandle = await testRuntime.startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
 
     process.env.DBOS__VMID = "fcvm123"
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
+    const execHandle = await testRuntime.startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
 
     const recoverHandles = await dbosExec.recoverPendingWorkflows(["fcvm123"]);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
@@ -152,7 +152,7 @@ describe("foundationdb-recovery", () => {
     });
 
     process.env.DBOS__VMID = "fcvm123"
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
+    const execHandle = await testRuntime.startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
 
     const response = await request(testRuntime.getAdminCallback())
       .post(WorkflowRecoveryUrl)

@@ -48,6 +48,9 @@ program
   .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
   .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (options: DBOSCLIStartOptions) => {
+    if (options?.configfile) {
+      console.warn('\x1b[33m%s\x1b[0m', "The --configfile option is deprecated. Please use --appDir instead.");
+    }
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
     await runtime.initAndStart();

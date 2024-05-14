@@ -31,7 +31,7 @@ describe("dbos-tests", () => {
   });
 
   test("simple-function", async () => {
-    const workflowHandle: WorkflowHandle<string> = await testRuntime.invoke(DBOSTestClass).testWorkflow(username);
+    const workflowHandle: WorkflowHandle<string> = await testRuntime.startWorkflow(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
   });
@@ -45,17 +45,17 @@ describe("dbos-tests", () => {
 
   test("tight-loop", async () => {
     for (let i = 0; i < 100; i++) {
-      await expect(testRuntime.invoke(DBOSTestClass).testNameWorkflow(username).then((x) => x.getResult())).resolves.toBe(username);
+      await expect(testRuntime.invokeWorkflow(DBOSTestClass).testNameWorkflow(username)).resolves.toBe(username);
     }
   });
 
   test("abort-function", async () => {
     for (let i = 0; i < 10; i++) {
-      await expect(testRuntime.invoke(DBOSTestClass).testFailWorkflow(username).then((x) => x.getResult())).resolves.toBe(i + 1);
+      await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow(username)).resolves.toBe(i + 1);
     }
 
     // Should not appear in the database.
-    await expect(testRuntime.invoke(DBOSTestClass).testFailWorkflow("fail").then((x) => x.getResult())).rejects.toThrow("fail");
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow("fail")).rejects.toThrow("fail");
   });
 
   test("simple-communicator", async () => {
@@ -66,16 +66,16 @@ describe("dbos-tests", () => {
 
   test("simple-workflow-notifications", async () => {
     // Send to non-existent workflow should fail
-    await expect(testRuntime.invoke(DBOSTestClass).sendWorkflow('1234567').then((x) => x.getResult())).rejects.toThrow('Sent to non-existent destination workflow UUID');
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow('1234567')).rejects.toThrow('Sent to non-existent destination workflow UUID');
 
     const workflowUUID = uuidv1();
-    const handle = await testRuntime.invoke(DBOSTestClass, workflowUUID).receiveWorkflow();
-    await expect(testRuntime.invoke(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID()).then((x) => x.getResult())).resolves.toBeFalsy(); // return void.
+    const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID())).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test("simple-workflow-events", async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.invoke(DBOSTestClass).setEventWorkflow();
+    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
     const workflowUUID = handle.getWorkflowUUID();
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
@@ -120,13 +120,13 @@ describe("dbos-tests", () => {
 
   test("readonly-recording", async () => {
     const workflowUUID = uuidv1();
-    // Invoke the workflow, should get the error.
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
+    // Invoke the workflow, should get the error
+    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
+    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });
@@ -135,7 +135,7 @@ describe("dbos-tests", () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(testRuntime.invoke(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test").then((x) => x.getResult())).rejects.toThrow(new Error("dumb test error"));
+    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
 
     // Check the transaction output table and make sure we record transaction information correctly.
     const readRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
@@ -189,7 +189,7 @@ describe("dbos-tests", () => {
   test("retrieve-workflowstatus", async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await testRuntime.invoke(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
+    const workflowHandle = await testRuntime.startWorkflow(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
 
     expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({

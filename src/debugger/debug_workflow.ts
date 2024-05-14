@@ -187,10 +187,19 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   // Invoke the debugWorkflow() function instead.
-  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+  }
+
+  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+    return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
+  }
+
+  // Deprecated
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    return this.startChildWorkflow(wf, ...args);
   }
 
   async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
@@ -245,10 +254,13 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return new RetrievedHandleDebug(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
   }
 
-  async sleep(_: number): Promise<void> {
+  async sleepms(_: number): Promise<void> {
     // Need to increment function ID for faithful replay.
     this.functionIDGetIncrement();
     return Promise.resolve();
+  }
+  async sleep(s: number): Promise<void> {
+    return this.sleepms(s*1000);
   }
 }
 

@@ -62,7 +62,7 @@ describe("foundationdb-oaoo", () => {
       }
 
       // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.childWorkflow(EventStatusOAOO.setEventWorkflow);
+      const invokedHandle = await ctxt.startChildWorkflow(EventStatusOAOO.setEventWorkflow);
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
@@ -90,9 +90,8 @@ describe("foundationdb-oaoo", () => {
 
     await expect(
       testRuntime
-        .invoke(EventStatusOAOO, getUUID)
+        .invokeWorkflow(EventStatusOAOO, getUUID)
         .getEventRetrieveWorkflow(setUUID)
-        .then((x) => x.getResult())
     ).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(2);
     await expect(testRuntime.getEvent(setUUID, "key1")).resolves.toBe("value1");
@@ -106,17 +105,15 @@ describe("foundationdb-oaoo", () => {
     // Run without UUID, should get the new result.
     await expect(
       testRuntime
-        .invoke(EventStatusOAOO)
+        .invokeWorkflow(EventStatusOAOO)
         .getEventRetrieveWorkflow(setUUID)
-        .then((x) => x.getResult())
     ).resolves.toBe("value1-ERROR-ERROR");
 
     // Test OAOO for getEvent and getWorkflowStatus.
     await expect(
       testRuntime
-        .invoke(EventStatusOAOO, getUUID)
+        .invokeWorkflow(EventStatusOAOO, getUUID)
         .getEventRetrieveWorkflow(setUUID)
-        .then((x) => x.getResult())
     ).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we're not flushing the result buffer.
   });

@@ -1,6 +1,6 @@
 import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "../src/utils";
+import { sleepms } from "../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { PoolClient } from "pg";
@@ -49,9 +49,8 @@ describe("concurrency-tests", () => {
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
     await testRuntime
-      .invoke(ConcurrTestClass, uuid)
-      .testWorkflow()
-      .then((x) => x.getResult());
+      .invokeWorkflow(ConcurrTestClass, uuid)
+      .testWorkflow();
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
@@ -83,12 +82,12 @@ describe("concurrency-tests", () => {
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2).then((x) => x.getResult()),
-      testRuntime.invoke(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2).then((x) => x.getResult()),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
-    await sleep(10); // Both would be listening to the notification.
+    await sleepms(10); // Both would be listening to the notification.
 
     await expect(testRuntime.send(recvUUID, "testmsg", "testTopic")).resolves.toBeFalsy();
 

@@ -79,7 +79,7 @@ describe("knex-tests", () => {
   test("simple-knex", async () => {
     await expect(testRuntime.invoke(TestClass).testInsert("test-one")).resolves.toBe(1);
     await expect(testRuntime.invoke(TestClass).testSelect(1)).resolves.toBe("test-one");
-    await expect(testRuntime.invoke(TestClass).testWf("test-two").then((x) => x.getResult())).resolves.toBe("test-two");
+    await expect(testRuntime.invokeWorkflow(TestClass).testWf("test-two")).resolves.toBe("test-two");
   });
 
   test("knex-return-void", async () => {
@@ -89,8 +89,8 @@ describe("knex-tests", () => {
   test("knex-duplicate-workflows", async () => {
     const uuid = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(TestClass, uuid).testWf("test-one").then((x) => x.getResult()),
-      testRuntime.invoke(TestClass, uuid).testWf("test-one").then((x) => x.getResult()),
+      testRuntime.invokeWorkflow(TestClass, uuid).testWf("test-one"),
+      testRuntime.invokeWorkflow(TestClass, uuid).testWf("test-one"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("test-one");
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe("test-one");
