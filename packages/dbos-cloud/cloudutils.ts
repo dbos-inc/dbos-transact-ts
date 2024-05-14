@@ -1,7 +1,7 @@
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 import path from "node:path";
 import { authenticateWithRefreshToken } from "./users/authentication.js";
 
@@ -121,7 +121,7 @@ export function deleteCredentials() {
 
 export function writeCredentials(credentials: DBOSCloudCredentials) {
   fs.mkdirSync(dbosEnvPath, { recursive: true });
-  fs.writeFileSync(path.join(dbosEnvPath, 'credentials'), JSON.stringify(credentials), "utf-8");
+  fs.writeFileSync(path.join(dbosEnvPath, "credentials"), JSON.stringify(credentials), "utf-8");
 }
 
 export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
@@ -154,10 +154,16 @@ export interface CloudAPIErrorResponse {
 }
 
 export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
-  return typeof obj === 'object' && obj !== null &&
-    'message' in obj && typeof obj['message'] === 'string' &&
-    'statusCode' in obj && typeof obj['statusCode'] === 'number' &&
-    'requestID' in obj && typeof obj['requestID'] === 'string';
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "message" in obj &&
+    typeof obj["message"] === "string" &&
+    "statusCode" in obj &&
+    typeof obj["statusCode"] === "number" &&
+    "requestID" in obj &&
+    typeof obj["requestID"] === "string"
+  );
 }
 
 export function handleAPIErrors(label: string, e: AxiosError) {

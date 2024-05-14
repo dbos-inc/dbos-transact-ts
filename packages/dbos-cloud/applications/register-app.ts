@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse } from "../cloudutils.js";
-import chalk from 'chalk';
+import chalk from "chalk";
 
 export async function registerApp(dbname: string, host: string, appName?: string): Promise<number> {
   const logger = getLogger();
@@ -11,11 +11,11 @@ export async function registerApp(dbname: string, host: string, appName?: string
   if (!appName) {
     return 1;
   }
-  logger.info(`Registering application: ${appName}`)
+  logger.info(`Registering application: ${appName}`);
 
   try {
     const register = await axios.put(
-      `https://${host}/v1alpha1/${userCredentials.userName}/applications`,
+      `https://${host}/v1alpha1/${userCredentials.organization}/applications`,
       {
         name: appName,
         database: dbname,

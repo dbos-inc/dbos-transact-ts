@@ -16,7 +16,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
 
   try {
     await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb`,
+      `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb`,
       { Name: dbName, AdminName: appDBUsername, AdminPassword: appDBPassword },
       {
         headers: {
@@ -47,7 +47,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
     const errorLabel = `Failed to create database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -62,7 +62,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
   try {
     await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.userName}/databases/byod`,
+      `https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`,
       { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel },
       {
         headers: {
@@ -72,13 +72,13 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
       }
     );
 
-    logger.info(`Database successfully linked!`)
+    logger.info(`Database successfully linked!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to link database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -92,7 +92,7 @@ export async function deleteUserDb(host: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -104,7 +104,7 @@ export async function deleteUserDb(host: string, dbName: string) {
     const errorLabel = `Failed to delete database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -118,7 +118,7 @@ export async function unlinkUserDB(host: string, dbName: string) {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.delete(`https://${host}/v1alpha1/${userCredentials.userName}/databases/byod/${dbName}`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/databases/byod/${dbName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -130,7 +130,7 @@ export async function unlinkUserDB(host: string, dbName: string) {
     const errorLabel = `Failed to unlink database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -157,7 +157,7 @@ export async function getUserDb(host: string, dbName: string, json: boolean) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -171,8 +171,8 @@ export async function listUserDB(host: string, json: boolean) {
   try {
     const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
-  
-    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases`, {
+
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -186,7 +186,7 @@ export async function listUserDB(host: string, json: boolean) {
       if (userDBs.length === 0) {
         logger.info("No database instances found");
       }
-      userDBs.forEach(userDBInfo => {
+      userDBs.forEach((userDBInfo) => {
         console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
         console.log(`Status: ${userDBInfo.Status}`);
         console.log(`Host Name: ${userDBInfo.HostName}`);
@@ -199,7 +199,7 @@ export async function listUserDB(host: string, json: boolean) {
     const errorLabel = `Failed to retrieve info`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -211,7 +211,7 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/info/${dbName}`, {
+  const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`, {
     headers: {
       "Content-Type": "application/json",
       Authorization: bearerToken,
@@ -227,21 +227,23 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/credentials`,
-    { Password: appDBPassword },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: bearerToken,
-      },
-    });
+    await axios.post(
+      `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/credentials`,
+      { Password: appDBPassword },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
     logger.info(`Successfully reset user password for database: ${dbName}`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to reset user password for database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
@@ -255,14 +257,16 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/restore`,
-    { RestoreName: targetName, RestoreTimestamp: restoreTime },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: bearerToken,
-      },
-    });
+    await axios.post(
+      `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/restore`,
+      { RestoreName: targetName, RestoreTimestamp: restoreTime },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
     logger.info(`Successfully started restoring database: ${dbName}! New database name: ${targetName}, restore time: ${restoreTime}`);
 
     if (sync) {
@@ -284,7 +288,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
     const errorLabel = `Failed to restore database ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
+      handleAPIErrors(errorLabel, axiosError);
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
