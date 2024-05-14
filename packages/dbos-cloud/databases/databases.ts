@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms } from "../cloudutils.js";
+import { Logger } from "winston";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -9,10 +10,26 @@ export interface UserDBInstance {
   readonly DatabaseUsername: string;
 }
 
+function isValidPassword(logger: Logger, password: string): boolean {
+  if (password.length < 8 || password.length > 128) {
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long")
+    return false;
+  }
+  if (password.includes('/') || password.includes('"') || password.includes('@') || password.includes(' ') || password.includes('\'')) {
+    logger.error("Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, \", ', and spaces")
+    return false;
+  }
+  return true
+}
+
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(logger, appDBPassword)) {
+    return 1
+  }
 
   try {
     await axios.post(
@@ -59,6 +76,11 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(logger, dbPassword)) {
+    return 1
+  }
+
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
   try {
     await axios.post(
@@ -225,6 +247,10 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(logger, appDBPassword)) {
+    return 1
+  }
 
   try {
     await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/credentials`,
