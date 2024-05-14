@@ -57,7 +57,7 @@ export async function registerUser(username: string, host: string): Promise<numb
   const loginName = userCredentials.userName;
   try {
     // Register the user in DBOS Cloud
-    const response = await axios.put(
+    await axios.put(
       `https://${host}/v1alpha1/user`,
       {
         name: loginName,
@@ -72,7 +72,13 @@ export async function registerUser(username: string, host: string): Promise<numb
         },
       }
     );
-    // Rewrite the local credentials file with the organization
+    // Retrieve user profile and update local credentials
+    const response = await axios.get(`https://${host}/v1alpha1/user/profile`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
     const profile = response.data as UserProfile;
     const credentials: DBOSCloudCredentials = {
       token: userCredentials.token,
