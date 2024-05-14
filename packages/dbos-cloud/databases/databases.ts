@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleep } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms } from "../cloudutils.js";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -32,9 +32,9 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
       let status = "";
       while (status != "available" && status != "backing-up") {
         if (status === "") {
-          await sleep(5000); // First time sleep 5 sec
+          await sleepms(5000); // First time sleep 5 sec
         } else {
-          await sleep(30000); // Otherwise, sleep 30 sec
+          await sleepms(30000); // Otherwise, sleep 30 sec
         }
         const userDBInfo = await getUserDBInfo(host, dbName);
         logger.info(userDBInfo);
@@ -273,9 +273,9 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
       let status = "";
       while (status != "available" && status != "backing-up") {
         if (status === "") {
-          await sleep(5000); // First time sleep 5 sec
+          await sleepms(5000); // First time sleep 5 sec
         } else {
-          await sleep(30000); // Otherwise, sleep 30 sec
+          await sleepms(30000); // Otherwise, sleep 30 sec
         }
         const userDBInfo = await getUserDBInfo(host, targetName);
         logger.info(userDBInfo);

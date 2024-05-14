@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName, sleep } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName, sleepms } from "../cloudutils.js";
 import { Application } from "./types.js";
 
 export async function deleteApp(host: string, dropdb: boolean, appName?: string): Promise<number> {
@@ -52,7 +52,7 @@ export async function deleteApp(host: string, dropdb: boolean, appName?: string)
           applicationDeleted = false;
         }
       }
-      await sleep(1000);
+      await sleepms(1000);
     }
     logger.info(`Successfully deleted application: ${appName}`);
     return 0;

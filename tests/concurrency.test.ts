@@ -1,6 +1,6 @@
 import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "../src/utils";
+import { sleepms } from "../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { PoolClient } from "pg";
@@ -87,7 +87,7 @@ describe("concurrency-tests", () => {
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
-    await sleep(10); // Both would be listening to the notification.
+    await sleepms(10); // Both would be listening to the notification.
 
     await expect(testRuntime.send(recvUUID, "testmsg", "testTopic")).resolves.toBeFalsy();
 

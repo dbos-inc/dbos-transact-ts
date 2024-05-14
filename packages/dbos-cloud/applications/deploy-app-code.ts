@@ -6,7 +6,7 @@ import {
   getCloudCredentials,
   getLogger,
   checkReadFile,
-  sleep,
+  sleepms,
   isCloudAPIErrorResponse,
   retrieveApplicationName,
   dbosEnvPath,
@@ -155,9 +155,9 @@ export async function deployAppCode(
           applicationAvailable = true;
         }
       }
-      await sleep(1000);
+      await sleepms(1000);
     }
-    await sleep(5000); // Leave time for route cache updates
+    await sleepms(5000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`);
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
     return 0;

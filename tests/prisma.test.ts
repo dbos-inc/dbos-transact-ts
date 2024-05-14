@@ -16,7 +16,7 @@ import {
 } from "../src/error";
 
 import { v1 as uuidv1 } from "uuid";
-import { sleep } from "../src/utils";
+import { sleepms } from "../src/utils";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { UserDatabaseName } from "../src/user_database";
 import { DBOSConfig } from "../src/dbos-executor";
@@ -53,7 +53,7 @@ class PrismaTestClass {
 
   @Transaction({ readOnly: true })
   static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
-    await sleep(1);
+    await sleepms(1);
     globalCnt += 1;
     return id;
   }

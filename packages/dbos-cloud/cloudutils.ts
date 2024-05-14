@@ -139,7 +139,7 @@ export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): 
   return fileContent;
 }
 
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
 
