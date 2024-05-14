@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms } from "../cloudutils.js";
+import { Logger } from "winston";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -9,11 +10,13 @@ export interface UserDBInstance {
   readonly DatabaseUsername: string;
 }
 
-function isValidPassword(password: string): boolean {
+function isValidPassword(logger: Logger, password: string): boolean {
   if (password.length < 8 || password.length > 128) {
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long")
     return false;
   }
   if (password.includes('/') || password.includes('"') || password.includes('@') || password.includes(' ') || password.includes('\'')) {
+    logger.error("Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, \", ', and spaces")
     return false;
   }
   return true
@@ -24,8 +27,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  if (!isValidPassword(appDBPassword)) {
-    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, /, \\, \", ', and spaces")
+  if (!isValidPassword(logger, appDBPassword)) {
     return 1
   }
 
@@ -75,8 +77,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  if (!isValidPassword(dbPassword)) {
-    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, /, \\, \", ', and spaces")
+  if (!isValidPassword(logger, dbPassword)) {
     return 1
   }
 
@@ -247,8 +248,7 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  if (!isValidPassword(appDBPassword)) {
-    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, \\, \", ', and spaces")
+  if (!isValidPassword(logger, appDBPassword)) {
     return 1
   }
 
