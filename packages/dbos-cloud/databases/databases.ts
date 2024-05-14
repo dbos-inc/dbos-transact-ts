@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms } from "../cloudutils.js";
+import validator from "validator";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -9,10 +10,25 @@ export interface UserDBInstance {
   readonly DatabaseUsername: string;
 }
 
+function isValidPassword(password: string): boolean {
+  if (password.length < 8 || password.length > 128) {
+    return false;
+  }
+  if (password.includes('/') || password.includes('"') || password.includes('@') || password.includes(' ') || password.includes('\'')) {
+    return false;
+  }
+  return true
+}
+
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(appDBPassword)) {
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, /, \\, \", ', and spaces")
+    return 1
+  }
 
   try {
     await axios.post(
@@ -225,6 +241,11 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
+
+  if (!isValidPassword(appDBPassword)) {
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long and can contain any ASCII character except @, \\, \", ', and spaces")
+    return 1
+  }
 
   try {
     await axios.post(`https://${host}/v1alpha1/${userCredentials.userName}/databases/userdb/${dbName}/credentials`,
