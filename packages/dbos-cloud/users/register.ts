@@ -48,7 +48,7 @@ export async function registerUser(username: string, host: string): Promise<numb
       logger.error(`You are trying to register ${username}, but are currently authenticated as ${userCredentials.userName}. Please run "npx dbos-cloud logout".`);
       return 1;
     } else {
-      logger.info(`You are currently authenticated as ${userCredentials.userName}.  Registering ${userCredentials.userName} with DBOS Cloud...`);
+      logger.info(`You are currently authenticated as ${userCredentials.userName}. Registering ${userCredentials.userName} with DBOS Cloud...`);
     }
   }
 
