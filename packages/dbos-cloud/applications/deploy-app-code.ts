@@ -83,7 +83,7 @@ export async function deployAppCode(
   }
   logger.debug(`  ... app name is ${appName}.`);
 
-  // Verify that package-lock.json exists
+  // Verify lock file exists
   logger.debug("Checking for package-lock.json...");
   const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
   const yarnLockJsonExists = existsSync(path.join(process.cwd(), "yarn.lock"));
