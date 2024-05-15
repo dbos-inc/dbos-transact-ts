@@ -1,4 +1,4 @@
-import axios , { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 import { ApplicationVersion, prettyPrintApplicationVersion } from "./types.js";
 
@@ -12,26 +12,26 @@ export async function listAppVersions(host: string, json: boolean, appName?: str
     return 1;
   }
   if (!json) {
-    logger.info(`Retrieving info for application: ${appName}`)
+    logger.info(`Retrieving info for application: ${appName}`);
   }
 
   try {
-    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}/versions`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/versions`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
-      }
+      },
     });
-    const versions = res.data as ApplicationVersion[]
+    const versions = res.data as ApplicationVersion[];
     if (json) {
       console.log(JSON.stringify(versions));
     } else {
       if (versions.length === 0) {
         logger.info("No versions found");
       }
-      versions.forEach(version => {
+      versions.forEach((version) => {
         prettyPrintApplicationVersion(version);
-        console.log('-------------------------');
+        console.log("-------------------------");
       });
     }
     return 0;

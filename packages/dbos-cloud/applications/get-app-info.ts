@@ -1,4 +1,4 @@
-import axios , { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 import { Application, prettyPrintApplication } from "./types.js";
 
@@ -12,17 +12,17 @@ export async function getAppInfo(host: string, json: boolean, appName?: string):
     return 1;
   }
   if (!json) {
-    logger.info(`Retrieving info for application: ${appName}`)
+    logger.info(`Retrieving info for application: ${appName}`);
   }
 
   try {
-    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.userName}/applications/${appName}`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
-      }
+      },
     });
-    const app = res.data as Application
+    const app = res.data as Application;
     if (json) {
       console.log(JSON.stringify(app));
     } else {

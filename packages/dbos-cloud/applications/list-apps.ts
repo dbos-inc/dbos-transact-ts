@@ -8,14 +8,11 @@ export async function listApps(host: string, json: boolean): Promise<number> {
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
-    const list = await axios.get(
-      `https://${host}/v1alpha1/${userCredentials.userName}/applications`,
-      {
-        headers: {
-          Authorization: bearerToken,
-        },
-      }
-    );
+    const list = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications`, {
+      headers: {
+        Authorization: bearerToken,
+      },
+    });
     const applications: Application[] = list.data as Application[];
     if (json) {
       console.log(JSON.stringify(applications));
@@ -23,14 +20,14 @@ export async function listApps(host: string, json: boolean): Promise<number> {
       if (applications.length === 0) {
         logger.info("No applications found");
       }
-      applications.forEach(app => {
+      applications.forEach((app) => {
         prettyPrintApplication(app);
-        console.log('-------------------------');
+        console.log("-------------------------");
       });
     }
     return 0;
   } catch (e) {
-    const errorLabel = 'Failed to list applications';
+    const errorLabel = "Failed to list applications";
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);

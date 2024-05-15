@@ -1,7 +1,7 @@
 import { transports, createLogger, format, Logger } from "winston";
 import fs from "fs";
 import { AxiosError } from "axios";
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 import path from "node:path";
 import { authenticateWithRefreshToken } from "./users/authentication.js";
 
@@ -9,6 +9,7 @@ export interface DBOSCloudCredentials {
   token: string;
   refreshToken?: string;
   userName: string;
+  organization: string;
 }
 
 export interface UserProfile {
@@ -26,27 +27,27 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
   const appName = packageJson.name;
   if (appName === undefined) {
-    logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.")
+    logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.");
     return undefined;
   }
   if (!silent) {
-    logger.info(`Loaded application name from package.json: ${appName}`)
+    logger.info(`Loaded application name from package.json: ${appName}`);
   }
-  return appName
+  return appName;
 }
 
 export type CLILogger = ReturnType<typeof createLogger>;
 let curLogger: Logger | undefined = undefined;
-export function getLogger(verbose?:boolean): CLILogger {
+export function getLogger(verbose?: boolean): CLILogger {
   if (curLogger) return curLogger;
   const winstonTransports = [];
   winstonTransports.push(
     new transports.Console({
       format: consoleFormat,
-      level:  verbose ? "debug" : "info",
+      level: verbose ? "debug" : "info",
     })
   );
-  return curLogger = createLogger({ transports: winstonTransports });
+  return (curLogger = createLogger({ transports: winstonTransports }));
 }
 
 const consoleFormat = format.combine(
@@ -80,18 +81,19 @@ function isTokenExpired(token: string): boolean {
 export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
   const logger = getLogger();
   if (!credentialsExist()) {
-    logger.error("Error: not logged in")
-    process.exit(1)
+    logger.error("Error: not logged in");
+    process.exit(1);
   }
   const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
-  const credentials =  {
+  const credentials = {
     userName: userCredentials.userName,
     refreshToken: userCredentials.refreshToken,
     token: userCredentials.token.replace(/\r|\n/g, ""), // Trim the trailing /r /n.
+    organization: userCredentials.organization,
   };
   if (isTokenExpired(credentials.token)) {
     if (credentials.refreshToken) {
-      logger.info("Refreshing access token with refresh token")
+      logger.info("Refreshing access token with refresh token");
       const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
       if (authResponse === null) {
         logger.error("Error: Refreshing access token with refresh token failed.  Logging out...");
@@ -106,7 +108,7 @@ export async function getCloudCredentials(): Promise<DBOSCloudCredentials> {
       process.exit(1);
     }
   }
-  return credentials
+  return credentials;
 }
 
 export function credentialsExist(): boolean {
@@ -119,7 +121,7 @@ export function deleteCredentials() {
 
 export function writeCredentials(credentials: DBOSCloudCredentials) {
   fs.mkdirSync(dbosEnvPath, { recursive: true });
-  fs.writeFileSync(path.join(dbosEnvPath, 'credentials'), JSON.stringify(credentials), "utf-8");
+  fs.writeFileSync(path.join(dbosEnvPath, "credentials"), JSON.stringify(credentials), "utf-8");
 }
 
 export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
@@ -133,7 +135,7 @@ export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): 
   });
 
   // Then, read its content
-  const fileContent: string = fs.readFileSync(path, { encoding } );
+  const fileContent: string = fs.readFileSync(path, { encoding });
   return fileContent;
 }
 
@@ -141,22 +143,27 @@ export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type ValuesOf<T> = T[keyof T];
 
-
 export function createDirectory(path: string): string | undefined {
   return fs.mkdirSync(path, { recursive: true });
 }
 
 export interface CloudAPIErrorResponse {
-  message: string,
-  statusCode: number,
-  requestID: string,
+  message: string;
+  statusCode: number;
+  requestID: string;
 }
 
 export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
-  return typeof obj === 'object' && obj !== null &&
-    'message' in obj && typeof obj['message'] === 'string' &&
-    'statusCode' in obj && typeof obj['statusCode'] === 'number' &&
-    'requestID' in obj && typeof obj['requestID'] === 'string';
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    "message" in obj &&
+    typeof obj["message"] === "string" &&
+    "statusCode" in obj &&
+    typeof obj["statusCode"] === "number" &&
+    "requestID" in obj &&
+    typeof obj["requestID"] === "string"
+  );
 }
 
 export function handleAPIErrors(label: string, e: AxiosError) {
