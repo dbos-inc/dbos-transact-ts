@@ -56,7 +56,7 @@ export interface DBOSConfig {
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
-  readonly env?: Record<string, string>
+  readonly env?: Record<string, string>;
   readonly application?: object;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
@@ -116,8 +116,8 @@ export class DBOSExecutor {
       DBOSExecutor.tempWorkflowName,
       {
         workflow: async () => {
-          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow")
-          return Promise.resolve()
+          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow");
+          return Promise.resolve();
         },
         config: {},
       },
@@ -259,7 +259,7 @@ export class DBOSExecutor {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, {...ro.workflowConfig});
+        this.#registerWorkflow(wf, { ...ro.workflowConfig });
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as Transaction<any, any>;
@@ -307,7 +307,7 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
+      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`;
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
@@ -402,10 +402,13 @@ export class DBOSExecutor {
 
     // If running in DBOS Cloud, set the executor ID
     if (process.env.DBOS__VMID) {
-      wCtxt.executorID = process.env.DBOS__VMID
+      wCtxt.executorID = process.env.DBOS__VMID;
     }
     if (process.env.DBOS__APPVERSION) {
-      wCtxt.applicationVersion = process.env.DBOS__APPVERSION
+      wCtxt.applicationVersion = process.env.DBOS__APPVERSION;
+    }
+    if (process.env.DBOS__APPID) {
+      wCtxt.applicationID = process.env.DBOS__APPID;
     }
 
     const internalStatus: WorkflowStatusInternal = {
@@ -420,7 +423,8 @@ export class DBOSExecutor {
       request: wCtxt.request,
       executorID: wCtxt.executorID,
       applicationVersion: wCtxt.applicationVersion,
-      createdAt: Date.now() // Remember the start time of this workflow
+      applicationID: wCtxt.applicationID,
+      createdAt: Date.now(), // Remember the start time of this workflow
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -664,7 +668,7 @@ export class DBOSExecutor {
         return await ctxt.send<any>(args[0], args[1], args[2]);
       };
     } else {
-      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
+      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -721,7 +725,7 @@ export class DBOSExecutor {
           for (const [funcID, recorded] of wfBuffer) {
             const output = recorded.output;
             const txnSnapshot = recorded.txn_snapshot;
-            const createdAt = recorded.created_at!
+            const createdAt = recorded.created_at!;
             if (paramCnt > 1) {
               sqlStmt += ", ";
             }
@@ -748,7 +752,7 @@ export class DBOSExecutor {
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, wfBuffer] of localBuffer) {
         if (!this.workflowResultBuffer.has(workflowUUID)) {
-          this.workflowResultBuffer.set(workflowUUID, wfBuffer)
+          this.workflowResultBuffer.set(workflowUUID, wfBuffer);
         }
       }
     }

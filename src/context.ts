@@ -18,7 +18,7 @@ export interface HTTPRequest {
   readonly querystring?: string;           // Unparsed raw query string.
   readonly url?: string;                   // Request URL.
   readonly ip?: string;                    // Request remote address.
-  readonly requestID?: string;              // Request ID. Gathered from headers or generated if missing.
+  readonly requestID?: string;             // Request ID. Gathered from headers or generated if missing.
 }
 
 export interface DBOSContext {
@@ -43,6 +43,7 @@ export class DBOSContextImpl implements DBOSContext {
   workflowUUID: string = "";          // Workflow UUID. Empty for HandlerContexts.
   executorID: string = "local";       // Executor ID. Gathered from the environment and "local" otherwise
   applicationVersion: string = "";    // Application version. Gathered from the environment and empty otherwise
+  applicationID: string = "";         // Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger;        // Wrapper around the global logger for this context.
 
   constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
@@ -72,12 +73,10 @@ export class DBOSContextImpl implements DBOSContext {
   }
 }
 
-
 /**
  * TODO : move logger and application, getConfig to a BaseContext which is at the root of all contexts
  */
 export class InitContext {
-
   readonly logger: Logger;
 
   // All private Not exposed
@@ -91,12 +90,12 @@ export class InitContext {
   }
 
   createUserSchema(): Promise<void> {
-    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations")
+    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations");
     return this.userDatabase.createSchema();
   }
 
   dropUserSchema(): Promise<void> {
-    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations")
+    this.logger.warn("Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations");
     return this.userDatabase.dropSchema();
   }
 
