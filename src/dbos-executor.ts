@@ -404,6 +404,9 @@ export class DBOSExecutor {
     if (process.env.DBOS__VMID) {
       wCtxt.executorID = process.env.DBOS__VMID
     }
+    if (process.env.DBOS__APPVERSION) {
+      wCtxt.applicationVersion = process.env.DBOS__APPVERSION
+    }
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
@@ -416,6 +419,7 @@ export class DBOSExecutor {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
+      applicationVersion: wCtxt.applicationVersion,
       createdAt: Date.now() // Remember the start time of this workflow
     };
 

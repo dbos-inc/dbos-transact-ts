@@ -8,6 +8,7 @@ import { hrTime } from '@opentelemetry/core';
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;
+  readonly applicationVersion: string;
   readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.tracer = new BasicTracerProvider({
@@ -17,6 +18,7 @@ export class Tracer {
     });
     this.tracer.register();
     this.applicationID = process.env.DBOS__APPID  || "APP_ID_NOT_DEFINED";
+    this.applicationVersion = process.env.DBOS__APPVERSION || "APP_VERSION_NOT_DEFINED";
     this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
   }
 
@@ -40,6 +42,7 @@ export class Tracer {
   endSpan(span: Span) {
     span.end(hrTime(performance.now()));
     span.attributes.applicationID = this.applicationID;
+    span.attributes.applicationVersion = this.applicationVersion;
     if ( !("executorID" in span.attributes)) {
       span.attributes.executorID = this.executorID;
     }

@@ -155,6 +155,7 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
   readonly applicationID: string;
+  readonly applicationVersion: string;
   readonly executorID: string;
 
   constructor(readonly telemetryCollector: TelemetryCollector, logLevel: string) {
@@ -164,6 +165,7 @@ class OTLPLogQueueTransport extends TransportStream {
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
     this.applicationID = process.env.DBOS__APPID || "APP_ID_NOT_DEFINED";
+    this.applicationVersion = process.env.DBOS__APPVERSION || "APP_VERSION_NOT_DEFINED";
     this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
     const logRecordProcessor = {
       forceFlush: async () => {
@@ -211,6 +213,7 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
+        applicationVersion: this.applicationVersion,
         executorID: this.executorID,
       } as LogAttributes,
     });
