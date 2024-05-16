@@ -23,6 +23,7 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
+import { orgInvite, orgListUsers } from "./organizations/organization.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -336,9 +337,37 @@ dashboardCommands
     process.exit(exitCode);
   });
 
+/////////////////////
+/* ORGANIZATIONS COMMANDS */
+/////////////////////  
+
+const orgCommands = program
+  .command('organization')
+  .alias('organizations')
+  .alias('org')
+  .description('Manage dbos organizations')
+
+  orgCommands
+  .command('invite')
+  .description("generate an invite secret for a user to join your organization")
+  .action((async (dbname: string, options: { json: boolean }) => {
+    const exitCode = await orgInvite(DBOSCloudHost);
+    process.exit(exitCode);
+  }))
+
+orgCommands
+  .command('list')
+  .description("List users in the organization")
+  .action((async (options: { json: boolean }) => {
+    const exitCode = await orgListUsers(DBOSCloudHost);
+    process.exit(exitCode);
+  }))  
+
 program.parse(process.argv);
 
 // If no arguments provided, display help by default
 if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
+
+
