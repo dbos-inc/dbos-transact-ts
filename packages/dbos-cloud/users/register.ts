@@ -16,11 +16,12 @@ function isValidUsername(username: string): boolean {
   return validator.matches(username, "^[a-z0-9_]+$");
 }
 
-export async function registerUser(username: string, host: string): Promise<number> {
+export async function registerUser(username: string, secret: string, host: string): Promise<number> {
   const logger = getLogger();
   let givenName = "";
   let familyName = "";
   let company = "";
+  logger.info("We got secret: " + secret);
   if (!isValidUsername(username)) {
     logger.error("Invalid username. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.");
     return 1;
@@ -64,6 +65,7 @@ export async function registerUser(username: string, host: string): Promise<numb
         given_name: givenName,
         family_name: familyName,
         company: company,
+        secret: secret,
       },
       {
         headers: {
