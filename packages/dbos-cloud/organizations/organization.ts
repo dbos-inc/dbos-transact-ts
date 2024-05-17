@@ -31,7 +31,7 @@ export async function orgInvite(host: string) {
     }
   }
 
-  export async function orgListUsers(host: string) {
+  export async function orgListUsers(host: string, json: boolean) {
     const logger = getLogger();
     const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
@@ -44,8 +44,16 @@ export async function orgInvite(host: string) {
             },
           });
       
-      logger.info(`Users in organization ${userCredentials.organization}: `);    
-      logger.info(res.data);
+        logger.info(`Users in organization ${userCredentials.organization}: `);    
+        if (json) {
+          logger.info(res.data);
+        } else {
+          const users = res.data.UserNames as string[];          
+          users.forEach(user => {
+            logger.info(user);
+          })
+        }  
+      
       return 0;
     } catch (e) {
         const errorLabel = `Failed to retrieve users for organization ${userCredentials.organization}`;

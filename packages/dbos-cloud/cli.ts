@@ -358,8 +358,9 @@ const orgCommands = program
 orgCommands
   .command('list')
   .description("List users in the organization")
-  .action((async () => {
-    const exitCode = await orgListUsers(DBOSCloudHost);
+  .option('--json', 'Emit JSON output')
+  .action((async (options: { json: boolean }) => {
+    const exitCode = await orgListUsers(DBOSCloudHost, options.json);
     process.exit(exitCode);
   }))  
 
