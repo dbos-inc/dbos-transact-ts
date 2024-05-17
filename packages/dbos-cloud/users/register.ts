@@ -21,7 +21,6 @@ export async function registerUser(username: string, secret: string, host: strin
   let givenName = "";
   let familyName = "";
   let company = "";
-  logger.info("We got secret: " + secret);
   if (!isValidUsername(username)) {
     logger.error("Invalid username. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.");
     return 1;

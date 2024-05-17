@@ -31,6 +31,11 @@ export async function orgInvite(host: string) {
     }
   }
 
+  export interface OrgUsers {
+    readonly OrgName: string;
+    readonly UserNames: string[];
+  }
+
   export async function orgListUsers(host: string, json: boolean) {
     const logger = getLogger();
     const userCredentials = await getCloudCredentials();
@@ -48,7 +53,8 @@ export async function orgInvite(host: string) {
         if (json) {
           logger.info(res.data);
         } else {
-          const users = res.data.UserNames as string[];          
+          const orgUsers = res.data as OrgUsers;
+          const users = orgUsers.UserNames;        
           users.forEach(user => {
             logger.info(user);
           })
