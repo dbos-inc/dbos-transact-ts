@@ -1,0 +1,30 @@
+{
+  "name": "@dbos-inc/communicator-email-ses",
+  "version": "0.0.0-placeholder",
+  "description": "Communicator library - email in AWS with SES",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact",
+    "directory": "packages/communicator-email-ses"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "npm run build && jest --detectOpenHandles",
+    "setversion": "grunt setversion"
+  },
+  "devDependencies": {
+    "grunt": "^1.6.1",
+    "nerdbank-gitversioning": "^3.6.133",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.574.0"
+  }
+}
