@@ -1,0 +1,27 @@
+{
+  "name": "@dbos-inc/aws-config",
+  "version": "0.0.0-placeholder",
+  "description": "AWS Configuration shared code",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact",
+    "directory": "packages/aws-config"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "echo 'No tests'",
+    "setversion": "grunt setversion"
+  },
+  "devDependencies": {
+    "grunt": "^1.6.1",
+    "nerdbank-gitversioning": "^3.6.133",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  }
+}
