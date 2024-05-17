@@ -1,12 +1,12 @@
 {
-  "name": "@dbos-inc/communicator-email-ses",
+  "name": "@dbos-inc/component-aws-s3",
   "version": "0.0.0-placeholder",
-  "description": "Communicator library - email in AWS with SES",
+  "description": "Component library - S3 communicators and workflows",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact",
-    "directory": "packages/communicator-email-ses"
+    "directory": "packages/component-aws-s3"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/index.js",
@@ -25,7 +25,9 @@
     "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
-    "@aws-sdk/client-sesv2": "^3.574.0",
-    "@dbos-inc/aws-config": "../aws-config"
+    "@aws-sdk/s3-presigned-post": "^3.552.0",
+    "@aws-sdk/s3-request-presigner": "^3.552.0",
+    "@dbos-inc/aws-config": "../aws-config",
+    "uuid": "^9.0.1"
   }
 }

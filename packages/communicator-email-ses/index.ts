@@ -1,7 +1,7 @@
 import {ArgOptional, Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
-import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscfg';
+import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 
 class SendEmailCommunicator
 {
