@@ -350,7 +350,7 @@ const orgCommands = program
   orgCommands
   .command('invite')
   .description("generate an invite secret for a user to join your organization")
-  .action((async (dbname: string, options: { json: boolean }) => {
+  .action((async () => {
     const exitCode = await orgInvite(DBOSCloudHost);
     process.exit(exitCode);
   }))
@@ -358,7 +358,7 @@ const orgCommands = program
 orgCommands
   .command('list')
   .description("List users in the organization")
-  .action((async (options: { json: boolean }) => {
+  .action((async () => {
     const exitCode = await orgListUsers(DBOSCloudHost);
     process.exit(exitCode);
   }))  
