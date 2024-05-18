@@ -35,11 +35,11 @@ export interface SystemDatabase {
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
-  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
-  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  send(workflowUUID: string, functionID: number, destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
+  recv(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<NonNullable<unknown> | null>;
 
-  setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
+  setEvent(workflowUUID: string, functionID: number, key: string, value: NonNullable<unknown>): Promise<void>;
+  getEvent(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<NonNullable<unknown> | null>;
 
   // Scheduler queries
   //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
@@ -364,7 +364,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = "__null__topic__";
 
-  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void> {
+  async send(workflowUUID: string, functionID: number, destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void> {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
 
@@ -398,12 +398,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<NonNullable<unknown> | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID])).rows;
     if (checkRows.length > 0) {
-      return JSON.parse(checkRows[0].output) as T;
+      return JSON.parse(checkRows[0].output) as NonNullable<unknown>;
     }
 
     // Then, register the key with the global notifications listener.
@@ -448,9 +448,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         AND notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
       RETURNING notifications.*;`,
       [workflowUUID, topic])).rows;
-    let message: T | null = null;
+    let message: NonNullable<unknown>| null = null;
     if (finalRecvRows.length > 0) {
-      message = JSON.parse(finalRecvRows[0].message) as T;
+      message = JSON.parse(finalRecvRows[0].message) as NonNullable<unknown>;
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, message);
     await client.query(`COMMIT`);
@@ -458,7 +458,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setEvent(workflowUUID: string, functionID: number, key: string, message: NonNullable<unknown>): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -482,12 +482,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+  async getEvent(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<NonNullable<unknown> | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
       const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [callerUUID, functionID]);
       if (rows.length > 0) {
-        return JSON.parse(rows[0].output) as T;
+        return JSON.parse(rows[0].output) as NonNullable<unknown>;
       }
     }
 
@@ -513,14 +513,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    let value: T | null = null;
+    let value: NonNullable<unknown> | null = null;
     if (initRecvRows.length > 0) {
-      value = JSON.parse(initRecvRows[0].value) as T;
+      value = JSON.parse(initRecvRows[0].value) as NonNullable<unknown>;
     } else {
       // Read it again from the database.
       const finalRecvRows = (await this.pool.query<workflow_events>(`SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
       if (finalRecvRows.length > 0) {
-        value = JSON.parse(finalRecvRows[0].value) as T;
+        value = JSON.parse(finalRecvRows[0].value) as NonNullable<unknown>;
       }
     }
 

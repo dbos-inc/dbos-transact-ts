@@ -202,7 +202,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
+  async send(_destinationUUID: string, _message: NonNullable<unknown>, _topic?: string | undefined): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -214,19 +214,19 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv<T extends NonNullable<any>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async recv(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<NonNullable<unknown> | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
+    const check: NonNullable<unknown> | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<NonNullable<unknown> | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded recv. Shouldn't happen in debug mode!`);
     }
     this.logger.debug("Use recorded recv output.");
-    return check as T | null;
+    return check as NonNullable<unknown> | null;
   }
 
-  async setEvent<T extends NonNullable<any>>(_key: string, _value: T): Promise<void> {
+  async setEvent(_key: string, _value: NonNullable<unknown>): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
     // Original result must exist during replay.
     const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
@@ -236,16 +236,16 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent<T extends NonNullable<any>>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async getEvent(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<NonNullable<unknown> | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
+    const check: NonNullable<unknown> | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<NonNullable<unknown> | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded getEvent. Shouldn't happen in debug mode!`);
     }
     this.logger.debug("Use recorded getEvent output.");
-    return check as T | null;
+    return check as NonNullable<unknown> | null;
   }
 
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {

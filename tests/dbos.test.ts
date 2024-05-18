@@ -303,8 +303,8 @@ class DBOSTestClass {
   @Workflow()
   static async receiveWorkflow(ctxt: WorkflowContext) {
     expect(DBOSTestClass.initialized).toBe(true);
-    const message1 = await ctxt.recv<string>();
-    const message2 = await ctxt.recv<string>();
+    const message1 = await ctxt.recv() as string;
+    const message2 = await ctxt.recv() as string;
     const fail = await ctxt.recv("fail", 0);
     return message1 === "message1" && message2 === "message2" && fail === null;
   }
@@ -314,7 +314,6 @@ class DBOSTestClass {
     await ctxt.send(destinationUUID, "message1");
     await ctxt.send(destinationUUID, "message2");
   }
-
 
   @Workflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {

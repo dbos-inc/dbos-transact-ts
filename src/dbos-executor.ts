@@ -553,10 +553,10 @@ export class DBOSExecutor {
     return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.external, tempWfName: commFn.name }, ...args)).getResult();
   }
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
-      return await ctxt.send<T>(destinationUUID, message, topic);
+    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: NonNullable<unknown>, topic?: string) => {
+      return await ctxt.send(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
     return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send }, destinationUUID, message, topic)).getResult();
@@ -565,7 +565,7 @@ export class DBOSExecutor {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<NonNullable<unknown> | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -653,7 +653,7 @@ export class DBOSExecutor {
       };
     } else if (nameArr[1] === TempWorkflowType.send) {
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        return await ctxt.send<any>(args[0] as string, args[1], args[2] as string);
+        return await ctxt.send(args[0] as string, args[1] as string, args[2] as string);
       };
     } else {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)

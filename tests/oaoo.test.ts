@@ -179,8 +179,8 @@ describe("oaoo-tests", () => {
     @Workflow()
     static async receiveOaooWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
       // This returns true if and only if exactly one message is sent to it.
-      const succeeds = await ctxt.recv<number>(topic, timeout);
-      const fails = await ctxt.recv<number>(topic, 0);
+      const succeeds = await ctxt.recv(topic, timeout) as number;
+      const fails = await ctxt.recv(topic, 0) as number;
       return succeeds === 123 && fails === null;
     }
   }
@@ -225,7 +225,7 @@ describe("oaoo-tests", () => {
     @Workflow()
     static async getEventRetrieveWorkflow(ctxt: WorkflowContext, targetUUID: string): Promise<string> {
       let res = "";
-      const getValue = await ctxt.getEvent<string>(targetUUID, "key1", 0);
+      const getValue = await ctxt.getEvent(targetUUID, "key1", 0) as string;
       EventStatusOAOO.wfCnt++;
       if (getValue === null) {
         res = "valueNull";
