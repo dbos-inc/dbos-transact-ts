@@ -64,7 +64,7 @@ export interface TestingRuntime {
   setConfig<T>(key: string, newValue: T): void;
 
   // User database operations.
-  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
+  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]>; // Execute a raw SQL query on the user database.
   createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
@@ -159,20 +159,16 @@ export class TestingRuntimeImpl implements TestingRuntime {
       if (asyncWf) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown>, wfParams, ...args)
           : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown>, wfParams, ...args)
           : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown>, wfParams, ...args)
           : undefined;
       } else {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }
@@ -220,8 +216,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
 
-  async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+  async queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     return this.getDBOSExec().userDatabase.query(sql, ...params);
   }
 

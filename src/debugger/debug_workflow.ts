@@ -56,11 +56,11 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
+        ?
+        (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
         : op.commConfig
-          ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
+          ?
+          (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, ...args)
           : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
@@ -99,7 +99,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Execute a transactional function in debug mode.
    * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
-  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
+  async transaction<R>(txn: Transaction<R>, ...args: unknown[]): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
     if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
@@ -168,7 +168,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
+  async external<R>(commFn: Communicator<R>, ..._args: unknown[]): Promise<R> {
     const commConfig = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
@@ -187,18 +187,18 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   // Invoke the debugWorkflow() function instead.
-  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
-  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
 

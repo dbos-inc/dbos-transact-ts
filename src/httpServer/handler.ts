@@ -125,20 +125,16 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       if (asyncWf) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#transaction(op.registeredFunction as Transaction<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown>, params, ...args)
           : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args)
           : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown>, params, ...args)
           : undefined;
       } else {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }
@@ -161,15 +157,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PRIVATE METHODS */
   /////////////////////
 
-  async #workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async #workflow<R>(wf: Workflow<R>, params: WorkflowParams, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     return this.#dbosExec.workflow(wf, params, ...args);
   }
 
-  async #transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #transaction<R>(txn: Transaction<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #external<R>(commFn: Communicator<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
   }
 }

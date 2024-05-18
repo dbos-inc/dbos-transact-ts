@@ -17,14 +17,14 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
-  initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
+  initWorkflowStatus<T extends unknown[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : void;
-  getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+  bufferWorkflowInputs<T extends unknown[]>(workflowUUID: string, args: T) : void;
+  getWorkflowInputs<T extends unknown[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;

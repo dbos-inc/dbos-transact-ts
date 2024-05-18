@@ -13,7 +13,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
-export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type Workflow<R> = (ctxt: WorkflowContext, ...args: any[]) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
@@ -62,9 +62,9 @@ export const StatusString = {
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
-  childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
+  startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>;
+  invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R>;
+  childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -175,7 +175,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     try {
       let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
       let paramCnt = 1;
-      const values: any[] = [];
+      const values: unknown[] = [];
       for (const funcID of funcIDs) {
         // Capture output and also transaction snapshot information.
         // Initially, no txn_id because no queries executed.
@@ -190,7 +190,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
       }
       this.logger.debug(sqlStmt);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       await this.#dbosExec.userDatabase.queryWithClient(client, sqlStmt, ...values);
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
@@ -243,19 +242,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
    * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
    */
-  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
-  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
 
@@ -265,7 +264,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If the transaction encounters a Postgres serialization error, retry it.
    * If it encounters any other error, throw it.
    */
-  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
+  async transaction<R>(txn: Transaction<R>, ...args: unknown[]): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -376,7 +375,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
+  async external<R>(commFn: Communicator<R>, ...args: unknown[]): Promise<R> {
     const commInfo = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
@@ -524,11 +523,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     for (const op of ops) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
+        ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
         : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
+          ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, ...args)
           : undefined;
     }
     return proxy as WFInvokeFuncs<T>;

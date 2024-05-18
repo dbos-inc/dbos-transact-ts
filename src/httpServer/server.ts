@@ -285,11 +285,11 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             // - Otherwise, we return 500.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
             if (ro.txnConfig) {
-              koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await dbosExec.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.external(ro.registeredFunction as Communicator<unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
