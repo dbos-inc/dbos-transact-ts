@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
@@ -13,14 +12,18 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export type Workflow<R> = (ctxt: WorkflowContext, ...args: any[]) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for transaction and communicator functions
-type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
-type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<unknown>;
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<unknown>;
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
@@ -519,9 +522,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
 
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+
       proxy[op.name] = op.txnConfig
         ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
         : op.commConfig

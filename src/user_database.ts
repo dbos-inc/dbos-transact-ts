@@ -1,4 +1,3 @@
- 
 import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";

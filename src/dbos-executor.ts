@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import {
+ import {
   DBOSError,
   DBOSInitializationError,
   DBOSWorkflowConflictUUIDError,
@@ -585,7 +584,7 @@ export class DBOSExecutor {
    * A recovery process that by default runs during executor init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
-  async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
+  async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
       if (execID == "local" && process.env.DBOS__VMID) {
@@ -597,7 +596,7 @@ export class DBOSExecutor {
       pendingWorkflows.push(...wIDs);
     }
 
-    const handlerArray: WorkflowHandle<any>[] = [];
+    const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const workflowUUID of pendingWorkflows) {
       try {
         handlerArray.push(await this.executeWorkflowUUID(workflowUUID));

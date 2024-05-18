@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
@@ -13,6 +12,7 @@ import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 
