@@ -521,10 +521,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-
     const proxy: Record<string, unknown> = {};
-    for (const op of ops) {
 
+    for (const op of ops) {
       proxy[op.name] = op.txnConfig
         ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
         : op.commConfig

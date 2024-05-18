@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
@@ -90,7 +88,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowEventsMap: Record<string, () => void> = {};
 
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
-  readonly workflowInputsBuffer: Map<string, any[]> = new Map();
+  readonly workflowInputsBuffer: Map<string, unknown[]> = new Map();
   readonly flushBatchSize = 100;
   static readonly connectionTimeoutMillis = 10000;  // 10 second timeout
 
@@ -134,7 +132,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
+  async initWorkflowStatus<T extends unknown[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query<workflow_status>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (workflow_uuid) DO NOTHING`,
       [initStatus.workflowUUID, initStatus.status, initStatus.name, initStatus.authenticatedUser, initStatus.assumedRole, JSON.stringify(initStatus.authenticatedRoles), JSON.stringify(initStatus.request), null, initStatus.executorID, initStatus.createdAt]
@@ -168,7 +166,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       while (finishedCnt < totalSize) {
         let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at, updated_at) VALUES `;
         let paramCnt = 1;
-        const values: any[] = [];
+        const values: unknown[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, status] of localBuffer) {
           if (paramCnt > 1) {
@@ -221,7 +219,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(i => i.workflow_uuid);
   }
 
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
+  bufferWorkflowInputs<T extends unknown[]>(workflowUUID: string, args: T): void {
     this.workflowInputsBuffer.set(workflowUUID, args);
   }
 
@@ -234,7 +232,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       while (finishedCnt < totalSize) {
         let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES `;
         let paramCnt = 1;
-        const values: any[] = [];
+        const values: unknown[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, args] of localBuffer) {
           finishedCnt++;
@@ -277,7 +275,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return;
   }
 
-  async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
+  async getWorkflowInputs<T extends unknown[]>(workflowUUID: string): Promise<T | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs WHERE workflow_uuid=$1`,
       [workflowUUID]

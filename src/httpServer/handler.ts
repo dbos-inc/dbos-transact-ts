@@ -119,11 +119,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
     const params = { workflowUUID: workflowUUID, parentCtx: this };
+
     for (const op of ops) {
       if (asyncWf) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown>, params, ...args)
           : op.workflowConfig
@@ -132,7 +132,6 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown>, params, ...args)
           : undefined;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;

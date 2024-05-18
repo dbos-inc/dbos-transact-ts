@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { IncomingMessage } from "http";
+ import { IncomingMessage } from "http";
 import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
@@ -144,8 +143,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
-
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
 
     // Creates a context to pass in necessary info.
     const span = dbosExec.tracer.startSpan("test");
@@ -157,7 +155,6 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
     for (const op of ops) {
       if (asyncWf) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown>, wfParams, ...args)
           : op.workflowConfig
@@ -166,7 +163,6 @@ export class TestingRuntimeImpl implements TestingRuntime {
           ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown>, wfParams, ...args)
           : undefined;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;

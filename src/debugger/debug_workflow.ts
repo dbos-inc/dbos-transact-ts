@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
+ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
@@ -51,10 +50,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
+    const proxy: Record<string, unknown> = {};
 
-    const proxy: any = {};
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         ?
         (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
