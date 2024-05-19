@@ -70,10 +70,10 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
-  recv(topic?: string, timeoutSeconds?: number): Promise<NonNullable<unknown> | null>;
+  recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent(key: string, value: NonNullable<unknown>): Promise<void>;
 
-  getEvent(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<NonNullable<unknown> | null>;
+  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
@@ -489,7 +489,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<NonNullable<unknown> | null> {
+  async recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T| null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -536,7 +536,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<NonNullable<unknown> | null> {
+  getEvent<T extends NonNullable<unknown>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }

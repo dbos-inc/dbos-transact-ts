@@ -212,7 +212,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<NonNullable<unknown> | null> {
+  async recv<T extends NonNullable<unknown>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -221,7 +221,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Cannot find recorded recv. Shouldn't happen in debug mode!`);
     }
     this.logger.debug("Use recorded recv output.");
-    return check as NonNullable<unknown> | null;
+    return check as T | null;
   }
 
   async setEvent(_key: string, _value: NonNullable<unknown>): Promise<void> {
@@ -234,7 +234,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<NonNullable<unknown> | null> {
+  async getEvent<T extends NonNullable<unknown>>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -243,7 +243,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`Cannot find recorded getEvent. Shouldn't happen in debug mode!`);
     }
     this.logger.debug("Use recorded getEvent output.");
-    return check as NonNullable<unknown> | null;
+    return check as T | null;
   }
 
   retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {

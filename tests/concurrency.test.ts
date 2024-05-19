@@ -137,6 +137,6 @@ class ConcurrTestClass {
 
   @Workflow()
   static async receiveWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
-    return ctxt.recv(topic, timeout);
+    return ctxt.recv<string>(topic, timeout);
   }
 }

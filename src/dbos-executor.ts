@@ -564,7 +564,7 @@ export class DBOSExecutor {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<NonNullable<unknown> | null> {
+  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

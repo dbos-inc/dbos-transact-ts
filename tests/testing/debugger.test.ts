@@ -72,8 +72,8 @@ describe("debugger-test", () => {
 
     @Workflow()
     static async receiveWorkflow(ctxt: WorkflowContext) {
-      const message1 = await ctxt.recv();
-      const message2 = await ctxt.recv();
+      const message1 = await ctxt.recv<string>();
+      const message2 = await ctxt.recv<string>();
       const fail = await ctxt.recv("message3", 0);
       return message1 === "message1" && message2 === "message2" && fail === null;
     }
@@ -93,8 +93,8 @@ describe("debugger-test", () => {
 
     @Workflow()
     static async getEventWorkflow(ctxt: WorkflowContext, targetUUID: string) {
-      const val1 = await ctxt.getEvent(targetUUID, "key1") as string;
-      const val2 = await ctxt.getEvent(targetUUID, "key2") as string;
+      const val1 = await ctxt.getEvent<string>(targetUUID, "key1");
+      const val2 = await ctxt.getEvent<string>(targetUUID, "key2");
       return val1 + "-" + val2;
     }
 
