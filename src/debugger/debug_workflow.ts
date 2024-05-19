@@ -216,7 +216,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: NonNullable<unknown> | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<NonNullable<unknown> | null>(this.workflowUUID, functionID);
+    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded recv. Shouldn't happen in debug mode!`);
     }
@@ -238,7 +238,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
-    const check: NonNullable<unknown> | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<NonNullable<unknown> | null>(this.workflowUUID, functionID);
+    const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {
       throw new DBOSDebuggerError(`Cannot find recorded getEvent. Shouldn't happen in debug mode!`);
     }

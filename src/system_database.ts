@@ -446,14 +446,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
         AND notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
       RETURNING notifications.*;`,
       [workflowUUID, topic])).rows;
-    let message: NonNullable<unknown>| null = null;
+    let message: T | null = null;
     if (finalRecvRows.length > 0) {
-      message = JSON.parse(finalRecvRows[0].message) as NonNullable<unknown>;
+      message = JSON.parse(finalRecvRows[0].message) as T
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, message);
     await client.query(`COMMIT`);
     client.release();
-    return message as T;
+    return message;
   }
 
   async setEvent(workflowUUID: string, functionID: number, key: string, message: NonNullable<unknown>): Promise<void> {
@@ -511,14 +511,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
-    let value: NonNullable<unknown> | null = null;
+    let value: T | null = null;
     if (initRecvRows.length > 0) {
-      value = JSON.parse(initRecvRows[0].value) as NonNullable<unknown>;
+      value = JSON.parse(initRecvRows[0].value) as T;
     } else {
       // Read it again from the database.
       const finalRecvRows = (await this.pool.query<workflow_events>(`SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
       if (finalRecvRows.length > 0) {
-        value = JSON.parse(finalRecvRows[0].value) as NonNullable<unknown>;
+        value = JSON.parse(finalRecvRows[0].value) as T;
       }
     }
 
@@ -526,7 +526,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (callerUUID !== undefined && functionID !== undefined) {
       await this.recordOperationOutput(callerUUID, functionID, value);
     }
-    return value as T;
+    return value;
   }
 
   async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {

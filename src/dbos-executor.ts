@@ -619,7 +619,7 @@ export class DBOSExecutor {
     const wfInfo: WorkflowInfo | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
 
     if (wfInfo) {
-       return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -658,7 +658,6 @@ export class DBOSExecutor {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
       throw new DBOSNotRegisteredError(wfName);
     }
-
     return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 
@@ -727,7 +726,6 @@ export class DBOSExecutor {
           }
         }
         this.logger.debug(sqlStmt);
-
         await this.userDatabase.query(sqlStmt, ...values);
 
         // Clean up after each batch succeeds
