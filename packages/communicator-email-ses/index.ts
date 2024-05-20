@@ -30,16 +30,11 @@ class SendEmailCommunicator
     @Communicator()
     static async sendEmail(
         ctx: CommunicatorContext,
-        mail: {to?:string[], cc?:string[], bcc?:string[], from:string, subject: string, bodyHtml?:string, bodyText?:string},
-        @ArgOptional
-        config?: {
-            configName?: string,
-            workflowStage?: string,
-        }
+        mail: {to?:string[], cc?:string[], bcc?:string[], from:string, subject: string, bodyHtml?:string, bodyText?:string}
     )
     {
         try {
-            const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+            const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
             const ses = SendEmailCommunicator.createSES(cfg);
 
             return await ses.sendEmail({
@@ -66,15 +61,10 @@ class SendEmailCommunicator
         templatedMail: {to?: string[], cc?: string[], bcc?: string[], from: string,
             templateName: string,
             templateDataJSON:string /*Record<string, string>*/
-        },
-        @ArgOptional
-        config?: {
-            configName?: string,
-            workflowStage?: string,
         }
     )
     {
-        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+        const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
         const ses = SendEmailCommunicator.createSES(cfg);
         const command = new SendEmailCommand(
             {
@@ -156,14 +146,9 @@ class SendEmailCommunicator
     static async createEmailTemplate(
         ctx:CommunicatorContext,
         templateName:string,
-        template: {subject: string, bodyHtml?:string, bodyText?:string},
-        @ArgOptional
-        config?: {
-            configName?: string,
-            workflowStage?: string,
-        }
+        template: {subject: string, bodyHtml?:string, bodyText?:string}
     ) {
-        const cfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS, config?.configName ?? "");
+        const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
         return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, template);
     }
 }
