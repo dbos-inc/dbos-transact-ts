@@ -1,18 +1,20 @@
 import { SendEmailCommunicator } from "./index";
 export { SendEmailCommunicator };
-import { TestingRuntime, createTestingRuntime, initClassConfiguration } from "@dbos-inc/dbos-sdk";
-
-// This would normally be a global or static or something
-const sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+import { ConfiguredClass, TestingRuntime, createTestingRuntime, initClassConfiguration } from "@dbos-inc/dbos-sdk";
 
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let sesIsAvailable = true;
+  let sesCfg : ConfiguredClass<typeof SendEmailCommunicator> | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not
     if (!process.env['AWS_REGION'] || !process.env['SES_FROM_ADDRESS'] || !process.env['SES_TO_ADDRESS']) {
       sesIsAvailable = false;
+    }
+    else {
+      // This would normally be a global or static or something
+      sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
     }
   });
 
@@ -32,7 +34,7 @@ describe("ses-tests", () => {
   }, 10000);
 
   test("ses-send", async () => {
-    if (!sesIsAvailable || !testRuntime) {
+    if (!sesIsAvailable || !testRuntime || !sesCfg) {
       console.log("SES unavailable, skipping SES tests");
       return;
     }
