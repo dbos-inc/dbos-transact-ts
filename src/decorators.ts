@@ -7,7 +7,6 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
-import { DBOSExecutor } from "./dbos-executor";
 
 /**
  * Any column type column can be.
@@ -200,7 +199,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   // eslint-disable-next-line @typescript-eslint/ban-types
   ormEntities: Function[] = [];
 
-  configurations: Map<string, unknown> = new Map();
+  configurations: Map<string, {init: InitConfigMethod, cfgname: string, arg: unknown}> = new Map();
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -491,21 +490,19 @@ export function Configurable<T extends InitConfigMethod>() {
   };
 }
 
-export async function initClassConfiguration<T extends InitConfigMethod>(
+export function initClassConfiguration<T extends InitConfigMethod>(
   ctor: HasInitConfigMethod<T>,
   cfgname: string,
   arg: Parameters<T['constructor']['initConfiguration']>[0]
 )
 {
   //ReturnType<T['constructor']['initConfiguration']>
-  // TODO not run this now
-  await ctor.constructor.initConfiguration(new InitContext(null as unknown as DBOSExecutor), arg);
   const clsreg = getOrCreateClassRegistration(ctor);
   if (clsreg.configurations.has(cfgname)) {
     throw new Error(`Class ${clsreg.name} already has a registered configuration named ${cfgname}`);
   }
   else {
-    clsreg.configurations.set(cfgname, arg);
+    clsreg.configurations.set(cfgname, {init: ctor, arg, cfgname});
   }
   return clsreg;
 }

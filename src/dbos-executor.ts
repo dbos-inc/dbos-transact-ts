@@ -279,8 +279,8 @@ export class DBOSExecutor {
       return;
     }
 
+    type AnyConstructor = new (...args: unknown[]) => object;
     try {
-      type AnyConstructor = new (...args: unknown[]) => object;
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
         if (reg.ormEntities.length > 0) {
@@ -314,6 +314,14 @@ export class DBOSExecutor {
 
     // Only execute init code if under non-debug mode
     if (!this.debugMode) {
+      for (const cls of classes) {
+        // Init its configurations
+        const creg = getOrCreateClassRegistration(cls as AnyConstructor);
+        for (const [_cfgname, cfg] of creg.configurations) {
+          await cfg.init.constructor.initConfiguration(new InitContext(this), cfg);
+        }
+      }
+
       for (const v of this.registeredOperations) {
         const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
