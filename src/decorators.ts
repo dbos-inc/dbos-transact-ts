@@ -479,9 +479,7 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
 
 interface InitConfigMethod {
   new (...args: unknown[]) : object;
-  constructor: {
-    initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
-  };
+  initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
 }
 type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never;
 
@@ -491,9 +489,9 @@ export function Configurable<T extends InitConfigMethod>() {
 }
 
 export function initClassConfiguration<T extends InitConfigMethod>(
-  ctor: HasInitConfigMethod<T>,
+  ctor: T,
   cfgname: string,
-  arg: Parameters<T['constructor']['initConfiguration']>[0]
+  arg: Parameters<T['initConfiguration']>[0]
 )
 {
   //ReturnType<T['constructor']['initConfiguration']>

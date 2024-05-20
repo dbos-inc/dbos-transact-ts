@@ -14,7 +14,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run --workspaces build && tsc --project tsconfig.build.json",
+    "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "npm run --workspaces build && tsc --project tsconfig.build-fdb.json",
     "lint": "eslint --fix --ext .ts --report-unused-disable-directives --ignore-pattern foundationdb/ --ignore-pattern templates/ .",
     "lint-fdb": "eslint --fix --ext .ts --ignore-pattern templates/ .",
