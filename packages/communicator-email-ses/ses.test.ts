@@ -36,7 +36,7 @@ describe("ses-tests", () => {
       console.log("SES unavailable, skipping SES tests");
       return;
     }
-    const ser = await testRuntime.invokeConfig(SendEmailCommunicator).sendEmail(
+    const ser = await testRuntime.invokeConfig(sesCfg).sendEmail(
         {
             to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
             from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
@@ -47,11 +47,11 @@ describe("ses-tests", () => {
     );
     expect(ser.MessageId).toBeDefined();
 
-    await testRuntime.invokeConfig(SendEmailCommunicator).createEmailTemplate(
+    await testRuntime.invokeConfig(sesCfg).createEmailTemplate(
         "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."},
         //{configName: 'aws_config_alt'}
     );
-    const ser2 = await testRuntime.invokeConfig(SendEmailCommunicator).sendTemplatedEmail({
+    const ser2 = await testRuntime.invokeConfig(sesCfg).sendTemplatedEmail({
         to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
         from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
         templateName: "unitTestTemplate",
