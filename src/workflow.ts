@@ -11,7 +11,7 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
-import { getRegisteredOperations } from "./decorators";
+import { InitConfigMethod, getRegisteredOperations } from "./decorators";
 
 export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -23,9 +23,19 @@ type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
-export type WFInvokeFuncs<T> = {
-  [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-}
+export type WFInvokeFuncs<T> =
+  T extends InitConfigMethod
+    ? never
+    : {
+      [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    };
+
+export type WFInvokeFuncsConf<T> = 
+  T extends InitConfigMethod
+    ? {
+      [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    }
+    : never;
 
 export interface WorkflowParams {
   workflowUUID?: string;

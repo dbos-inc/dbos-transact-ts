@@ -484,11 +484,11 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
-interface InitConfigMethod {
+export interface InitConfigMethod {
   new (...args: unknown[]) : object;
   initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
 }
-type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never;
+export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never;
 
 export function Configurable<T extends InitConfigMethod>() {
   return function (_constructor: HasInitConfigMethod<T>) {

@@ -3,7 +3,7 @@ export { SendEmailCommunicator };
 import { TestingRuntime, createTestingRuntime, initClassConfiguration } from "@dbos-inc/dbos-sdk";
 
 // This would normally be a global or static or something
-const _sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+const sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
 
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
@@ -36,7 +36,7 @@ describe("ses-tests", () => {
       console.log("SES unavailable, skipping SES tests");
       return;
     }
-    const ser = await testRuntime.invoke(SendEmailCommunicator).sendEmail(
+    const ser = await testRuntime.invokeConfig(SendEmailCommunicator).sendEmail(
         {
             to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
             from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
@@ -47,11 +47,11 @@ describe("ses-tests", () => {
     );
     expect(ser.MessageId).toBeDefined();
 
-    await testRuntime.invoke(SendEmailCommunicator).createEmailTemplate(
+    await testRuntime.invokeConfig(SendEmailCommunicator).createEmailTemplate(
         "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."},
         //{configName: 'aws_config_alt'}
     );
-    const ser2 = await testRuntime.invoke(SendEmailCommunicator).sendTemplatedEmail({
+    const ser2 = await testRuntime.invokeConfig(SendEmailCommunicator).sendTemplatedEmail({
         to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],
         from: testRuntime.getConfig('ses_from_address', 'info@dbos.dev'),
         templateName: "unitTestTemplate",
