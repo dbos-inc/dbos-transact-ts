@@ -3,12 +3,20 @@ import {ArgOptional, ClassName, Communicator, CommunicatorContext, Configurable,
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 
+interface SESConfig{
+    awscfgname?: string,
+    awscfg?: AWSServiceConfig,
+}
+
 @ClassName('ses-communicator')
 @Configurable()
 class SendEmailCommunicator
 {
     static AWS_SES_CONFIGURATIONS = 'aws_ses_configurations';
-    static async initConfiguration(_ctx: InitContext, _arg: {awscfg: AWSServiceConfig}) {
+    static async initConfiguration(ctx: InitContext, arg: SESConfig) {
+        if (!arg.awscfg) {
+            arg.awscfg = getAWSConfigForService(ctx, this.AWS_SES_CONFIGURATIONS, arg.awscfgname ?? "");
+        }
         return Promise.resolve();
     }
 
