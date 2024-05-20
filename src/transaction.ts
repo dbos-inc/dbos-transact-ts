@@ -6,6 +6,8 @@ import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
+import { ConfiguredClass } from "./decorators";
+import { DBOSError } from "./error";
 
 // Can we call it TransactionFunction
 export type Transaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
@@ -25,6 +27,8 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
+  getConfiguredClass(): ConfiguredClass<unknown> | null;
+  getClassConfig<T>(): T;
 }
 
 export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSContextImpl implements TransactionContext<T> {
@@ -35,9 +39,19 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
     span: Span,
     logger: Logger,
     readonly functionID: number,
-    operationName: string
+    operationName: string,
+    readonly configuredClass: ConfiguredClass<unknown> | null
   ) {
     super(operationName, span, logger, workflowContext);
     this.applicationConfig = workflowContext.applicationConfig;
+  }
+
+  getClassConfig<T>(): T {
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass.arg as T;
+  }
+  getConfiguredClass(): ConfiguredClass<unknown> {
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass;
   }
 }

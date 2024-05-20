@@ -144,7 +144,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to invoke workflows, transactions, and communicators;
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
+    clscfg: ConfiguredClass<unknown> | null): InvokeFuncs<T>
+  {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
@@ -157,7 +159,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, classConfig: clscfg };
     for (const op of ops) {
       if (asyncWf) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -183,27 +185,27 @@ export class TestingRuntimeImpl implements TestingRuntime {
   }
 
   invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, true);
+    return this.mainInvoke(object, workflowUUID, params, true, null);
   }
 
   startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, true);
+    return this.mainInvoke(object, workflowUUID, params, true, null);
   }
 
   invokeWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, false) as unknown as SyncHandlerWfFuncs<T>;
+    return this.mainInvoke(object, workflowUUID, params, false, null) as unknown as SyncHandlerWfFuncs<T>;
   }
 
   invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true) as unknown as InvokeFuncsConf<T>;
+    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
   }
 
   startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true) as unknown as AsyncHandlerWfFuncsConf<T>;
+    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
   }
 
   invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, false) as unknown as SyncHandlerWfFuncsConf<T>;
+    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
   }
 
   /**

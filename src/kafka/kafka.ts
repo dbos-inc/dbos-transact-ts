@@ -118,7 +118,7 @@ export class DBOSKafka {
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID };
+            const wfParams = { workflowUUID: workflowUUID, classConfig: null };
             // All operations annotated with Kafka decorators must take in these three arguments
             const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.

@@ -4,6 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { DBOSError } from "./error";
+import { ConfiguredClass } from "./decorators";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Communicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
@@ -19,6 +20,7 @@ export interface CommunicatorContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
+  getConfiguredClass(): ConfiguredClass<unknown>;
   getClassConfig<T>(): T;
 }
 
@@ -28,11 +30,11 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
   readonly backoffRate: number;
-  readonly classConfig?: object;
+  readonly configuredClass: ConfiguredClass<unknown> | null;
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger,
-     params: CommunicatorConfig, commName: string, classConfig?: object)
+     params: CommunicatorConfig, commName: string, configuredClass: ConfiguredClass<unknown> | null)
   {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
@@ -41,11 +43,15 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     this.maxAttempts = params.maxAttempts ?? 3;
     this.backoffRate = params.backoffRate ?? 2;
     this.applicationConfig = workflowContext.applicationConfig;
-    this.classConfig = classConfig;
+    this.configuredClass = configuredClass;
   }
 
   getClassConfig<T>(): T {
-    if (!this.classConfig) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
-    return this.classConfig as T;
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass.arg as T;
+  }
+  getConfiguredClass(): ConfiguredClass<unknown> {
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass;
   }
 }

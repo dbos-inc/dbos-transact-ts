@@ -41,6 +41,7 @@ export type WFInvokeFuncsConf<T> =
 export interface WorkflowParams {
   workflowUUID?: string;
   parentCtx?: DBOSContextImpl;
+  classConfig: ConfiguredClass<unknown> | null;
 }
 
 export interface WorkflowConfig {
@@ -90,6 +91,9 @@ export interface WorkflowContext extends DBOSContext {
 
   sleepms(durationMS: number): Promise<void>;
   sleep(durationSec: number): Promise<void>;
+
+  getConfiguredClass(): ConfiguredClass<unknown>;
+  getClassConfig<T>(): T;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -106,7 +110,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     workflowName: string,
     readonly presetUUID: boolean,
     readonly tempWfOperationType: string = "", // "transaction", "external", or "send"
-    readonly tempWfOperationName: string = "" // Name for the temporary workflow operation
+    readonly tempWfOperationName: string = "", // Name for the temporary workflow operation
+    readonly configuredClass: ConfiguredClass<unknown> | null
   ) {
     const span = dbosExec.tracer.startSpan(
       workflowName,
@@ -126,6 +131,15 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
+  }
+
+  getClassConfig<T>(): T {
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass.arg as T;
+  }
+  getConfiguredClass(): ConfiguredClass<unknown> {
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    return this.configuredClass;
   }
 
   functionIDGetIncrement(): number {
@@ -262,7 +276,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: null }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -280,7 +294,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If the transaction encounters a Postgres serialization error, retry it.
    * If it encounters any other error, throw it.
    */
-  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -310,7 +324,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         const tCtxt = new TransactionContextImpl(
           this.#dbosExec.userDatabase.getName(), client, this,
-          span, this.#dbosExec.logger, funcId, txn.name,
+          span, this.#dbosExec.logger, funcId, txn.name, clscfg
         );
 
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
@@ -391,7 +405,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
     const commInfo = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
@@ -416,7 +430,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name);
+    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name, clscfg);
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
@@ -540,24 +554,37 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
+        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, null, ...args)
         : op.commConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
+          ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, null, ...args)
           : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
   }
 
   invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T> {
+    const ops = getRegisteredOperations(targetCfg.ctor);
+
+    const proxy: any = {};
+    for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      proxy[op.name] = op.txnConfig
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, targetCfg, ...args)
+        : op.commConfig
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, targetCfg, ...args)
+          : undefined;
+    }
     return this.invoke(targetCfg.ctor) as unknown as InvokeFuncsConf<T>;
   }
 
-  async startChildWorkflowOnConfig<T extends unknown[], R>(_targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
