@@ -50,9 +50,9 @@ export interface HandlerContext extends DBOSContext {
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
-  invokeConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): InvokeFuncsConf<T>;
-  invokeWorkflowConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T>;
-  startWorkflowConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T>;
+  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): InvokeFuncsConf<T>;
+  invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T>;
+  startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -181,15 +181,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.mainInvoke(object, workflowUUID, false) as unknown as SyncHandlerWfFuncs<T>;
   }
 
-  invokeConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): InvokeFuncsConf<T> {
+  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): InvokeFuncsConf<T> {
     return this.mainInvoke(targetCfg.ctor, workflowUUID, true) as unknown as InvokeFuncsConf<T>;
   }
 
-  startWorkflowConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T> {
+  startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T> {
     return this.mainInvoke(targetCfg.ctor, workflowUUID, true) as unknown as AsyncHandlerWfFuncsConf<T>;
   }
 
-  invokeWorkflowConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T> {
+  invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T> {
     return this.mainInvoke(targetCfg.ctor, workflowUUID, false) as unknown as SyncHandlerWfFuncsConf<T>;
   }
 
