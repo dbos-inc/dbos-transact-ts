@@ -1,6 +1,9 @@
 import { SendEmailCommunicator } from "./index";
 export { SendEmailCommunicator };
-import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
+import { TestingRuntime, createTestingRuntime, initClassConfiguration } from "@dbos-inc/dbos-sdk";
+
+// This would normally be a global or static or something
+const _sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
 
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;

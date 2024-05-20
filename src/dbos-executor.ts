@@ -318,7 +318,7 @@ export class DBOSExecutor {
         // Init its configurations
         const creg = getOrCreateClassRegistration(cls as AnyConstructor);
         for (const [_cfgname, cfg] of creg.configurations) {
-          await cfg.init.initConfiguration(new InitContext(this), cfg);
+          await cfg.init.initConfiguration(new InitContext(this), cfg.arg);
         }
       }
 

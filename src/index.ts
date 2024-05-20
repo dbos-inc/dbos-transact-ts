@@ -46,6 +46,8 @@ export {
   // Class Decorators
   ClassName,
   Configurable,
+    initClassConfiguration,
+    ConfiguredClass,
   DefaultRequiredRole,
   DefaultArgRequired,
   DefaultArgOptional,

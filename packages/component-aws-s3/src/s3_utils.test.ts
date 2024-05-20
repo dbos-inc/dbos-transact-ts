@@ -147,7 +147,7 @@ describe("ses-tests", () => {
     const myurl = await mthandle.getResult();
     expect (myurl).not.toBeNull();
     // Get the file contents out of S3
-    await downloadFromS3(myurl!, './deleteme.xxx');
+    await downloadFromS3(myurl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 

@@ -189,6 +189,13 @@ implements MethodRegistrationBase
   }
 }
 
+export interface ConfiguredClass<CT> {
+  init: InitConfigMethod;
+  cfgname: string;
+  arg: unknown;
+  ctor: CT;
+}
+
 export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
 {
   name: string = "";
@@ -199,7 +206,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   // eslint-disable-next-line @typescript-eslint/ban-types
   ormEntities: Function[] = [];
 
-  configurations: Map<string, {init: InitConfigMethod, cfgname: string, arg: unknown}> = new Map();
+  configurations: Map<string, ConfiguredClass<CT>> = new Map();
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -491,7 +498,7 @@ export function Configurable<T extends InitConfigMethod>() {
 export function initClassConfiguration<T extends InitConfigMethod>(
   ctor: T,
   cfgname: string,
-  arg: Parameters<T['initConfiguration']>[0]
+  arg: Parameters<T['initConfiguration']>[1]
 )
 {
   //ReturnType<T['constructor']['initConfiguration']>
@@ -500,9 +507,10 @@ export function initClassConfiguration<T extends InitConfigMethod>(
     throw new Error(`Class ${clsreg.name} already has a registered configuration named ${cfgname}`);
   }
   else {
-    clsreg.configurations.set(cfgname, {init: ctor, arg, cfgname});
+    const reg = {init: ctor, arg, cfgname, ctor};
+    clsreg.configurations.set(cfgname, reg);
+    return reg as ConfiguredClass<T>;
   }
-  return clsreg;
 }
 
 ///////////////////////
