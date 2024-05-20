@@ -22,10 +22,10 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.574.0",
-    "@dbos-inc/aws-config": "../aws-config"
+    "@dbos-inc/aws-config": "../aws-config",
+    "@dbos-inc/dbos-sdk": "../.."
   }
 }

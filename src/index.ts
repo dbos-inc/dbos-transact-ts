@@ -44,6 +44,8 @@ export {
   ArgVarchar,
 
   // Class Decorators
+  ClassName,
+  Configurable,
   DefaultRequiredRole,
   DefaultArgRequired,
   DefaultArgOptional,

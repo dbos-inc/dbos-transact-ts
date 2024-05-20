@@ -1,11 +1,16 @@
-import {ArgOptional, Communicator, CommunicatorContext, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
+import {ArgOptional, ClassName, Communicator, CommunicatorContext, Configurable, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 
+@ClassName('ses-communicator')
+@Configurable()
 class SendEmailCommunicator
 {
     static AWS_SES_CONFIGURATIONS = 'aws_ses_configurations';
+    static async initConfiguration(_ctx: InitContext, _arg: {awscfg: AWSServiceConfig}) {
+        return Promise.resolve();
+    }
 
     @DBOSInitializer()
     static checkConfig(ctx: InitContext): Promise<void> {

@@ -159,6 +159,7 @@ implements MethodRegistrationBase
   defaults?: RegistrationDefaults | undefined;
 
   name: string = "";
+  className: string = "";
 
   requiredRole: string[] | undefined = undefined;
 
@@ -191,6 +192,7 @@ implements MethodRegistrationBase
 export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
 {
   name: string = "";
+  nameOverride?: string = "";
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   needsInitialized: boolean = true;
@@ -250,7 +252,15 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
+    let classname = target.constructor.name;
+    const clsreg = getOrCreateClassRegistration(target.constructor as new (...args: unknown[]) => object);
+    if (clsreg.nameOverride) {
+      classname = clsreg.nameOverride;
+    }
+
+  
     methReg.name = propertyKey.toString();
+    methReg.className = classname;
 
     methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
@@ -435,6 +445,15 @@ export function ArgVarchar(length: number) {
 /* CLASS DECORATORS */
 ///////////////////////
 
+export function ClassName(nameOverride: string) {
+  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  {
+     const clsreg = getOrCreateClassRegistration(ctor);
+     clsreg.nameOverride = nameOverride;
+  }
+  return clsdec;
+}
+
 export function DefaultRequiredRole(anyOf: string[]) {
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
@@ -456,6 +475,15 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
+interface InitConfigMethod {
+  initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
+}
+type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never;
+
+export function Configurable<T extends InitConfigMethod>() {
+  return function (_constructor: HasInitConfigMethod<T>) {
+  };
+}
 
 ///////////////////////
 /* METHOD DECORATORS */
