@@ -9,8 +9,9 @@ import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContextImpl } from "../context";
-import { getRegisteredOperations } from "../decorators";
+import { ConfiguredClass, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
+import { InvokeFuncsConf } from "../httpServer/handler";
 
 interface RecordedResult<R> {
   output: R;
@@ -200,6 +201,20 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   // Deprecated
   async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
+  }
+
+  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T> {
+    return this.invoke(targetCfg.ctor) as unknown as InvokeFuncsConf<T>;
+  }
+
+  async startChildWorkflowOnConfig<T extends unknown[], R>(_targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+  }
+
+  async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
+    return this.startChildWorkflowOnConfig(targetCfg, wf, ...args).then((handle) => handle.getResult());
   }
 
   async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
