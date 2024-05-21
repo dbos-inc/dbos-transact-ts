@@ -23,6 +23,7 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
+import { orgInvite, orgListUsers } from "./organizations/organization.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -82,8 +83,9 @@ program
   .command('register')
   .description('Register a user with DBOS cloud')
   .requiredOption('-u, --username <string>', 'Username')
-  .action(async (options: { username: string }) => {
-    const exitCode = await registerUser(options.username, DBOSCloudHost);
+  .option('-s, --secret <string>','Organization secret')
+  .action(async (options: { username: string, secret: string }) => {
+    const exitCode = await registerUser(options.username, options.secret, DBOSCloudHost);
     process.exit(exitCode);
   });
 
@@ -335,9 +337,39 @@ dashboardCommands
     process.exit(exitCode);
   });
 
+////////////////////////////
+/* ORGANIZATIONS COMMANDS */
+////////////////////////////
+
+const orgCommands = program
+  .command('organization')
+  .alias('organizations')
+  .alias('org')
+  .description('Manage dbos organizations')
+
+  orgCommands
+  .command('invite')
+  .description("Generate an invite secret for a user to join your organization")
+  .option('--json', 'Emit JSON output')
+  .action((async (options: { json: boolean }) => {
+    const exitCode = await orgInvite(DBOSCloudHost, options.json);
+    process.exit(exitCode);
+  }))
+
+orgCommands
+  .command('list')
+  .description("List users in your organization")
+  .option('--json', 'Emit JSON output')
+  .action((async (options: { json: boolean }) => {
+    const exitCode = await orgListUsers(DBOSCloudHost, options.json);
+    process.exit(exitCode);
+  }))
+
 program.parse(process.argv);
 
 // If no arguments provided, display help by default
 if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
+
+
