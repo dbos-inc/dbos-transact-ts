@@ -45,7 +45,6 @@ describe("ses-tests", () => {
             subject: 'Test email from DBOS SES Unit Test',
             bodyText: 'Check mailbox to see if it worked.'
         },
-        //{configName: 'aws_config_alt'}
     );
     expect(ser.MessageId).toBeDefined();
 
@@ -59,7 +58,6 @@ describe("ses-tests", () => {
         templateName: "unitTestTemplate",
         templateDataJSON: JSON.stringify({todaydate: new Date().toISOString()}),
     },
-    //{configName: 'aws_config_alt'}
     );
     expect(ser2.MessageId).toBeDefined();
   });

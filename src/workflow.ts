@@ -50,6 +50,8 @@ export interface WorkflowConfig {
 export interface WorkflowStatus {
   readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, or ERROR.
   readonly workflowName: string; // The name of the workflow function.
+  readonly workflowClassName: string; // The class name holding the workflow function.
+  readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
   readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.

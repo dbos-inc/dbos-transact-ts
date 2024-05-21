@@ -7,6 +7,7 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
+import { removeListener } from "process";
 
 /**
  * Any column type column can be.
@@ -252,6 +253,16 @@ function generateSaltedHash(data: string, salt: string): string {
   return hash.digest("hex");
 }
 
+const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
+export function getRegisteredMethodClassName(func: unknown): string {
+  let rv:string = "";
+  if (methodToRegistration.has(func)) {
+    rv = methodToRegistration.get(func)!.className;
+  }
+  //console.log(`Function class name is ${rv}`);
+  return rv;
+}
+
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
@@ -267,7 +278,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       classname = clsreg.nameOverride;
     }
 
-  
     methReg.name = propertyKey.toString();
     methReg.className = classname;
 
@@ -355,6 +365,8 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.registeredFunction = wrappedMethod;
 
     methReg.needInitialized = false;
+    methodToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
+    methodToRegistration.set(methReg.origFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
   }
 
   return methReg;

@@ -38,7 +38,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -417,6 +417,8 @@ export class DBOSExecutor {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
       name: wf.name,
+      className: getRegisteredMethodClassName(wf),
+      configName: params.classConfig?.cfgname || "",
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
       error: "",
