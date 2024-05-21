@@ -6,10 +6,10 @@ import {
   ClassInfo,
   ParameterInfo,
   findPackageInfo,
-} from './TypeParser';
+} from './TypeParser.js';
 
-import { ArgSources } from "../../src/httpServer/handlerTypes";
-import { APITypes } from "../../src/httpServer/handlerTypes";
+import { ArgSources } from "../../src/httpServer/handlerTypes.js";
+import { APITypes } from "../../src/httpServer/handlerTypes.js";
 
 import {
   createParser,
@@ -23,11 +23,12 @@ import {
   PrimitiveType,
   SubTypeFormatter,
   Definition,
-  Config,
+  CompletedConfig,
+  DEFAULT_CONFIG,
 } from 'ts-json-schema-generator';
 
 import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
-import { diagResult, logDiagnostics, DiagnosticsCollector } from './tsDiagUtil';
+import { diagResult, logDiagnostics, DiagnosticsCollector } from './tsDiagUtil.js';
 
 function isValid<T>(value: T | undefined): value is T { return value !== undefined; }
 
@@ -94,7 +95,8 @@ export class OpenApiGenerator {
 
   constructor(readonly program: ts.Program) {
     this.#checker = program.getTypeChecker();
-    const config: Config = {
+    const config: CompletedConfig = {
+      ...DEFAULT_CONFIG,
       discriminatorType: 'open-api',
       encodeRefs: false
     };

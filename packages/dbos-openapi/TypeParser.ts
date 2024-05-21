@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { DiagnosticsCollector, diagResult } from './tsDiagUtil';
+import { DiagnosticsCollector, diagResult } from './tsDiagUtil.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 

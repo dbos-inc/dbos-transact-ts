@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { generateOpenApi } from "./openApi";
+import { generateOpenApi } from "./openApi.js";
 import YAML from 'yaml';
 import fs from 'node:fs/promises';
 import path from 'node:path';

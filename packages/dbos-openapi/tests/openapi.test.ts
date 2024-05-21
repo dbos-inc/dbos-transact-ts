@@ -1,8 +1,8 @@
 import ts from "typescript";
-import { TypeParser } from "../TypeParser";
-import { OpenApiGenerator } from "../openApi";
+import { TypeParser } from "../TypeParser.js";
+import { OpenApiGenerator } from "../openApi.js";
 import path from "node:path";
-import { makeTestTypescriptProgram } from "./makeProgram";
+import { makeTestTypescriptProgram } from "./makeProgram.js";
 
 const printer = ts.createPrinter();
 
