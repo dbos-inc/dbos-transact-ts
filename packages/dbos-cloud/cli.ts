@@ -337,9 +337,9 @@ dashboardCommands
     process.exit(exitCode);
   });
 
-/////////////////////
+////////////////////////////
 /* ORGANIZATIONS COMMANDS */
-/////////////////////  
+////////////////////////////
 
 const orgCommands = program
   .command('organization')
@@ -349,20 +349,21 @@ const orgCommands = program
 
   orgCommands
   .command('invite')
-  .description("generate an invite secret for a user to join your organization")
-  .action((async () => {
-    const exitCode = await orgInvite(DBOSCloudHost);
+  .description("Generate an invite secret for a user to join your organization")
+  .option('--json', 'Emit JSON output')
+  .action((async (options: { json: boolean }) => {
+    const exitCode = await orgInvite(DBOSCloudHost, options.json);
     process.exit(exitCode);
   }))
 
 orgCommands
   .command('list')
-  .description("List users in the organization")
+  .description("List users in your organization")
   .option('--json', 'Emit JSON output')
   .action((async (options: { json: boolean }) => {
     const exitCode = await orgListUsers(DBOSCloudHost, options.json);
     process.exit(exitCode);
-  }))  
+  }))
 
 program.parse(process.argv);
 
