@@ -417,7 +417,7 @@ export class DBOSExecutor {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
       name: wf.name,
-      className: getRegisteredMethodClassName(wf),
+      className: wCtxt.isTempWorkflow ? "" : getRegisteredMethodClassName(wf),
       configName: params.classConfig?.cfgname || "",
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,

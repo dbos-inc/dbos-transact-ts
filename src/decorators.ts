@@ -259,7 +259,6 @@ export function getRegisteredMethodClassName(func: unknown): string {
   if (methodToRegistration.has(func)) {
     rv = methodToRegistration.get(func)!.className;
   }
-  //console.log(`Function class name is ${rv}`);
   return rv;
 }
 
@@ -272,7 +271,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
-    let classname = target.constructor.name;
+    let classname = target.constructor.name.toString();
     const clsreg = getOrCreateClassRegistration(target.constructor as new (...args: unknown[]) => object);
     if (clsreg.nameOverride) {
       classname = clsreg.nameOverride;
