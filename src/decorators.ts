@@ -261,6 +261,14 @@ export function getRegisteredMethodClassName(func: unknown): string {
   return rv;
 }
 
+export function getRegisteredMethodName(func: unknown): string {
+  let rv:string = "";
+  if (methodToRegistration.has(func)) {
+    rv = methodToRegistration.get(func)!.name;
+  }
+  return rv;
+}
+
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,

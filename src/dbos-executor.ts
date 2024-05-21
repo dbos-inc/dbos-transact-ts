@@ -38,7 +38,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass, getRegisteredMethodName } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -85,6 +85,7 @@ interface CommunicatorInfo {
 interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
+  readonly tempWfClass?: string;
 }
 
 export const OperationType = {
@@ -460,6 +461,7 @@ export class DBOSExecutor {
 
     if (wCtxt.isTempWorkflow) {
       internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+      internalStatus.className = params.tempWfClass ?? "";
     }
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
@@ -580,7 +582,12 @@ export class DBOSExecutor {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.transaction(txn, params.classConfig, ...args);
     };
-    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.transaction, tempWfName: txn.name }, ...args)).getResult();
+    return (await this.workflow(temp_workflow, {
+      ...params,
+      tempWfType: TempWorkflowType.transaction,
+      tempWfName: getRegisteredMethodName(txn),
+      tempWfClass: getRegisteredMethodClassName(txn),
+    }, ...args)).getResult();
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -589,7 +596,12 @@ export class DBOSExecutor {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.external(commFn, params.classConfig, ...args);
     };
-    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.external, tempWfName: commFn.name }, ...args)).getResult();
+    return (await this.workflow(temp_workflow, {
+      ...params,
+      tempWfType: TempWorkflowType.external,
+      tempWfName: getRegisteredMethodName(commFn),
+      tempWfClass: getRegisteredMethodClassName(commFn),
+    }, ...args)).getResult();
   }
 
   async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
