@@ -31,10 +31,16 @@ application:
 
 If a different configuration file section should be used for SES, the `aws_ses_configurations` list can be changed to indicate configuration sections for use with SES.  If multiple configurations are listed, the application should provide the name of the configuration to the communicator API.
 
+## Selecting A Configuration
+`SendEmailCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a configuration is created, for example:
+```typescript
+const defaultSES = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+```
+
 ## Sending Messages
 Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SendEmailCommunicator` function from the workflow context:
 ```typescript
-    const result = await workflowContext.invoke(SendEmailCommunicator).sendEmail(
+    const result = await workflowContext.invokeOnConfig(defaultSES).sendEmail(
         {
             to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
             from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
@@ -46,15 +52,15 @@ Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutori
 
 ## Sending Templated Messages
 Sending a templated email is slightly more involved, as a template must be set up first.  Setting up a template can be invoked as a communicator, or directly (so that it can be called from initialization, or other contexts where a workflow may not be in progress).
-- Use `workflowContext.invoke(SendEmailCommunicator).createEmailTemplate(...)` or `SendEmailCommunicator.createEmailTemplateFunction(...) to create the template.
+- Use `workflowContext.invokeOnConfig(defaultSES).createEmailTemplate(...)` or `SendEmailCommunicator.createEmailTemplateFunction(...) to create the template.
 ```typescript
-    await workflowContext.invoke(SendEmailCommunicator).createEmailTemplate(
+    await workflowContext.invokeOnConfg(defaultSES).createEmailTemplate(
         "testTemplate", {subject: "Email using test template", bodyText: "Today's date is {{todaydate}}."}
     );
 ```
 - Within a workflow, send email with the template, noting that the template substitution data is to be stringified JSON:
 ```typescript
-    await workflowContext.invoke(SendEmailCommunicator).sendTemplatedEmail({
+    await workflowContext.invokeOnConfig(defaultSES).sendTemplatedEmail({
         to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
         from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
         templateName: "testTemplate",

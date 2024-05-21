@@ -47,11 +47,11 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
   }
 
   getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
   getConfiguredClass(): ConfiguredClass<unknown> {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass;
   }
 }
