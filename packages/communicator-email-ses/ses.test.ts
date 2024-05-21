@@ -50,7 +50,6 @@ describe("ses-tests", () => {
 
     await testRuntime.invokeOnConfig(sesCfg).createEmailTemplate(
         "unitTestTemplate", {subject: "Email from unit test template", bodyText: "Today's date is {{todaydate}}."},
-        //{configName: 'aws_config_alt'}
     );
     const ser2 = await testRuntime.invokeOnConfig(sesCfg).sendTemplatedEmail({
         to: [testRuntime.getConfig('ses_to_address', 'dbos@nowhere.dev')],

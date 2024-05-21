@@ -7,7 +7,6 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
-import { removeListener } from "process";
 
 /**
  * Any column type column can be.

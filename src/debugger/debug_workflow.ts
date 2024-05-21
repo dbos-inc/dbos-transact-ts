@@ -112,7 +112,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, cfcls: ConfiguredClass<unknown> | null,  ...args: T): Promise<R> {
-    const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
+    const txnInfo = this.#dbosExec.getTransactionInfo(txn as Transaction<unknown[], unknown>);
     if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
     }
@@ -181,7 +181,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, _clscfg: ConfiguredClass<unknown> | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.communicatorInfoMap.get(commFn.name);
+    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }

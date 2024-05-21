@@ -297,7 +297,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any other error, throw it.
    */
   async transaction<T extends any[], R>(txn: Transaction<T, R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
-    const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
+    const txnInfo = this.#dbosExec.getTransactionInfo(txn as Transaction<unknown[], unknown>);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
     }
@@ -408,7 +408,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends any[], R>(commFn: Communicator<T, R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.communicatorInfoMap.get(commFn.name);
+    const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
     }

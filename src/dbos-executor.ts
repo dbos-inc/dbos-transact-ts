@@ -38,7 +38,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -125,6 +125,7 @@ export class DBOSExecutor {
   ]);
   readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
+
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
@@ -388,6 +389,34 @@ export class DBOSExecutor {
     this.communicatorInfoMap.set(comm.name, commInfo);
   }
 
+  getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
+    const wfname = wf.name;
+    return this.workflowInfoMap.get(wfname);
+  }
+  getWorkflowInfoByStatus(wf: WorkflowStatus) {
+    const wfname = wf.workflowName;
+    const wfInfo = this.workflowInfoMap.get(wfname);
+    return {wfInfo, config: null};
+  }
+
+  getTransactionInfo(tf: Transaction<unknown[], unknown>) {
+    const tfname = tf.name;
+    return this.transactionInfoMap.get(tfname);
+  }
+  getTransactionInfoByNames(_className: string, functionName: string, _cfgName: string) {
+    const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(functionName);
+    return {txnInfo, config: null};
+  }
+
+  getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
+    const cfname = cf.name;
+    return this.communicatorInfoMap.get(cfname);
+  }
+  getCommunicatorInfoByNames(_className: string, functionName: string, _cfgName: string) {
+    const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(functionName);
+    return {commInfo, config: null};
+  }
+
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     if (this.debugMode) {
       return this.debugWorkflow(wf, params, undefined, undefined, ...args);
@@ -400,7 +429,7 @@ export class DBOSExecutor {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
-    const wInfo = this.workflowInfoMap.get(wf.name);
+    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
     }
@@ -510,7 +539,7 @@ export class DBOSExecutor {
       throw new DBOSDebuggerError("Workflow UUID not found!");
     }
     const workflowUUID = params.workflowUUID;
-    const wInfo = this.workflowInfoMap.get(wf.name);
+    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSDebuggerError("Workflow unregistered! " + wf.name);
     }
@@ -627,66 +656,59 @@ export class DBOSExecutor {
     }
     const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
 
-    const wfInfo: WorkflowInfo | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
+    const {wfInfo, config} = this.getWorkflowInfoByStatus(wfStatus);
 
     if (wfInfo) {
-      // TODO TODO TODO
-      // THIS IS THE SYSTEM DB LOOKUP FOR THE CLASS AND CONFIG NAME
-      // *******************
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, classConfig: null }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, classConfig: config }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
     const wfName = wfStatus.workflowName;
     const nameArr = wfName.split("-");
     if (!nameArr[0].startsWith(DBOSExecutor.tempWorkflowName)) {
+      // CB - Doesn't this happen if the user changed the function name in their code?
       throw new DBOSError(`This should never happen! Cannot find workflow info for a non-temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
     }
 
     let temp_workflow: Workflow<any, any>;
+    let clscfg: ConfiguredClass<unknown> | null = null;
     if (nameArr[1] === TempWorkflowType.transaction) {
-      const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(nameArr[2]);
+      const {txnInfo, config} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!txnInfo) {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
       temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
-        // TODO TODO TODO
-        // THIS IS THE SYSTEM DB LOOKUP FOR THE CLASS AND CONFIG NAME
-        // *******************
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument
-        return await ctxtImpl.transaction(txnInfo.transaction, null, ...args);
+        return await ctxtImpl.transaction(txnInfo.transaction, config, ...args);
       };
+      clscfg = config;
     } else if (nameArr[1] === TempWorkflowType.external) {
-      const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(nameArr[2]);
+      const {commInfo, config} = this.getCommunicatorInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!commInfo) {
         this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
       temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
-        // TODO TODO TODO
-        // THIS IS THE SYSTEM DB LOOKUP FOR THE CLASS AND CONFIG NAME
-        // *******************
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument
-        return await ctxtImpl.external(commInfo.communicator, null, ...args);
+        return await ctxtImpl.external(commInfo.communicator, config, ...args);
       };
+      clscfg = config;
     } else if (nameArr[1] === TempWorkflowType.send) {
       temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return await ctxt.send<any>(args[0], args[1], args[2]);
       };
+      clscfg = null;
     } else {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
       throw new DBOSNotRegisteredError(wfName);
     }
-    // TODO TODO TODO
-    // THIS IS THE SYSTEM DB LOOKUP FOR THE CLASS AND CONFIG NAME
-    // *******************
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, classConfig: null}, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, classConfig: clscfg}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
