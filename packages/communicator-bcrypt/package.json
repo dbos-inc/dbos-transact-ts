@@ -20,7 +20,7 @@
     "@types/bcryptjs": "^2.4.6",
     "grunt": "^1.6.1",
     "nerdbank-gitversioning": "^3.6.133",
-    "typescript": "^5.3.3"
+    "typescript": "5.4.5"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3"
