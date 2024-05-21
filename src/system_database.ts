@@ -183,7 +183,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at, updated_at) VALUES `;
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at) VALUES `;
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -191,8 +191,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
-          values.push(workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID, status.createdAt, Date.now());
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          values.push(
+            workflowUUID,
+            status.status,
+            status.name,
+            status.authenticatedUser,
+            status.assumedRole,
+            JSON.stringify(status.authenticatedRoles),
+            JSON.stringify(status.request),
+            JSON.stringify(status.output),
+            status.executorID,
+            status.applicationVersion,
+            status.applicationID,
+            status.createdAt,
+            Date.now()
+          );
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
 
@@ -206,7 +220,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await this.pool.query(sqlStmt, values);
 
         // Clean up after each batch succeeds
-        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+        batchUUIDs.forEach((value) => {
+          localBuffer.delete(value);
+        });
       }
     } catch (error) {
       (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
@@ -224,9 +240,23 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (workflow_uuid)
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id, application_id, application_version, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
-      [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), status.error, status.executorID, status.createdAt, Date.now()]
+      [
+        workflowUUID,
+        StatusString.ERROR,
+        status.name,
+        status.authenticatedUser,
+        status.assumedRole,
+        JSON.stringify(status.authenticatedRoles),
+        JSON.stringify(status.request),
+        status.error,
+        status.executorID,
+        status.applicationID,
+        status.applicationVersion,
+        status.createdAt,
+        Date.now(),
+      ]
     );
   }
 

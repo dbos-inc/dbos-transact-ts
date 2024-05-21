@@ -1,11 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  DBOSError,
-  DBOSInitializationError,
-  DBOSWorkflowConflictUUIDError,
-  DBOSNotRegisteredError,
-  DBOSDebuggerError,
-} from './error';
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -677,17 +671,14 @@ export class DBOSExecutor {
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(
-      status.workflowName,
-      {
-        operationUUID: workflowUUID,
-        operationType: OperationType.WORKFLOW,
-        status: status.status,
-        authenticatedUser: status.authenticatedUser,
-        assumedRole: status.assumedRole,
-        authenticatedRoles: status.authenticatedRoles,
-      },
-    );
+    const span = this.tracer.startSpan(status.workflowName, {
+      operationUUID: workflowUUID,
+      operationType: OperationType.WORKFLOW,
+      status: status.status,
+      authenticatedUser: status.authenticatedUser,
+      assumedRole: status.assumedRole,
+      authenticatedRoles: status.authenticatedRoles,
+    });
     const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
