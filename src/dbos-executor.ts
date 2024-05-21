@@ -394,17 +394,6 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
 
-    // If running in DBOS Cloud, set the executor ID
-    if (process.env.DBOS__VMID) {
-      wCtxt.executorID = process.env.DBOS__VMID;
-    }
-    if (process.env.DBOS__APPVERSION) {
-      wCtxt.applicationVersion = process.env.DBOS__APPVERSION;
-    }
-    if (process.env.DBOS__APPID) {
-      wCtxt.applicationID = process.env.DBOS__APPID;
-    }
-
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,

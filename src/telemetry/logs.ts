@@ -1,6 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import TransportStream = require("winston-transport");
-import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContextImpl } from "../context";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
@@ -137,7 +136,7 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = getApplicationVersion();
+    const applicationVersion = process.env.DBOS__APPVERSION || "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
