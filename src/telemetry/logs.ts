@@ -165,7 +165,7 @@ class OTLPLogQueueTransport extends TransportStream {
     this.otelLogger = loggerProvider.getLogger("default");
     this.applicationID = process.env.DBOS__APPID || "";
     this.applicationVersion = process.env.DBOS__APPVERSION || "";
-    this.executorID = process.env.DBOS__VMID || "";
+    this.executorID = process.env.DBOS__VMID || "local";
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
