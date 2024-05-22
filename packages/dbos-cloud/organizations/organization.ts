@@ -83,7 +83,7 @@ export async function orgInvite(host: string, json: boolean) {
     }
     
     try {
-        const res = await axios.patch(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
+        await axios.patch(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
           {
             newName: newname
           },  
