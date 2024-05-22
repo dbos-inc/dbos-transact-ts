@@ -75,8 +75,15 @@ export async function orgInvite(host: string, json: boolean) {
     const logger = getLogger();
     const userCredentials = await getCloudCredentials();
     const bearerToken = "Bearer " + userCredentials.token;
+
+    const currentOrg = userCredentials.organization;
+    if (currentOrg !== oldname) {
+      logger.error(`You are currently authenticated to organization ${currentOrg}, but you are trying to rename ${oldname}. Please logout and login to the correct organization.`);
+      return 1;
+    }
+    
     try {
-        const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
+        const res = await axios.patch(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
           {
             oldName: oldname,
             newName: newname
