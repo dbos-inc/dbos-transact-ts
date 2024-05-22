@@ -370,7 +370,7 @@ orgCommands
   .description("Rename the organization")
   .argument('<oldname>', 'Organization old name')
   .argument('<newname>', 'Organization new name')
-  .action((async (oldname, newname) => {
+  .action((async (oldname: string, newname: string) => {
     const exitCode = await rename(DBOSCloudHost, oldname, newname);
     process.exit(exitCode);
 }))  
