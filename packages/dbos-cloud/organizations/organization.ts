@@ -88,7 +88,7 @@ export async function orgInvite(host: string, json: boolean) {
         });
 
         if (res.status === 204) {
-          logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh before any further commands.`);
+          logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`);
         } else {
           logger.error(`Failed to rename organization ${oldname} to ${newname}. Got status code ${res.status}`);
         }
