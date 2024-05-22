@@ -85,7 +85,6 @@ export async function orgInvite(host: string, json: boolean) {
     try {
         const res = await axios.patch(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
           {
-            oldName: oldname,
             newName: newname
           },  
           { headers: {
@@ -94,12 +93,9 @@ export async function orgInvite(host: string, json: boolean) {
           }         
         });
 
-        if (res.status === 204) {
-          logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`);
-        } else {
-          logger.error(`Failed to rename organization ${oldname} to ${newname}. Got status code ${res.status}`);
-        }
-  
+       
+        logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`);
+        
       return 0;
     } catch (e) {
         const errorLabel = `Failed to rename organization ${userCredentials.organization}`;
