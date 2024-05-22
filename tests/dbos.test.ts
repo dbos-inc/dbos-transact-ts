@@ -315,7 +315,6 @@ class DBOSTestClass {
     await ctxt.send(destinationUUID, "message2");
   }
 
-
   @Workflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
