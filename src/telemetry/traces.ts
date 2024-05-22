@@ -17,9 +17,9 @@ export class Tracer {
       }),
     });
     this.tracer.register();
-    this.applicationID = process.env.DBOS__APPID  || "APP_ID_NOT_DEFINED";
-    this.applicationVersion = process.env.DBOS__APPVERSION || "APP_VERSION_NOT_DEFINED";
-    this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
+    this.applicationID = process.env.DBOS__APPID || "";
+    this.applicationVersion = process.env.DBOS__APPVERSION || "";
+    this.executorID = process.env.DBOS__VMID || "local"; // for consistency with src/context.ts
   }
 
   startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {
@@ -43,7 +43,7 @@ export class Tracer {
     span.end(hrTime(performance.now()));
     span.attributes.applicationID = this.applicationID;
     span.attributes.applicationVersion = this.applicationVersion;
-    if ( !("executorID" in span.attributes)) {
+    if (!("executorID" in span.attributes)) {
       span.attributes.executorID = this.executorID;
     }
     this.telemetryCollector.push(span as ReadableSpan);
