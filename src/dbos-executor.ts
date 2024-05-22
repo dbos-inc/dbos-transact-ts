@@ -260,17 +260,11 @@ export class DBOSExecutor {
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
-        const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, {...ro.workflowConfig});
-        this.logger.debug(`Registered workflow ${ro.name}`);
+        this.#registerWorkflow(ro);
       } else if (ro.txnConfig) {
-        const tx = ro.registeredFunction as Transaction<any, any>;
-        this.#registerTransaction(tx, ro.txnConfig);
-        this.logger.debug(`Registered transaction ${ro.name}`);
+        this.#registerTransaction(ro);
       } else if (ro.commConfig) {
-        const comm = ro.registeredFunction as Communicator<any, any>;
-        this.#registerCommunicator(comm, ro.commConfig);
-        this.logger.debug(`Registered communicator ${ro.name}`);
+        this.#registerCommunicator(ro);
       }
     }
   }
@@ -357,64 +351,81 @@ export class DBOSExecutor {
 
   /* WORKFLOW OPERATIONS */
 
-  #registerWorkflow<T extends any[], R>(wf: Workflow<T, R>, config: WorkflowConfig = {}) {
-    if (wf.name === DBOSExecutor.tempWorkflowName || this.workflowInfoMap.has(wf.name)) {
-      throw new DBOSError(`Repeated workflow name: ${wf.name}`);
+  #registerWorkflow(ro :MethodRegistrationBase) {
+    const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
+    if (wf.name === DBOSExecutor.tempWorkflowName) {
+      throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
+    }
+    const wfn = getRegisteredMethodClassName(wf) + '.' + ro.name;
+    if (this.workflowInfoMap.has(wfn)) {
+      throw new DBOSError(`Repeated workflow name: ${wfn}`);
     }
     const workflowInfo: WorkflowInfo = {
       workflow: wf,
-      config: config,
+      config: {...ro.workflowConfig},
     };
-    this.workflowInfoMap.set(wf.name, workflowInfo);
+    this.workflowInfoMap.set(wfn, workflowInfo);
+    this.logger.debug(`Registered workflow ${wfn}`);
   }
 
-  #registerTransaction<T extends any[], R>(txn: Transaction<T, R>, params: TransactionConfig = {}) {
-    if (this.transactionInfoMap.has(txn.name)) {
-      throw new DBOSError(`Repeated Transaction name: ${txn.name}`);
+  #registerTransaction(ro: MethodRegistrationBase) {
+    const txf = ro.registeredFunction as Transaction<unknown[], unknown>;
+    const tfn = getRegisteredMethodClassName(txf) + '.' + ro.name;
+
+    if (this.transactionInfoMap.has(tfn)) {
+      throw new DBOSError(`Repeated Transaction name: ${tfn}`);
     }
     const txnInfo: TransactionInfo = {
-      transaction: txn,
-      config: params,
+      transaction: txf,
+      config: {...ro.txnConfig},
     };
-    this.transactionInfoMap.set(txn.name, txnInfo);
+    this.transactionInfoMap.set(tfn, txnInfo);
+    this.logger.debug(`Registered transaction ${tfn}`);
   }
 
-  #registerCommunicator<T extends any[], R>(comm: Communicator<T, R>, params: CommunicatorConfig = {}) {
-    if (this.communicatorInfoMap.has(comm.name)) {
-      throw new DBOSError(`Repeated Commmunicator name: ${comm.name}`);
+  #registerCommunicator(ro: MethodRegistrationBase) {
+    const comm = ro.registeredFunction as Communicator<unknown[], unknown>;
+    const cfn = getRegisteredMethodClassName(comm) + '.' + ro.name;
+    if (this.communicatorInfoMap.has(cfn)) {
+      throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
     }
     const commInfo: CommunicatorInfo = {
       communicator: comm,
-      config: params,
+      config: {...ro.commConfig},
     };
-    this.communicatorInfoMap.set(comm.name, commInfo);
+    this.communicatorInfoMap.set(cfn, commInfo);
+    this.logger.debug(`Registered communicator ${cfn}`);
   }
 
   getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
-    const wfname = wf.name;
+    const wfname = (wf.name === DBOSExecutor.tempWorkflowName)
+      ? wf.name
+      : getRegisteredMethodClassName(wf) + '.' + wf.name;
     return this.workflowInfoMap.get(wfname);
   }
   getWorkflowInfoByStatus(wf: WorkflowStatus) {
-    const wfname = wf.workflowName;
+    const wfname = wf.workflowClassName + '.' + wf.workflowName;
     const wfInfo = this.workflowInfoMap.get(wfname);
     return {wfInfo, config: null};
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
-    const tfname = tf.name;
+    const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
     return this.transactionInfoMap.get(tfname);
   }
-  getTransactionInfoByNames(_className: string, functionName: string, _cfgName: string) {
-    const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(functionName);
+  getTransactionInfoByNames(className: string, functionName: string, _cfgName: string) {
+    const tfname = className + '.' + functionName;
+    const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(tfname);
     return {txnInfo, config: null};
   }
 
   getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
-    const cfname = cf.name;
+    const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.communicatorInfoMap.get(cfname);
   }
-  getCommunicatorInfoByNames(_className: string, functionName: string, _cfgName: string) {
-    const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(functionName);
+  getCommunicatorInfoByNames(className: string, functionName: string, _cfgName: string) {
+    const cfname = className + '.' + functionName;
+    const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(cfname);
     return {commInfo, config: null};
   }
 
