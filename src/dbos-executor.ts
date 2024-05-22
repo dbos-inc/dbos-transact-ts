@@ -38,7 +38,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass, getRegisteredMethodName } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass, getRegisteredMethodName, getClassConfiguration } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -419,14 +419,14 @@ export class DBOSExecutor {
       }
     }
 
-    return {wfInfo, config: null};
+    return {wfInfo, config: getClassConfiguration(wf.workflowClassName, wf.workflowConfigName)};
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
     const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
     return this.transactionInfoMap.get(tfname);
   }
-  getTransactionInfoByNames(className: string, functionName: string, _cfgName: string) {
+  getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
     const tfname = className + '.' + functionName;
     let txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(tfname);
 
@@ -443,14 +443,14 @@ export class DBOSExecutor {
       }
     }
 
-    return {txnInfo, config: null};
+    return {txnInfo, config: getClassConfiguration(className, cfgName)};
   }
 
   getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.communicatorInfoMap.get(cfname);
   }
-  getCommunicatorInfoByNames(className: string, functionName: string, _cfgName: string) {
+  getCommunicatorInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
     let commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(cfname);
 
@@ -467,7 +467,7 @@ export class DBOSExecutor {
       }
     }
 
-    return {commInfo, config: null};
+    return {commInfo, config: getClassConfiguration(className, cfgName)};
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {

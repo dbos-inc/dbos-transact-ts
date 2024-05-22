@@ -388,6 +388,9 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
   return { descriptor, registration };
 }
 
+type AnyConstructor = new (...args: unknown[]) => object;
+const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
+
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
@@ -396,6 +399,7 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
 
   if (clsReg.needsInitialized) {
     clsReg.name = ctor.name;
+    classesByName.set(clsReg.nameOverride ?? clsReg.name, clsReg);
 
     Reflect.defineMetadata(classMetadataKey, clsReg, ctor, "dbosclassreg");
 
@@ -529,6 +533,12 @@ export function initClassConfiguration<T extends InitConfigMethod>(
     clsreg.configurations.set(cfgname, reg);
     return reg as ConfiguredClass<T>;
   }
+}
+
+export function getClassConfiguration(clsname: string, cfgname: string): ConfiguredClass<unknown> | null {
+  const classReg = classesByName.get(clsname);
+  if (!classReg) return null;
+  return classReg.configurations.get(cfgname) ?? null;
 }
 
 ///////////////////////
