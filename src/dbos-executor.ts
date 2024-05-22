@@ -405,7 +405,20 @@ export class DBOSExecutor {
   }
   getWorkflowInfoByStatus(wf: WorkflowStatus) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
-    const wfInfo = this.workflowInfoMap.get(wfname);
+    let wfInfo = this.workflowInfoMap.get(wfname);
+    if (!wfInfo && !wf.workflowClassName) {
+      for (const [_wfn, wfr] of this.workflowInfoMap) {
+        if (wf.workflowName === wfr.workflow.name) {
+          if (wfInfo) {
+            throw new DBOSError(`Recovered workflow function name '${wf.workflowName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
+          }
+          else {
+            wfInfo = wfr;
+          }  
+        }
+      }
+    }
+
     return {wfInfo, config: null};
   }
 
@@ -415,7 +428,21 @@ export class DBOSExecutor {
   }
   getTransactionInfoByNames(className: string, functionName: string, _cfgName: string) {
     const tfname = className + '.' + functionName;
-    const txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(tfname);
+    let txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(tfname);
+
+    if (!txnInfo && !className) {
+      for (const [_wfn, tfr] of this.transactionInfoMap) {
+        if (functionName === tfr.transaction.name) {
+          if (txnInfo) {
+            throw new DBOSError(`Recovered transaction function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
+          }
+          else {
+            txnInfo = tfr;
+          }  
+        }
+      }
+    }
+
     return {txnInfo, config: null};
   }
 
@@ -425,7 +452,21 @@ export class DBOSExecutor {
   }
   getCommunicatorInfoByNames(className: string, functionName: string, _cfgName: string) {
     const cfname = className + '.' + functionName;
-    const commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(cfname);
+    let commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(cfname);
+
+    if (!commInfo && !className) {
+      for (const [_wfn, cfr] of this.communicatorInfoMap) {
+        if (functionName === cfr.communicator.name) {
+          if (commInfo) {
+            throw new DBOSError(`Recovered communicator function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
+          }
+          else {
+            commInfo = cfr;
+          }  
+        }
+      }
+    }
+
     return {commInfo, config: null};
   }
 
