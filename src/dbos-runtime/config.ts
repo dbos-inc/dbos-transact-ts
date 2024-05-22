@@ -7,7 +7,6 @@ import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
-import { setApplicationVersion } from "./applicationVersion";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
@@ -165,8 +164,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     const errorMessages = prettyPrintAjvErrors(validator);
     throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
-
-  setApplicationVersion(configFile.version);
 
   /*******************************/
   /* Handle user database config */
