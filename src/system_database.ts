@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
@@ -17,14 +15,15 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
-  initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
+  initWorkflowStatus<T extends unknown[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
-  getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+
+  bufferWorkflowInputs<T extends unknown[]>(workflowUUID: string, args: T) : void;
+  getWorkflowInputs<T extends unknown[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
@@ -35,11 +34,11 @@ export interface SystemDatabase {
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
-  send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
-  recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  send(workflowUUID: string, functionID: number, destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
+  recv<T extends NonNullable<unknown>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
-  setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
+  setEvent(workflowUUID: string, functionID: number, key: string, value: NonNullable<unknown>): Promise<void>;
+  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
 
   // Scheduler queries
   //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
@@ -92,7 +91,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowEventsMap: Record<string, () => void> = {};
 
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
-  readonly workflowInputsBuffer: Map<string, any[]> = new Map();
+  readonly workflowInputsBuffer: Map<string, unknown[]> = new Map();
   readonly flushBatchSize = 100;
   static readonly connectionTimeoutMillis = 10000; // 10 second timeout
 
@@ -136,7 +135,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
+  async initWorkflowStatus<T extends unknown[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query<workflow_status>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at)
       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -185,7 +184,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       while (finishedCnt < totalSize) {
         let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at) VALUES `;
         let paramCnt = 1;
-        const values: any[] = [];
+        const values: unknown[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, status] of localBuffer) {
           if (paramCnt > 1) {
@@ -268,7 +267,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(i => i.workflow_uuid);
   }
 
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
+  bufferWorkflowInputs<T extends unknown[]>(workflowUUID: string, args: T): void {
     this.workflowInputsBuffer.set(workflowUUID, args);
   }
 
@@ -281,7 +280,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       while (finishedCnt < totalSize) {
         let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES `;
         let paramCnt = 1;
-        const values: any[] = [];
+        const values: unknown[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, args] of localBuffer) {
           finishedCnt++;
@@ -324,7 +323,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return;
   }
 
-  async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {
+  async getWorkflowInputs<T extends unknown[]>(workflowUUID: string): Promise<T | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs WHERE workflow_uuid=$1`,
       [workflowUUID]
@@ -411,7 +410,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = "__null__topic__";
 
-  async send<T extends NonNullable<any>>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void> {
+  async send(workflowUUID: string, functionID: number, destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void> {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
 
@@ -445,7 +444,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T extends NonNullable<any>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T extends NonNullable<unknown>>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID])).rows;
@@ -497,7 +496,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [workflowUUID, topic])).rows;
     let message: T | null = null;
     if (finalRecvRows.length > 0) {
-      message = JSON.parse(finalRecvRows[0].message) as T;
+      message = JSON.parse(finalRecvRows[0].message) as T
     }
     await this.recordNotificationOutput(client, workflowUUID, functionID, message);
     await client.query(`COMMIT`);
@@ -505,7 +504,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setEvent(workflowUUID: string, functionID: number, key: string, message: NonNullable<unknown>): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
@@ -529,7 +528,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
       const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [callerUUID, functionID]);
