@@ -23,7 +23,7 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
-import { orgInvite, orgListUsers } from "./organizations/organization.js";
+import { orgInvite, orgListUsers, rename } from "./organizations/organization.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -364,6 +364,16 @@ orgCommands
     const exitCode = await orgListUsers(DBOSCloudHost, options.json);
     process.exit(exitCode);
   }))
+
+orgCommands
+  .command('rename')
+  .description("Rename the organization")
+  .argument('<oldname>', 'Organization old name')
+  .argument('<newname>', 'Organization new name')
+  .action((async (oldname, newname) => {
+    const exitCode = await rename(DBOSCloudHost, oldname, newname);
+    process.exit(exitCode);
+}))  
 
 program.parse(process.argv);
 
