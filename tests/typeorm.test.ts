@@ -150,10 +150,13 @@ class UserManager {
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
+    if (Array.isArray(user)) {
+      throw new DBOSNotAuthorizedError("Many users provided", 401);
+    }
     const u = await ctx.query(
-      (dbClient: EntityManager, uname: string) => {
-        return dbClient.findOneBy(User, {username: uname});
-      }, user as string
+      (dbClient: EntityManager) => {
+        return dbClient.findOneBy(User, {username: user});
+      }
       );
 
     if (!u) {

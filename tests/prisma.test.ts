@@ -164,14 +164,18 @@ class PUserManager {
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
+    if (Array.isArray(user)) {
+      throw new DBOSNotAuthorizedError("Many users provided", 401);
+    }
+
     const u = await ctx.query(
-      (dbClient: PrismaClient, uname: string) => {
+      (dbClient: PrismaClient) => {
         return dbClient.dbos_test_user.findFirst({
           where: {
-            username: uname,
+            username: user,
           },
         });
-      }, user as string
+      }
       );
 
     if (!u) {

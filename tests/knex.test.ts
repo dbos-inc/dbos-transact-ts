@@ -139,10 +139,13 @@ class KUserManager {
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
+    if (Array.isArray(user)) {
+      throw new DBOSNotAuthorizedError("Many users provided", 401);
+    }
     const u = await ctx.query(
-      (dbClient: Knex, uname: string) => {
-        return dbClient<UserTable>(userTableName).select("username").where({ username: uname })
-      }, user as string
+      (dbClient: Knex) => {
+        return dbClient<UserTable>(userTableName).select("username").where({ username: user })
+      }
       );
 
     if (!u || !u.length) {

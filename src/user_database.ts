@@ -10,13 +10,13 @@ export interface UserDatabase {
   getName(): UserDatabaseName;
 
   // Run transactionFunction as a database transaction with a given config and arguments.
-  transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R>;
+  transaction<R>(transactionFunction: UserDatabaseTransaction<R>, config: TransactionConfig, ): Promise<R>;
   // Execute a query function
-  queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(queryFunction: UserDatabaseQuery<C, R, T>, ...params: T): Promise<R>;
+  queryFunction<C extends UserDatabaseClient, R>(queryFunction: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R>;
   // Execute a raw SQL query.
-  query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]>;
+  query<R>(sql: string, ...args: unknown[]): Promise<R[]>;
   // Execute a raw SQL query in the session/transaction of a particular client.
-  queryWithClient<R, T extends unknown[] = unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]>;
+  queryWithClient<R = unknown[]>(client: UserDatabaseClient, sql: string, ...args: unknown[]): Promise<R[]>;
 
   // Is a database error retriable?  Currently only serialization errors are retriable.
   isRetriableTransactionError(error: unknown): boolean;
@@ -30,8 +30,8 @@ export interface UserDatabase {
   dropSchema(): Promise<void>;
 }
 
-type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
-type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
+type UserDatabaseQuery<C extends UserDatabaseClient, R> = (ctxt: C, ...args: unknown[]) => Promise<R>;
+type UserDatabaseTransaction<R> = (ctxt: UserDatabaseClient, ...args: unknown[]) => Promise<R>;
 
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
 
@@ -69,7 +69,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     return UserDatabaseName.PGNODE;
   }
 
-  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R>(txn: UserDatabaseTransaction<R>, config: TransactionConfig, ...args: unknown[]): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -89,7 +89,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     }
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try
     {
@@ -101,15 +101,15 @@ export class PGNodeUserDatabase implements UserDatabase {
     }
   }
 
-  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    return this.pool.query<QueryResultRow>(sql, params).then((value) => {
+  async query<R>(sql: string, ...args: unknown[]): Promise<R[]> {
+    return this.pool.query<QueryResultRow>(sql, args).then((value) => {
       return value.rows as R[];
     });
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...args: unknown[]): Promise<R[]> {
     const pgClient: PoolClient = client as PoolClient;
-    return pgClient.query<QueryResultRow>(sql, params).then((value) => {
+    return pgClient.query<QueryResultRow>(sql, args).then((value) => {
       return value.rows as R[];
     });
   }
@@ -147,7 +147,7 @@ export class PGNodeUserDatabase implements UserDatabase {
  * Prisma user data access interface
  */
 export interface PrismaClient {
-  $queryRawUnsafe<R, T extends unknown[]>(query: string, ...params: T): Promise<R[]>;
+  $queryRawUnsafe<R>(query: string, ...args: unknown[]): Promise<R[]>;
   $transaction<R>(fn: (prisma: unknown) => Promise<R>, options?: { maxWait?: number; timeout?: number; isolationLevel?: unknown }): Promise<R>;
   $disconnect(): Promise<void>;
 }
@@ -186,7 +186,7 @@ export class PrismaUserDatabase implements UserDatabase {
     return UserDatabaseName.PRISMA;
   }
 
-  async transaction<R, T extends unknown[]>(transaction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R>(transaction: UserDatabaseTransaction<R>, config: TransactionConfig, ...args: unknown[]): Promise<R> {
     let isolationLevel: string;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
       isolationLevel = PrismaIsolationLevel.ReadUncommitted;
@@ -206,17 +206,17 @@ export class PrismaUserDatabase implements UserDatabase {
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
     return func(this.prisma as C, ...args);
   }
 
-  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    return this.prisma.$queryRawUnsafe<R, T>(sql, ...params);
+  async query<R>(sql: string, ...args: unknown[]): Promise<R[]> {
+    return this.prisma.$queryRawUnsafe<R>(sql, ...args);
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...args: unknown[]): Promise<R[]> {
     const prismaClient = client as PrismaClient;
-    return prismaClient.$queryRawUnsafe<R, T>(sql, ...params);
+    return prismaClient.$queryRawUnsafe<R>(sql, ...args);
   }
 
   getPostgresErrorCode(error: unknown): string | null {
@@ -254,7 +254,7 @@ interface TypeORMDataSource {
 }
 
 interface TypeORMEntityManager {
-  query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>
+  query<R>(query: string, parameters?: unknown[]): Promise<R>
   transaction<R>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>): Promise<R>
 }
 
@@ -294,7 +294,7 @@ export class TypeORMDatabase implements UserDatabase {
     return UserDatabaseName.TYPEORM;
   }
 
-  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R>(txn: UserDatabaseTransaction<R>, config: TransactionConfig, ...args: unknown[]): Promise<R> {
     const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
 
     return this.dataSource.manager.transaction(isolationLevel,
@@ -305,7 +305,7 @@ export class TypeORMDatabase implements UserDatabase {
     );
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
     return func(this.dataSource.manager as C, ...args);
   }
 
@@ -315,9 +315,9 @@ export class TypeORMDatabase implements UserDatabase {
     });
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+  async queryWithClient<R>(client: UserDatabaseClient, sql: string, ...args: unknown[]): Promise<R[]> {
     const tClient = client as TypeORMEntityManager;
-    return tClient.query(sql, params).then((value) => {
+    return tClient.query(sql, args).then((value) => {
       return value as R[];
     });
   }
@@ -372,7 +372,7 @@ export class KnexUserDatabase implements UserDatabase {
     return UserDatabaseName.KNEX;
   }
 
-  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R>(transactionFunction: UserDatabaseTransaction<R>, config: TransactionConfig, ...args: unknown[]): Promise<R> {
     let isolationLevel: Knex.IsolationLevels;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
       isolationLevel = "read uncommitted";
@@ -392,7 +392,7 @@ export class KnexUserDatabase implements UserDatabase {
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
     const result = await this.knex.transaction<R>(
       async (transactionClient: Knex.Transaction) => {
         return await func(transactionClient as unknown as C, ...args);
@@ -402,13 +402,13 @@ export class KnexUserDatabase implements UserDatabase {
     return result;
   }
 
-  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
-    return this.queryWithClient(this.knex, sql, ...params);
+  async query<R>(sql: string, ...args: unknown[]): Promise<R[]> {
+    return this.queryWithClient(this.knex, sql, ...args);
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...uparams: T): Promise<R[]> {
+  async queryWithClient<R>(client: Knex, sql: string, ...args: unknown[]): Promise<R[]> {
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
-    const params = uparams.map(i => i === undefined ? null : i); // Set undefined parameters to null.
+    const params = args.map(i => i === undefined ? null : i); // Set undefined parameters to null.
     const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
     return rows.rows;
   }
