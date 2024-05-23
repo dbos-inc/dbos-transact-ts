@@ -101,16 +101,14 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const wfhandle = await testRuntime.invokeOnConfig(s3Cfg!).saveStringToFile(userid, 'text', 'mytextfile.txt', bucket, 'This is my file');
-    const myFileRecord = await wfhandle.getResult();
+    const myFileRecord = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).saveStringToFile(userid, 'text', 'mytextfile.txt', bucket, 'This is my file');
 
     // Get the file contents out of DBOS (using the table index)
-    const mthandle = await testRuntime.invokeOnConfig(s3Cfg!).readStringFromFile(userid,  'text', myFileRecord.file_name, bucket);
-    const mytxt = await mthandle.getResult();
+    const mytxt = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).readStringFromFile(userid,  'text', myFileRecord.file_name, bucket);
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
+    const dfhandle = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
     expect(dfhandle).toBeDefined();
   });
 
@@ -127,7 +125,7 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const wfhandle = await testRuntime.invokeOnConfig(s3Cfg!).writeFileViaURL(userid, 'text', 'mytextfile.txt', bucket, 60, {contentType: 'text/plain'});
+    const wfhandle = await testRuntime.startWorkflowOnConfig(s3Cfg!).writeFileViaURL(userid, 'text', 'mytextfile.txt', bucket, 60, {contentType: 'text/plain'});
     //    Get the presigned post
     const ppost = await testRuntime.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
     //    Upload to the URL
@@ -147,8 +145,7 @@ describe("ses-tests", () => {
     const myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const mthandle = await testRuntime.invokeOnConfig(s3Cfg!).getFileReadURL(userid, myFileRecord.file_type, myFileRecord.file_name, bucket);
-    const myurl = await mthandle.getResult();
+    const myurl = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).getFileReadURL(userid, myFileRecord.file_type, myFileRecord.file_name, bucket);
     expect (myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
@@ -157,7 +154,7 @@ describe("ses-tests", () => {
 
     // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
+    const dfhandle = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
     expect(dfhandle).toBeDefined();
   });
 

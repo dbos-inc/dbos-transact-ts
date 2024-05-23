@@ -51,9 +51,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass(): ConfiguredClass<unknown> {
+  getConfiguredClass<C, T=unknown>() {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
-    return this.configuredClass;
+    return this.configuredClass as ConfiguredClass<C, T>;
   }
 
   functionIDGetIncrement(): number {

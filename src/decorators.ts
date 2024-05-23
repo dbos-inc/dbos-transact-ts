@@ -189,10 +189,10 @@ implements MethodRegistrationBase
   }
 }
 
-export interface ConfiguredClass<CT> {
+export interface ConfiguredClass<CT, T=unknown> {
   init: InitConfigMethod;
   cfgname: string;
-  arg: unknown;
+  arg: T;
   ctor: CT;
 }
 
