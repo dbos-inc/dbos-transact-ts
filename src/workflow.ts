@@ -11,7 +11,7 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
-import { StoredProcedure } from "./procedure";
+import { StoredProcedure, StoredProcedureContext } from "./procedure";
 
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export type Workflow<R> = (ctxt: WorkflowContext, ...args: any[]) => Promise<R>;
@@ -25,10 +25,13 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<unknown>;
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<unknown>;
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<unknown>;
+
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
-  [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
 }
 
 export interface WorkflowParams {
@@ -534,7 +537,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
         : op.commConfig
           ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, ...args)
-          : undefined;
+          : op.procConfig
+            ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
+            : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
   }

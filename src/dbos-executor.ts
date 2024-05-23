@@ -83,7 +83,7 @@ interface CommunicatorInfo {
 }
 
 interface ProcedureInfo {
-  procedure: StoredProcedure<any>;
+  procedure: StoredProcedure<unknown>;
   config: TransactionConfig;
 }
 
@@ -278,7 +278,7 @@ export class DBOSExecutor {
         this.#registerCommunicator(comm, ro.commConfig);
         this.logger.debug(`Registered communicator ${ro.name}`);
       } else if (ro.procConfig) {
-        const proc = ro.registeredFunction as StoredProcedure<any>;
+        const proc = ro.registeredFunction as StoredProcedure<unknown>;
         this.#registerProcedure(proc, ro.procConfig);
         this.logger.debug(`Registered procedure ${ro.name}`);
       }

@@ -10,6 +10,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
+import { StoredProcedure } from "../procedure";
 
 // local type declarations for workflow functions
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -130,6 +131,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args)
           : op.commConfig
           ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown>, params, ...args)
+          : op.procConfig
+          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
           : undefined;
       } else {
         proxy[op.name] = op.workflowConfig
@@ -166,6 +169,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
   async #external<R>(commFn: Communicator<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
+  }
+
+  async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+    return this.#dbosExec.procedure(proc, params, ...args);
   }
 }
 
