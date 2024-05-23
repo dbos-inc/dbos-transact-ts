@@ -22,7 +22,7 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 // local type declarations for transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
-type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<unknown>;
+type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
