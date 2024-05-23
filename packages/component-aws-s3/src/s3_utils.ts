@@ -89,9 +89,10 @@ export interface ResponseError extends Error {
     status?: number;
 }
 
-interface S3Config{
+export interface S3Config{
     awscfgname?: string,
     awscfg?: AWSServiceConfig,
+    bucket: string,
     tableOps: {
         createS3Key: (rec: unknown) => string;
     }
@@ -210,10 +211,10 @@ export class S3Ops {
     }
 
     @Communicator()
-    static async deleteS3Comm(ctx: CommunicatorContext, bucket: string, key: string)
+    static async deleteS3Comm(ctx: CommunicatorContext, key: string)
     {
         const cfg = ctx.getClassConfig<S3Config>();
-        return await S3Ops.deleteS3(cfg.awscfg!, bucket, key);
+        return await S3Ops.deleteS3(cfg.awscfg!, cfg.bucket, key);
     }
 
     // Put small string
@@ -235,10 +236,10 @@ export class S3Ops {
     }
 
     @Communicator()
-    static async putS3Comm(ctx: CommunicatorContext, bucket: string, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
+    static async putS3Comm(ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
     {
         const cfg = ctx.getClassConfig<S3Config>();
-        return await S3Ops.putS3(cfg.awscfg!, bucket, key, content, contentType);
+        return await S3Ops.putS3(cfg.awscfg!, cfg.bucket, key, content, contentType);
     }
 
     // Get string
@@ -258,10 +259,10 @@ export class S3Ops {
     }
 
     @Communicator()
-    static async getS3Comm(ctx: CommunicatorContext, bucket: string, key: string)
+    static async getS3Comm(ctx: CommunicatorContext, key: string)
     {
         const cfg = ctx.getClassConfig<S3Config>();
-        return (await S3Ops.getS3(cfg.awscfg!, bucket, key)).Body?.transformToString();
+        return (await S3Ops.getS3(cfg.awscfg!, cfg.bucket, key)).Body?.transformToString();
     }
 
     // Presigned GET key
@@ -284,10 +285,10 @@ export class S3Ops {
     }
 
     @Communicator()
-    static async getS3KeyComm(ctx: CommunicatorContext, bucket: string, key: string, expirationSecs: number = 3600)
+    static async getS3KeyComm(ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
     {
         const cfg = ctx.getClassConfig<S3Config>();
-        return await S3Ops.getS3Key(cfg.awscfg!, bucket, key, expirationSecs);
+        return await S3Ops.getS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs);
     }
 
     // Presigned post key
@@ -330,7 +331,7 @@ export class S3Ops {
     }
 
     @Communicator()
-    static async postS3KeyComm(ctx: CommunicatorContext, bucket: string, key: string, expirationSecs: number = 1200,
+    static async postS3KeyComm(ctx: CommunicatorContext, key: string, expirationSecs: number = 1200,
         @ArgOptional contentOptions?: {
             contentType?: string,
             contentLengthMin?: number,
@@ -339,7 +340,7 @@ export class S3Ops {
     {
         try {
             const cfg = ctx.getClassConfig<S3Config>();
-            return await S3Ops.postS3Key(cfg.awscfg!, bucket, key, expirationSecs, contentOptions);
+            return await S3Ops.postS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs, contentOptions);
         }
         catch (e) {
             ctx.logger.error(e);
@@ -361,7 +362,7 @@ export class S3Ops {
     //     If it fails drop the partial file (if any) from S3
     // Note this will ALL get logged in the DB as a workflow parameter (and a communicator parameter) so better not be big!
     @Workflow()
-    static async saveStringToFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket:string, content: string, @ArgOptional contentType = 'text/plain') 
+    static async saveStringToFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, content: string, @ArgOptional contentType = 'text/plain') 
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
@@ -370,10 +371,10 @@ export class S3Ops {
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
-            await ctx.invokeOnConfig(cfc).putS3Comm(bucket, key, content, contentType);
+            await ctx.invokeOnConfig(cfc).putS3Comm(key, content, contentType);
         }
         catch (e) {
-            await ctx.invokeOnConfig(cfc).deleteS3Comm(bucket, key);
+            await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
             throw e;
         }
     
@@ -387,13 +388,13 @@ export class S3Ops {
     //    Does the DB query
     //    Does the S3 read
     @Workflow()
-    static async readStringFromFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string)
+    static async readStringFromFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string)
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
         const key = cfc.arg.tableOps.createS3Key(rec[0]);
-        const txt = await ctx.invokeOnConfig(cfc).getS3Comm(bucket, key);
+        const txt = await ctx.invokeOnConfig(cfc).getS3Comm(key);
         return txt;
     }
 
@@ -403,14 +404,14 @@ export class S3Ops {
     //     Do the S3 op
     //   Wrapper function to wait
     @Workflow()
-    static async deleteFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string)
+    static async deleteFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string)
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
         const key = cfc.arg.tableOps.createS3Key(rec[0]);
         await ctx.invoke(UserFileTable).deleteFileRecord(rec[0]);
-        return await ctx.invokeOnConfig(cfc).deleteS3Comm(bucket, key);
+        return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
     }
 
     ////////////
@@ -423,13 +424,13 @@ export class S3Ops {
     //  Presigned D/L for end user
     //    Hardly warrants a full workflow
     @Workflow()
-    static async getFileReadURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string, @ArgOptional expirationSec = 3600) : Promise<string>
+    static async getFileReadURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, @ArgOptional expirationSec = 3600) : Promise<string>
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length} for ${user_id}/${file_type}/${file_name}`);
         const key = cfc.arg.tableOps.createS3Key(rec[0]);
-        return await ctx.invokeOnConfig(cfc).getS3KeyComm(bucket, key, expirationSec);
+        return await ctx.invokeOnConfig(cfc).getS3KeyComm(key, expirationSec);
     }
 
     //  Presigned U/L for end user
@@ -443,7 +444,7 @@ export class S3Ops {
     //      We won't start that completion checker more than once
     //      If you ask again, you get the same presigned post URL
     @Workflow()
-    static async writeFileViaURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string,
+    static async writeFileViaURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string,
         @ArgOptional expirationSec = 3600,
         @ArgOptional contentOptions?: {
             contentType?: string,
@@ -460,7 +461,7 @@ export class S3Ops {
 
         const key = cfc.arg.tableOps.createS3Key(rec);
 
-        const upkey = await ctx.invokeOnConfig(cfc).postS3KeyComm(bucket, key, expirationSec, contentOptions);
+        const upkey = await ctx.invokeOnConfig(cfc).postS3KeyComm(key, expirationSec, contentOptions);
         await ctx.setEvent("uploadkey", upkey);
 
         try {
@@ -474,7 +475,7 @@ export class S3Ops {
         catch (e) {
             try {
                 // This should probably be by ID...
-                const _cwfh = await ctx.childWorkflow(S3Ops.deleteFile, user_id, file_type, file_name, bucket);
+                const _cwfh = await ctx.childWorkflow(S3Ops.deleteFile, user_id, file_type, file_name);
                 // No reason to await result
             }
             catch (e2) {

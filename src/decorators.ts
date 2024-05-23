@@ -531,7 +531,7 @@ export function initClassConfiguration<T extends InitConfigMethod>(
   else {
     const reg = {init: ctor, arg, cfgname, ctor};
     clsreg.configurations.set(cfgname, reg);
-    return reg as ConfiguredClass<T>;
+    return reg as ConfiguredClass<T, Parameters<T['initConfiguration']>[1]>;
   }
 }
 
