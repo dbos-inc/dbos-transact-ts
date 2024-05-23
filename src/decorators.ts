@@ -7,7 +7,7 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
-import { ProcedureContext } from "./procedure";
+import { StoredProcedureContext } from "./procedure";
 
 /**
  * Any column type column can be.
@@ -147,6 +147,7 @@ export interface MethodRegistrationBase {
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  procConfig?: TransactionConfig;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   registeredFunction: Function | undefined;
@@ -175,6 +176,7 @@ implements MethodRegistrationBase
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  procConfig?: TransactionConfig;
   init: boolean = false;
 
   invoke(pthis:This, args: Args) : Promise<Return> {
@@ -503,15 +505,15 @@ export function Transaction(config: TransactionConfig={}) {
   return decorator;
 }
 
-export function Procedure(config: TransactionConfig={}) {
+export function StoredProcedure(config: TransactionConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: ProcedureContext, ...args: Args) => Promise<Return>>)
+     
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    registration.txnConfig = config;
+    registration.procConfig = config;
     return descriptor;
   }
   return decorator;

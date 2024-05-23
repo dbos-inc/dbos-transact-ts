@@ -5,13 +5,13 @@ import { WorkflowContextImpl } from "./workflow";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { UserDatabase } from "./user_database";
 
-export type Procedure<R> = (ctxt: ProcedureContext, ...args: unknown[]) => Promise<R>;
+export type StoredProcedure<R> = (ctxt: StoredProcedureContext, ...args: unknown[]) => Promise<R>;
 
-export interface ProcedureContext extends Pick<DBOSContext, 'logger' | 'workflowUUID'> {
+export interface StoredProcedureContext extends Pick<DBOSContext, 'logger' | 'workflowUUID'> {
   query<R>(sql: string, ...params: unknown[]): Promise<R[]>;
 }
 
-export class ProcedureContextImpl extends DBOSContextImpl implements ProcedureContext {
+export class StoredProcedureContextImpl extends DBOSContextImpl implements StoredProcedureContext {
   constructor(
     readonly client: UserDatabase,
     workflowContext: WorkflowContextImpl | WorkflowContextDebug,
@@ -22,7 +22,7 @@ export class ProcedureContextImpl extends DBOSContextImpl implements ProcedureCo
     super(operationName, span, logger, workflowContext);
   }
   query<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+     
     return this.client.query<R, unknown[]>(sql, ...params);
   }
 }

@@ -12,6 +12,7 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
+import { StoredProcedure } from "./procedure";
 
 export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -259,6 +260,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.startChildWorkflow(wf, ...args);
   }
 
+  async procedure<R>(_proc: StoredProcedure<R>, ..._args: unknown[]): Promise<R> {
+    // const funcId = this.functionIDGetIncrement();
+    await Promise.resolve();
+    throw new Error("Not implemented");
+  }
   /**
    * Execute a transactional function.
    * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.

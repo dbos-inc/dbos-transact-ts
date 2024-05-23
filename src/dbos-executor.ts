@@ -46,6 +46,7 @@ import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { sleepms } from './utils';
+import { StoredProcedure } from './procedure';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -82,6 +83,11 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
+interface ProcedureInfo {
+  procedure: StoredProcedure<any>;
+  config: TransactionConfig;
+}
+
 interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
@@ -92,10 +98,12 @@ export const OperationType = {
   WORKFLOW: "workflow",
   TRANSACTION: "transaction",
   COMMUNICATOR: "communicator",
+  PROCEDURE: "procedure",
 } as const;
 
 const TempWorkflowType = {
   transaction: "transaction",
+  procedure: "procedure",
   external: "external",
   send: "send",
 } as const;
@@ -125,6 +133,7 @@ export class DBOSExecutor {
   ]);
   readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
+  readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
@@ -269,6 +278,10 @@ export class DBOSExecutor {
         const comm = ro.registeredFunction as Communicator<any, any>;
         this.#registerCommunicator(comm, ro.commConfig);
         this.logger.debug(`Registered communicator ${ro.name}`);
+      } else if (ro.procConfig) {
+        const proc = ro.registeredFunction as StoredProcedure<any>;
+        this.#registerProcedure(proc, ro.procConfig);
+        this.logger.debug(`Registered procedure ${ro.name}`);
       }
     }
   }
@@ -378,6 +391,13 @@ export class DBOSExecutor {
       config: params,
     };
     this.communicatorInfoMap.set(comm.name, commInfo);
+  }
+
+  #registerProcedure<R>(procedure: StoredProcedure<R>, config: TransactionConfig = {}) {
+    if (this.procedureInfoMap.has(procedure.name)) {
+      throw new DBOSError(`Repeated Procedure name: ${procedure.name}`);
+    }
+    this.procedureInfoMap.set(procedure.name, { procedure, config });
   }
 
   async workflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
@@ -542,6 +562,15 @@ export class DBOSExecutor {
       return await ctxtImpl.transaction(txn, ...args);
     };
     return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.transaction, tempWfName: txn.name }, ...args)).getResult();
+  }
+
+  async procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+    // Create a workflow and call procedure.
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      return await ctxtImpl.procedure(proc, ...args);
+    };
+    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.procedure, tempWfName: proc.name }, ...args)).getResult();
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
