@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
@@ -12,18 +13,14 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { getRegisteredOperations } from "./decorators";
 
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export type Workflow<R> = (ctxt: WorkflowContext, ...args: any[]) => Promise<R>;
+export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for transaction and communicator functions
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<unknown>;
-/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<unknown>;
+type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
+type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> = {
@@ -65,15 +62,15 @@ export const StatusString = {
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R>;
-  childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
+  startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
+  childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
-  send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
-  recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
-  setEvent(key: string, value: NonNullable<unknown>): Promise<void>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void>;
+  recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  setEvent<T extends NonNullable<any>>(key: string, value: T): Promise<void>;
 
-  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
@@ -178,7 +175,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     try {
       let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
       let paramCnt = 1;
-      const values: unknown[] = [];
+      const values: any[] = [];
       for (const funcID of funcIDs) {
         // Capture output and also transaction snapshot information.
         // Initially, no txn_id because no queries executed.
@@ -193,6 +190,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
       }
       this.logger.debug(sqlStmt);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       await this.#dbosExec.userDatabase.queryWithClient(client, sqlStmt, ...values);
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
@@ -245,19 +243,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
    * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
    */
-  async startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R> {
+  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
-  async childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
 
@@ -267,7 +265,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If the transaction encounters a Postgres serialization error, retry it.
    * If it encounters any other error, throw it.
    */
-  async transaction<R>(txn: Transaction<R>, ...args: unknown[]): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -378,7 +376,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<R>(commFn: Communicator<R>, ...args: unknown[]): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, ...args: T): Promise<R> {
     const commInfo = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
@@ -473,7 +471,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Send a message to a workflow identified by a UUID.
    * The message can optionally be tagged with a topic.
    */
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -489,7 +487,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T| null> {
+  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -504,7 +502,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Emit a workflow event, represented as a key-value pair.
    * Events are immutable once set.
    */
-  async setEvent(key: string, value: NonNullable<unknown>) {
+  async setEvent<T extends NonNullable<any>>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -521,13 +519,16 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-    const proxy: Record<string, unknown> = {};
 
+    const proxy: any = {};
     for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ? (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
-          ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
           : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
@@ -536,7 +537,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<unknown>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }
