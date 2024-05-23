@@ -70,3 +70,41 @@ export async function orgInvite(host: string, json: boolean) {
       return 1;
     }
   }
+
+  export async function rename(host: string, oldname: string, newname:string) {
+    const logger = getLogger();
+    const userCredentials = await getCloudCredentials();
+    const bearerToken = "Bearer " + userCredentials.token;
+
+    const currentOrg = userCredentials.organization;
+    if (currentOrg !== oldname) {
+      logger.error(`You are currently authenticated to organization ${currentOrg}, but you are trying to rename ${oldname}. Please logout and login to the correct organization.`);
+      return 1;
+    }
+    
+    try {
+        await axios.patch(`https://${host}/v1alpha1/${userCredentials.organization}/organizations`, 
+          {
+            newName: newname
+          },  
+          { headers: {
+              "Content-Type": "application/json",
+              Authorization: bearerToken,
+          }         
+        });
+
+       
+        logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`);
+        
+      return 0;
+    } catch (e) {
+        const errorLabel = `Failed to rename organization ${userCredentials.organization}`;
+      const axiosError = e as AxiosError;
+      if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+        handleAPIErrors(errorLabel, axiosError);
+      } else {
+        logger.error(`${errorLabel}: ${(e as Error).message}`);
+      }
+      return 1;
+    }
+  }
