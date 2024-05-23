@@ -390,7 +390,7 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
-        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
         await cfc.arg.tableOps.insertPendingFileRecord(ctx, rec);
 
         const key = cfc.arg.tableOps.createS3Key(rec);

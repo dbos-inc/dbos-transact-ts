@@ -123,30 +123,37 @@ describe("ses-tests", () => {
           createS3Key: (f) => {return TestUserFileTable.createS3Key(f as UserFile);},
           createFileRecord: async (ctx: WorkflowContext, fdt: unknown) => {
             const details = fdt as FileDetails;
-            return ctx.invoke(TestUserFileTable).chooseFileRecord(details);
+            return await ctx.invoke(TestUserFileTable).chooseFileRecord(details);
           },
           lookUpFileRecord: async (ctx: WorkflowContext, fdt: unknown) => {
             const details = fdt as FileDetails;
-            return ctx.invoke(TestUserFileTable).lookUpByFields(details);
+            const res = await ctx.invoke(TestUserFileTable).lookUpByFields(details);
+            if (res.length < 1) {
+              throw new Error(`File not Found: ${JSON.stringify(fdt)}`);
+            }
+            if (res.length > 1) {
+              throw new Error(`File not unique: ${JSON.stringify(fdt)}`);
+            }
+            return res[0];
           },
           insertActiveFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
-            return ctx.invoke(TestUserFileTable).insertFileRecord(rec);
+            return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
           },
           insertPendingFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.PENDING;
-            return ctx.invoke(TestUserFileTable).insertFileRecord(rec);
+            return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
           },
           activateFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
-            return ctx.invoke(TestUserFileTable).updateFileRecord(rec);
+            return await ctx.invoke(TestUserFileTable).updateFileRecord(rec);
           },
           deleteFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
-            return ctx.invoke(TestUserFileTable).deleteFileRecordById(rec.file_id);
+            return await ctx.invoke(TestUserFileTable).deleteFileRecordById(rec.file_id);
           }
         }
       });
@@ -290,7 +297,7 @@ describe("ses-tests", () => {
     expect(dfhandle).toBeDefined();
   });
 
-    async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
+  async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
         const formData = new FormData();
     
         // Append all the fields from the presigned post data
