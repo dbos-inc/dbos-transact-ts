@@ -146,7 +146,11 @@
       }
     },
     "application": {},
-    "env": {}
+    "env": {},
+    "version": {
+      "type": "string",
+      "deprecated": true
+    }
   },
   "required": [
     "database"

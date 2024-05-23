@@ -17,7 +17,6 @@ const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath)) as objec
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
-  version: string;
   database: {
     hostname: string;
     port: number;
