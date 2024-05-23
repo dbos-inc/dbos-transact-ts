@@ -53,7 +53,7 @@ export interface TestingRuntime {
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send(destinationUUID: string, message: unknown, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   getAdminCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
@@ -204,7 +204,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getDBOSExec().send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.getDBOSExec().getEvent(workflowUUID, key, timeoutSeconds);
   }
 

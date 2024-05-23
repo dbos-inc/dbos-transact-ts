@@ -212,7 +212,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv<T extends unknown>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async recv<T>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -234,7 +234,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent<T extends unknown>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async getEvent<T>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
