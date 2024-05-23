@@ -105,36 +105,7 @@ interface S3Config{
     awscfg?: AWSServiceConfig,
 }
 
-@Configurable()
-export class S3Ops {
-    //////////
-    // S3 Configuration
-    //////////
-
-    static async initConfiguration(ctx: InitContext, arg: S3Config) {
-        if (!arg.awscfg) {
-            arg.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, arg.awscfgname ?? "");
-        }
-        return Promise.resolve();
-    }
-
-    static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
-
-    @DBOSInitializer()
-    static checkConfig(ctx: InitContext): Promise<void> {
-        // Get the config and call the validation
-        getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
-        return Promise.resolve();
-    }
-
-    static createS3Client(cfg: AWSServiceConfig) {
-        return new S3Client({
-            region: cfg.region,
-            credentials: cfg.credentials,
-            maxAttempts: cfg.maxRetries,
-        });
-    }
-
+export class UserFileTable {
     //////////
     //// Database table
     //////////
@@ -192,6 +163,37 @@ export class S3Ops {
     static async lookUpByUser(ctx: KnexTransactionContext, user_id: string) {
         const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
         return rv;
+    }
+}
+
+@Configurable()
+export class S3Ops {
+    //////////
+    // S3 Configuration
+    //////////
+
+    static async initConfiguration(ctx: InitContext, arg: S3Config) {
+        if (!arg.awscfg) {
+            arg.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, arg.awscfgname ?? "");
+        }
+        return Promise.resolve();
+    }
+
+    static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
+
+    @DBOSInitializer()
+    static checkConfig(ctx: InitContext): Promise<void> {
+        // Get the config and call the validation
+        getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
+        return Promise.resolve();
+    }
+
+    static createS3Client(cfg: AWSServiceConfig) {
+        return new S3Client({
+            region: cfg.region,
+            credentials: cfg.credentials,
+            maxAttempts: cfg.maxRetries,
+        });
     }
 
     ///////
@@ -371,7 +373,7 @@ export class S3Ops {
     static async saveStringToFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket:string, content: string, @ArgOptional contentType = 'text/plain', @ArgOptional
         config?: S3Config) 
     {
-        const rec = await ctx.invoke(S3Ops).chooseFileRecord(user_id, file_type, file_name);
+        const rec = await ctx.invoke(UserFileTable).chooseFileRecord(user_id, file_type, file_name);
         const key = createS3Key(rec);
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
@@ -384,7 +386,7 @@ export class S3Ops {
         }
     
         rec.file_status = 'Active';
-        await ctx.invoke(S3Ops).insertFileRecord(rec);
+        await ctx.invoke(UserFileTable).insertFileRecord(rec);
         return rec;
     }
 
@@ -396,7 +398,7 @@ export class S3Ops {
     static async readStringFromFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string, @ArgOptional
         config?: S3Config)
     {
-        const rec = await ctx.invoke(S3Ops).lookUpByName(user_id, file_type, file_name);
+        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
         const key = createS3Key(rec[0]);
         const txt = await ctx.invoke(S3Ops).getS3Comm(bucket, key, config);
@@ -412,10 +414,10 @@ export class S3Ops {
     static async deleteFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string, @ArgOptional
         config?: S3Config)
     {
-        const rec = await ctx.invoke(S3Ops).lookUpByName(user_id, file_type, file_name);
+        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
         const key = createS3Key(rec[0]);
-        await ctx.invoke(S3Ops).deleteFileRecord(rec[0]);
+        await ctx.invoke(UserFileTable).deleteFileRecord(rec[0]);
         return await ctx.invoke(S3Ops).deleteS3Comm(bucket, key, config);
     }
 
@@ -432,7 +434,7 @@ export class S3Ops {
     static async getFileReadURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, bucket: string, @ArgOptional expirationSec = 3600, @ArgOptional
         config?: S3Config) : Promise<string>
     {
-        const rec = await ctx.invoke(S3Ops).lookUpByName(user_id, file_type, file_name);
+        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length} for ${user_id}/${file_type}/${file_name}`);
         const key = createS3Key(rec[0]);
         return await ctx.invoke(S3Ops).getS3KeyComm(bucket, key, expirationSec, config);
@@ -458,14 +460,14 @@ export class S3Ops {
         },
         @ArgOptional config?: S3Config) : Promise<UserFile>
     {
-        const rec = await ctx.invoke(S3Ops).chooseFileRecord(user_id, file_type, file_name);
+        const rec = await ctx.invoke(UserFileTable).chooseFileRecord(user_id, file_type, file_name);
         rec.file_status = FileStatus.PENDING;
-        await ctx.invoke(S3Ops).insertFileRecord(rec); // TODO: Any conflict checking?
+        await ctx.invoke(UserFileTable).insertFileRecord(rec); // TODO: Any conflict checking?
 
         const key = createS3Key(rec);
 
         const upkey = await ctx.invoke(S3Ops).postS3KeyComm(bucket, key, expirationSec, contentOptions, config);
-        await ctx.setEvent<PresignedPost>("uploadkey", upkey);
+        await ctx.setEvent("uploadkey", upkey);
 
         try {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
@@ -473,7 +475,7 @@ export class S3Ops {
 
             // TODO: Validate the file
 
-            await ctx.invoke(S3Ops).updateFileRecord(rec);
+            await ctx.invoke(UserFileTable).updateFileRecord(rec);
         }
         catch (e) {
             try {
@@ -486,43 +488,8 @@ export class S3Ops {
             throw e;
         }
         rec.file_status = FileStatus.ACTIVE;
-        await ctx.invoke(S3Ops).updateFileRecord(rec);
+        await ctx.invoke(UserFileTable).updateFileRecord(rec);
 
         return rec;
     }
 }
-
-/*
-// Send multi-part to S3 (passthrough)
-//   You could do this with a handler context but WHY?
-//   You wouldn't get any guarantees, the only thing would be that the URL
-//     looks like DBOS and we could check things in DBOS...
-
-router.post('/upload', koaBody({ multipart: true }), async (ctx) => {
-  const file = ctx.request.files?.file;
-
-  if (!file) {
-    ctx.status = 400;
-    ctx.body = 'File not uploaded.';
-    return;
-  }
-
-  const fileStream = new stream.PassThrough();
-  fileStream.end((file as any).buffer);
-
-  const params = {
-    Bucket: 'your-s3-bucket-name',
-    Key: `uploads/${Date.now()}-${file.name}`,
-    Body: fileStream,
-    ContentType: file.type,
-  };
-
-  try {
-    const data = await s3.upload(params).promise();
-    ctx.body = 'File uploaded successfully';
-  } catch (err) {
-    ctx.status = 500;
-    ctx.body = 'Failed to upload to S3.';
-  }
-});
-*/

@@ -1,6 +1,6 @@
 import { S3Ops } from "./s3_utils";
 export { S3Ops };
-import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
+import { TestingRuntime, createTestingRuntime, ConfiguredClass, initClassConfiguration } from "@dbos-inc/dbos-sdk";
 
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
@@ -12,11 +12,15 @@ import { v4 as uuidv4 } from 'uuid';
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let s3IsAvailable = true;
+  let s3Cfg : ConfiguredClass<typeof S3Ops> | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not
     if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET'] ) {
       s3IsAvailable = false;
+    }
+    else {
+      s3Cfg = initClassConfiguration(S3Ops, 'default', {awscfgname: 'aws_config'});
     }
   });
 
@@ -43,14 +47,14 @@ describe("ses-tests", () => {
 
     const fn = `filepath/FN_${new Date().toISOString()}`;
     const bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
-    const putres = await testRuntime.invoke(S3Ops).putS3Comm(bucket, fn, "Test string from DBOS");
+    const putres = await testRuntime.invokeOnConfig(s3Cfg!).putS3Comm(bucket, fn, "Test string from DBOS");
     expect(putres).toBeDefined();
 
-    const getres = await testRuntime.invoke(S3Ops).getS3Comm(bucket, fn);
+    const getres = await testRuntime.invokeOnConfig(s3Cfg!).getS3Comm(bucket, fn);
     expect(getres).toBeDefined();
     expect(getres).toBe('Test string from DBOS');
 
-    const delres = await testRuntime.invoke(S3Ops).deleteS3Comm(bucket, fn);
+    const delres = await testRuntime.invokeOnConfig(s3Cfg!).deleteS3Comm(bucket, fn);
     expect(delres).toBeDefined();
   });
 
@@ -63,7 +67,7 @@ describe("ses-tests", () => {
     const fn = `presigned_filepath/FN_${new Date().toISOString()}`;
     const bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
 
-    const postres = await testRuntime.invoke(S3Ops).postS3KeyComm(bucket, fn, 30, {contentType: 'text/plain'});
+    const postres = await testRuntime.invokeOnConfig(s3Cfg!).postS3KeyComm(bucket, fn, 30, {contentType: 'text/plain'});
     expect(postres).toBeDefined();
     try {
         const res = await uploadToS3(postres, './src/s3_utils.test.ts');
@@ -76,13 +80,13 @@ describe("ses-tests", () => {
     }
 
     // Make a fetch request to test it...
-    const geturl = await testRuntime.invoke(S3Ops).getS3KeyComm(bucket, fn, 30);
+    const geturl = await testRuntime.invokeOnConfig(s3Cfg!).getS3KeyComm(bucket, fn, 30);
     await downloadFromS3(geturl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 
     // Delete it
-    const delres = await testRuntime.invoke(S3Ops).deleteS3Comm(bucket, fn);
+    const delres = await testRuntime.invokeOnConfig(s3Cfg!).deleteS3Comm(bucket, fn);
     expect(delres).toBeDefined();
   });
 
@@ -97,16 +101,16 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const wfhandle = await testRuntime.invoke(S3Ops).saveStringToFile(userid, 'text', 'mytextfile.txt', bucket, 'This is my file');
+    const wfhandle = await testRuntime.invokeOnConfig(s3Cfg!).saveStringToFile(userid, 'text', 'mytextfile.txt', bucket, 'This is my file');
     const myFileRecord = await wfhandle.getResult();
 
     // Get the file contents out of DBOS (using the table index)
-    const mthandle = await testRuntime.invoke(S3Ops).readStringFromFile(userid,  'text', myFileRecord.file_name, bucket);
+    const mthandle = await testRuntime.invokeOnConfig(s3Cfg!).readStringFromFile(userid,  'text', myFileRecord.file_name, bucket);
     const mytxt = await mthandle.getResult();
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invoke(S3Ops).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
+    const dfhandle = await testRuntime.invokeOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
     expect(dfhandle).toBeDefined();
   });
 
@@ -123,7 +127,7 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const wfhandle = await testRuntime.invoke(S3Ops).writeFileViaURL(userid, 'text', 'mytextfile.txt', bucket, 60, {contentType: 'text/plain'});
+    const wfhandle = await testRuntime.invokeOnConfig(s3Cfg!).writeFileViaURL(userid, 'text', 'mytextfile.txt', bucket, 60, {contentType: 'text/plain'});
     //    Get the presigned post
     const ppost = await testRuntime.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
     //    Upload to the URL
@@ -137,13 +141,13 @@ describe("ses-tests", () => {
         expect(e).toBeUndefined();
     }
     //    Notify WF
-    await testRuntime.send<string>(wfhandle.getWorkflowUUID(), "", "uploadfinish");
+    await testRuntime.send(wfhandle.getWorkflowUUID(), "", "uploadfinish");
 
     //    Wait for WF complete
     const myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const mthandle = await testRuntime.invoke(S3Ops).getFileReadURL(userid, myFileRecord.file_type, myFileRecord.file_name, bucket);
+    const mthandle = await testRuntime.invokeOnConfig(s3Cfg!).getFileReadURL(userid, myFileRecord.file_type, myFileRecord.file_name, bucket);
     const myurl = await mthandle.getResult();
     expect (myurl).not.toBeNull();
     // Get the file contents out of S3
@@ -153,7 +157,7 @@ describe("ses-tests", () => {
 
     // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invoke(S3Ops).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
+    const dfhandle = await testRuntime.invokeOnConfig(s3Cfg!).deleteFile(userid, 'text', myFileRecord.file_name, bucket);
     expect(dfhandle).toBeDefined();
   });
 
