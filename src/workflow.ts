@@ -65,8 +65,11 @@ export const StatusString = {
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R>;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  startChildWorkflow<R>(wf: Workflow<R>, ...args: any[]): Promise<WorkflowHandle<R>>;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  invokeChildWorkflow<R>(wf: Workflow<R>, ...args: any[]): Promise<R>;
+   
   childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;

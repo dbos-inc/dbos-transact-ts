@@ -7,7 +7,8 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
 // Can we call it TransactionFunction
-export type Transaction<R> = (ctxt: TransactionContext<UserDatabaseClient>, ...args: unknown[]) => Promise<R>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Transaction<R> = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;

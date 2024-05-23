@@ -63,7 +63,8 @@ export interface TestingRuntime {
   setConfig<T>(key: string, newValue: T): void;
 
   // User database operations.
-  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]>; // Execute a raw SQL query on the user database.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
   createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
