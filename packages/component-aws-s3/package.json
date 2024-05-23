@@ -13,12 +13,14 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "npm run build && jest --detectOpenHandles",
+    "test": "npm run build && npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
     "setversion": "grunt setversion"
   },
   "devDependencies": {
     "grunt": "^1.6.1",
+    "knex": "^3.1.0",
     "nerdbank-gitversioning": "^3.6.133",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
