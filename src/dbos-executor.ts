@@ -1,4 +1,5 @@
- import {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import {
   DBOSError,
   DBOSInitializationError,
   DBOSWorkflowConflictUUIDError,
@@ -67,17 +68,17 @@ export interface DBOSConfig {
 }
 
 interface WorkflowInfo {
-  workflow: Workflow<unknown>;
+  workflow: Workflow<any, any>;
   config: WorkflowConfig;
 }
 
 interface TransactionInfo {
-  transaction: Transaction<unknown>;
+  transaction: Transaction<any, any>;
   config: TransactionConfig;
 }
 
 interface CommunicatorInfo {
-  communicator: Communicator<unknown>;
+  communicator: Communicator<any, any>;
   config: CommunicatorConfig;
 }
 
@@ -351,7 +352,7 @@ export class DBOSExecutor {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow(ro :MethodRegistrationBase) {
-    const wf = ro.registeredFunction as Workflow<unknown>;
+    const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
     }
@@ -368,7 +369,7 @@ export class DBOSExecutor {
   }
 
   #registerTransaction(ro: MethodRegistrationBase) {
-    const txf = ro.registeredFunction as Transaction<unknown>;
+    const txf = ro.registeredFunction as Transaction<unknown[], unknown>;
     const tfn = getRegisteredMethodClassName(txf) + '.' + ro.name;
 
     if (this.transactionInfoMap.has(tfn)) {
@@ -383,7 +384,7 @@ export class DBOSExecutor {
   }
 
   #registerCommunicator(ro: MethodRegistrationBase) {
-    const comm = ro.registeredFunction as Communicator<unknown>;
+    const comm = ro.registeredFunction as Communicator<unknown[], unknown>;
     const cfn = getRegisteredMethodClassName(comm) + '.' + ro.name;
     if (this.communicatorInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
@@ -469,7 +470,7 @@ export class DBOSExecutor {
     return {commInfo, config: getClassConfiguration(className, cfgName)};
   }
 
-  async workflow<R>(wf: Workflow<R>, params: InternalWorkflowParams, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async workflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     if (this.debugMode) {
       return this.debugWorkflow(wf, params, undefined, undefined, ...args);
     }
@@ -477,7 +478,7 @@ export class DBOSExecutor {
   }
 
   // If callerUUID and functionID are set, it means the workflow is invoked from within a workflow.
-  async internalWorkflow<R>(wf: Workflow<R>, params: InternalWorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async internalWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
@@ -586,7 +587,7 @@ export class DBOSExecutor {
   /**
    * DEBUG MODE workflow execution, skipping all the recording
    */
-  async debugWorkflow<R>(wf: Workflow<R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async debugWorkflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
     // In debug mode, we must have a specific workflow UUID.
     if (!params.workflowUUID) {
       throw new DBOSDebuggerError("Workflow UUID not found!");
@@ -627,9 +628,9 @@ export class DBOSExecutor {
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
-  async transaction<R>(txn: Transaction<R>, params: WorkflowParams, ...args: unknown[] ): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
-    const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.transaction(txn, params.classConfig, ...args);
     };
@@ -641,9 +642,9 @@ export class DBOSExecutor {
     }, ...args)).getResult();
   }
 
-  async external<R>(commFn: Communicator<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
-    const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.external(commFn, params.classConfig, ...args);
     };
@@ -655,10 +656,10 @@ export class DBOSExecutor {
     }, ...args)).getResult();
   }
 
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: NonNullable<unknown>, topic?: string) => {
-      return await ctxt.send(destinationUUID, message, topic);
+    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
+      return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
     return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, classConfig: null }, destinationUUID, message, topic)).getResult();
@@ -667,7 +668,7 @@ export class DBOSExecutor {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -687,7 +688,7 @@ export class DBOSExecutor {
    * A recovery process that by default runs during executor init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
-  async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
+  async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<any>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
       if (execID == "local" && process.env.DBOS__VMID) {
@@ -699,7 +700,7 @@ export class DBOSExecutor {
       pendingWorkflows.push(...wIDs);
     }
 
-    const handlerArray: WorkflowHandle<unknown>[] = [];
+    const handlerArray: WorkflowHandle<any>[] = [];
     for (const workflowUUID of pendingWorkflows) {
       try {
         handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
@@ -733,7 +734,7 @@ export class DBOSExecutor {
       throw new DBOSError(`This should never happen! Cannot find workflow info for a non-temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
     }
 
-    let temp_workflow: Workflow<unknown>;
+    let temp_workflow: Workflow<unknown[], unknown>;
     let clscfg: ConfiguredClass<unknown> | null = null;
     if (nameArr[1] === TempWorkflowType.transaction) {
       const {txnInfo, config} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
@@ -741,7 +742,7 @@ export class DBOSExecutor {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.transaction(txnInfo.transaction, config, ...args);
       };
@@ -752,14 +753,15 @@ export class DBOSExecutor {
         this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.external(commInfo.communicator, config, ...args);
       };
       clscfg = config;
     } else if (nameArr[1] === TempWorkflowType.send) {
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        return await ctxt.send(args[0] as string, args[1] as string, args[2] as string);
+      temp_workflow = async (ctxt: WorkflowContext, ...args: any[]) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        return await ctxt.send<any>(args[0], args[1], args[2]);
       };
       clscfg = null;
     } else {
@@ -813,7 +815,7 @@ export class DBOSExecutor {
       while (finishedCnt < totalSize) {
         let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
         let paramCnt = 1;
-        const values: unknown[] = [];
+        const values: any[] = [];
         const batchUUIDs: string[] = [];
         for (const [workflowUUID, wfBuffer] of localBuffer) {
           for (const [funcID, recorded] of wfBuffer) {
@@ -834,6 +836,7 @@ export class DBOSExecutor {
           }
         }
         this.logger.debug(sqlStmt);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         await this.userDatabase.query(sqlStmt, ...values);
 
         // Clean up after each batch succeeds

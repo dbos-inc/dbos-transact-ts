@@ -1,4 +1,5 @@
- import { IncomingMessage } from "http";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { IncomingMessage } from "http";
 import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredClass, getRegisteredOperations } from "../decorators";
@@ -55,8 +56,8 @@ export interface TestingRuntime {
   invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
   startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   getAdminCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
@@ -66,7 +67,7 @@ export interface TestingRuntime {
   setConfig<T>(key: string, newValue: T): void;
 
   // User database operations.
-  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]>; // Execute a raw SQL query on the user database.
+  queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]>; // Execute a raw SQL query on the user database.
   createUserSchema(): Promise<void>; // Only valid if using TypeORM. Create tables based on the provided schema.
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
@@ -148,7 +149,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
   {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
-    const proxy: Record<string, unknown> = {};
+
+    const proxy: any = {};
 
     // Creates a context to pass in necessary info.
     const span = dbosExec.tracer.startSpan("test");
@@ -160,16 +162,22 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, classConfig: clscfg };
     for (const op of ops) {
       if (asyncWf) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown>, wfParams, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
           : op.workflowConfig
-          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown>, wfParams, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
           : op.commConfig
-          ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown>, wfParams, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
           : undefined;
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown>, wfParams, ...args).then((handle) => handle.getResult())
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }
@@ -217,11 +225,11 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.#server.adminApp.callback();
   }
 
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.getDBOSExec().send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.getDBOSExec().getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -229,7 +237,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
 
-  async queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
+  async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.getDBOSExec().userDatabase.query(sql, ...params);
   }
 

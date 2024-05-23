@@ -12,8 +12,7 @@ import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
-/* eslint-disable @typescript-eslint/no-explicit-any */
-type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
+type WFFunc = (ctxt: WorkflowContext, ...args: unknown[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 export type InvokeFuncsConf<T> = WFInvokeFuncsConf<T>;
 
@@ -54,8 +53,8 @@ export interface HandlerContext extends DBOSContext {
   invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T>;
   startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 }
 
 export const RequestIDHeader = "x-request-id";
@@ -125,11 +124,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PUBLIC INTERFACE  */
   ///////////////////////
 
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.#dbosExec.send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.#dbosExec.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -148,16 +147,22 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
     for (const op of ops) {
       if (asyncWf) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown>, params, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
           : op.workflowConfig
-          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
-          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown>, params, ...args)
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown>, params, ...args).then((handle) => handle.getResult())
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }
@@ -192,15 +197,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PRIVATE METHODS */
   /////////////////////
 
-  async #workflow<R>(wf: Workflow<R>, params: WorkflowParams, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async #workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.#dbosExec.workflow(wf, params, ...args);
   }
 
-  async #transaction<R>(txn: Transaction<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async #transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<R>(commFn: Communicator<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async #external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
   }
 }

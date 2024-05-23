@@ -124,10 +124,10 @@ export class DBOSKafka {
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (ro.txnConfig) {
               // Execute the transaction
-              await this.dbosExec.transaction(ro.registeredFunction as Transaction<unknown>, wfParams, ...args);
+              await this.dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
               // Safely start the workflow
-              await this.dbosExec.workflow(ro.registeredFunction as Workflow<unknown>, wfParams, ...args);
+              await this.dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
             }
           },
         })

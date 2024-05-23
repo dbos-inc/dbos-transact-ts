@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { UserDatabaseName, UserDatabaseClient } from "./user_database";
 import { WorkflowContextImpl } from "./workflow";
 import { Span } from "@opentelemetry/sdk-trace-base";
@@ -9,7 +10,7 @@ import { ConfiguredClass } from "./decorators";
 import { DBOSError } from "./error";
 
 // Can we call it TransactionFunction
-export type Transaction<R> = (ctxt: TransactionContext<UserDatabaseClient>, ...args: unknown[]) => Promise<R>;
+export type Transaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;

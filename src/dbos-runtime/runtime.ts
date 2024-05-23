@@ -10,7 +10,8 @@ import { DBOSKafka } from '../kafka/kafka';
 import { DBOSScheduler } from '../scheduler/scheduler';
 
 interface ModuleExports {
-  [key: string]: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
 }
 
 export interface DBOSRuntimeConfig {
@@ -73,7 +74,7 @@ export class DBOSRuntime {
       let exports: ModuleExports;
       if (fs.existsSync(operations)) {
         const operationsURL = pathToFileURL(operations).href;
-        exports = (await import(operationsURL)) as ModuleExports;
+        exports = (await import(operationsURL)) as Promise<ModuleExports>;
       } else {
         throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
       }
