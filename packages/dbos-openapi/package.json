@@ -12,8 +12,7 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "npm run build && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
-    "setversion": "grunt setversion"
+    "test": "npm run build && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles"
   },
   "bin": {
     "dbos-openapi": "./dist/packages/dbos-openapi/cli.js"
@@ -25,9 +24,7 @@
     "@typescript-eslint/eslint-plugin": "^6.7.2",
     "@typescript-eslint/parser": "^6.7.2",
     "eslint": "^8.49.0",
-    "grunt": "^1.6.1",
     "jest": "^29.6.1",
-    "nerdbank-gitversioning": "^3.6.133",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.1"
   },

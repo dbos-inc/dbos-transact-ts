@@ -12,8 +12,7 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo \"No tests\"",
-    "setversion": "grunt setversion"
+    "test": "echo \"No tests\""
   },
   "bin": {
     "create": "./dist/cli.js"
@@ -24,8 +23,6 @@
     "@types/prompt-sync": "^4.2.3",
     "@types/update-notifier": "^6.0.8",
     "@types/validator": "^13.11.9",
-    "grunt": "^1.6.1",
-    "nerdbank-gitversioning": "^3.6.133",
     "typescript": "^5.4.5"
   },
   "dependencies": {

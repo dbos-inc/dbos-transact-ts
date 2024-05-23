@@ -13,13 +13,10 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo 'No tests'",
-    "setversion": "grunt setversion"
+    "test": "echo 'No tests'"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "grunt": "^1.6.1",
-    "nerdbank-gitversioning": "^3.6.133",
     "typescript": "^5.4.5"
   },
   "dependencies": {
