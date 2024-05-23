@@ -84,8 +84,8 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
-  startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: T): Promise<R>;
+  startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>;
+  invokeChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<R>;
 
   send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
   recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -578,14 +578,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.invoke(targetCfg.ctor) as unknown as InvokeFuncsConf<T>;
   }
 
-  async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<R> {
     return this.startChildWorkflowOnConfig(targetCfg, wf, ...args).then((handle) => handle.getResult());
   }
 

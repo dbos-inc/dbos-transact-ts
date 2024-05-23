@@ -109,7 +109,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Execute a transactional function in debug mode.
    * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
-  async transaction<R>(txn: Transaction<R>, cfcls: ConfiguredClass<unknown> | null,  ...args: T): Promise<R> {
+  async transaction<R>(txn: Transaction<R>, cfcls: ConfiguredClass<unknown> | null,  ...args: unknown[]): Promise<R> {
     const txnInfo = this.#dbosExec.getTransactionInfo(txn as Transaction<unknown>);
     if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
@@ -178,7 +178,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<R>(commFn: Communicator<R>, _clscfg: ConfiguredClass<unknown> | null, ..._args: T): Promise<R> {
+  async external<R>(commFn: Communicator<R>, _clscfg: ConfiguredClass<unknown> | null, ..._args: unknown[]): Promise<R> {
     const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown>);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
@@ -215,7 +215,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T> {
     const ops = getRegisteredOperations(targetCfg.ctor);
 
-    const proxy: unknown = {};
+    const proxy: Record<string, unknown> = {};
     for (const op of ops) {
       proxy[op.name] = op.txnConfig
         ?
@@ -228,13 +228,13 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return proxy as InvokeFuncsConf<T>;
   }
 
-  async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<R> {
     return this.startChildWorkflowOnConfig(targetCfg, wf, ...args).then((handle) => handle.getResult());
   }
 
