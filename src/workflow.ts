@@ -434,6 +434,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
+
     const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name, clscfg);
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -575,7 +576,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, targetCfg, ...args)
           : undefined;
     }
-    return this.invoke(targetCfg.ctor) as unknown as InvokeFuncsConf<T>;
+    return proxy as InvokeFuncsConf<T>;
   }
 
   async startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
