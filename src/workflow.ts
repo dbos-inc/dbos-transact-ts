@@ -265,11 +265,84 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async procedure<R>(_proc: StoredProcedure<R>, ..._args: unknown[]): Promise<R> {
-    // const funcId = this.functionIDGetIncrement();
-    await Promise.resolve();
-    throw new Error("Not implemented");
+  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+    const procInfo = this.#dbosExec.procedureInfoMap.get(proc.name);
+    if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
+    const readOnly = procInfo.config.readOnly ?? false;
+    const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      proc.name,
+      {
+        operationUUID: this.workflowUUID,
+        operationType: OperationType.TRANSACTION,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
+        readOnly: readOnly,
+        isolationLevel: procInfo.config.isolationLevel,
+        executorID: this.executorID,
+      },
+      this.span,
+    );
+
+    const $args = [this.workflowUUID, funcId, this.presetUUID, null, ...args];
+    if (!readOnly) {
+      // function_id, output, txn_snapshot, created_at
+      const bufferedResults = new Array<[number, unknown, string, number?]>();
+      for (const [functionID, { output, txn_snapshot, created_at }] of this.resultBuffer.entries()) {
+        bufferedResults.push([functionID, output, txn_snapshot, created_at]);
+      }
+      // sort by function ID
+      bufferedResults.sort((a, b) => a[0] - b[0]);
+      $args.unshift(bufferedResults.length > 0 ? JSON.stringify(bufferedResults) : null);
+    }
+
+    const sql = `CALL "${proc.name}_dbos_proc"(${$args.map((_v, i) => `$${i + 1}`).join()});`;
+
+    type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
+    try {
+      const [{ return_value }] = await this.#dbosExec.userDatabase.query<ReturnValue, unknown[]>(sql, ...$args);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const { error, output, txn_snapshot, txn_id, created_at } = return_value;
+
+      // buffered results are persisted in r/w stored procs, even if it returns an error
+      if (!readOnly) {
+        this.resultBuffer.clear();
+      }
+
+      // if the stored proc returns an error, deserialize and throw it. 
+      // stored proc saves the error in tx_output before returning 
+      if (error) {
+        throw deserializeError(error);
+      }
+
+      // if txn_snapshot is provided, the output needs to be buffered
+      if (readOnly && txn_snapshot) {
+        this.resultBuffer.set(funcId, {
+          output,
+          txn_snapshot,
+          created_at: created_at ?? Date.now(),
+        });
+      }
+
+      if (!readOnly) {
+        this.resultBuffer.clear();
+      }
+
+      if (txn_id) {
+        span.setAttribute("pg_txn_id", txn_id);
+      }
+      span.setStatus({ code: SpanStatusCode.OK });
+      return output!; // output will be undefined if tx function returns void
+    } catch (e) {
+      const { message } = e as { message: string };
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
+      throw e;
+    } finally {
+      this.#dbosExec.tracer.endSpan(span);
+    }
   }
+
   /**
    * Execute a transactional function.
    * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.
@@ -498,7 +571,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T| null> {
+  async recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
