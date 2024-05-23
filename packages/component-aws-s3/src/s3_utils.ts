@@ -95,67 +95,12 @@ export interface S3Config{
     bucket: string,
     tableOps: {
         createS3Key: (rec: unknown) => string;
-    }
-}
-
-export class UserFileTable {
-    //////////
-    //// Database table
-    //////////
-
-    // Pick a file ID
-    @Communicator()
-    static async chooseFileRecord(_ctx: CommunicatorContext, user_id: string, file_type: string, file_name: string): Promise<UserFile> {
-        return {
-            user_id,
-            file_status: FileStatus.PENDING,
-            file_type,
-            file_id: uuidv4(),
-            file_name,
-            file_time: new Date().getTime(),
-        };
-    }
-
-    // File table DML operations
-    // Whole record is known
-    @Transaction()
-    static async insertFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-        await ctx.client<UserFile>('user_files').insert(rec);
-    }
-    @Transaction()
-    static async updateFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-        await ctx.client<UserFile>('user_files').update(rec).where({file_id: rec.file_id});
-    }
-    @Transaction()
-    static async deleteFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-        await ctx.client<UserFile>('user_files').delete().where({file_id: rec.file_id});
-    }
-    // Delete when part of record is known
-    @Transaction()
-    static async deleteFileRecordById(ctx: KnexTransactionContext, file_id: string) {
-        await ctx.client<UserFile>('user_files').delete().where({file_id});
-    }
-
-    // Queries
-    @Transaction({readOnly: true})
-    static async lookUpByFields(ctx: KnexTransactionContext, user_id: string, fields: UserFile) {
-        const rv = await ctx.client<UserFile>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
-        return rv ? [rv] : [];
-    }
-    @Transaction({readOnly: true})
-    static async lookUpByName(ctx: KnexTransactionContext, user_id: string, file_type: string, file_name: string) {
-        const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
-        return rv ? [rv] : [];
-    }
-    @Transaction({readOnly: true})
-    static async lookUpByType(ctx: KnexTransactionContext, user_id: string, file_type: string) {
-        const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
-        return rv;
-    }
-    @Transaction({readOnly: true})
-    static async lookUpByUser(ctx: KnexTransactionContext, user_id: string) {
-        const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
-        return rv;
+        createFileRecord: (ctx: WorkflowContext, fdt: unknown) => Promise<unknown>;
+        lookUpFileRecord: (ctx: WorkflowContext, fdt: unknown) => Promise<unknown>;
+        insertActiveFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
+        insertPendingFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
+        activateFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
+        deleteFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
     }
 }
 
@@ -362,11 +307,11 @@ export class S3Ops {
     //     If it fails drop the partial file (if any) from S3
     // Note this will ALL get logged in the DB as a workflow parameter (and a communicator parameter) so better not be big!
     @Workflow()
-    static async saveStringToFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, content: string, @ArgOptional contentType = 'text/plain') 
+    static async saveStringToFile(ctx: WorkflowContext, fileDetails: unknown, content: string, @ArgOptional contentType = 'text/plain') 
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
-        const rec = await ctx.invoke(UserFileTable).chooseFileRecord(user_id, file_type, file_name);
+        const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
@@ -378,8 +323,7 @@ export class S3Ops {
             throw e;
         }
     
-        rec.file_status = 'Active';
-        await ctx.invoke(UserFileTable).insertFileRecord(rec);
+        await cfc.arg.tableOps.insertActiveFileRecord(ctx, rec);
         return rec;
     }
 
@@ -388,12 +332,11 @@ export class S3Ops {
     //    Does the DB query
     //    Does the S3 read
     @Workflow()
-    static async readStringFromFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string)
+    static async readStringFromFile(ctx: WorkflowContext, fileDetails: unknown)
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
-        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
-        if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
-        const key = cfc.arg.tableOps.createS3Key(rec[0]);
+        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.arg.tableOps.createS3Key(rec);
         const txt = await ctx.invokeOnConfig(cfc).getS3Comm(key);
         return txt;
     }
@@ -404,13 +347,26 @@ export class S3Ops {
     //     Do the S3 op
     //   Wrapper function to wait
     @Workflow()
-    static async deleteFile(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string)
+    static async deleteFile(ctx: WorkflowContext, fileDetails: unknown)
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
-        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
-        if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
-        const key = cfc.arg.tableOps.createS3Key(rec[0]);
-        await ctx.invoke(UserFileTable).deleteFileRecord(rec[0]);
+        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.arg.tableOps.createS3Key(rec);
+        await cfc.arg.tableOps.deleteFileRecord(ctx, rec);
+        return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
+    }
+
+    //  App code deletes a file out of S3
+    //   One-shot workflow
+    //     Do the table write
+    //     Do the S3 op
+    //   Wrapper function to wait
+    @Workflow()
+    static async deleteFileRec(ctx: WorkflowContext, fileRecord: unknown)
+    {
+        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const key = cfc.arg.tableOps.createS3Key(fileRecord);
+        await cfc.arg.tableOps.deleteFileRecord(ctx, fileRecord);
         return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
     }
 
@@ -424,12 +380,11 @@ export class S3Ops {
     //  Presigned D/L for end user
     //    Hardly warrants a full workflow
     @Workflow()
-    static async getFileReadURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string, @ArgOptional expirationSec = 3600) : Promise<string>
+    static async getFileReadURL(ctx: WorkflowContext, fileDetails: unknown, @ArgOptional expirationSec = 3600) : Promise<string>
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
-        const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
-        if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length} for ${user_id}/${file_type}/${file_name}`);
-        const key = cfc.arg.tableOps.createS3Key(rec[0]);
+        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.arg.tableOps.createS3Key(rec);
         return await ctx.invokeOnConfig(cfc).getS3KeyComm(key, expirationSec);
     }
 
@@ -444,7 +399,7 @@ export class S3Ops {
     //      We won't start that completion checker more than once
     //      If you ask again, you get the same presigned post URL
     @Workflow()
-    static async writeFileViaURL(ctx: WorkflowContext, user_id: string, file_type: string, file_name: string,
+    static async writeFileViaURL(ctx: WorkflowContext, fileDetails: unknown,
         @ArgOptional expirationSec = 3600,
         @ArgOptional contentOptions?: {
             contentType?: string,
@@ -455,9 +410,8 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
-        const rec = await ctx.invoke(UserFileTable).chooseFileRecord(user_id, file_type, file_name);
-        rec.file_status = FileStatus.PENDING;
-        await ctx.invoke(UserFileTable).insertFileRecord(rec); // TODO: Any conflict checking?
+        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
+        await cfc.arg.tableOps.insertPendingFileRecord(ctx, rec);
 
         const key = cfc.arg.tableOps.createS3Key(rec);
 
@@ -466,24 +420,20 @@ export class S3Ops {
 
         try {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
-            rec.file_status = FileStatus.RECEIVED;
 
             // TODO: Validate the file
-
-            await ctx.invoke(UserFileTable).updateFileRecord(rec);
+            await cfc.arg.tableOps.activateFileRecord(ctx, rec);
         }
         catch (e) {
             try {
-                // This should probably be by ID...
-                const _cwfh = await ctx.childWorkflow(S3Ops.deleteFile, user_id, file_type, file_name);
+                // TODO This should probably be by record...
+                const _cwfh = await ctx.startChildWorkflowOnConfig(cfc, S3Ops.deleteFileRec, rec);
                 // No reason to await result
             }
             catch (e2) {
             }
             throw e;
         }
-        rec.file_status = FileStatus.ACTIVE;
-        await ctx.invoke(UserFileTable).updateFileRecord(rec);
 
         return rec;
     }
