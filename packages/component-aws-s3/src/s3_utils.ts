@@ -89,14 +89,12 @@ export interface ResponseError extends Error {
     status?: number;
 }
 
-function createS3Key(rec: UserFile) {
-    const key = `${rec.file_type}/${rec.user_id}/${rec.file_id}/${rec.file_time}`;
-    return key;
-}
-
 interface S3Config{
     awscfgname?: string,
     awscfg?: AWSServiceConfig,
+    tableOps: {
+        createS3Key: (rec: unknown) => string;
+    }
 }
 
 export class UserFileTable {
@@ -368,7 +366,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
         const rec = await ctx.invoke(UserFileTable).chooseFileRecord(user_id, file_type, file_name);
-        const key = createS3Key(rec);
+        const key = cfc.arg.tableOps.createS3Key(rec);
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
@@ -394,7 +392,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
-        const key = createS3Key(rec[0]);
+        const key = cfc.arg.tableOps.createS3Key(rec[0]);
         const txt = await ctx.invokeOnConfig(cfc).getS3Comm(bucket, key);
         return txt;
     }
@@ -410,7 +408,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length}`);
-        const key = createS3Key(rec[0]);
+        const key = cfc.arg.tableOps.createS3Key(rec[0]);
         await ctx.invoke(UserFileTable).deleteFileRecord(rec[0]);
         return await ctx.invokeOnConfig(cfc).deleteS3Comm(bucket, key);
     }
@@ -430,7 +428,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
         const rec = await ctx.invoke(UserFileTable).lookUpByName(user_id, file_type, file_name);
         if (rec.length !== 1) throw new DBOSError(`Didn't find exactly 1 file: ${rec.length} for ${user_id}/${file_type}/${file_name}`);
-        const key = createS3Key(rec[0]);
+        const key = cfc.arg.tableOps.createS3Key(rec[0]);
         return await ctx.invokeOnConfig(cfc).getS3KeyComm(bucket, key, expirationSec);
     }
 
@@ -452,7 +450,7 @@ export class S3Ops {
             contentLengthMin?: number,
             contentLengthMax?: number,
         }
-    ) : Promise<UserFile>
+    )
     {
         const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
 
@@ -460,7 +458,7 @@ export class S3Ops {
         rec.file_status = FileStatus.PENDING;
         await ctx.invoke(UserFileTable).insertFileRecord(rec); // TODO: Any conflict checking?
 
-        const key = createS3Key(rec);
+        const key = cfc.arg.tableOps.createS3Key(rec);
 
         const upkey = await ctx.invokeOnConfig(cfc).postS3KeyComm(bucket, key, expirationSec, contentOptions);
         await ctx.setEvent("uploadkey", upkey);

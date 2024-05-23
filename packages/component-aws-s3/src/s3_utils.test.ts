@@ -1,13 +1,103 @@
 import { S3Ops } from "./s3_utils";
 export { S3Ops };
-import { TestingRuntime, createTestingRuntime, ConfiguredClass, initClassConfiguration } from "@dbos-inc/dbos-sdk";
+import {
+  TestingRuntime, createTestingRuntime,
+  ConfiguredClass, initClassConfiguration,
+  Communicator, CommunicatorContext,
+  Transaction, TransactionContext,
+} from "@dbos-inc/dbos-sdk";
 
+import { Knex } from 'knex';
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
 import { PresignedPost } from "@aws-sdk/s3-presigned-post";
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+
+enum FileStatus
+{
+    PENDING  = 'Pending',
+    RECEIVED = 'Received',
+    ACTIVE   = 'Active',
+}
+
+interface UserFile {
+  file_id: string,
+  user_id: string,
+  file_status: string,
+  file_type: string,
+  file_time: number,
+  file_name: string,
+}
+
+type KnexTransactionContext = TransactionContext<Knex>;
+
+class TestUserFileTable {
+  //////////
+  //// Database table
+  //////////
+
+  // Pick a file ID
+  @Communicator()
+  static async chooseFileRecord(_ctx: CommunicatorContext, user_id: string, file_type: string, file_name: string): Promise<UserFile> {
+      return {
+          user_id,
+          file_status: FileStatus.PENDING,
+          file_type,
+          file_id: uuidv4(),
+          file_name,
+          file_time: new Date().getTime(),
+      };
+  }
+
+  static createS3Key(rec: UserFile) {
+      const key = `${rec.file_type}/${rec.user_id}/${rec.file_id}/${rec.file_time}`;
+      return key;
+  }
+  
+  // File table DML operations
+  // Whole record is known
+  @Transaction()
+  static async insertFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
+      await ctx.client<UserFile>('user_files').insert(rec);
+  }
+  @Transaction()
+  static async updateFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
+      await ctx.client<UserFile>('user_files').update(rec).where({file_id: rec.file_id});
+  }
+  @Transaction()
+  static async deleteFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
+      await ctx.client<UserFile>('user_files').delete().where({file_id: rec.file_id});
+  }
+  // Delete when part of record is known
+  @Transaction()
+  static async deleteFileRecordById(ctx: KnexTransactionContext, file_id: string) {
+      await ctx.client<UserFile>('user_files').delete().where({file_id});
+  }
+
+  // Queries
+  @Transaction({readOnly: true})
+  static async lookUpByFields(ctx: KnexTransactionContext, user_id: string, fields: UserFile) {
+      const rv = await ctx.client<UserFile>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+      return rv ? [rv] : [];
+  }
+  @Transaction({readOnly: true})
+  static async lookUpByName(ctx: KnexTransactionContext, user_id: string, file_type: string, file_name: string) {
+      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+      return rv ? [rv] : [];
+  }
+  @Transaction({readOnly: true})
+  static async lookUpByType(ctx: KnexTransactionContext, user_id: string, file_type: string) {
+      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
+      return rv;
+  }
+  @Transaction({readOnly: true})
+  static async lookUpByUser(ctx: KnexTransactionContext, user_id: string) {
+      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
+      return rv;
+  }
+}
 
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
@@ -20,7 +110,12 @@ describe("ses-tests", () => {
       s3IsAvailable = false;
     }
     else {
-      s3Cfg = initClassConfiguration(S3Ops, 'default', {awscfgname: 'aws_config'});
+      s3Cfg = initClassConfiguration(S3Ops, 'default', {
+        awscfgname: 'aws_config',
+        tableOps: {
+          createS3Key: (f) => {return TestUserFileTable.createS3Key(f as UserFile);},
+        }
+      });
     }
   });
 
