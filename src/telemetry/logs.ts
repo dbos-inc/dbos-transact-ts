@@ -1,5 +1,6 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import TransportStream = require("winston-transport");
+import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContextImpl } from "../context";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
@@ -136,7 +137,7 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = process.env.DBOS__APPVERSION || "";
+    const applicationVersion = getApplicationVersion();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
@@ -154,7 +155,6 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
   readonly applicationID: string;
-  readonly applicationVersion: string;
   readonly executorID: string;
 
   constructor(readonly telemetryCollector: TelemetryCollector, logLevel: string) {
@@ -163,9 +163,8 @@ class OTLPLogQueueTransport extends TransportStream {
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
-    this.applicationID = process.env.DBOS__APPID || "";
-    this.applicationVersion = process.env.DBOS__APPVERSION || "";
-    this.executorID = process.env.DBOS__VMID || "local";
+    this.applicationID = process.env.DBOS__APPID || "APP_ID_NOT_DEFINED";
+    this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
@@ -212,7 +211,6 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
-        applicationVersion: this.applicationVersion,
         executorID: this.executorID,
       } as LogAttributes,
     });
