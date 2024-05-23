@@ -149,7 +149,7 @@ class PUserManager {
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
+    return Promise.resolve({ messge: "hello " + hCtxt.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
@@ -160,7 +160,7 @@ class PUserManager {
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }
-    const {user} = ctx.koaContext.query;
+    const { user } = ctx.koaContext.query;
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
@@ -176,7 +176,7 @@ class PUserManager {
           },
         });
       }
-      );
+    );
 
     if (!u) {
       throw new DBOSNotAuthorizedError("User does not exist", 403);
@@ -218,7 +218,7 @@ describe("prisma-auth-tests", () => {
     const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({ uname: "paul" });
     expect(response3.statusCode).toBe(200);
 
     const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");

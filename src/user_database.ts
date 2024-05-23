@@ -12,7 +12,7 @@ export interface UserDatabase {
   // Run transactionFunction as a database transaction with a given config and arguments.
   transaction<R>(transactionFunction: UserDatabaseTransaction<R>, config: TransactionConfig, ): Promise<R>;
   // Execute a query function
-  queryFunction<C extends UserDatabaseClient, R>(queryFunction: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R>;
+  queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(queryFunction: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R>;
   // Execute a raw SQL query.
   query<R>(sql: string, ...args: unknown[]): Promise<R[]>;
   // Execute a raw SQL query in the session/transaction of a particular client.
@@ -30,7 +30,7 @@ export interface UserDatabase {
   dropSchema(): Promise<void>;
 }
 
-type UserDatabaseQuery<C extends UserDatabaseClient, R> = (ctxt: C, ...args: unknown[]) => Promise<R>;
+type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R> = (ctxt: UserDatabaseClient, ...args: unknown[]) => Promise<R>;
 
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
@@ -89,7 +89,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     }
   }
 
-  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R,T>, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try
     {
@@ -206,7 +206,7 @@ export class PrismaUserDatabase implements UserDatabase {
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     return func(this.prisma as C, ...args);
   }
 
@@ -305,7 +305,7 @@ export class TypeORMDatabase implements UserDatabase {
     );
   }
 
-  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     return func(this.dataSource.manager as C, ...args);
   }
 
@@ -392,7 +392,7 @@ export class KnexUserDatabase implements UserDatabase {
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R>(func: UserDatabaseQuery<C, R>, ...args: unknown[]): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     const result = await this.knex.transaction<R>(
       async (transactionClient: Knex.Transaction) => {
         return await func(transactionClient as unknown as C, ...args);

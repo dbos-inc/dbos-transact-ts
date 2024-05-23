@@ -46,7 +46,7 @@ class TestClass {
   }
 
   @Transaction()
-  static async returnVoid(_ctxt: KnexTransactionContext) {}
+  static async returnVoid(_ctxt: KnexTransactionContext) { }
 
   @Transaction()
   static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
@@ -110,10 +110,9 @@ describe("knex-tests", () => {
 });
 
 const userTableName = 'dbos_test_user';
-interface UserTable
-{
-  id ?: number;
-  username ?: string;
+interface UserTable {
+  id?: number;
+  username?: string;
 }
 
 @Authentication(KUserManager.authMiddlware)
@@ -121,21 +120,21 @@ class KUserManager {
   @Transaction()
   @PostApi('/register')
   static async createUser(txnCtxt: KnexTransactionContext, uname: string) {
-    const result = await txnCtxt.client<UserTable>(userTableName).insert({username: uname}).returning("id");
+    const result = await txnCtxt.client<UserTable>(userTableName).insert({ username: uname }).returning("id");
     return result;
   }
 
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
+    return Promise.resolve({ messge: "hello " + hCtxt.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }
-    const {user} = ctx.koaContext.query;
+    const { user } = ctx.koaContext.query;
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
@@ -146,7 +145,7 @@ class KUserManager {
       (dbClient: Knex) => {
         return dbClient<UserTable>(userTableName).select("username").where({ username: user })
       }
-      );
+    );
 
     if (!u || !u.length) {
       throw new DBOSNotAuthorizedError("User does not exist", 403);
@@ -188,7 +187,7 @@ describe("knex-auth-tests", () => {
     const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({ uname: "paul" });
     expect(response3.statusCode).toBe(200);
 
     const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");

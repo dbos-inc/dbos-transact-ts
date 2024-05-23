@@ -5,16 +5,16 @@ import { EntityManager, Unique } from "typeorm";
 
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import {
-   TestingRuntime,
-   Transaction,
-   OrmEntities,
-   TransactionContext,
-   Authentication,
-   MiddlewareContext,
-   GetApi,
-   HandlerContext,
-   RequiredRole,
-   PostApi,
+  TestingRuntime,
+  Transaction,
+  OrmEntities,
+  TransactionContext,
+  Authentication,
+  MiddlewareContext,
+  GetApi,
+  HandlerContext,
+  RequiredRole,
+  PostApi,
 } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
 import { v1 as uuidv1 } from "uuid";
@@ -53,7 +53,7 @@ class KVController {
   @Transaction({ readOnly: true })
   static async readTxn(txnCtxt: TestTransactionContext, id: string) {
     globalCnt += 1;
-    const kvp = await txnCtxt.client.findOneBy(KV, {id: id});
+    const kvp = await txnCtxt.client.findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || "<Not Found>");
   }
 }
@@ -90,7 +90,7 @@ describe("typeorm-tests", () => {
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
       testRuntime.invoke(KVController, workUUID).testTxn("oaootest",
-      "oaoovalue"),
+        "oaoovalue"),
       testRuntime.invoke(KVController, workUUID).testTxn("oaootest", "oaoovalue"),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootest");
@@ -135,7 +135,7 @@ class UserManager {
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
+    return Promise.resolve({ messge: "hello " + hCtxt.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
@@ -146,7 +146,7 @@ class UserManager {
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }
-    const {user} = ctx.koaContext.query;
+    const { user } = ctx.koaContext.query;
     if (!user) {
       throw new DBOSNotAuthorizedError("User not provided", 401);
     }
@@ -155,9 +155,9 @@ class UserManager {
     }
     const u = await ctx.query(
       (dbClient: EntityManager) => {
-        return dbClient.findOneBy(User, {username: user});
+        return dbClient.findOneBy(User, { username: user });
       }
-      );
+    );
 
     if (!u) {
       throw new DBOSNotAuthorizedError("User does not exist", 403);
@@ -199,7 +199,7 @@ describe("typeorm-auth-tests", () => {
     const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({ uname: "paul" });
     expect(response3.statusCode).toBe(200);
 
     const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
