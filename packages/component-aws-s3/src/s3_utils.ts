@@ -2,10 +2,20 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import { ArgOptional, DBOSInitializer, Communicator, CommunicatorContext, InitContext, Transaction, TransactionContext, Workflow, WorkflowContext } from '@dbos-inc/dbos-sdk';
+import {
+    ArgOptional,
+    Communicator, CommunicatorContext,
+    Configurable,
+    DBOSInitializer,
+    InitContext,
+    Transaction,
+    TransactionContext,
+    Workflow,
+    WorkflowContext
+} from '@dbos-inc/dbos-sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { Knex } from 'knex';
-import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from './awscfg';
+import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
 
 export type KnexTransactionContext = TransactionContext<Knex>;
@@ -78,14 +88,6 @@ export interface UserFile {
 export interface ResponseError extends Error {
     status?: number;
 }
-/*
-function errorWithStatus(msg: string, st: number) : ResponseError
-{
-    const err = new Error(msg) as ResponseError;
-    err.status = st;
-    return err;
-}
-*/
 
 interface S3Config
 {
@@ -98,16 +100,22 @@ function createS3Key(rec: UserFile) {
     return key;
 }
 
+interface S3Config{
+    awscfgname?: string,
+    awscfg?: AWSServiceConfig,
+}
+
+@Configurable()
 export class S3Ops {
     //////////
     // S3 Configuration
     //////////
-    static createS3Client(cfg: AWSServiceConfig) {
-        return new S3Client({
-            region: cfg.region,
-            credentials: cfg.credentials,
-            maxAttempts: cfg.maxRetries,
-        });
+
+    static async initConfiguration(ctx: InitContext, arg: S3Config) {
+        if (!arg.awscfg) {
+            arg.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, arg.awscfgname ?? "");
+        }
+        return Promise.resolve();
     }
 
     static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
@@ -117,6 +125,14 @@ export class S3Ops {
         // Get the config and call the validation
         getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
         return Promise.resolve();
+    }
+
+    static createS3Client(cfg: AWSServiceConfig) {
+        return new S3Client({
+            region: cfg.region,
+            credentials: cfg.credentials,
+            maxAttempts: cfg.maxRetries,
+        });
     }
 
     //////////
