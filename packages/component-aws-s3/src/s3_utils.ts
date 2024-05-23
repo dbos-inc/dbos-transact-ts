@@ -69,26 +69,6 @@ Other user considerations:
   User may offer world read on the bucket (e.g. product photos), how to get URL.
 */
 
-enum FileStatus
-{
-    PENDING  = 'Pending',
-    RECEIVED = 'Received',
-    ACTIVE   = 'Active',
-}
-
-export interface UserFile {
-    file_id: string,
-    user_id: string,
-    file_status: string,
-    file_type: string,
-    file_time: number,
-    file_name: string,
-}
-
-export interface ResponseError extends Error {
-    status?: number;
-}
-
 export interface S3Config{
     awscfgname?: string,
     awscfg?: AWSServiceConfig,
