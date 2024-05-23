@@ -200,7 +200,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async send(_destinationUUID: string, _message: NonNullable<unknown>, _topic?: string | undefined): Promise<void> {
+  async send(_destinationUUID: string, _message: unknown, _topic?: string | undefined): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -212,7 +212,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv<T extends NonNullable<unknown>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async recv<T extends unknown>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -224,7 +224,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check as T | null;
   }
 
-  async setEvent(_key: string, _value: NonNullable<unknown>): Promise<void> {
+  async setEvent(_key: string, _value: unknown): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
     // Original result must exist during replay.
     const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
@@ -234,7 +234,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent<T extends NonNullable<unknown>>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async getEvent<T extends unknown>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.

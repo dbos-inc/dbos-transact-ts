@@ -30,8 +30,8 @@ export interface HandlerContext extends DBOSContext {
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  send(destinationUUID: string, message: unknown, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 }
 
 export const RequestIDHeader = "x-request-id";
@@ -101,11 +101,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PUBLIC INTERFACE  */
   ///////////////////////
 
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send(destinationUUID: string, message: unknown, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.#dbosExec.send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.#dbosExec.getEvent(workflowUUID, key, timeoutSeconds);
   }
 

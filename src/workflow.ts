@@ -69,11 +69,11 @@ export interface WorkflowContext extends DBOSContext {
   invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R>;
   childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
-  send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void>;
-  recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
-  setEvent(key: string, value: NonNullable<unknown>): Promise<void>;
+  send(destinationUUID: string, message: unknown, topic?: string): Promise<void>;
+  recv<T extends unknown>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  setEvent(key: string, value: unknown): Promise<void>;
 
-  getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
@@ -473,7 +473,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Send a message to a workflow identified by a UUID.
    * The message can optionally be tagged with a topic.
    */
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string): Promise<void> {
+  async send(destinationUUID: string, message: unknown, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -489,7 +489,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<unknown>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T| null> {
+  async recv<T extends unknown>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T| null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -504,7 +504,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Emit a workflow event, represented as a key-value pair.
    * Events are immutable once set.
    */
-  async setEvent(key: string, value: NonNullable<unknown>) {
+  async setEvent(key: string, value: unknown) {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -536,7 +536,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<unknown>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T extends unknown>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }

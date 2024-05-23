@@ -544,9 +544,9 @@ export class DBOSExecutor {
     return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.external, tempWfName: commFn.name }, ...args)).getResult();
   }
 
-  async send(destinationUUID: string, message: NonNullable<unknown>, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send(destinationUUID: string, message: unknown, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: NonNullable<unknown>, topic?: string) => {
+    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: unknown, topic?: string) => {
       return await ctxt.send(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
@@ -556,7 +556,7 @@ export class DBOSExecutor {
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  async getEvent<T extends NonNullable<unknown>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T extends unknown>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
