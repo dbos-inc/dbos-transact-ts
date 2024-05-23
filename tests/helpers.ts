@@ -1,7 +1,6 @@
 import { DBOSConfig } from "../src/dbos-executor";
 import { Client } from "pg";
 import { UserDatabaseName } from "../src/user_database";
-import { setApplicationVersion } from "../src/dbos-runtime/applicationVersion";
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugMode?: boolean, debugProxy?: string): DBOSConfig {
@@ -11,8 +10,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugMode?: 
   }
 
   const silenceLogs: boolean = process.env.SILENCE_LOGS === "true" ? true : false;
-
-  setApplicationVersion("test");
 
   const dbosTestConfig: DBOSConfig = {
     poolConfig: {
