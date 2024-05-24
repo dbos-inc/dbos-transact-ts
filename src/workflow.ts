@@ -578,21 +578,21 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return proxy as InvokeFuncsConf<T>;
   }
 
-  async startChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflowOnConfig<R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: unknown[]): Promise<R> {
+  async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflowOnConfig(targetCfg, wf, ...args).then((handle) => handle.getResult());
   }
 
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T extends NonNullable<any>>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  getEvent<T>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
   }

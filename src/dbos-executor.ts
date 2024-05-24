@@ -397,7 +397,7 @@ export class DBOSExecutor {
     this.logger.debug(`Registered communicator ${cfn}`);
   }
 
-  getWorkflowInfo(wf: Workflow<unknown>) {
+  getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
     const wfname = (wf.name === DBOSExecutor.tempWorkflowName)
       ? wf.name
       : getRegisteredMethodClassName(wf) + '.' + wf.name;
@@ -422,7 +422,7 @@ export class DBOSExecutor {
     return {wfInfo, config: getClassConfiguration(wf.workflowClassName, wf.workflowConfigName)};
   }
 
-  getTransactionInfo(tf: Transaction<unknown>) {
+  getTransactionInfo(tf: Transaction<unknown[], unknown>) {
     const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
     return this.transactionInfoMap.get(tfname);
   }
@@ -446,7 +446,7 @@ export class DBOSExecutor {
     return {txnInfo, config: getClassConfiguration(className, cfgName)};
   }
 
-  getCommunicatorInfo(cf: Communicator<unknown>) {
+  getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.communicatorInfoMap.get(cfname);
   }
@@ -482,7 +482,7 @@ export class DBOSExecutor {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
-    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown>);
+    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
     }
@@ -593,7 +593,7 @@ export class DBOSExecutor {
       throw new DBOSDebuggerError("Workflow UUID not found!");
     }
     const workflowUUID = params.workflowUUID;
-    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown>);
+    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSDebuggerError("Workflow unregistered! " + wf.name);
     }
