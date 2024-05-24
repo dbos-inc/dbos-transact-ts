@@ -138,7 +138,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ON CONFLICT (workflow_uuid) DO NOTHING`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        output,
+        executor_id,
+        created_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (workflow_uuid) DO NOTHING`,
       [
        initStatus.workflowUUID,
        initStatus.status,
@@ -222,7 +236,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (workflow_uuid)
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        error,
+        executor_id,
+        created_at,
+        updated_at
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
       [
        workflowUUID,
