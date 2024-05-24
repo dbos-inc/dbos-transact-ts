@@ -14,55 +14,6 @@ import {
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
 
-/*
-Tracking Table
-  Schema
-  Interface
-  Write transactions
-   Start
-   Uploaded
-   Valid
-  Read transactions
-   By user / name
-
-Steps for read
-  Transaction lookup
-  DBOS Read (w/ API Key)
-  Client Read (S3 presigned)
-
-Workflow for write (client)
-  Pick info
-  DB Insert
-  Presigned
-  Upload complete trigger / cancel timeout
-  Validation
-  File activation
-
-Workflow for delete (force... we aren't ref counting readers now)
-  Pick info
-  S3 comm for delete
-
-Example / Test
-  Client (node + jest, python, EJS/Next)
-    Example client read
-    Example client write direct
-    Example client write (presigned)
-
-Internal
-  Example DBOS read
-  DBOS write from within a handler / WF context direct
-  DBOS write w/ child workflow (no client)
-
-Other user considerations:
-  What if user wants DBOS authentication - logged in user say?
-    And if they don't - see below.  But there could also be roles.
-  What if user doesn't want to use knex?
-  User may want own schema/indexing, and key naming convention...
-    In fact there could be a whole policy about file versioning
-  What to do to files if a user / anchor record is deleted?
-  User may offer world read on the bucket (e.g. product photos), how to get URL.
-*/
-
 export interface S3Config{
     awscfgname?: string,
     awscfg?: AWSServiceConfig,
