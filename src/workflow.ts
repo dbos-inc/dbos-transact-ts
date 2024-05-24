@@ -274,19 +274,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
    * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
    */
-  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: null }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
-  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
 

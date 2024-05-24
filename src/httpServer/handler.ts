@@ -12,7 +12,8 @@ import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
-type WFFunc = (ctxt: WorkflowContext, ...args: unknown[]) => Promise<unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 export type InvokeFuncsConf<T> = WFInvokeFuncsConf<T>;
 

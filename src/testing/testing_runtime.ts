@@ -150,7 +150,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = this.getDBOSExec();
     const ops = getRegisteredOperations(object);
 
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
 
     // Creates a context to pass in necessary info.
     const span = dbosExec.tracer.startSpan("test");
@@ -165,19 +165,19 @@ export class TestingRuntimeImpl implements TestingRuntime {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.transaction(op.registeredFunction as Transaction<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args)
           : op.workflowConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
           : op.commConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.external(op.registeredFunction as Communicator<any[], any>, wfParams, ...args)
+          ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
           : undefined;
       } else {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => dbosExec.workflow(op.registeredFunction as Workflow<any[], any>, wfParams, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }

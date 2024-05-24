@@ -10,7 +10,7 @@ import { ConfiguredClass } from "./decorators";
 import { DBOSError } from "./error";
 
 // Can we call it TransactionFunction
-export type Transaction<T extends any[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;

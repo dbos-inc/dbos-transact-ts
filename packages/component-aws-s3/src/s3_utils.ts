@@ -396,7 +396,7 @@ export class S3Ops {
         const key = cfc.arg.tableOps.createS3Key(rec);
 
         const upkey = await ctx.invokeOnConfig(cfc).postS3KeyComm(key, expirationSec, contentOptions);
-        await ctx.setEvent("uploadkey", upkey);
+        await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
