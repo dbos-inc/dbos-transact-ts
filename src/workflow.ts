@@ -293,7 +293,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       $args.unshift(bufferedResults.length > 0 ? JSON.stringify(bufferedResults) : null);
     }
 
-    const sql = `CALL "${proc.name}_dbos_proc"(${$args.map((_v, i) => `$${i + 1}`).join()});`;
+    const sql = `CALL "${proc.name}_proc"(${$args.map((_v, i) => `$${i + 1}`).join()});`;
 
     type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
     try {
