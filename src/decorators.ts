@@ -199,7 +199,6 @@ export interface ConfiguredClass<CT, T=unknown> {
 export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
 {
   name: string = "";
-  nameOverride?: string = "";
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   needsInitialized: boolean = true;
@@ -278,11 +277,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
-    let classname = target.constructor.name.toString();
-    const clsreg = getOrCreateClassRegistration(target.constructor as new (...args: unknown[]) => object);
-    if (clsreg.nameOverride) {
-      classname = clsreg.nameOverride;
-    }
+    const classname = target.constructor.name.toString();
 
     methReg.name = propertyKey.toString();
     methReg.className = classname;
@@ -399,7 +394,7 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
 
   if (clsReg.needsInitialized) {
     clsReg.name = ctor.name;
-    classesByName.set(clsReg.nameOverride ?? clsReg.name, clsReg);
+    classesByName.set(clsReg.name, clsReg);
 
     Reflect.defineMetadata(classMetadataKey, clsReg, ctor, "dbosclassreg");
 
@@ -475,15 +470,6 @@ export function ArgVarchar(length: number) {
 ///////////////////////
 /* CLASS DECORATORS */
 ///////////////////////
-
-export function ClassName(nameOverride: string) {
-  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
-  {
-     const clsreg = getOrCreateClassRegistration(ctor);
-     clsreg.nameOverride = nameOverride;
-  }
-  return clsdec;
-}
 
 export function DefaultRequiredRole(anyOf: string[]) {
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)

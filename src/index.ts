@@ -46,7 +46,6 @@ export {
   ArgVarchar,
 
   // Class Decorators
-  ClassName,
   Configurable,
     initClassConfiguration,
     ConfiguredClass,

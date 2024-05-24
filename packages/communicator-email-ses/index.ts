@@ -1,4 +1,4 @@
-import {ClassName, Communicator, CommunicatorContext, Configurable, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
+import {Communicator, CommunicatorContext, Configurable, DBOSInitializer, InitContext} from '@dbos-inc/dbos-sdk';
 
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
@@ -8,7 +8,6 @@ interface SESConfig{
     awscfg?: AWSServiceConfig,
 }
 
-@ClassName('ses-communicator')
 @Configurable()
 class SendEmailCommunicator
 {
