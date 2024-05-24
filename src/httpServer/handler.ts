@@ -148,21 +148,21 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
     for (const op of ops) {
       if (asyncWf) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+         
         proxy[op.name] = op.txnConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
           : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+         
         proxy[op.name] = op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;
       }

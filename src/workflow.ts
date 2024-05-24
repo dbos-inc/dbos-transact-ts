@@ -14,7 +14,7 @@ import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredClass, InitConfigMethod, getRegisteredOperations } from "./decorators";
 import { InvokeFuncsConf } from "./httpServer/handler";
 
-export type Workflow<T extends any[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
@@ -552,9 +552,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
 
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
     for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+       
       proxy[op.name] = op.txnConfig
         ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
         : op.commConfig

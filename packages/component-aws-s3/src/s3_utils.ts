@@ -8,17 +8,11 @@ import {
     Configurable,
     DBOSInitializer,
     InitContext,
-    Transaction,
-    TransactionContext,
     Workflow,
     WorkflowContext
 } from '@dbos-inc/dbos-sdk';
-import { v4 as uuidv4 } from 'uuid';
-import { Knex } from 'knex';
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
-
-export type KnexTransactionContext = TransactionContext<Knex>;
 
 /*
 Tracking Table
@@ -411,6 +405,7 @@ export class S3Ops {
                 // No reason to await result
             }
             catch (e2) {
+                ctx.logger.debug(e2);
             }
             throw e;
         }

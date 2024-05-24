@@ -6,8 +6,7 @@ import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { DBOSError } from "./error";
 import { ConfiguredClass } from "./decorators";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export type Communicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
+export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
 export interface CommunicatorConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)

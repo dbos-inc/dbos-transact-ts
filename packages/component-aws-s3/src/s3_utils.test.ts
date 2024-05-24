@@ -46,15 +46,15 @@ class TestUserFileTable {
 
   // Pick a file ID
   @Communicator()
-  static async chooseFileRecord(_ctx: CommunicatorContext, details: FileDetails): Promise<UserFile> {
-      return {
+  static chooseFileRecord(_ctx: CommunicatorContext, details: FileDetails): Promise<UserFile> {
+      return Promise.resolve({
           user_id: details.user_id,
           file_status: FileStatus.PENDING,
           file_type: details.file_type,
           file_id: uuidv4(),
           file_name: details.file_name,
           file_time: new Date().getTime(),
-      };
+      });
   }
 
   static createS3Key(rec: UserFile) {
@@ -236,7 +236,7 @@ describe("ses-tests", () => {
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
     const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
-    const myFileRecord = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).saveStringToFile(
+    const _myFileRecord = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).saveStringToFile(
       myFile, 'This is my file'
     );
 
@@ -281,7 +281,7 @@ describe("ses-tests", () => {
     await testRuntime.send<string>(wfhandle.getWorkflowUUID(), "", "uploadfinish");
 
     //    Wait for WF complete
-    const myFileRecord = await wfhandle.getResult();
+    const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
     const myurl = await testRuntime.invokeWorkflowOnConfig(s3Cfg!).getFileReadURL(myFile);

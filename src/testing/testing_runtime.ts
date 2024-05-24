@@ -162,21 +162,21 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, classConfig: clscfg };
     for (const op of ops) {
       if (asyncWf) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+         
         proxy[op.name] = op.txnConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args)
           : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
           : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
           : undefined;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+         
         proxy[op.name] = op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+           
           ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
