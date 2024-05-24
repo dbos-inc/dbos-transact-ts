@@ -620,7 +620,6 @@ export class DBOSExecutor {
     const wfInfo: WorkflowInfo | undefined = this.workflowInfoMap.get(wfStatus.workflowName);
 
     if (wfInfo) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
     }
 
@@ -663,7 +662,6 @@ export class DBOSExecutor {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
       throw new DBOSNotRegisteredError(wfName);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined }, ...inputs);
   }
 

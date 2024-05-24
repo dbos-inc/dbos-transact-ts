@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
@@ -407,11 +406,9 @@ export class KnexUserDatabase implements UserDatabase {
     return this.queryWithClient(this.knex, sql, ...params);
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...uparams: T): Promise<R[]> {
+  async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...args: T): Promise<R[]> {
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
-    let params = uparams as any[];
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    params = params.map(i => i === undefined ? null : i); // Set undefined parameters to null.
+    const params = args.map(i => i === undefined ? null : i); // Set undefined parameters to null.
     const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
     return rows.rows;
   }

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
@@ -13,6 +12,7 @@ import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
 
 // local type declarations for workflow functions
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 
@@ -119,26 +119,20 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-    const proxy: any = {};
+    const proxy: Record<string, unknown> = {};
     const params = { workflowUUID: workflowUUID, parentCtx: this };
     for (const op of ops) {
       if (asyncWf) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.txnConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#transaction(op.registeredFunction as Transaction<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
           : op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         proxy[op.name] = op.workflowConfig
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }
@@ -161,15 +155,15 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PRIVATE METHODS */
   /////////////////////
 
-  async #workflow<T extends any[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async #workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     return this.#dbosExec.workflow(wf, params, ...args);
   }
 
-  async #transaction<T extends any[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<T extends any[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
   }
 }
