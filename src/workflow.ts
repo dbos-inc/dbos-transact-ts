@@ -87,8 +87,8 @@ export interface WorkflowContext extends DBOSContext {
   send<T>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T>(key: string, value: T): Promise<void>;
-
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
@@ -503,7 +503,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Send a message to a workflow identified by a UUID.
    * The message can optionally be tagged with a topic.
    */
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string): Promise<void> {
+  async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -519,7 +519,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If a topic is specified, retrieve the oldest message tagged with that topic.
    * Otherwise, retrieve the oldest message with no topic.
    */
-  async recv<T extends NonNullable<any>>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
@@ -534,7 +534,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Emit a workflow event, represented as a key-value pair.
    * Events are immutable once set.
    */
-  async setEvent<T extends NonNullable<any>>(key: string, value: T) {
+  async setEvent<T>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {

@@ -56,8 +56,8 @@ export interface TestingRuntime {
   invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
   startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
   getHandlersCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
   getAdminCallback(): (req: IncomingMessage | Http2ServerRequest, res: ServerResponse | Http2ServerResponse) => Promise<void>;
@@ -225,11 +225,11 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.#server.adminApp.callback();
   }
 
-  async send<T extends NonNullable<any>>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     return this.getDBOSExec().send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     return this.getDBOSExec().getEvent(workflowUUID, key, timeoutSeconds);
   }
 
