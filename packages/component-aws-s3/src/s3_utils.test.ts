@@ -281,7 +281,7 @@ describe("ses-tests", () => {
     await testRuntime.send<string>(wfhandle.getWorkflowUUID(), "", "uploadfinish");
 
     //    Wait for WF complete
-    const myFileRecord = await wfhandle.getResult();
+    const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
     const myurl = await testRuntime.invokeWorkflow(s3Cfg!).getFileReadURL(myFile);
