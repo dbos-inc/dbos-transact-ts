@@ -234,7 +234,7 @@ export class S3Ops {
     @Workflow()
     static async saveStringToFile(ctx: WorkflowContext, fileDetails: unknown, content: string, @ArgOptional contentType = 'text/plain') 
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
 
         const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
@@ -259,7 +259,7 @@ export class S3Ops {
     @Workflow()
     static async readStringFromFile(ctx: WorkflowContext, fileDetails: unknown)
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
         const txt = await ctx.invokeOnConfig(cfc).getS3Comm(key);
@@ -274,7 +274,7 @@ export class S3Ops {
     @Workflow()
     static async deleteFile(ctx: WorkflowContext, fileDetails: unknown)
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
         await cfc.arg.tableOps.deleteFileRecord(ctx, rec);
@@ -289,7 +289,7 @@ export class S3Ops {
     @Workflow()
     static async deleteFileRec(ctx: WorkflowContext, fileRecord: unknown)
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
         const key = cfc.arg.tableOps.createS3Key(fileRecord);
         await cfc.arg.tableOps.deleteFileRecord(ctx, fileRecord);
         return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
@@ -307,7 +307,7 @@ export class S3Ops {
     @Workflow()
     static async getFileReadURL(ctx: WorkflowContext, fileDetails: unknown, @ArgOptional expirationSec = 3600) : Promise<string>
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
         return await ctx.invokeOnConfig(cfc).getS3KeyComm(key, expirationSec);
@@ -333,7 +333,7 @@ export class S3Ops {
         }
     )
     {
-        const cfc = ctx.getConfiguredClass<typeof S3Ops, S3Config>();
+        const cfc = ctx.getConfiguredClass(S3Ops);
 
         const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
         await cfc.arg.tableOps.insertPendingFileRecord(ctx, rec);
@@ -351,7 +351,6 @@ export class S3Ops {
         }
         catch (e) {
             try {
-                // TODO This should probably be by record...
                 const _cwfh = await ctx.startChildWorkflowOnConfig(cfc, S3Ops.deleteFileRec, rec);
                 // No reason to await result
             }

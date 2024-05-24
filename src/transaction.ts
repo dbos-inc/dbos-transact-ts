@@ -6,7 +6,7 @@ import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
-import { ConfiguredClass } from "./decorators";
+import { ConfiguredClass, InitConfigMethod } from "./decorators";
 import { DBOSError } from "./error";
 
 // Can we call it TransactionFunction
@@ -27,7 +27,7 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
-  getConfiguredClass(): ConfiguredClass<unknown> | null;
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   getClassConfig<T>(): T;
 }
 
@@ -50,8 +50,8 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass(): ConfiguredClass<unknown> {
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
-    return this.configuredClass;
+    return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 }

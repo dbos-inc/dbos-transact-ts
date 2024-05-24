@@ -94,7 +94,7 @@ export interface WorkflowContext extends DBOSContext {
   sleepms(durationMS: number): Promise<void>;
   sleep(durationSec: number): Promise<void>;
 
-  getConfiguredClass<C, T=unknown>(): ConfiguredClass<C, T>;
+  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   getClassConfig<T>(): T;
 }
 
@@ -139,9 +139,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass<C, T=unknown>(): ConfiguredClass<C, T> {
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
-    return this.configuredClass as  ConfiguredClass<C, T>;
+    return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 
   functionIDGetIncrement(): number {

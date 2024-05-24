@@ -1,3 +1,5 @@
+import { ConfiguredClass, InitConfigMethod } from './decorators';
+
 export {
   createTestingRuntime,
   TestingRuntime,
@@ -62,6 +64,8 @@ export {
   DBOSInitializer,
   DBOSDeploy,
 } from "./decorators";
+
+export type ConfiguredClassType<C extends InitConfigMethod> = ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
 
 export {
   ArgSources,

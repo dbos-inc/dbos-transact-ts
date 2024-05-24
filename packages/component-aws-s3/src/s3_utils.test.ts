@@ -1,8 +1,8 @@
-import { S3Ops, S3Config } from "./s3_utils";
+import { S3Ops } from "./s3_utils";
 export { S3Ops };
 import {
   TestingRuntime, createTestingRuntime,
-  ConfiguredClass, initClassConfiguration,
+  ConfiguredClassType, initClassConfiguration,
   Communicator, CommunicatorContext,
   Transaction, TransactionContext,
   WorkflowContext,
@@ -108,7 +108,7 @@ class TestUserFileTable {
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let s3IsAvailable = true;
-  let s3Cfg : ConfiguredClass<typeof S3Ops, S3Config> | undefined = undefined;
+  let s3Cfg : ConfiguredClassType<typeof S3Ops> | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not

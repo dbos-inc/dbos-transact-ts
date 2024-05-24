@@ -9,7 +9,7 @@ import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContextImpl } from "../context";
-import { ConfiguredClass, getRegisteredOperations } from "../decorators";
+import { ConfiguredClass, InitConfigMethod, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
 import { InvokeFuncsConf } from "../httpServer/handler";
 
@@ -52,9 +52,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass<C, T=unknown>() {
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
-    return this.configuredClass as ConfiguredClass<C, T>;
+    return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 
   functionIDGetIncrement(): number {

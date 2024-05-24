@@ -4,7 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { DBOSError } from "./error";
-import { ConfiguredClass } from "./decorators";
+import { ConfiguredClass, InitConfigMethod } from "./decorators";
 
 export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
@@ -19,7 +19,7 @@ export interface CommunicatorContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
-  getConfiguredClass(): ConfiguredClass<unknown>;
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   getClassConfig<T>(): T;
 }
 
@@ -49,8 +49,8 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass(): ConfiguredClass<unknown> {
+  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
-    return this.configuredClass;
+    return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 }
