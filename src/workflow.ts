@@ -75,12 +75,13 @@ export const StatusString = {
 } as const;
 
 export interface WorkflowContext extends DBOSContext {
+  invoke<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
   startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
-  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
+  // These are subject to change...
   startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R>;
 
@@ -136,11 +137,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass.arg as T;
   }
   getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 
@@ -549,33 +550,35 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
+  invoke<T extends object>(object: T | ConfiguredClass<T>): WFInvokeFuncs<T> | InvokeFuncsConf<T> {
+    if (typeof object === 'function') {
+      const ops = getRegisteredOperations(object);
 
-    const proxy: Record<string, unknown> = {};
-    for (const op of ops) {
-       
-      proxy[op.name] = op.txnConfig
-        ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
-        : op.commConfig
-          ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
-          : undefined;
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        
+        proxy[op.name] = op.txnConfig
+          ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
+          : op.commConfig
+            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            : undefined;
+      }
+      return proxy as WFInvokeFuncs<T>;
     }
-    return proxy as WFInvokeFuncs<T>;
-  }
+    else {
+      const targetCfg = object as ConfiguredClass<T>;
+      const ops = getRegisteredOperations(targetCfg.ctor);
 
-  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T> {
-    const ops = getRegisteredOperations(targetCfg.ctor);
-
-    const proxy: Record<string, unknown> = {};
-    for (const op of ops) {
-      proxy[op.name] = op.txnConfig
-        ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetCfg, ...args)
-        : op.commConfig
-          ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetCfg, ...args)
-          : undefined;
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        proxy[op.name] = op.txnConfig
+          ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetCfg, ...args)
+          : op.commConfig
+            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetCfg, ...args)
+            : undefined;
+      }
+      return proxy as InvokeFuncsConf<T>;
     }
-    return proxy as InvokeFuncsConf<T>;
   }
 
   async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {

@@ -40,7 +40,7 @@ const defaultSES = initClassConfiguration(SendEmailCommunicator, 'default', {aws
 ## Sending Messages
 Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SendEmailCommunicator` function from the workflow context:
 ```typescript
-    const result = await workflowContext.invokeOnConfig(defaultSES).sendEmail(
+    const result = await workflowContext.invoke(defaultSES).sendEmail(
         {
             to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
             from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
@@ -52,7 +52,7 @@ Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutori
 
 ## Sending Templated Messages
 Sending a templated email is slightly more involved, as a template must be set up first.  Setting up a template can be invoked as a communicator, or directly (so that it can be called from initialization, or other contexts where a workflow may not be in progress).
-- Use `workflowContext.invokeOnConfig(defaultSES).createEmailTemplate(...)` or `SendEmailCommunicator.createEmailTemplateFunction(...) to create the template.
+- Use `workflowContext.invoke(defaultSES).createEmailTemplate(...)` or `SendEmailCommunicator.createEmailTemplateFunction(...) to create the template.
 ```typescript
     await workflowContext.invokeOnConfg(defaultSES).createEmailTemplate(
         "testTemplate", {subject: "Email using test template", bodyText: "Today's date is {{todaydate}}."}
@@ -60,7 +60,7 @@ Sending a templated email is slightly more involved, as a template must be set u
 ```
 - Within a workflow, send email with the template, noting that the template substitution data is to be stringified JSON:
 ```typescript
-    await workflowContext.invokeOnConfig(defaultSES).sendTemplatedEmail({
+    await workflowContext.invoke(defaultSES).sendTemplatedEmail({
         to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
         from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
         templateName: "testTemplate",

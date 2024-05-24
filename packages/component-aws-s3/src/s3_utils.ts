@@ -241,10 +241,10 @@ export class S3Ops {
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
-            await ctx.invokeOnConfig(cfc).putS3Comm(key, content, contentType);
+            await ctx.invoke(cfc).putS3Comm(key, content, contentType);
         }
         catch (e) {
-            await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
+            await ctx.invoke(cfc).deleteS3Comm(key);
             throw e;
         }
     
@@ -262,7 +262,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass(S3Ops);
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
-        const txt = await ctx.invokeOnConfig(cfc).getS3Comm(key);
+        const txt = await ctx.invoke(cfc).getS3Comm(key);
         return txt;
     }
 
@@ -278,7 +278,7 @@ export class S3Ops {
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
         await cfc.arg.tableOps.deleteFileRecord(ctx, rec);
-        return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
+        return await ctx.invoke(cfc).deleteS3Comm(key);
     }
 
     //  App code deletes a file out of S3
@@ -292,7 +292,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass(S3Ops);
         const key = cfc.arg.tableOps.createS3Key(fileRecord);
         await cfc.arg.tableOps.deleteFileRecord(ctx, fileRecord);
-        return await ctx.invokeOnConfig(cfc).deleteS3Comm(key);
+        return await ctx.invoke(cfc).deleteS3Comm(key);
     }
 
     ////////////
@@ -310,7 +310,7 @@ export class S3Ops {
         const cfc = ctx.getConfiguredClass(S3Ops);
         const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
         const key = cfc.arg.tableOps.createS3Key(rec);
-        return await ctx.invokeOnConfig(cfc).getS3KeyComm(key, expirationSec);
+        return await ctx.invoke(cfc).getS3KeyComm(key, expirationSec);
     }
 
     //  Presigned U/L for end user
@@ -340,7 +340,7 @@ export class S3Ops {
 
         const key = cfc.arg.tableOps.createS3Key(rec);
 
-        const upkey = await ctx.invokeOnConfig(cfc).postS3KeyComm(key, expirationSec, contentOptions);
+        const upkey = await ctx.invoke(cfc).postS3KeyComm(key, expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {

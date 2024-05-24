@@ -49,12 +49,12 @@ export interface WorkflowInvokeParams {
 }
 
 export interface TestingRuntime {
+  invoke<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
+  invokeWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
+  startWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
-  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T>;
-  invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
-  startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -184,28 +184,38 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return proxy as InvokeFuncs<T>;
   }
 
-  invoke<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, true, null);
+  invoke<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> | InvokeFuncsConf<T> {
+    if (typeof object === 'function') {
+      return this.mainInvoke(object, workflowUUID, params, true, null);
+    }
+    else {
+      const targetCfg = object as ConfiguredClass<T>;
+      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
+    }
   }
 
-  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, true, null);
+  startWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams)
+    : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncsConf<T>
+  {
+    if (typeof object === 'function') {
+      return this.mainInvoke(object, workflowUUID, params, true, null);
+    }
+    else {
+      const targetCfg = object as ConfiguredClass<T>;
+      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
+    }
   }
 
-  invokeWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T> {
-    return this.mainInvoke(object, workflowUUID, params, false, null) as unknown as SyncHandlerWfFuncs<T>;
-  }
-
-  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
-  }
-
-  startWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
-  }
-
-  invokeWorkflowOnConfig<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T> {
-    return this.mainInvoke(targetCfg.ctor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+  invokeWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams)
+    : SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsConf<T>
+  {
+    if (typeof object === 'function') {
+      return this.mainInvoke(object, workflowUUID, params, false, null) as unknown as SyncHandlerWfFuncs<T>;
+    }
+    else {
+      const targetCfg = object as ConfiguredClass<T>;
+      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+    }
   }
 
   /**

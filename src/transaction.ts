@@ -47,11 +47,11 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
   }
 
   getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass.arg as T;
   }
   getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 }

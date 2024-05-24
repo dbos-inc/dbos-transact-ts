@@ -11,7 +11,7 @@ database:
   port: 5432
   username: 'postgres'
   password: ${PGPASSWORD}
-  app_db_name: 's3test'
+  app_db_name: 'dbostest'
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
   migrate: ['npx knex migrate:latest']
