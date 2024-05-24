@@ -162,7 +162,7 @@ describe("ses-tests", () => {
 
   beforeEach(async () => {
     if (s3IsAvailable) {
-      testRuntime = await createTestingRuntime([S3Ops, TestUserFileTable]);
+      testRuntime = await createTestingRuntime([S3Ops, TestUserFileTable], 's3-test-dbos-config.yaml);
       s3Cfg!.arg.bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
     }
     else {
