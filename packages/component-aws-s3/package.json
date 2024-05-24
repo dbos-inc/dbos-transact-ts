@@ -13,8 +13,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo 'no tests'",
-    "tests3": "npm run build && npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
+    "test": "npm run build && npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
     "setversion": "grunt setversion"
   },
   "devDependencies": {
