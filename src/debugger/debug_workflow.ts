@@ -202,7 +202,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async send<T extends NonNullable<any>>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
+  async send<T>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -214,7 +214,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv<T extends NonNullable<any>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async recv<T>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -226,7 +226,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check as T | null;
   }
 
-  async setEvent<T extends NonNullable<any>>(_key: string, _value: T): Promise<void> {
+  async setEvent<T>(_key: string, _value: T): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
     // Original result must exist during replay.
     const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
@@ -236,7 +236,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent<T extends NonNullable<any>>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async getEvent<T>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
