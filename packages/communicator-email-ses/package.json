@@ -13,12 +13,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "npm run build && jest --detectOpenHandles",
-    "setversion": "grunt setversion"
+    "test": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
-    "grunt": "^1.6.1",
-    "nerdbank-gitversioning": "^3.6.133",
     "typescript": "^5.3.3"
   },
   "peerDependencies": {

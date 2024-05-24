@@ -14,13 +14,10 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "echo 'no tests'",
-    "tests3": "npm run build && npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
-    "setversion": "grunt setversion"
+    "tests3": "npm run build && npx dbos rollback && npx dbos migrate && jest --detectOpenHandles"
   },
   "devDependencies": {
-    "grunt": "^1.6.1",
     "knex": "^3.1.0",
-    "nerdbank-gitversioning": "^3.6.133",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   },
