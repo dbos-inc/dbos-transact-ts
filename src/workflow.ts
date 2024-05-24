@@ -81,8 +81,8 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
-  startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflowOnConfig<R extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<R>, ...args: T): Promise<R>;
+  startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   send<T>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -407,7 +407,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends unknown[], R>(commFn: Communicator<R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
+  async external<T extends unknown[], R>(commFn: Communicator<T, R>, clscfg: ConfiguredClass<unknown> | null, ...args: T): Promise<R> {
     const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
