@@ -111,7 +111,7 @@ describe("ses-tests", () => {
   let s3Cfg : ConfiguredClassType<typeof S3Ops> | undefined = undefined;
 
   beforeAll(() => {
-    // Check if SES is available and update app config, skip the test if it's not
+    // Check if S3 is available and update app config, skip the test if it's not
     if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET'] ) {
       s3IsAvailable = false;
     }
