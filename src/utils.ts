@@ -80,7 +80,7 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
 
 export function DBOSReviver(_key: string, value: unknown): unknown {
   const candidate = value as SerializedBuffer;
-  if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
+  if (candidate && 'type' in candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
     return Buffer.from(candidate.data);
   }
   if (typeof value === 'string' && value.startsWith(JSON_DATE_VALUE_PREFIX)) {
