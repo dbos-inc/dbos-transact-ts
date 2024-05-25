@@ -2,6 +2,25 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"type": "typescript",
+			"tsconfig": "tsconfig.build.json",
+			"group": "build",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"label": "tsc: build - tsconfig.build.json"
+		},
+		{
+			"type": "typescript",
+			"tsconfig": "tsconfig.build.json",
+			"option": "watch",
+			"problemMatcher": [
+				"$tsc-watch"
+			],
+			"group": "build",
+			"label": "tsc: watch - tsconfig.build.json"
+		},
+		{
 			"type": "npm",
 			"script": "build",
 			"group": "build",

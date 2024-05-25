@@ -4,6 +4,19 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        { 
+            "type": "node",
+            "request": "launch",
+            "name": "Launch DBOS application",
+            "preLaunchTask": "tsc: watch - tsconfig.build.json",
+            "program": "${workspaceFolder}/dist/src/dbos-runtime/cli.js",
+            "args": [
+                "start",
+                "-d",
+                "/home/harry/apps/widget-store-plv8-proto",
+            ],
+            "console": "integratedTerminal"
+        },
         {
             "command": "npx dbos-sdk start",
             "name": "Launch Example",
