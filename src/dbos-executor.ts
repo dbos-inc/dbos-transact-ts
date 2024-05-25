@@ -27,7 +27,7 @@ import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
-import { PoolConfig } from 'pg';
+import { Pool, PoolConfig, QueryResultRow } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -47,6 +47,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { sleepms } from './utils';
 import { StoredProcedure } from './procedure';
+import { NoticeMessage } from "pg-protocol/dist/messages";
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -114,6 +115,7 @@ export class DBOSExecutor {
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
   readonly systemDatabase: SystemDatabase;
+  readonly procedurePool: Pool;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   static readonly tempWorkflowName = "temp_workflow";
@@ -165,6 +167,8 @@ export class DBOSExecutor {
         process.env[key] = value;
       }
     }
+
+    this.procedurePool = new Pool(config.poolConfig);
 
     if (config.telemetry?.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
@@ -268,7 +272,7 @@ export class DBOSExecutor {
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
         const wf = ro.registeredFunction as Workflow<any, any>;
-        this.#registerWorkflow(wf, {...ro.workflowConfig});
+        this.#registerWorkflow(wf, { ...ro.workflowConfig });
         this.logger.debug(`Registered workflow ${ro.name}`);
       } else if (ro.txnConfig) {
         const tx = ro.registeredFunction as Transaction<any, any>;
@@ -339,6 +343,42 @@ export class DBOSExecutor {
     this.logger.info("Workflow executor initialized");
   }
 
+  #logNotice(msg: NoticeMessage) {
+    switch (msg.severity) {
+      case "INFO":
+      case "LOG":
+      case "NOTICE":
+        this.logger.info(msg.message);
+        break;
+      case "WARNING":
+        this.logger.warn(msg.message);
+        break;
+      case "DEBUG":
+        this.logger.debug(msg.message);
+        break;
+      case "ERROR":
+      case "FATAL":
+      case "PANIC":
+        this.logger.error(msg.message);
+        break;
+      default:
+        this.logger.error(`Unknown notice severity: ${msg.severity} - ${msg.message}`);
+    }
+  }
+
+  async runProcedure<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<R[]> {
+    const client = await this.procedurePool.connect();
+    const log = (msg: NoticeMessage) => this.#logNotice(msg);
+    
+    try {
+      client.on('notice', log);
+      return await client.query<R>(sql, params).then(value => value.rows);
+    } finally {
+      client.off('notice', log);
+      client.release();
+    }
+  }
+
   async destroy() {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
@@ -355,6 +395,7 @@ export class DBOSExecutor {
     }
     await this.systemDatabase.destroy();
     await this.userDatabase.destroy();
+    await this.procedurePool.end();
     await this.logger.destroy();
   }
 
