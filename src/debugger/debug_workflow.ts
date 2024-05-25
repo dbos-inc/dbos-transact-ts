@@ -49,11 +49,11 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass.arg as T;
   }
   getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.  Was the method invoked with 'invoke' instead of 'invokeOnConfig'?`);
+    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
   }
 
@@ -61,22 +61,41 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.functionID++;
   }
 
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
+  invoke<T extends object>(object: T |  ConfiguredClass<T>): WFInvokeFuncs<T> | InvokeFuncsConf<T>  {
+    if (typeof object === 'function') {
+      const ops = getRegisteredOperations(object);
 
-    const proxy: any = {};
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.txnConfig
-        ?
-        (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
-        : op.commConfig
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+
+        proxy[op.name] = op.txnConfig
           ?
-          (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
-          : undefined;
+          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
+          : op.commConfig
+            ?
+            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            : undefined;
+      }
+      return proxy as WFInvokeFuncs<T>;
     }
-    return proxy as WFInvokeFuncs<T>;
+    else {
+      const targetCfg = object as ConfiguredClass<T>;
+      const ops = getRegisteredOperations(targetCfg.ctor);
+
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        proxy[op.name] = op.txnConfig
+          ?
+          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetCfg, ...args)
+          : op.commConfig
+            ?
+            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetCfg, ...args)
+            : undefined;
+      }
+      return proxy as InvokeFuncsConf<T>;
+    }
   }
+
 
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
     // Note: we read the recorded snapshot and transaction ID!
@@ -212,22 +231,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   // Deprecated
   async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
-  }
-
-  invokeOnConfig<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T> {
-    const ops = getRegisteredOperations(targetCfg.ctor);
-
-    const proxy: Record<string, unknown> = {};
-    for (const op of ops) {
-      proxy[op.name] = op.txnConfig
-        ?
-        (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetCfg, ...args)
-        : op.commConfig
-          ?
-          (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetCfg, ...args)
-          : undefined;
-    }
-    return proxy as InvokeFuncsConf<T>;
   }
 
   async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
