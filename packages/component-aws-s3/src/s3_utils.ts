@@ -6,7 +6,6 @@ import {
     ArgOptional,
     Communicator, CommunicatorContext,
     Configurable,
-    DBOSInitializer,
     InitContext,
     Workflow,
     WorkflowContext
@@ -35,19 +34,14 @@ export class S3Ops {
     // S3 Configuration
     //////////
 
+    static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
+
     static async initConfiguration(ctx: InitContext, arg: S3Config) {
+        // Get the config and call the validation
+        getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
         if (!arg.awscfg) {
             arg.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, arg.awscfgname ?? "");
         }
-        return Promise.resolve();
-    }
-
-    static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
-
-    @DBOSInitializer()
-    static checkConfig(ctx: InitContext): Promise<void> {
-        // Get the config and call the validation
-        getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
         return Promise.resolve();
     }
 
