@@ -141,10 +141,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, classConfig: ConfiguredClass<unknown> | null): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredClass: ConfiguredClass<unknown> | null): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this, classConfig };
+    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredClass };
 
     for (const op of ops) {
       if (asyncWf) {

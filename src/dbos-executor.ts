@@ -38,7 +38,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass, getRegisteredMethodName, getClassConfiguration } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, ConfiguredClass, getRegisteredMethodName, getConfiguredClass } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -419,7 +419,7 @@ export class DBOSExecutor {
       }
     }
 
-    return {wfInfo, config: getClassConfiguration(wf.workflowClassName, wf.workflowConfigName)};
+    return {wfInfo, configuredClass: getConfiguredClass(wf.workflowClassName, wf.workflowConfigName)};
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
@@ -443,7 +443,7 @@ export class DBOSExecutor {
       }
     }
 
-    return {txnInfo, config: getClassConfiguration(className, cfgName)};
+    return {txnInfo, config: getConfiguredClass(className, cfgName)};
   }
 
   getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
@@ -467,7 +467,7 @@ export class DBOSExecutor {
       }
     }
 
-    return {commInfo, config: getClassConfiguration(className, cfgName)};
+    return {commInfo, config: getConfiguredClass(className, cfgName)};
   }
 
   async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
@@ -488,7 +488,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName, params.classConfig);
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName, params.configuredClass);
 
     // If running in DBOS Cloud, set the executor ID
     if (process.env.DBOS__VMID) {
@@ -500,7 +500,7 @@ export class DBOSExecutor {
       status: StatusString.PENDING,
       name: wf.name,
       className: wCtxt.isTempWorkflow ? "" : getRegisteredMethodClassName(wf),
-      configName: params.classConfig?.configName || "",
+      configName: params.configuredClass?.configName || "",
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
       error: "",
@@ -599,7 +599,7 @@ export class DBOSExecutor {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name, params.classConfig);
+    const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name, params.configuredClass);
 
     // A workflow must have run before.
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
@@ -632,7 +632,7 @@ export class DBOSExecutor {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.transaction(txn, params.classConfig, ...args);
+      return await ctxtImpl.transaction(txn, params.configuredClass, ...args);
     };
     return (await this.workflow(temp_workflow, {
       ...params,
@@ -646,7 +646,7 @@ export class DBOSExecutor {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.external(commFn, params.classConfig, ...args);
+      return await ctxtImpl.external(commFn, params.configuredClass, ...args);
     };
     return (await this.workflow(temp_workflow, {
       ...params,
@@ -662,7 +662,7 @@ export class DBOSExecutor {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
-    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, classConfig: null }, destinationUUID, message, topic)).getResult();
+    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, configuredClass: null }, destinationUUID, message, topic)).getResult();
   }
 
   /**
@@ -720,11 +720,11 @@ export class DBOSExecutor {
     }
     const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
 
-    const {wfInfo, config} = this.getWorkflowInfoByStatus(wfStatus);
+    const {wfInfo, configuredClass} = this.getWorkflowInfoByStatus(wfStatus);
 
     if (wfInfo) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, classConfig: config }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, configuredClass: configuredClass }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -770,7 +770,7 @@ export class DBOSExecutor {
       throw new DBOSNotRegisteredError(wfName);
     }
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, classConfig: clscfg}, ...inputs);
+      return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, configuredClass: clscfg}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow

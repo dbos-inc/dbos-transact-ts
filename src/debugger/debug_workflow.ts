@@ -48,10 +48,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.applicationConfig = dbosExec.config.application;
   }
 
-  getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass.config as T;
-  }
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
@@ -223,7 +219,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: null }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: null }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -238,7 +234,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {

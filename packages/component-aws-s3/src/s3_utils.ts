@@ -77,7 +77,7 @@ export class S3Ops {
     @Communicator()
     static async deleteS3Comm(ctx: CommunicatorContext, key: string)
     {
-        const cfg = ctx.getClassConfig<S3Config>();
+        const cfg = ctx.getConfiguredClass(S3Ops).config;
         return await S3Ops.deleteS3(cfg.awscfg!, cfg.bucket, key);
     }
 
@@ -102,7 +102,7 @@ export class S3Ops {
     @Communicator()
     static async putS3Comm(ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
     {
-        const cfg = ctx.getClassConfig<S3Config>();
+        const cfg = ctx.getConfiguredClass(S3Ops).config;
         return await S3Ops.putS3(cfg.awscfg!, cfg.bucket, key, content, contentType);
     }
 
@@ -125,7 +125,7 @@ export class S3Ops {
     @Communicator()
     static async getS3Comm(ctx: CommunicatorContext, key: string)
     {
-        const cfg = ctx.getClassConfig<S3Config>();
+        const cfg = ctx.getConfiguredClass(S3Ops).config;
         return (await S3Ops.getS3(cfg.awscfg!, cfg.bucket, key)).Body?.transformToString();
     }
 
@@ -151,7 +151,7 @@ export class S3Ops {
     @Communicator()
     static async getS3KeyComm(ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
     {
-        const cfg = ctx.getClassConfig<S3Config>();
+        const cfg = ctx.getConfiguredClass(S3Ops).config;
         return await S3Ops.getS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs);
     }
 
@@ -203,7 +203,7 @@ export class S3Ops {
         })
     {
         try {
-            const cfg = ctx.getClassConfig<S3Config>();
+            const cfg = ctx.getConfiguredClass(S3Ops).config;
             return await S3Ops.postS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs, contentOptions);
         }
         catch (e) {

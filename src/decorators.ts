@@ -521,7 +521,7 @@ export function initClassConfiguration<T extends InitConfigMethod>(
   }
 }
 
-export function getClassConfiguration(clsname: string, cfgname: string): ConfiguredClass<unknown> | null {
+export function getConfiguredClass(clsname: string, cfgname: string): ConfiguredClass<unknown> | null {
   const classReg = classesByName.get(clsname);
   if (!classReg) return null;
   return classReg.configurations.get(cfgname) ?? null;

@@ -41,7 +41,7 @@ export type WFInvokeFuncsConf<T> =
 export interface WorkflowParams {
   workflowUUID?: string;
   parentCtx?: DBOSContextImpl;
-  classConfig: ConfiguredClass<unknown> | null;
+  configuredClass: ConfiguredClass<unknown> | null;
 }
 
 export interface WorkflowConfig {
@@ -96,7 +96,6 @@ export interface WorkflowContext extends DBOSContext {
   sleep(durationSec: number): Promise<void>;
 
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
-  getClassConfig<T>(): T;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -136,10 +135,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.applicationConfig = dbosExec.config.application;
   }
 
-  getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass.config as T;
-  }
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
@@ -281,7 +276,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: null }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: null }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -587,7 +582,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, classConfig: targetCfg }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: targetCfg }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {

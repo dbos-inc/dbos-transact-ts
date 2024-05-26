@@ -28,7 +28,6 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
   getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
-  getClassConfig<T>(): T;
 }
 
 export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSContextImpl implements TransactionContext<T> {
@@ -46,10 +45,6 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
     this.applicationConfig = workflowContext.applicationConfig;
   }
 
-  getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass.config as T;
-  }
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;

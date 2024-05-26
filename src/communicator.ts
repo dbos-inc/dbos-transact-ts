@@ -20,7 +20,6 @@ export interface CommunicatorContext extends DBOSContext {
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
   getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
-  getClassConfig<T>(): T;
 }
 
 export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext {
@@ -45,10 +44,6 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     this.configuredClass = configuredClass;
   }
 
-  getClassConfig<T>(): T {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass.config as T;
-  }
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;

@@ -28,7 +28,7 @@ class SendEmailCommunicator
     )
     {
         try {
-            const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
+            const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
             const ses = SendEmailCommunicator.createSES(cfg);
 
             return await ses.sendEmail({
@@ -58,7 +58,7 @@ class SendEmailCommunicator
         }
     )
     {
-        const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
+        const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
         const ses = SendEmailCommunicator.createSES(cfg);
         const command = new SendEmailCommand(
             {
@@ -142,7 +142,7 @@ class SendEmailCommunicator
         templateName:string,
         template: {subject: string, bodyHtml?:string, bodyText?:string}
     ) {
-        const cfg = ctx.getClassConfig<SESConfig>().awscfg!;
+        const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
         return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, template);
     }
 }
