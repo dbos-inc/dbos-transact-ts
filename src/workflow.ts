@@ -140,9 +140,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     return this.configuredClass.arg as T;
   }
-  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
+  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
+    const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
+    if (cc.ctor !== cls) throw new DBOSError(`Configration retrieval was attempted for class '${cls.name}' but saved for class '${cc.ctor.name}'`);
+    return cc;
   }
 
   functionIDGetIncrement(): number {
