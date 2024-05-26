@@ -314,7 +314,7 @@ export class DBOSExecutor {
         // Init its configurations
         const creg = getOrCreateClassRegistration(cls as AnyConstructor);
         for (const [_cfgname, cfg] of creg.configurations) {
-          await cfg.init.initConfiguration(new InitContext(this), cfg.arg);
+          await cfg.classConfigInitializerFunc.initConfiguration(new InitContext(this), cfg.config);
         }
       }
 
@@ -500,7 +500,7 @@ export class DBOSExecutor {
       status: StatusString.PENDING,
       name: wf.name,
       className: wCtxt.isTempWorkflow ? "" : getRegisteredMethodClassName(wf),
-      configName: params.classConfig?.cfgname || "",
+      configName: params.classConfig?.configName || "",
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
       error: "",

@@ -36,11 +36,11 @@ export class S3Ops {
 
     static AWS_S3_CONFIGURATIONS = 'aws_s3_configurations';
 
-    static async initConfiguration(ctx: InitContext, arg: S3Config) {
+    static async initConfiguration(ctx: InitContext, config: S3Config) {
         // Get the config and call the validation
         getAWSConfigs(ctx, S3Ops.AWS_S3_CONFIGURATIONS);
-        if (!arg.awscfg) {
-            arg.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, arg.awscfgname ?? "");
+        if (!config.awscfg) {
+            config.awscfg = getAWSConfigForService(ctx, this.AWS_S3_CONFIGURATIONS, config.awscfgname ?? "");
         }
         return Promise.resolve();
     }
@@ -230,8 +230,8 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
 
-        const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
-        const key = cfc.arg.tableOps.createS3Key(rec);
+        const rec = await cfc.config.tableOps.createFileRecord(ctx, fileDetails);
+        const key = cfc.config.tableOps.createS3Key(rec);
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
@@ -242,7 +242,7 @@ export class S3Ops {
             throw e;
         }
     
-        await cfc.arg.tableOps.insertActiveFileRecord(ctx, rec);
+        await cfc.config.tableOps.insertActiveFileRecord(ctx, rec);
         return rec;
     }
 
@@ -254,8 +254,8 @@ export class S3Ops {
     static async readStringFromFile(ctx: WorkflowContext, fileDetails: unknown)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.arg.tableOps.createS3Key(rec);
+        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.config.tableOps.createS3Key(rec);
         const txt = await ctx.invoke(cfc).getS3Comm(key);
         return txt;
     }
@@ -269,9 +269,9 @@ export class S3Ops {
     static async deleteFile(ctx: WorkflowContext, fileDetails: unknown)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.arg.tableOps.createS3Key(rec);
-        await cfc.arg.tableOps.deleteFileRecord(ctx, rec);
+        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.config.tableOps.createS3Key(rec);
+        await cfc.config.tableOps.deleteFileRecord(ctx, rec);
         return await ctx.invoke(cfc).deleteS3Comm(key);
     }
 
@@ -284,8 +284,8 @@ export class S3Ops {
     static async deleteFileRec(ctx: WorkflowContext, fileRecord: unknown)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const key = cfc.arg.tableOps.createS3Key(fileRecord);
-        await cfc.arg.tableOps.deleteFileRecord(ctx, fileRecord);
+        const key = cfc.config.tableOps.createS3Key(fileRecord);
+        await cfc.config.tableOps.deleteFileRecord(ctx, fileRecord);
         return await ctx.invoke(cfc).deleteS3Comm(key);
     }
 
@@ -302,8 +302,8 @@ export class S3Ops {
     static async getFileReadURL(ctx: WorkflowContext, fileDetails: unknown, @ArgOptional expirationSec = 3600) : Promise<string>
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.arg.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.arg.tableOps.createS3Key(rec);
+        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
+        const key = cfc.config.tableOps.createS3Key(rec);
         return await ctx.invoke(cfc).getS3KeyComm(key, expirationSec);
     }
 
@@ -329,10 +329,10 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
 
-        const rec = await cfc.arg.tableOps.createFileRecord(ctx, fileDetails);
-        await cfc.arg.tableOps.insertPendingFileRecord(ctx, rec);
+        const rec = await cfc.config.tableOps.createFileRecord(ctx, fileDetails);
+        await cfc.config.tableOps.insertPendingFileRecord(ctx, rec);
 
-        const key = cfc.arg.tableOps.createS3Key(rec);
+        const key = cfc.config.tableOps.createS3Key(rec);
 
         const upkey = await ctx.invoke(cfc).postS3KeyComm(key, expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
@@ -341,7 +341,7 @@ export class S3Ops {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
 
             // TODO: Validate the file
-            await cfc.arg.tableOps.activateFileRecord(ctx, rec);
+            await cfc.config.tableOps.activateFileRecord(ctx, rec);
         }
         catch (e) {
             try {

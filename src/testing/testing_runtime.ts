@@ -190,7 +190,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
     }
   }
 
@@ -202,7 +202,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
     }
   }
 
@@ -214,7 +214,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
     }
   }
 

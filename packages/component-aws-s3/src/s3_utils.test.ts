@@ -163,7 +163,7 @@ describe("ses-tests", () => {
   beforeEach(async () => {
     if (s3IsAvailable) {
       testRuntime = await createTestingRuntime([S3Ops, TestUserFileTable], 'dbos-config.yaml');
-      s3Cfg!.arg.bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
+      s3Cfg!.config.bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
     }
     else {
       console.log("S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET");

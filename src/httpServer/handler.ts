@@ -176,7 +176,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, true, targetCfg) as unknown as InvokeFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, true, targetCfg) as unknown as InvokeFuncsConf<T>;
     }
   }
 
@@ -186,7 +186,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
     }
   }
 
@@ -196,7 +196,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.ctor, workflowUUID, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetCfg.classCtor, workflowUUID, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
     }
   }
 

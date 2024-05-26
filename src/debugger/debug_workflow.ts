@@ -50,12 +50,12 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   getClassConfig<T>(): T {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    return this.configuredClass.arg as T;
+    return this.configuredClass.config as T;
   }
   getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
     if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
     const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
-    if (cc.ctor !== cls) throw new DBOSError(`Configration retrieval was attempted for class '${cls.name}' but saved for class '${cc.ctor.name}'`);
+    if (cc.classCtor !== cls) throw new DBOSError(`Configration retrieval was attempted for class '${cls.name}' but saved for class '${cc.classCtor.name}'`);
     return cc;
   }
 
@@ -82,7 +82,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
     else {
       const targetCfg = object as ConfiguredClass<T>;
-      const ops = getRegisteredOperations(targetCfg.ctor);
+      const ops = getRegisteredOperations(targetCfg.classCtor);
 
       const proxy: Record<string, unknown> = {};
       for (const op of ops) {

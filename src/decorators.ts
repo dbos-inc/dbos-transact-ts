@@ -190,10 +190,10 @@ implements MethodRegistrationBase
 }
 
 export interface ConfiguredClass<CT, T=unknown> {
-  init: InitConfigMethod;
-  cfgname: string;
-  arg: T;
-  ctor: CT;
+  configName: string;
+  config: T;
+  classCtor: CT;
+  classConfigInitializerFunc: InitConfigMethod;
 }
 
 export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
@@ -506,7 +506,7 @@ export function Configurable<T extends InitConfigMethod>() {
 export function initClassConfiguration<T extends InitConfigMethod>(
   ctor: T,
   cfgname: string,
-  arg: Parameters<T['initConfiguration']>[1]
+  config: Parameters<T['initConfiguration']>[1]
 )
 {
   //ReturnType<T['constructor']['initConfiguration']>
@@ -515,7 +515,7 @@ export function initClassConfiguration<T extends InitConfigMethod>(
     throw new Error(`Class ${clsreg.name} already has a registered configuration named ${cfgname}`);
   }
   else {
-    const reg = {init: ctor, arg, cfgname, ctor};
+    const reg = {classCtor: ctor, classConfigInitializerFunc: ctor, config, configName: cfgname};
     clsreg.configurations.set(cfgname, reg);
     return reg as ConfiguredClass<T, Parameters<T['initConfiguration']>[1]>;
   }
