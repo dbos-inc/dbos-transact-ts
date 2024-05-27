@@ -77,13 +77,14 @@ export const StatusString = {
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
+  startChildWorkflow<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  invokeChildWorkflow<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R>;
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
+
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   // These are subject to change...
-  startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   send<T>(destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -272,15 +273,27 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
    * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
    */
-  async startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
-    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
-    const funcId = this.functionIDGetIncrement();
-    const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: null }, this.workflowUUID, funcId, ...args);
+  async startChildWorkflow<T extends unknown[], R>(wfOrCC: Workflow<T, R> | ConfiguredClass<unknown>, ...args: T): Promise<WorkflowHandle<R>> {
+    if (typeof wfOrCC === 'function') {
+      const wf = wfOrCC as unknown as Workflow<T, R>;
+      // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+      const funcId = this.functionIDGetIncrement();
+      const childUUID: string = this.workflowUUID + "-" + funcId;
+      return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: null }, this.workflowUUID, funcId, ...args);
+    }
+    else {
+      // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+      const targetCfg = wfOrCC as unknown as ConfiguredClass<unknown>;
+      const funcId = this.functionIDGetIncrement();
+      const childUUID: string = this.workflowUUID + "-" + funcId;
+      const wf = args[0] as Workflow<T, R>;
+      const slicedArgs = args.slice(1) as unknown as T;
+      return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: targetCfg }, this.workflowUUID, funcId, ...slicedArgs);
+    }
   }
 
-  async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
-    return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
+  async invokeChildWorkflow<T extends unknown[], R>(wfOrCC: ConfiguredClass<unknown> | Workflow<T, R>, ...args: T): Promise<R> {
+    return this.startChildWorkflow(wfOrCC, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
@@ -576,17 +589,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
       return proxy as InvokeFuncsConf<T>;
     }
-  }
-
-  async startChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
-    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
-    const funcId = this.functionIDGetIncrement();
-    const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredClass: targetCfg }, this.workflowUUID, funcId, ...args);
-  }
-
-  async invokeChildWorkflowOnConfig<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R> {
-    return this.startChildWorkflowOnConfig(targetCfg, wf, ...args).then((handle) => handle.getResult());
   }
 
   /**
