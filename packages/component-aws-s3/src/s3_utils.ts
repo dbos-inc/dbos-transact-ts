@@ -345,7 +345,7 @@ export class S3Ops {
         }
         catch (e) {
             try {
-                const _cwfh = await ctx.startChildWorkflowOnConfig(cfc, S3Ops.deleteFileRec, rec);
+                const _cwfh = await ctx.startChildWorkflow(cfc, S3Ops.deleteFileRec, rec);
                 // No reason to await result
             }
             catch (e2) {
