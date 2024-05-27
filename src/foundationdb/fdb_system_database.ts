@@ -331,7 +331,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async setEvent<T extends NonNullable<any>>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
+  async setEvent<T>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void> {
     return this.dbRoot.doTransaction(async (txn) => {
       const operationOutputs = txn.at(this.operationOutputsDB);
       const workflowEvents = txn.at(this.workflowEventsDB);
@@ -352,7 +352,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     });
   }
 
-  async getEvent<T extends NonNullable<any>>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
       const output = (await this.operationOutputsDB.get([callerUUID, functionID])) as OperationOutput<T | null> | undefined;

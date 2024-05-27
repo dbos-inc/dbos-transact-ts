@@ -1,4 +1,5 @@
- import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
@@ -50,15 +51,16 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   invoke<T extends object>(object: T): WFInvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
-    const proxy: Record<string, unknown> = {};
 
+    const proxy: any = {};
     for (const op of ops) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       proxy[op.name] = op.txnConfig
-        ?
-        (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown>, ...args)
+        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
         : op.commConfig
-          ?
-          (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown>, ...args)
+          ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
           : undefined;
     }
     return proxy as WFInvokeFuncs<T>;
@@ -97,7 +99,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Execute a transactional function in debug mode.
    * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
-  async transaction<R>(txn: Transaction<R>, ...args: unknown[]): Promise<R> {
+  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
     const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
     if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
@@ -166,7 +168,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<R>(commFn: Communicator<R>, ..._args: unknown[]): Promise<R> {
+  async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
     const commConfig = this.#dbosExec.communicatorInfoMap.get(commFn.name);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
@@ -185,22 +187,22 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   // Invoke the debugWorkflow() function instead.
-  async startChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
     return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<R> {
+  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   // Deprecated
-  async childWorkflow<R>(wf: Workflow<R>, ...args: unknown[]): Promise<WorkflowHandle<R>> {
+  async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async send(_destinationUUID: string, _message: NonNullable<unknown>, _topic?: string | undefined): Promise<void> {
+  async send<T>(_destinationUUID: string, _message: T, _topic?: string | undefined): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -212,7 +214,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return;
   }
 
-  async recv<T extends NonNullable<unknown>>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async recv<T>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
@@ -224,7 +226,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check as T | null;
   }
 
-  async setEvent(_key: string, _value: NonNullable<unknown>): Promise<void> {
+  async setEvent<T>(_key: string, _value: T): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
     // Original result must exist during replay.
     const check: undefined | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<undefined>(this.workflowUUID, functionID);
@@ -234,7 +236,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     this.logger.debug("Use recorded setEvent output.");
   }
 
-  async getEvent<T extends NonNullable<unknown>>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
+  async getEvent<T>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
 
     // Original result must exist during replay.
