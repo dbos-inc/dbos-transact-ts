@@ -1,5 +1,15 @@
 import fs from "fs";
 import path from "path";
+import vercelms from 'ms';
+
+//Definitions copied from ms@3.0.0-canary.1
+declare type Unit = 'Years' | 'Year' | 'Yrs' | 'Yr' | 'Y' | 'Weeks' | 'Week' | 'W' | 'Days' | 'Day' | 'D' | 'Hours' | 'Hour' | 'Hrs' | 'Hr' | 'H' | 'Minutes' | 'Minute' | 'Mins' | 'Min' | 'M' | 'Seconds' | 'Second' | 'Secs' | 'Sec' | 's' | 'Milliseconds' | 'Millisecond' | 'Msecs' | 'Msec' | 'Ms';
+declare type UnitAnyCase = Unit | Uppercase<Unit> | Lowercase<Unit>;
+export declare type StringValue = `${number}` | `${number}${UnitAnyCase}` | `${number} ${UnitAnyCase}`;
+
+export function ms (value: StringValue) {
+  return vercelms(value)
+}
 
 /*
  * Use the node.js `fs` module to read the content of a file
@@ -76,3 +86,4 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   }
   return value;
 }
+

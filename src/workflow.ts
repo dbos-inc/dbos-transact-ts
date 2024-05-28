@@ -5,7 +5,7 @@ import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
-import { sleepms } from "./utils";
+import { StringValue, ms, sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -561,8 +561,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return await this.#dbosExec.systemDatabase.sleepms(this.workflowUUID, functionID, durationMS);
   }
 
-  async sleep(durationSec: number): Promise<void> {
-    return this.sleepms(durationSec * 1000);
+  async sleep(durationSec: number | StringValue): Promise<void> {
+    const duration = typeof durationSec === 'string' ? ms(durationSec) : durationSec * 1000;
+    return this.sleepms(duration);
   }
 }
 
