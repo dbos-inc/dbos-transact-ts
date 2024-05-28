@@ -70,7 +70,7 @@ export async function orgListUsers(host: string, json: boolean) {
   }
 }
 
-export async function rename(host: string, oldname: string, newname: string) {
+export async function renameOrganization(host: string, oldname: string, newname: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
@@ -100,6 +100,39 @@ export async function rename(host: string, oldname: string, newname: string) {
     return 0;
   } catch (e) {
     const errorLabel = `Failed to rename organization ${userCredentials.organization}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function joinOrganization(host: string, orgname: string, secret: string) {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.post(
+      `https://${host}/v1alpha1/${orgname}/join`,
+      {
+        secret: secret,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
+
+    logger.info(`Successfully joined organization ${orgname}. Please logout and login to refresh your local context before any further commands.`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to join organization ${orgname}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
