@@ -6,8 +6,7 @@ import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { Pool } from "pg";
 
 export interface QueryResultBase {
-  command: string;
-  rowCount: number | null;
+  rowCount: number;
 }
 
 export interface QueryResultRow {
@@ -34,7 +33,8 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
   ) {
     super(operationName, span, logger, workflowContext);
   }
-  query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>> {
-    return this.client.query<R>(sql, params);
+  async query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>> {
+    const { rowCount, rows } = await this.client.query<R>(sql, params);
+    return { rowCount: rowCount ?? rows.length, rows };
   }
 }
