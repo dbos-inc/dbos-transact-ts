@@ -3,17 +3,30 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
-import { UserDatabase } from "./user_database";
+import { Pool } from "pg";
+
+export interface QueryResultBase {
+  command: string;
+  rowCount: number | null;
+}
+
+export interface QueryResultRow {
+  [column: string]: any;
+}
+
+export interface QueryResult<R extends QueryResultRow = any> extends QueryResultBase {
+  rows: R[];
+}
 
 export type StoredProcedure<R> = (ctxt: StoredProcedureContext, ...args: unknown[]) => Promise<R>;
 
 export interface StoredProcedureContext extends Pick<DBOSContext, 'logger' | 'workflowUUID'> {
-  query<R>(sql: string, ...params: unknown[]): Promise<R[]>;
+  query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>>;
 }
 
 export class StoredProcedureContextImpl extends DBOSContextImpl implements StoredProcedureContext {
   constructor(
-    readonly client: UserDatabase,
+    readonly client: Pool,
     workflowContext: WorkflowContextImpl | WorkflowContextDebug,
     span: Span,
     logger: Logger,
@@ -21,8 +34,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
   ) {
     super(operationName, span, logger, workflowContext);
   }
-  query<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-     
-    return this.client.query<R, unknown[]>(sql, ...params);
+  query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>> {
+    return this.client.query<R>(sql, params);
   }
 }
