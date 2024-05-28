@@ -22,11 +22,9 @@ export interface S3Config{
     awscfg?: AWSServiceConfig,
     bucket: string,
     s3Callbacks: {
-        createFileRecord: (ctx: WorkflowContext, fdt: FileRecord) => Promise<unknown>;
-        lookUpFileRecord: (ctx: WorkflowContext, fdt: FileRecord) => Promise<unknown>;
-        insertActiveFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
-        insertPendingFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
-        activateFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        newActiveFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        newPendingFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        fileActivated: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
         fileDeleted: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
     }
 }
@@ -242,7 +240,7 @@ export class S3Ops {
             throw e;
         }
     
-        await cfc.config.s3Callbacks.insertActiveFileRecord(ctx, fileDetails);
+        await cfc.config.s3Callbacks.newActiveFile(ctx, fileDetails);
         return fileDetails;
     }
 
@@ -309,7 +307,7 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
 
-        await cfc.config.s3Callbacks.insertPendingFileRecord(ctx, fileDetails);
+        await cfc.config.s3Callbacks.newPendingFile(ctx, fileDetails);
 
         const upkey = await ctx.invoke(cfc).postS3KeyComm(fileDetails.key, expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
@@ -318,7 +316,7 @@ export class S3Ops {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
 
             // TODO: Validate the file
-            await cfc.config.s3Callbacks.activateFileRecord(ctx, fileDetails);
+            await cfc.config.s3Callbacks.fileActivated(ctx, fileDetails);
         }
         catch (e) {
             try {

@@ -133,32 +133,17 @@ describe("ses-tests", () => {
         awscfgname: 'aws_config',
         bucket: "",
         s3Callbacks: {
-          createFileRecord: async (ctx: WorkflowContext, fdt: unknown) => {
-            const details = fdt as FileDetails;
-            return await ctx.invoke(TestUserFileTable).chooseFileRecord(details);
-          },
-          lookUpFileRecord: async (ctx: WorkflowContext, fdt: unknown) => {
-            const details = fdt as FileDetails;
-            const res = await ctx.invoke(TestUserFileTable).lookUpByFields(details);
-            if (res.length < 1) {
-              throw new Error(`File not Found: ${JSON.stringify(fdt)}`);
-            }
-            if (res.length > 1) {
-              throw new Error(`File not unique: ${JSON.stringify(fdt)}`);
-            }
-            return res[0];
-          },
-          insertActiveFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
+          newActiveFile: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
             return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
           },
-          insertPendingFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
+          newPendingFile: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.PENDING;
             return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
           },
-          activateFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
+          fileActivated: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
             return await ctx.invoke(TestUserFileTable).updateFileRecord(rec);
