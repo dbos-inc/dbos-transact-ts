@@ -19,7 +19,7 @@ export interface CommunicatorContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
-  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
+  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
 }
 
 export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext {

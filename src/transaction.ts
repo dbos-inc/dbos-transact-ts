@@ -27,7 +27,7 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
-  getConfiguredClass<C extends InitConfigMethod>(_cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
+  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
 }
 
 export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSContextImpl implements TransactionContext<T> {
