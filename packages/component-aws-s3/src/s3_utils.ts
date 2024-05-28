@@ -13,18 +13,21 @@ import {
 import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
 
+export interface FileRecord {
+    getKey(): string;
+}
+
 export interface S3Config{
     awscfgname?: string,
     awscfg?: AWSServiceConfig,
     bucket: string,
-    tableOps: {
-        createS3Key: (rec: unknown) => string;
-        createFileRecord: (ctx: WorkflowContext, fdt: unknown) => Promise<unknown>;
-        lookUpFileRecord: (ctx: WorkflowContext, fdt: unknown) => Promise<unknown>;
-        insertActiveFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
-        insertPendingFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
-        activateFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
-        deleteFileRecord: (ctx: WorkflowContext, rec: unknown) => Promise<unknown>;
+    s3Callbacks: {
+        createFileRecord: (ctx: WorkflowContext, fdt: FileRecord) => Promise<unknown>;
+        lookUpFileRecord: (ctx: WorkflowContext, fdt: FileRecord) => Promise<unknown>;
+        insertActiveFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        insertPendingFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        activateFileRecord: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        fileDeleted: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
     }
 }
 
@@ -226,24 +229,21 @@ export class S3Ops {
     //     If it fails drop the partial file (if any) from S3
     // Note this will ALL get logged in the DB as a workflow parameter (and a communicator parameter) so better not be big!
     @Workflow()
-    static async saveStringToFile(ctx: WorkflowContext, fileDetails: unknown, content: string, @ArgOptional contentType = 'text/plain') 
+    static async saveStringToFile(ctx: WorkflowContext, fileDetails: FileRecord, content: string, @ArgOptional contentType = 'text/plain') 
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
 
-        const rec = await cfc.config.tableOps.createFileRecord(ctx, fileDetails);
-        const key = cfc.config.tableOps.createS3Key(rec);
-
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
-            await ctx.invoke(cfc).putS3Comm(key, content, contentType);
+            await ctx.invoke(cfc).putS3Comm(fileDetails.getKey(), content, contentType);
         }
         catch (e) {
-            await ctx.invoke(cfc).deleteS3Comm(key);
+            await ctx.invoke(cfc).deleteS3Comm(fileDetails.getKey());
             throw e;
         }
     
-        await cfc.config.tableOps.insertActiveFileRecord(ctx, rec);
-        return rec;
+        await cfc.config.s3Callbacks.insertActiveFileRecord(ctx, fileDetails);
+        return fileDetails;
     }
 
     //  App code reads a file out of S3
@@ -251,12 +251,10 @@ export class S3Ops {
     //    Does the DB query
     //    Does the S3 read
     @Workflow()
-    static async readStringFromFile(ctx: WorkflowContext, fileDetails: unknown)
+    static async readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.config.tableOps.createS3Key(rec);
-        const txt = await ctx.invoke(cfc).getS3Comm(key);
+        const txt = await ctx.invoke(cfc).getS3Comm(fileDetails.getKey());
         return txt;
     }
 
@@ -266,27 +264,11 @@ export class S3Ops {
     //     Do the S3 op
     //   Wrapper function to wait
     @Workflow()
-    static async deleteFile(ctx: WorkflowContext, fileDetails: unknown)
+    static async deleteFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.config.tableOps.createS3Key(rec);
-        await cfc.config.tableOps.deleteFileRecord(ctx, rec);
-        return await ctx.invoke(cfc).deleteS3Comm(key);
-    }
-
-    //  App code deletes a file out of S3
-    //   One-shot workflow
-    //     Do the table write
-    //     Do the S3 op
-    //   Wrapper function to wait
-    @Workflow()
-    static async deleteFileRec(ctx: WorkflowContext, fileRecord: unknown)
-    {
-        const cfc = ctx.getConfiguredClass(S3Ops);
-        const key = cfc.config.tableOps.createS3Key(fileRecord);
-        await cfc.config.tableOps.deleteFileRecord(ctx, fileRecord);
-        return await ctx.invoke(cfc).deleteS3Comm(key);
+        await cfc.config.s3Callbacks.fileDeleted(ctx, fileDetails);
+        return await ctx.invoke(cfc).deleteS3Comm(fileDetails.getKey());
     }
 
     ////////////
@@ -299,12 +281,10 @@ export class S3Ops {
     //  Presigned D/L for end user
     //    Hardly warrants a full workflow
     @Workflow()
-    static async getFileReadURL(ctx: WorkflowContext, fileDetails: unknown, @ArgOptional expirationSec = 3600) : Promise<string>
+    static async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600) : Promise<string>
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const rec = await cfc.config.tableOps.lookUpFileRecord(ctx, fileDetails);
-        const key = cfc.config.tableOps.createS3Key(rec);
-        return await ctx.invoke(cfc).getS3KeyComm(key, expirationSec);
+        return await ctx.invoke(cfc).getS3KeyComm(fileDetails.getKey(), expirationSec);
     }
 
     //  Presigned U/L for end user
@@ -318,7 +298,7 @@ export class S3Ops {
     //      We won't start that completion checker more than once
     //      If you ask again, you get the same presigned post URL
     @Workflow()
-    static async writeFileViaURL(ctx: WorkflowContext, fileDetails: unknown,
+    static async writeFileViaURL(ctx: WorkflowContext, fileDetails: FileRecord,
         @ArgOptional expirationSec = 3600,
         @ArgOptional contentOptions?: {
             contentType?: string,
@@ -329,23 +309,20 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
 
-        const rec = await cfc.config.tableOps.createFileRecord(ctx, fileDetails);
-        await cfc.config.tableOps.insertPendingFileRecord(ctx, rec);
+        await cfc.config.s3Callbacks.insertPendingFileRecord(ctx, fileDetails);
 
-        const key = cfc.config.tableOps.createS3Key(rec);
-
-        const upkey = await ctx.invoke(cfc).postS3KeyComm(key, expirationSec, contentOptions);
+        const upkey = await ctx.invoke(cfc).postS3KeyComm(fileDetails.getKey(), expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {
             await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
 
             // TODO: Validate the file
-            await cfc.config.tableOps.activateFileRecord(ctx, rec);
+            await cfc.config.s3Callbacks.activateFileRecord(ctx, fileDetails);
         }
         catch (e) {
             try {
-                const _cwfh = await ctx.startChildWorkflow(cfc, S3Ops.deleteFileRec, rec);
+                const _cwfh = await ctx.startChildWorkflow(cfc, S3Ops.deleteFile, fileDetails);
                 // No reason to await result
             }
             catch (e2) {
@@ -354,6 +331,6 @@ export class S3Ops {
             throw e;
         }
 
-        return rec;
+        return fileDetails;
     }
 }

@@ -1,4 +1,4 @@
-import { S3Ops } from "./s3_utils";
+import { FileRecord, S3Ops } from "./s3_utils";
 export { S3Ops };
 import {
   TestingRuntime, createTestingRuntime,
@@ -28,13 +28,29 @@ interface FileDetails {
   file_type: string;
   file_name: string;
 }
-interface UserFile {
-  file_id: string,
-  user_id: string,
-  file_status: string,
-  file_type: string,
-  file_time: number,
-  file_name: string,
+class UserFile implements FileDetails, FileRecord {
+  user_id: string;
+  file_type: string;
+  file_name: string;
+  file_id: string;
+  file_status: string;
+  file_time: number;
+  constructor(arg: {
+    user_id: string,
+    file_status: FileStatus,
+    file_type: string,
+    file_id: string,
+    file_name: string,
+    file_time: number})
+  {
+    this.user_id = arg.user_id;
+    this.file_status = arg.file_status;
+    this.file_type = arg.file_type;
+    this.file_id = arg.file_id;
+    this.file_time = arg.file_time;
+    this.file_name = arg.file_name;
+  }
+  getKey() {return TestUserFileTable.createS3Key(this);}
 }
 
 type KnexTransactionContext = TransactionContext<Knex>;
@@ -47,7 +63,7 @@ class TestUserFileTable {
   // Pick a file ID
   @Communicator()
   static chooseFileRecord(_ctx: CommunicatorContext, details: FileDetails): Promise<UserFile> {
-      return Promise.resolve({
+      const rec = new UserFile({
           user_id: details.user_id,
           file_status: FileStatus.PENDING,
           file_type: details.file_type,
@@ -55,6 +71,7 @@ class TestUserFileTable {
           file_name: details.file_name,
           file_time: new Date().getTime(),
       });
+      return Promise.resolve(rec);
   }
 
   static createS3Key(rec: UserFile) {
@@ -71,10 +88,6 @@ class TestUserFileTable {
   @Transaction()
   static async updateFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
       await ctx.client<UserFile>('user_files').update(rec).where({file_id: rec.file_id});
-  }
-  @Transaction()
-  static async deleteFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-      await ctx.client<UserFile>('user_files').delete().where({file_id: rec.file_id});
   }
   // Delete when part of record is known
   @Transaction()
@@ -119,8 +132,7 @@ describe("ses-tests", () => {
       s3Cfg = initClassConfiguration(S3Ops, 'default', {
         awscfgname: 'aws_config',
         bucket: "",
-        tableOps: {
-          createS3Key: (f) => {return TestUserFileTable.createS3Key(f as UserFile);},
+        s3Callbacks: {
           createFileRecord: async (ctx: WorkflowContext, fdt: unknown) => {
             const details = fdt as FileDetails;
             return await ctx.invoke(TestUserFileTable).chooseFileRecord(details);
@@ -151,7 +163,7 @@ describe("ses-tests", () => {
             rec.file_status = FileStatus.ACTIVE;
             return await ctx.invoke(TestUserFileTable).updateFileRecord(rec);
           },
-          deleteFileRecord: async (ctx: WorkflowContext, frec: unknown) => {
+          fileDeleted: async (ctx: WorkflowContext, frec: unknown) => {
             const rec = frec as UserFile;
             return await ctx.invoke(TestUserFileTable).deleteFileRecordById(rec.file_id);
           }
@@ -236,18 +248,19 @@ describe("ses-tests", () => {
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
     const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
-    const _myFileRecord = await testRuntime.invokeWorkflow(s3Cfg!).saveStringToFile(
-      myFile, 'This is my file'
+    const myFileRec = await testRuntime.invoke(TestUserFileTable).chooseFileRecord(myFile);
+    await testRuntime.invokeWorkflow(s3Cfg!).saveStringToFile(
+      myFileRec, 'This is my file'
     );
 
     // Get the file contents out of DBOS (using the table index)
     const mytxt = await testRuntime.invokeWorkflow(s3Cfg!).readStringFromFile(
-      myFile
+      myFileRec
     );
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFile);
+    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFileRec);
     expect(dfhandle).toBeDefined();
   });
 
@@ -264,7 +277,8 @@ describe("ses-tests", () => {
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
     const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
-    const wfhandle = await testRuntime.startWorkflow(s3Cfg!).writeFileViaURL(myFile, 60, {contentType: 'text/plain'});
+    const myFileRec = await testRuntime.invoke(TestUserFileTable).chooseFileRecord(myFile);
+    const wfhandle = await testRuntime.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, {contentType: 'text/plain'});
     //    Get the presigned post
     const ppost = await testRuntime.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
     //    Upload to the URL
@@ -284,7 +298,7 @@ describe("ses-tests", () => {
     const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const myurl = await testRuntime.invokeWorkflow(s3Cfg!).getFileReadURL(myFile);
+    const myurl = await testRuntime.invokeWorkflow(s3Cfg!).getFileReadURL(myFileRec);
     expect (myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
@@ -293,7 +307,7 @@ describe("ses-tests", () => {
 
     // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFile);
+    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFileRec);
     expect(dfhandle).toBeDefined();
   });
 
