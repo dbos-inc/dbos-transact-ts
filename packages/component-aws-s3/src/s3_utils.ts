@@ -14,7 +14,7 @@ import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-i
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
 
 export interface FileRecord {
-    getKey(): string;
+    key: string;
 }
 
 export interface S3Config{
@@ -235,10 +235,10 @@ export class S3Ops {
 
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
-            await ctx.invoke(cfc).putS3Comm(fileDetails.getKey(), content, contentType);
+            await ctx.invoke(cfc).putS3Comm(fileDetails.key, content, contentType);
         }
         catch (e) {
-            await ctx.invoke(cfc).deleteS3Comm(fileDetails.getKey());
+            await ctx.invoke(cfc).deleteS3Comm(fileDetails.key);
             throw e;
         }
     
@@ -254,7 +254,7 @@ export class S3Ops {
     static async readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        const txt = await ctx.invoke(cfc).getS3Comm(fileDetails.getKey());
+        const txt = await ctx.invoke(cfc).getS3Comm(fileDetails.key);
         return txt;
     }
 
@@ -268,7 +268,7 @@ export class S3Ops {
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
         await cfc.config.s3Callbacks.fileDeleted(ctx, fileDetails);
-        return await ctx.invoke(cfc).deleteS3Comm(fileDetails.getKey());
+        return await ctx.invoke(cfc).deleteS3Comm(fileDetails.key);
     }
 
     ////////////
@@ -284,7 +284,7 @@ export class S3Ops {
     static async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600) : Promise<string>
     {
         const cfc = ctx.getConfiguredClass(S3Ops);
-        return await ctx.invoke(cfc).getS3KeyComm(fileDetails.getKey(), expirationSec);
+        return await ctx.invoke(cfc).getS3KeyComm(fileDetails.key, expirationSec);
     }
 
     //  Presigned U/L for end user
@@ -311,7 +311,7 @@ export class S3Ops {
 
         await cfc.config.s3Callbacks.insertPendingFileRecord(ctx, fileDetails);
 
-        const upkey = await ctx.invoke(cfc).postS3KeyComm(fileDetails.getKey(), expirationSec, contentOptions);
+        const upkey = await ctx.invoke(cfc).postS3KeyComm(fileDetails.key, expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {

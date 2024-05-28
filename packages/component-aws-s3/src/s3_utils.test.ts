@@ -27,30 +27,17 @@ interface FileDetails {
   user_id: string;
   file_type: string;
   file_name: string;
+  file_id?: string;
+  file_status?: string;
+  file_time?: number;
 }
-class UserFile implements FileDetails, FileRecord {
+interface UserFile extends FileDetails, FileRecord {
   user_id: string;
   file_type: string;
   file_name: string;
   file_id: string;
   file_status: string;
   file_time: number;
-  constructor(arg: {
-    user_id: string,
-    file_status: FileStatus,
-    file_type: string,
-    file_id: string,
-    file_name: string,
-    file_time: number})
-  {
-    this.user_id = arg.user_id;
-    this.file_status = arg.file_status;
-    this.file_type = arg.file_type;
-    this.file_id = arg.file_id;
-    this.file_time = arg.file_time;
-    this.file_name = arg.file_name;
-  }
-  getKey() {return TestUserFileTable.createS3Key(this);}
 }
 
 type KnexTransactionContext = TransactionContext<Knex>;
@@ -63,14 +50,16 @@ class TestUserFileTable {
   // Pick a file ID
   @Communicator()
   static chooseFileRecord(_ctx: CommunicatorContext, details: FileDetails): Promise<UserFile> {
-      const rec = new UserFile({
+      const rec: UserFile = {
           user_id: details.user_id,
           file_status: FileStatus.PENDING,
           file_type: details.file_type,
           file_id: uuidv4(),
           file_name: details.file_name,
           file_time: new Date().getTime(),
-      });
+          key: "",
+      };
+      rec.key = TestUserFileTable.createS3Key(rec);
       return Promise.resolve(rec);
   }
 
@@ -78,42 +67,53 @@ class TestUserFileTable {
       const key = `${rec.file_type}/${rec.user_id}/${rec.file_id}/${rec.file_time}`;
       return key;
   }
+
+  static toFileDetails(rec: UserFile) {
+    return {
+      user_id: rec.user_id,
+      file_type: rec.file_type,
+      file_name: rec.file_name,
+      file_id: rec.file_id,
+      file_status: rec.file_status,
+      file_time: rec.file_time,
+    };
+  }
   
   // File table DML operations
   // Whole record is known
   @Transaction()
   static async insertFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-      await ctx.client<UserFile>('user_files').insert(rec);
+      await ctx.client<FileDetails>('user_files').insert(TestUserFileTable.toFileDetails(rec));
   }
   @Transaction()
   static async updateFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-      await ctx.client<UserFile>('user_files').update(rec).where({file_id: rec.file_id});
+      await ctx.client<FileDetails>('user_files').update(TestUserFileTable.toFileDetails(rec)).where({file_id: rec.file_id});
   }
   // Delete when part of record is known
   @Transaction()
   static async deleteFileRecordById(ctx: KnexTransactionContext, file_id: string) {
-      await ctx.client<UserFile>('user_files').delete().where({file_id});
+      await ctx.client<FileDetails>('user_files').delete().where({file_id});
   }
 
   // Queries
   @Transaction({readOnly: true})
   static async lookUpByFields(ctx: KnexTransactionContext, fields: FileDetails) {
-      const rv = await ctx.client<UserFile>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+      const rv = await ctx.client<FileDetails>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
       return rv ? [rv] : [];
   }
   @Transaction({readOnly: true})
   static async lookUpByName(ctx: KnexTransactionContext, user_id: string, file_type: string, file_name: string) {
-      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
       return rv ? [rv] : [];
   }
   @Transaction({readOnly: true})
   static async lookUpByType(ctx: KnexTransactionContext, user_id: string, file_type: string) {
-      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
+      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
       return rv;
   }
   @Transaction({readOnly: true})
   static async lookUpByUser(ctx: KnexTransactionContext, user_id: string) {
-      const rv = await ctx.client<UserFile>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
+      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
       return rv;
   }
 }
