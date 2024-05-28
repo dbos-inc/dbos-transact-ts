@@ -19,7 +19,7 @@ Then, each communicator module will support a list of AWS configurations, for
 example SES (Simple Email Service) uses:
 ```yaml
  aws_ses_configurations: my_aws_config
-```yaml
+```
  
 By providing this list, the communicator can validate configuration information
 at app startup.
