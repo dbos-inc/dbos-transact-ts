@@ -6,7 +6,7 @@ export async function orgInvite(host: string, json: boolean) {
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   try {
-    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/organizations/secret`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/secret`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -41,7 +41,7 @@ export async function orgListUsers(host: string, json: boolean) {
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   try {
-    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/organizations/users`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/users`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -83,7 +83,7 @@ export async function renameOrganization(host: string, oldname: string, newname:
 
   try {
     await axios.patch(
-      `https://${host}/v1alpha1/${userCredentials.organization}/organizations`,
+      `https://${host}/v1alpha1/${userCredentials.organization}`,
       {
         newName: newname,
       },
