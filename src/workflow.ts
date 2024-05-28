@@ -74,12 +74,16 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
+export type WorkflowOf<WC, T extends unknown[], R> = {
+  [K in keyof WC]: WC[K] extends Workflow<T, R> ? WC[K] : never
+}[keyof WC];
+
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends object>(targetCfg: ConfiguredClass<T>): InvokeFuncsConf<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  startChildWorkflow<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+  startChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredClass<C>, wf: WorkflowOf<C, T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflow<T extends unknown[], R>(targetCfg: ConfiguredClass<unknown>, wf: Workflow<T, R>, ...args: T): Promise<R>;
+  invokeChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredClass<C>, wf: WorkflowOf<C, T, R>, ...args: T): Promise<R>;
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
