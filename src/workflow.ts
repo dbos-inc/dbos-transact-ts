@@ -270,7 +270,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       proc.name,
       {
         operationUUID: this.workflowUUID,
-        operationType: OperationType.TRANSACTION,
+        operationType: OperationType.PROCEDURE,
         authenticatedUser: this.authenticatedUser,
         assumedRole: this.assumedRole,
         authenticatedRoles: this.authenticatedRoles,

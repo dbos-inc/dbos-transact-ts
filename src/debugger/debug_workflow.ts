@@ -11,6 +11,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContextImpl } from "../context";
 import { getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
+import { StoredProcedure, StoredProcedureContextImpl } from "../procedure";
 
 interface RecordedResult<R> {
   output: R;
@@ -153,7 +154,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     check = check!;
     result = result!;
 
-    if (check instanceof Error) {
+    if (check! instanceof Error) {
       throw check;
     }
 
@@ -166,6 +167,74 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check.output)}`);
     }
     return check.output; // Always return the recorded result.
+  }
+
+  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+    const procInfo = this.#dbosExec.procedureInfoMap.get(proc.name);
+    if (procInfo === undefined) { throw new DBOSDebuggerError(proc.name); }
+    const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      proc.name,
+      {
+        operationUUID: this.workflowUUID,
+        operationType: OperationType.PROCEDURE,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
+        readOnly: procInfo.config.readOnly ?? false,
+        isolationLevel: procInfo.config.isolationLevel,
+        executorID: this.executorID,
+      },
+      this.span,
+    );
+
+    let check: RecordedResult<R> | Error;
+    const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
+      // Original result must exist during replay.
+      const spCtxt = new StoredProcedureContextImpl(this.#dbosExec.procedurePool, this, span, this.#dbosExec.logger, proc.name);
+      check = await this.checkExecution<R>(client, funcId);
+
+      if (check instanceof Error) {
+        if (this.#dbosExec.debugProxy) {
+          this.logger.warn(`original stored procedure ${proc.name} failed with error: ${check.message}`);
+        } else {
+          throw check; // In direct mode, directly throw the error.
+        }
+      }
+
+      if (!this.#dbosExec.debugProxy) {
+        // Direct mode skips execution and return the recorded result.
+        return (check as RecordedResult<R>).output;
+      }
+      // If we have a proxy, then execute the user's transaction.
+      const result = await proc(spCtxt, ...args);
+      return result;
+    };
+
+    let result: Awaited<R> | Error;
+    try {
+      result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, procInfo.config);
+    } catch (e) {
+      result = e as Error;
+    }
+
+    check = check!;
+    result = result!;
+
+    if (check! instanceof Error) {
+      throw check;
+    }
+
+    // If returned nothing and the recorded value is also null/undefined, we just return it
+    if (result === undefined && !check.output) {
+      return result;
+    }
+
+    if (JSON.stringify(check.output) !== JSON.stringify(result)) {
+      this.logger.error(`Detected different stored procedure output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check.output)}`);
+    }
+    return check.output; // Always return the recorded result.
+
   }
 
   async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
