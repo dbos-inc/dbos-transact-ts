@@ -374,7 +374,7 @@ orgCommands
 
 orgCommands
   .command("join")
-  .description("Join an organization")
+  .description("Join an organization with an invite secret")
   .argument("<organization>", "Organization name")
   .argument("<secret>", "Organization secret")
   .action(async (organization: string, secret: string) => {
