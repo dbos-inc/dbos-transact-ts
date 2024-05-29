@@ -3,6 +3,8 @@ import {
   CommunicatorContext,
   Configurable,
   ConfiguredClassType,
+  GetApi,
+  HandlerContext,
   InitContext,
   Transaction,
   TransactionContext,
@@ -14,6 +16,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { PoolClient } from "pg";
 import { TestingRuntime, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import request from "supertest";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -117,6 +120,23 @@ class DBOSTestConfiguredClass {
     // Invoke a workflow function without its config
     await ctxt.invokeChildWorkflow(DBOSTestConfiguredClass.testBasicWorkflow, "please");
   }
+
+  @GetApi('/bad')
+  static async testUnconfiguredHandler(_ctx: HandlerContext) {
+    // A handler in a configured class doesn't have a configuration.
+    //  The compiler won't let you ask for one.
+    return Promise.resolve("This is a bad idea");
+  }
+
+  @Workflow()
+  @GetApi('/worse')
+  static async testUnconfiguredCCHandler(ctx: WorkflowContext) {
+    // A handler in a configured class doesn't have a configuration.
+    //  The compiler will currently let you ask for one if the function is a workflow (etc.)
+    //  You will earn an error for trying however...
+    const _cc = ctx.getConfiguredClass(DBOSTestConfiguredClass);
+    return Promise.resolve("This is even worse");
+  }
 }
 
 const config1: ConfiguredClassType<typeof DBOSTestConfiguredClass> =
@@ -193,5 +213,26 @@ describe("dbos-configclass-tests", () => {
       threw = true;
     }
     expect(threw).toBeTruthy();
+  });
+
+  test("badhandler", async() => {
+    let threw = false;
+    try {
+      const response = await request(testRuntime.getHandlersCallback()).get("/bad");
+      expect(response.statusCode).toBe(200);
+    }
+    catch (e) {
+      threw = true;
+    }
+    expect(threw).toBeFalsy();
+
+    try {
+      const response = await request(testRuntime.getHandlersCallback()).get("/worse");
+      expect(response.statusCode).toBe(500);
+    }
+    catch (e) {
+      threw = true;
+    }
+    expect(threw).toBeFalsy();
   });
 });
