@@ -7,6 +7,7 @@ export async function launchDashboard(host: string): Promise<number> {
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   try {
+    logger.warn(`'dashboard launch' is a deprecated command; use 'dashboard url' instead.`)
     const res = await axios.put(
       `https://${host}/v1alpha1/${userCredentials.organization}/dashboard`,
       {},

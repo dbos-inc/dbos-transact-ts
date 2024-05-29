@@ -331,7 +331,7 @@ dashboardCommands
 
 dashboardCommands
   .command('url')
-  .description('Get the URL of your Monitoring Dashboard')
+  .description('Deploy the Monitoring Dashboard if it does not exist; then return its URL')
   .action(async () => {
     const exitCode = await getDashboardURL(DBOSCloudHost);
     process.exit(exitCode);
