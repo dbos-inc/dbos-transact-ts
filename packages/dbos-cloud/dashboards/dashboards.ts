@@ -70,3 +70,29 @@ export async function getDashboardURL(host: string): Promise<number> {
   }
   return 1;
 }
+
+
+export async function deleteDashboard(host: string): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    const res = await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/dashboard`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    logger.info(`Dashboard deleted`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to delete dashboard`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+  }
+  return 1;
+}
