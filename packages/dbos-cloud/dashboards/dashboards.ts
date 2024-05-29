@@ -77,7 +77,7 @@ export async function deleteDashboard(host: string): Promise<number> {
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
   try {
-    const res = await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/dashboard`, {
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/dashboard`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
