@@ -11,7 +11,7 @@ import { Command } from 'commander';
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB } from "./databases/databases.js";
-import { launchDashboard, getDashboardURL } from "./dashboards/dashboards.js";
+import { launchDashboard, getDashboardURL, deleteDashboard } from "./dashboards/dashboards.js";
 import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from 'prompt-sync';
@@ -331,11 +331,20 @@ dashboardCommands
 
 dashboardCommands
   .command('url')
-  .description('Get the URL of your Monitoring Dashboard')
+  .description('Deploy the Monitoring Dashboard if it does not exist; then return its URL')
   .action(async () => {
     const exitCode = await getDashboardURL(DBOSCloudHost);
     process.exit(exitCode);
   });
+
+dashboardCommands
+  .command('delete')
+  .description('Delete your Monitoring Dashboard')
+  .action(async () => {
+    const exitCode = await deleteDashboard(DBOSCloudHost);
+    process.exit(exitCode);
+  });
+
 
 ////////////////////////////
 /* ORGANIZATIONS COMMANDS */
