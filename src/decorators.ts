@@ -277,7 +277,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
-    const classname = target.constructor.name.toString();
+    const classname = (target as {name: string}).name;
 
     methReg.name = propertyKey.toString();
     methReg.className = classname;
