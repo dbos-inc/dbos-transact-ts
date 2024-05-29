@@ -8,7 +8,6 @@ import {
   TransactionContext,
   Workflow,
   WorkflowContext,
-  WorkflowHandle,
   initClassConfiguration,
 } from "../src";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -17,43 +16,6 @@ import { PoolClient } from "pg";
 import { TestingRuntime, createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
-
-describe("dbos-configclass-tests", () => {
-  let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
-  let config1: ConfiguredClassType<typeof DBOSTestConfiguredClass> | undefined = undefined;
-  let configA: ConfiguredClassType<typeof DBOSTestConfiguredClass> | undefined = undefined;
-
-  beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-  });
-
-  beforeEach(async () => {
-    DBOSTestConfiguredClass.configs = new Map();
-    config1 = initClassConfiguration(DBOSTestConfiguredClass, "config1", new ConfigTracker("config1"));
-    configA = initClassConfiguration(DBOSTestConfiguredClass, "configA", new ConfigTracker("configA"));
-    testRuntime = await createInternalTestRuntime([DBOSTestConfiguredClass], config);
-  });
-
-  afterEach(async () => {
-    await testRuntime.destroy();
-  });
-
-  test("simple-function", async () => {
-    await testRuntime.invoke(config1!).testCommunicator();
-    await testRuntime.invoke(configA!).testCommunicator();
-    await testRuntime.invoke(config1!).testTransaction1();
-    await testRuntime.invoke(configA!).testTransaction1();
-
-    expect(config1!.config.nByName).toBe(2);
-    expect(configA!.config.nByName).toBe(2);
-    expect(config1!.config.nComm).toBe(1);
-    expect(configA!.config.nComm).toBe(1);
-    expect(config1!.config.nTrans).toBe(1);
-    expect(configA!.config.nTrans).toBe(1);
-  });
-});
 
 class ConfigTracker {
   name: string = "";
@@ -65,6 +27,9 @@ class ConfigTracker {
 
   constructor(name: string) {
     this.name = name;
+  }
+  reset() {
+    this.nInit = this.nByName = this.nWF = this.nComm = this.nTrans = 0;
   }
 }
 
@@ -118,16 +83,115 @@ class DBOSTestConfiguredClass {
   }
 
   @Workflow()
-  static async testBasicWorkflow(ctxt: WorkflowContext) {
+  static async testBasicWorkflow(ctxt: WorkflowContext, key: string) {
+    expect(key).toBe("please");
     const cc = ctxt.getConfiguredClass(DBOSTestConfiguredClass);
     expect(cc).toBeDefined();
     expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
     expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
-    ++cc.config.nComm;
+    ++cc.config.nWF;
     ++cc.config.nByName;
 
     // Invoke a transaction and a communicator
     await ctxt.invoke(cc).testCommunicator();
     await ctxt.invoke(cc).testTransaction1();
   }
+
+  @Workflow()
+  static async testChildWorkflow(ctxt: WorkflowContext) {
+    const cc = ctxt.getConfiguredClass(DBOSTestConfiguredClass);
+    expect(cc).toBeDefined();
+    expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
+    expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
+    ++cc.config.nWF;
+    ++cc.config.nByName;
+
+    // Invoke a workflow that invokes a transaction and a communicator
+    await ctxt.invokeChildWorkflow(cc, DBOSTestConfiguredClass.testBasicWorkflow, "please");
+    const wfh = await ctxt.startChildWorkflow(cc, DBOSTestConfiguredClass.testBasicWorkflow, "please");
+    await wfh.getResult();
+  }
+
+  @Workflow()
+  static async testBadWorkflow(ctxt: WorkflowContext) {
+    // Invoke a workflow function without its config
+    await ctxt.invokeChildWorkflow(DBOSTestConfiguredClass.testBasicWorkflow, "please");
+  }
 }
+
+const config1: ConfiguredClassType<typeof DBOSTestConfiguredClass> =
+  initClassConfiguration(DBOSTestConfiguredClass, "config1", new ConfigTracker("config1"));
+const configA = initClassConfiguration(DBOSTestConfiguredClass, "configA", new ConfigTracker("configA"));
+
+describe("dbos-configclass-tests", () => {
+  let config: DBOSConfig;
+  let testRuntime: TestingRuntime;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+  });
+
+  beforeEach(async () => {
+    DBOSTestConfiguredClass.configs = new Map();
+    config1.config.reset();
+    configA.config.reset();
+
+    testRuntime = await createInternalTestRuntime([DBOSTestConfiguredClass], config);
+  });
+
+  afterEach(async () => {
+    await testRuntime.destroy();
+  });
+
+  test("simple-functions", async () => {
+    await testRuntime.invoke(config1).testCommunicator();
+    await testRuntime.invoke(configA).testCommunicator();
+    await testRuntime.invoke(config1).testTransaction1();
+    await testRuntime.invoke(configA).testTransaction1();
+
+    expect(config1.config.nByName).toBe(2);
+    expect(configA.config.nByName).toBe(2);
+    expect(config1.config.nComm).toBe(1);
+    expect(configA.config.nComm).toBe(1);
+    expect(config1.config.nTrans).toBe(1);
+    expect(configA.config.nTrans).toBe(1);
+  });
+
+  test("simplewf", async() => {
+    await testRuntime.invokeWorkflow(config1).testBasicWorkflow("please");
+    expect(config1.config.nTrans).toBe(1);
+    expect(config1.config.nComm).toBe(1);
+    expect(config1.config.nWF).toBe(1);
+    expect(config1.config.nByName).toBe(3);
+
+    await (await testRuntime.startWorkflow(configA).testBasicWorkflow("please")).getResult();
+    expect(configA.config.nTrans).toBe(1);
+    expect(configA.config.nComm).toBe(1);
+    expect(configA.config.nWF).toBe(1);
+    expect(configA.config.nByName).toBe(3);
+  });
+
+  test("childwf", async() => {
+    await testRuntime.invokeWorkflow(config1).testChildWorkflow();
+    expect(config1.config.nTrans).toBe(2);
+    expect(config1.config.nComm).toBe(2);
+    expect(config1.config.nWF).toBe(3);
+    expect(config1.config.nByName).toBe(7);
+  });
+
+  test("badcall", async () => {
+    await testRuntime.invoke(config1).testBadCall();
+  });
+
+  test("badwf", async () => {
+    let threw = false;
+    try {
+      await testRuntime.invokeWorkflow(config1).testBadWorkflow();
+    }
+    catch (e) {
+      threw = true;
+    }
+    expect(threw).toBeTruthy();
+  });
+});
