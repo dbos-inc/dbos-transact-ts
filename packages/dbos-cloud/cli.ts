@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 
-import {
-  registerApp,
-  listApps,
-  deleteApp,
-  deployAppCode,
-  getAppLogs,
-} from "./applications/index.js";
-import { Command } from 'commander';
+import { registerApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
+import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
 import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB } from "./databases/databases.js";
@@ -23,7 +17,7 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
-import { orgInvite, orgListUsers, rename } from "./organizations/organization.js";
+import { orgInvite, orgListUsers, renameOrganization, joinOrganization } from "./organizations/organization.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -33,9 +27,9 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "packa
 try {
   const notifier = updateNotifier({
     pkg: packageJson,
-    updateCheckInterval: 0
-  })
-  if (notifier.update && !notifier.update.current.includes("preview") && !notifier.update.current.includes("placeholder") && (notifier.update.current !== notifier.update.latest)) {
+    updateCheckInterval: 0,
+  });
+  if (notifier.update && !notifier.update.current.includes("preview") && !notifier.update.current.includes("placeholder") && notifier.update.current !== notifier.update.latest) {
     console.log(`
   ${chalk.yellow("-----------------------------------------------------------------------------------------")}
 
@@ -44,8 +38,7 @@ try {
   To upgrade the DBOS Cloud CLI to the latest version, run the following command:
   ${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
 
-  ${chalk.yellow("-----------------------------------------------------------------------------------------")}`
-    );
+  ${chalk.yellow("-----------------------------------------------------------------------------------------")}`);
   }
 } catch (error) {
   // Ignore errors in the notifier
@@ -77,7 +70,6 @@ program
     const exitCode = await profile(DBOSCloudHost, options.json);
     process.exit(exitCode);
   });
-
 
 program
   .command('register')
@@ -350,39 +342,45 @@ dashboardCommands
 /* ORGANIZATIONS COMMANDS */
 ////////////////////////////
 
-const orgCommands = program
-  .command('organization')
-  .alias('organizations')
-  .alias('org')
-  .description('Manage dbos organizations')
+const orgCommands = program.command("organization").alias("organizations").alias("org").description("Manage dbos organizations");
 
-  orgCommands
-  .command('invite')
+orgCommands
+  .command("invite")
   .description("Generate an invite secret for a user to join your organization")
-  .option('--json', 'Emit JSON output')
-  .action((async (options: { json: boolean }) => {
+  .option("--json", "Emit JSON output")
+  .action(async (options: { json: boolean }) => {
     const exitCode = await orgInvite(DBOSCloudHost, options.json);
     process.exit(exitCode);
-  }))
+  });
 
 orgCommands
-  .command('list')
+  .command("list")
   .description("List users in your organization")
-  .option('--json', 'Emit JSON output')
-  .action((async (options: { json: boolean }) => {
+  .option("--json", "Emit JSON output")
+  .action(async (options: { json: boolean }) => {
     const exitCode = await orgListUsers(DBOSCloudHost, options.json);
     process.exit(exitCode);
-  }))
+  });
 
 orgCommands
-  .command('rename')
+  .command("rename")
   .description("Rename the organization")
-  .argument('<oldname>', 'Organization old name')
-  .argument('<newname>', 'Organization new name')
-  .action((async (oldname: string, newname: string) => {
-    const exitCode = await rename(DBOSCloudHost, oldname, newname);
+  .argument("<oldname>", "Organization old name")
+  .argument("<newname>", "Organization new name")
+  .action(async (oldname: string, newname: string) => {
+    const exitCode = await renameOrganization(DBOSCloudHost, oldname, newname);
     process.exit(exitCode);
-}))  
+  });
+
+orgCommands
+  .command("join")
+  .description("Join an organization with an invite secret")
+  .argument("<organization>", "Organization name")
+  .argument("<secret>", "Organization secret")
+  .action(async (organization: string, secret: string) => {
+    const exitCode = await joinOrganization(DBOSCloudHost, organization, secret);
+    process.exit(exitCode);
+  });
 
 program.parse(process.argv);
 
@@ -390,5 +388,3 @@ program.parse(process.argv);
 if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
-
-
