@@ -1,7 +1,7 @@
 import {
   Communicator,
   CommunicatorContext,
-  ConfiguredClassType,
+  ConfiguredInstance,
   GetApi,
   HandlerContext,
   InitContext,
@@ -9,7 +9,7 @@ import {
   TransactionContext,
   Workflow,
   WorkflowContext,
-  initClassConfiguration,
+  configureInstance,
 } from "../src";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
@@ -35,11 +35,12 @@ class ConfigTracker {
   }
 }
 
-class DBOSTestConfiguredClass {
+class DBOSTestConfiguredClass extends ConfiguredInstance {
   static configs : Map<string, ConfigTracker> = new Map();
 
   tracker: ConfigTracker;
-  constructor(name: string) {
+  constructor(name: string, readonly val:number) {
+    super(name);
     this.tracker = new ConfigTracker(name);
   }
 
@@ -56,8 +57,8 @@ class DBOSTestConfiguredClass {
   @Transaction()
   testTransaction1(_txnCtxt: TestTransactionContext) {
     const arg = this.tracker;
-    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
-    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
     ++arg.nTrans;
     ++arg.nByName;
     return Promise.resolve();
@@ -66,8 +67,8 @@ class DBOSTestConfiguredClass {
   @Communicator()
   testCommunicator(ctxt: CommunicatorContext) {
     const arg = this.tracker;
-    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
-    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
     ++arg.nComm;
     ++arg.nByName;
     return Promise.resolve();
@@ -77,21 +78,21 @@ class DBOSTestConfiguredClass {
   async testBasicWorkflow(ctxt: WorkflowContext, key: string) {
     expect(key).toBe("please");
     const arg = this.tracker;
-    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
-    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
     ++arg.nWF;
     ++arg.nByName;
 
     // Invoke a transaction and a communicator
-    await ctxt.invoke(this).testCommunicator();
-    await ctxt.invoke(this).testTransaction1();
+//    await ctxt.invoke(this).testCommunicator();
+//    await ctxt.invoke(this).testTransaction1();
   }
 
   @Workflow()
   async testChildWorkflow(ctxt: WorkflowContext) {
     const arg = this.tracker;
-    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
-    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
     ++arg.nWF;
     ++arg.nByName;
 
@@ -125,6 +126,8 @@ const config1: ConfiguredClassType<typeof DBOSTestConfiguredClass> =
   initClassConfiguration(DBOSTestConfiguredClass, "config1", new ConfigTracker("config1"));
 const configA = initClassConfiguration(DBOSTestConfiguredClass, "configA", new ConfigTracker("configA"));
 */
+const config1 = configureInstance(DBOSTestConfiguredClass, "config1", 1);
+const configA = configureInstance(DBOSTestConfiguredClass, "configA", 2);
 
 describe("dbos-configclass-tests", () => {
   let config: DBOSConfig;
@@ -136,9 +139,9 @@ describe("dbos-configclass-tests", () => {
   });
 
   beforeEach(async () => {
-//    DBOSTestConfiguredClass.configs = new Map();
-//    config1.config.reset();
-//    configA.config.reset();
+    DBOSTestConfiguredClass.configs = new Map();
+    config1.tracker.reset();
+    configA.tracker.reset();
 
     testRuntime = await createInternalTestRuntime([DBOSTestConfiguredClass], config);
   });

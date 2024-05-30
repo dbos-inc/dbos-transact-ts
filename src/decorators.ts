@@ -492,18 +492,36 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
-export interface InitConfigMethod {
+export abstract class ConfiguredInstance {
+  readonly name: string;
+  constructor(name: string) {
+    this.name = name;
+  }
+  abstract initialize(ctx: InitContext): Promise<void>;
+}
+
+//export type IsConfiguredInstance<T> = T extends ConfiguredInstance ? T : never;
+
+export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
+{
+  const inst = new cls(name, ...args);
+  // TODO Register this
+  return inst;
+}
+
+export interface InitConfigMethod { // TODO: Remove
   new (...args: unknown[]) : object;
   initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
 }
-export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never;
 
-export function Configurable<T extends InitConfigMethod>() {
+export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never; // TODO Remove
+
+export function Configurable<T extends InitConfigMethod>() { // TODO: Remove
   return function (_constructor: HasInitConfigMethod<T>) {
   };
 }
 
-export function initClassConfiguration<T extends InitConfigMethod>(
+export function initClassConfiguration<T extends InitConfigMethod>( // TODO: Remove
   ctor: T,
   cfgname: string,
   config: Parameters<T['initConfiguration']>[1]

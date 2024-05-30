@@ -2,9 +2,9 @@
 import { IncomingMessage } from "http";
 import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
-import { ConfiguredClass, getRegisteredOperations } from "../decorators";
+import { ConfiguredClass, ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
-import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncsConf, InvokeFuncs, InvokeFuncsConf, SyncHandlerWfFuncs, SyncHandlerWfFuncsConf } from "../httpServer/handler";
+import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncsConf, InvokeFuncs, InvokeFuncsConf, InvokeFuncsInst, SyncHandlerWfFuncs, SyncHandlerWfFuncsConf } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
@@ -49,7 +49,8 @@ export interface WorkflowInvokeParams {
 }
 
 export interface TestingRuntime {
-  invoke<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T>;
+  invoke<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T>; // TODO Remove
+  invoke<T extends ConfiguredInstance>(targetInst: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   invokeWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;

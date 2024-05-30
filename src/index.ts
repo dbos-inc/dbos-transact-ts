@@ -55,6 +55,10 @@ export {
   // Typeorm Class Decorators
   OrmEntities,
 
+  // Class Instances
+  ConfiguredInstance,
+  configureInstance,
+
   // Method Decorators
   Transaction,
   Workflow,
@@ -64,7 +68,7 @@ export {
   DBOSDeploy,
 } from "./decorators";
 
-export type ConfiguredClassType<C extends InitConfigMethod> = ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
+export type ConfiguredClassType<C extends InitConfigMethod> = ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>; // TODO Remove
 
 export {
   ArgSources,

@@ -2,7 +2,7 @@ import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCrea
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
-import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsConf } from "../workflow";
+import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsConf, WFInvokeFuncsInst } from "../workflow";
 import { Transaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -15,7 +15,8 @@ import { APITypes, ArgSources } from "./handlerTypes";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
-export type InvokeFuncsConf<T> = WFInvokeFuncsConf<T>;
+export type InvokeFuncsConf<T> = WFInvokeFuncsConf<T>; // TODO: Remove
+export type InvokeFuncsInst<T> = WFInvokeFuncsInst<T>;
 
 export type AsyncHandlerWfFuncs<T> = 
   T extends InitConfigMethod
