@@ -119,12 +119,14 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgUserClient.connect();
 
   // Create DBOS table/schema in user DB.
-  const schemaExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
-  if (!schemaExists.rows[0].exists) {
+  // removed schema check since stored proc compiler emits routines in the dbos schema + creating the user db table + index is idempotent.
+  // TODO: Qian is going to update this code to correctly check table/index existence before skipping this step
+  // const schemaExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
+  // if (!schemaExists.rows[0].exists) {
     await pgUserClient.query(createUserDBSchema);
     await pgUserClient.query(userDBSchema);
     await pgUserClient.query(userDBIndex);
-  }
+  // }
 
   // Create the DBOS system database.
   const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
