@@ -293,11 +293,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       $args.unshift(bufferedResults.length > 0 ? JSON.stringify(bufferedResults) : null);
     }
 
-    const sql = `CALL "${proc.name}_proc"(${$args.map((_v, i) => `$${i + 1}`).join()});`;
-
     type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
     try {
-      const [{ return_value }] = await this.#dbosExec.runProcedure<ReturnValue>(sql, ...$args);
+      const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, ...$args);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const { error, output, txn_snapshot, txn_id, created_at } = return_value;
 

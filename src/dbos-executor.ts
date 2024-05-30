@@ -367,13 +367,18 @@ export class DBOSExecutor {
     }
   }
 
-  async runProcedure<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<R[]> {
+  async callProcedure<R extends QueryResultRow = any>(proc: StoredProcedure<unknown>, ...values: unknown[]): Promise<R[]> {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
-    
+
+    const procName = this.config.appVersion
+      ? `${proc.name}${this.config.appVersion}_proc`
+      : `${proc.name}_proc`;
+
+    const sql = `CALL "${procName}"(${values.map((_v, i) => `$${i + 1}`).join()});`;
     try {
       client.on('notice', log);
-      return await client.query<R>(sql, params).then(value => value.rows);
+      return await client.query<R>(sql, values).then(value => value.rows);
     } finally {
       client.off('notice', log);
       client.release();
