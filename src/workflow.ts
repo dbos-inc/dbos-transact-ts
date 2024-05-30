@@ -49,6 +49,7 @@ export interface WorkflowParams {
   workflowUUID?: string;
   parentCtx?: DBOSContextImpl;
   configuredClass: ConfiguredClass<unknown> | null;
+  configuredInstance?: ConfiguredInstance | null;
 }
 
 export interface WorkflowConfig {

@@ -223,23 +223,40 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
-  for (const name of Object.getOwnPropertyNames(target)) {
-    const operation = Reflect.getOwnMetadata(methodMetadataKey, target, name) as MethodRegistrationBase | undefined;
-    if (operation) { registeredOperations.push(operation); }
+  if (typeof target === 'function') {
+    for (const name of Object.getOwnPropertyNames(target)) {
+      const operation = Reflect.getOwnMetadata(methodMetadataKey, target, name) as MethodRegistrationBase | undefined;
+      if (operation) { registeredOperations.push(operation); }
+    }
+  }
+  else {
+    let current: object | undefined = target;
+    while (current) {
+      for (const name of Object.getOwnPropertyNames(current)) {
+        console.log(`Looking up ${target.constructor.name}/${name}`);
+        const operation = Reflect.getOwnMetadata(methodMetadataKey, target.constructor, name) as MethodRegistrationBase | undefined;
+        if (operation) { registeredOperations.push(operation); }
+      }
+      current = Object.getPrototypeOf(current) as object | undefined;
+    }
   }
 
   return registeredOperations;
 }
 
 export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
-  let mParameters: MethodParameter[] = (Reflect.getOwnMetadata(paramMetadataKey, target, propertyKey) as MethodParameter[]) || [];
+  let regtarget = target;
+  if (typeof regtarget !== 'function') {
+    regtarget = regtarget.constructor;
+  }
+  let mParameters: MethodParameter[] = (Reflect.getOwnMetadata(paramMetadataKey, regtarget, propertyKey) as MethodParameter[]) || [];
 
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
     const designParamTypes = Reflect.getMetadata("design:paramtypes", target, propertyKey) as Function[];
     mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
 
-    Reflect.defineMetadata(paramMetadataKey, mParameters, target, propertyKey);
+    Reflect.defineMetadata(paramMetadataKey, mParameters, regtarget, propertyKey);
   }
 
   return mParameters;
@@ -273,15 +290,21 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   propertyKey: string | symbol,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
 ) {
+  let regtarget = target;
+  if (typeof regtarget !== 'function') {
+    // Instance method case
+    regtarget = regtarget.constructor;
+  }
   const methReg: MethodRegistration<This, Args, Return> =
-    (Reflect.getOwnMetadata(methodMetadataKey, target, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
+    (Reflect.getOwnMetadata(methodMetadataKey, regtarget, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
 
   if (methReg.needInitialized) {
-    const classname = (target as {name: string}).name;
+    const classname = (regtarget as {name: string}).name;
 
     methReg.name = propertyKey.toString();
     methReg.className = classname;
 
+    console.log(`Registering ${classname}.${methReg.name}`);
     methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const argNames = getArgNames(descriptor.value!);
@@ -297,7 +320,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       }
     });
 
-    Reflect.defineMetadata(methodMetadataKey, methReg, target, propertyKey);
+    Reflect.defineMetadata(methodMetadataKey, methReg, regtarget, propertyKey);
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
 

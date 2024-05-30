@@ -49,7 +49,6 @@ export interface WorkflowInvokeParams {
 }
 
 export interface TestingRuntime {
-  invoke<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsConf<T>; // TODO Remove
   invoke<T extends ConfiguredInstance>(targetInst: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   invokeWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
@@ -146,10 +145,11 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * to invoke workflows, transactions, and communicators;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
-    clscfg: ConfiguredClass<unknown> | null): InvokeFuncs<T>
+    clsinst: ConfiguredInstance | null): InvokeFuncs<T>
   {
     const dbosExec = this.getDBOSExec();
-    const ops = getRegisteredOperations(object);
+
+    const ops = getRegisteredOperations(clsinst ? clsinst : object);
 
     const proxy: Record<string, unknown> = {};
 
@@ -160,24 +160,19 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredClass: clscfg };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst, configuredClass: null };
     for (const op of ops) {
+      console.log(`Making an op for ${op.name}`);
       if (asyncWf) {
-         
         proxy[op.name] = op.txnConfig
-           
           ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args)
           : op.workflowConfig
-           
-          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
-          : op.commConfig
-           
-          ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
-          : undefined;
+            ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
+              : undefined;
       } else {
-         
         proxy[op.name] = op.workflowConfig
-           
           ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
@@ -190,20 +185,20 @@ export class TestingRuntimeImpl implements TestingRuntime {
       return this.mainInvoke(object, workflowUUID, params, true, null);
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, true, targetCfg) as unknown as InvokeFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as InvokeFuncsConf<T>;
     }
   }
 
-  startWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams)
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams)
     : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncsConf<T>
   {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, params, true, null);
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncsConf<T>;
     }
   }
 
@@ -214,8 +209,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
       return this.mainInvoke(object, workflowUUID, params, false, null) as unknown as SyncHandlerWfFuncs<T>;
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, params, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, false, targetInst) as unknown as SyncHandlerWfFuncsConf<T>;
     }
   }
 

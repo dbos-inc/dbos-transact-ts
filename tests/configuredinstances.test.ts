@@ -151,20 +151,26 @@ describe("dbos-configclass-tests", () => {
   });
 
   test("simple-functions", async () => {
-/*
+    try {
     await testRuntime.invoke(config1).testCommunicator();
+    }
+    catch (e) {
+      console.log(e);
+      throw e;
+    }
     await testRuntime.invoke(configA).testCommunicator();
     await testRuntime.invoke(config1).testTransaction1();
     await testRuntime.invoke(configA).testTransaction1();
 
-    expect(config1.config.nByName).toBe(2);
-    expect(configA.config.nByName).toBe(2);
-    expect(config1.config.nComm).toBe(1);
-    expect(configA.config.nComm).toBe(1);
-    expect(config1.config.nTrans).toBe(1);
-    expect(configA.config.nTrans).toBe(1);
+    expect(config1.tracker.nByName).toBe(2);
+    expect(configA.tracker.nByName).toBe(2);
+    expect(config1.tracker.nComm).toBe(1);
+    expect(configA.tracker.nComm).toBe(1);
+    expect(config1.tracker.nTrans).toBe(1);
+    expect(configA.tracker.nTrans).toBe(1);
   });
 
+/*
   test("simplewf", async() => {
     await testRuntime.invokeWorkflow(config1).testBasicWorkflow("please");
     expect(config1.config.nTrans).toBe(1);
@@ -177,8 +183,8 @@ describe("dbos-configclass-tests", () => {
     expect(configA.config.nComm).toBe(1);
     expect(configA.config.nWF).toBe(1);
     expect(configA.config.nByName).toBe(3);
+  });
 */
-});
 
 /*
   test("childwf", async() => {
