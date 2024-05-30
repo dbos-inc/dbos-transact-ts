@@ -10,7 +10,7 @@ import {
     Workflow,
     WorkflowContext
 } from '@dbos-inc/dbos-sdk';
-import { AWSServiceConfig, getAWSConfigForService } from '@dbos-inc/aws-config';
+import { AWSServiceConfig, getAWSConfigForService, loadAWSConfigByName } from '@dbos-inc/aws-config';
 import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
 
 export interface FileRecord {
@@ -40,7 +40,12 @@ export class S3Ops {
     static async initConfiguration(ctx: InitContext, config: S3Config) {
         // Get the config and call the validation
         if (!config.awscfg) {
-            config.awscfg = getAWSConfigForService(ctx, config.awscfgname ?? this.AWS_S3_CONFIGURATION);
+            if (config.awscfgname) {
+                config.awscfg = loadAWSConfigByName(ctx, config.awscfgname);
+            }
+            else {
+                config.awscfg = getAWSConfigForService(ctx, S3Ops.AWS_S3_CONFIGURATION);
+            }
         }
         return Promise.resolve();
     }
