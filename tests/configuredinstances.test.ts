@@ -1,7 +1,6 @@
 import {
   Communicator,
   CommunicatorContext,
-  Configurable,
   ConfiguredClassType,
   GetApi,
   HandlerContext,
@@ -36,19 +35,16 @@ class ConfigTracker {
   }
 }
 
-@Configurable()
-class SomeOtherClass
-{
-  static initConfiguration(_ctx: InitContext, _arg: ConfigTracker) : Promise<void> {
-    return Promise.resolve();
-  }
-}
-
-@Configurable()
 class DBOSTestConfiguredClass {
   static configs : Map<string, ConfigTracker> = new Map();
 
-  static initConfiguration(_ctx: InitContext, arg: ConfigTracker) : Promise<void> {
+  tracker: ConfigTracker;
+  constructor(name: string) {
+    this.tracker = new ConfigTracker(name);
+  }
+
+  initialize(_ctx: InitContext) : Promise<void> {
+    const arg = this.tracker;
     if (!arg.name || DBOSTestConfiguredClass.configs.has(arg.name)) {
       throw new Error(`Invalid or duplicate config name: ${arg.name}`);
     }
@@ -58,65 +54,55 @@ class DBOSTestConfiguredClass {
   }
 
   @Transaction()
-  static testTransaction1(txnCtxt: TestTransactionContext) {
-    const cc = txnCtxt.getConfiguredClass(DBOSTestConfiguredClass);
-    expect(cc).toBeDefined();
-    expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
-    expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
-    ++cc.config.nTrans;
-    ++cc.config.nByName;
-    return Promise.resolve();
-  }
-
-  @Transaction({readOnly: true})
-  static testBadCall(txnCtxt: TestTransactionContext) {
-    expect(()=>txnCtxt.getConfiguredClass(SomeOtherClass)).toThrow();
+  testTransaction1(_txnCtxt: TestTransactionContext) {
+    const arg = this.tracker;
+    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    ++arg.nTrans;
+    ++arg.nByName;
     return Promise.resolve();
   }
 
   @Communicator()
-  static testCommunicator(ctxt: CommunicatorContext) {
-    const cc = ctxt.getConfiguredClass(DBOSTestConfiguredClass);
-    expect(cc).toBeDefined();
-    expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
-    expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
-    ++cc.config.nComm;
-    ++cc.config.nByName;
+  testCommunicator(ctxt: CommunicatorContext) {
+    const arg = this.tracker;
+    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    ++arg.nComm;
+    ++arg.nByName;
     return Promise.resolve();
   }
 
   @Workflow()
-  static async testBasicWorkflow(ctxt: WorkflowContext, key: string) {
+  async testBasicWorkflow(ctxt: WorkflowContext, key: string) {
     expect(key).toBe("please");
-    const cc = ctxt.getConfiguredClass(DBOSTestConfiguredClass);
-    expect(cc).toBeDefined();
-    expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
-    expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
-    ++cc.config.nWF;
-    ++cc.config.nByName;
+    const arg = this.tracker;
+    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    ++arg.nWF;
+    ++arg.nByName;
 
     // Invoke a transaction and a communicator
-    await ctxt.invoke(cc).testCommunicator();
-    await ctxt.invoke(cc).testTransaction1();
+    await ctxt.invoke(this).testCommunicator();
+    await ctxt.invoke(this).testTransaction1();
   }
 
   @Workflow()
-  static async testChildWorkflow(ctxt: WorkflowContext) {
-    const cc = ctxt.getConfiguredClass(DBOSTestConfiguredClass);
-    expect(cc).toBeDefined();
-    expect(DBOSTestConfiguredClass.configs.has(cc.configName)).toBeTruthy();
-    expect(cc.config).toBe(DBOSTestConfiguredClass.configs.get(cc.configName));
-    ++cc.config.nWF;
-    ++cc.config.nByName;
+  async testChildWorkflow(ctxt: WorkflowContext) {
+    const arg = this.tracker;
+    expect(DBOSTestConfiguredClass.configs.has(arg.name)).toBeTruthy();
+    expect(arg).toBe(DBOSTestConfiguredClass.configs.get(arg.name));
+    ++arg.nWF;
+    ++arg.nByName;
 
     // Invoke a workflow that invokes a transaction and a communicator
-    await ctxt.invokeChildWorkflow(cc, DBOSTestConfiguredClass.testBasicWorkflow, "please");
-    const wfh = await ctxt.startChildWorkflow(cc, DBOSTestConfiguredClass.testBasicWorkflow, "please");
+    await ctxt.invokeChildWorkflow(this, testBasicWorkflow, "please");
+    const wfh = await ctxt.startChildWorkflow(this, testBasicWorkflow, "please");
     await wfh.getResult();
   }
 
   @Workflow()
-  static async testBadWorkflow(ctxt: WorkflowContext) {
+  async testBadWorkflow(ctxt: WorkflowContext) {
     // Invoke a workflow function without its config
     await ctxt.invokeChildWorkflow(DBOSTestConfiguredClass.testBasicWorkflow, "please");
   }
@@ -128,14 +114,9 @@ class DBOSTestConfiguredClass {
     return Promise.resolve("This is a bad idea");
   }
 
-  @Workflow()
-  @GetApi('/worse')
-  static async testUnconfiguredCCHandler(ctx: WorkflowContext) {
-    // A handler in a configured class doesn't have a configuration.
-    //  The compiler will currently let you ask for one if the function is a workflow (etc.)
-    //  You will earn an error for trying however...
-    const _cc = ctx.getConfiguredClass(DBOSTestConfiguredClass);
-    return Promise.resolve("This is even worse");
+  @GetApi('/instance') // You can't actually call this...
+  async testInstMthd(_ctxt: HandlerContext) {
+    return Promise.resolve('foo');
   }
 }
 
@@ -198,10 +179,6 @@ describe("dbos-configclass-tests", () => {
     expect(config1.config.nComm).toBe(2);
     expect(config1.config.nWF).toBe(3);
     expect(config1.config.nByName).toBe(7);
-  });
-
-  test("badcall", async () => {
-    await testRuntime.invoke(config1).testBadCall();
   });
 
   test("badwf", async () => {
