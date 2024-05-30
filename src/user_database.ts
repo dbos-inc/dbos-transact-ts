@@ -44,6 +44,14 @@ export const UserDatabaseName = {
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
+export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_outputs')`;
+export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_outputs' AND indexname = 'transaction_outputs_idx')`;
+
+interface ExistenceCheck {
+  exists: boolean;
+}
+
 /**
  * node-postgres user data access interface
  */
@@ -56,9 +64,18 @@ export class PGNodeUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      await this.pool.query(createUserDBSchema);
-      await this.pool.query(userDBSchema);
-      await this.pool.query(userDBIndex);
+      const schemaExists = await this.pool.query<ExistenceCheck>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await this.pool.query(createUserDBSchema);
+      }
+      const txnOutputTableExists = await this.pool.query<ExistenceCheck>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await this.pool.query(userDBSchema);
+      }
+      const txnIndexExists = await this.pool.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists.rows[0].exists) {
+        await this.pool.query(userDBIndex);
+      }
     }
   }
 
@@ -173,9 +190,18 @@ export class PrismaUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      await this.prisma.$queryRawUnsafe(createUserDBSchema);
-      await this.prisma.$queryRawUnsafe(userDBSchema);
-      await this.prisma.$queryRawUnsafe(userDBIndex);
+      const schemaExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(schemaExistsQuery);
+      if (!schemaExists[0].exists) {
+        await this.prisma.$queryRawUnsafe(createUserDBSchema);
+      }
+      const txnOutputTableExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists[0].exists) {
+        await this.prisma.$queryRawUnsafe(userDBSchema);
+      }
+      const txnIndexExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists[0].exists) {
+        await this.prisma.$queryRawUnsafe(userDBIndex);
+      }
     }
   }
 
@@ -279,9 +305,18 @@ export class TypeORMDatabase implements UserDatabase {
     }
 
     if (!debugMode) {
-      await this.dataSource.query(createUserDBSchema);
-      await this.dataSource.query(userDBSchema);
-      await this.dataSource.query(userDBIndex);
+      const schemaExists = await this.dataSource.query<ExistenceCheck[]>(schemaExistsQuery);
+      if (!schemaExists[0].exists) {
+        await this.dataSource.query(createUserDBSchema);
+      }
+      const txnOutputTableExists = await this.dataSource.query<ExistenceCheck[]>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists[0].exists) {
+        await this.dataSource.query(userDBSchema);
+      }
+      const txnIndexExists = await this.dataSource.query<ExistenceCheck[]>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists[0].exists) {
+        await this.dataSource.query(userDBIndex);
+      }
     }
   }
 
@@ -359,9 +394,18 @@ export class KnexUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      await this.knex.raw(createUserDBSchema);
-      await this.knex.raw(userDBSchema);
-      await this.knex.raw(userDBIndex);
+      const schemaExists = await this.knex.raw<{rows: ExistenceCheck[]}>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await this.knex.raw(createUserDBSchema);
+      }
+      const txnOutputTableExists = await this.knex.raw<{rows: ExistenceCheck[]}>(txnOutputIndexExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await this.knex.raw(userDBSchema);
+      }
+      const txnIndexExists = await this.knex.raw<{rows: ExistenceCheck[]}>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists.rows[0].exists) {
+        await this.knex.raw(userDBIndex);
+      }
     }
   }
 
