@@ -54,6 +54,7 @@ export interface AWSCfgFileItem
     aws_secret_access_key?: string,
 }
 
+// Load a config by its section name
 export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig {
     const cfgstrs = ctx.getConfig<AWSCfgFileItem|undefined>(cfgname, undefined);
     if (!cfgstrs) {
@@ -90,33 +91,10 @@ export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSSe
     };
 }
 
-export function loadAWSCongfigsByNames(ctx: ConfigProvider, cfgnames: string) {
-    const configs: AWSServiceConfig[] = [];
-    const cfgnamesarr = (cfgnames || 'aws_config').split(',');
-
-    for (const cfgname of cfgnamesarr) {
-        configs.push(loadAWSConfigByName(ctx, cfgname));
-    }
-
-    return configs;
-}
-
-export function getAWSConfigs(ctx: ConfigProvider, svccfgname?: string) : AWSServiceConfig[]
+export function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string) : AWSServiceConfig
 {
-    if (svccfgname) {
-        return loadAWSCongfigsByNames(ctx, ctx.getConfig<string>(svccfgname, ''));
+    if (svccfgname && ctx.getConfig<string>(svccfgname, '')) {
+        return loadAWSConfigByName(ctx, ctx.getConfig<string>(svccfgname, ''));
     }
-    return [loadAWSConfigByName(ctx, 'aws_config')];
-}
-
-export function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string, cfgname: string) : AWSServiceConfig
-{
-    if (svccfgname) {
-        const cfgs = loadAWSCongfigsByNames(ctx, ctx.getConfig<string>(svccfgname, ''));
-        for (const cfg of cfgs) {
-            if (cfg.name.toLowerCase() === cfgname || !cfgname) return cfg;
-        }
-        throw new DBOSError.DBOSError(`Configuration '${cfgname}' does not exist in service '${svccfgname}'`);
-    }
-    return loadAWSConfigByName(ctx, cfgname || 'aws_config');
+    return loadAWSConfigByName(ctx, 'aws_config');
 }

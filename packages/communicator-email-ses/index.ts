@@ -1,7 +1,7 @@
 import {Communicator, CommunicatorContext, Configurable, InitContext} from '@dbos-inc/dbos-sdk';
 
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
-import { AWSServiceConfig, getAWSConfigForService, getAWSConfigs } from '@dbos-inc/aws-config';
+import { AWSServiceConfig, getAWSConfigForService } from '@dbos-inc/aws-config';
 
 interface SESConfig{
     awscfgname?: string,
@@ -11,12 +11,11 @@ interface SESConfig{
 @Configurable()
 class SendEmailCommunicator
 {
-    static AWS_SES_CONFIGURATIONS = 'aws_ses_configurations';
+    static AWS_SES_CONFIGURATION = 'aws_ses_configuration';
     static async initConfiguration(ctx: InitContext, arg: SESConfig) {
         // Get the config and call the validation
-        getAWSConfigs(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATIONS);
         if (!arg.awscfg) {
-            arg.awscfg = getAWSConfigForService(ctx, this.AWS_SES_CONFIGURATIONS, arg.awscfgname ?? "");
+            arg.awscfg = getAWSConfigForService(ctx, arg.awscfgname ?? this.AWS_SES_CONFIGURATION);
         }
         return Promise.resolve();
     }

@@ -2,29 +2,48 @@
 
 Common utility for configuring AWS services in a DBOS Transact application.
  
-The approach is to decompose AWS credentials into two parts, to allow sharing
-of the credential between services, or separate credentials per service.
- 
+By default, services just use a configuration called 'aws_config'.
+
 Start by giving a name to a configuration for an AWS service or role.
-In dbos-config.yaml, under 'application', make a section with all the
+In `dbos-config.yaml`, under 'application', make a section with all the
 AWS bits:
 ```yaml
- my_aws_config:
+ aws_config:
   aws_region: us-east-2
   aws_access_key_id: ${AWS_ACCESS_KEY_ID}
   aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 ```
 
-Then, each communicator module will support a list of AWS configurations, for
+It is also possible to have more than one configuration, so that each service
+has its own configuration.  In this case, additional AWS configuration sets are
+placed in `dbos-config.yaml`:
+
+```yaml
+ my_aws_config_for_ses:
+  aws_region: us-east-2
+  aws_access_key_id: ${AWS_ACCESS_KEY_ID_SES}
+  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY_SES}
+```
+
+Then, each communicator library supports a default AWS configuration name, for
 example SES (Simple Email Service) uses:
 ```yaml
- aws_ses_configurations: my_aws_config
+ aws_ses_configuration: my_aws_config_for_ses
 ```
- 
-By providing this list, the communicator can validate configuration information
-at app startup.
 
-By default, these will just use a configuration called 'aws_config'.
+If the application uses more than one set of credentials for the same service,
+such as a separate email configuration for sending advertising vs order confirmations,
+then separate sections will be specified within the application code.
+```yaml
+ ses_config_for_marketing:
+  aws_region: ${AWS_REGION}
+  aws_access_key_id: ${AWS_ACCESS_KEY_ID_SES1}
+  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY_SES1}
+ ses_config_for_orders:
+  aws_region: ${AWS_REGION}
+  aws_access_key_id: ${AWS_ACCESS_KEY_ID_SES1}
+  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY_SES1}
+```
 
 ## Interfaces
 
@@ -54,16 +73,8 @@ export interface AWSServiceConfig
 ## Available Functions
 ```typescript
 // Loads an AWS configuration by its section name within the `application` part of dbos-config.yaml
-export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig
+function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig
 
-// Loads multiple AWS configurations by section name within the `application` part of dbos-config.yaml
-export function loadAWSCongfigsByNames(ctx: ConfigProvider, cfgnames: string): AWSServiceConfig[]
-
-// Reads a key from within dbos-config.yaml and uses the value of that key to load one or more AWS configuration sections
-export function getAWSConfigs(ctx: ConfigProvider, svccfgname?: string) : AWSServiceConfig[]
-
-// Reads a key `svccfgname` from within dbos-config.yaml and uses the value of that key to load one or more AWS configuration sections.  If there is more than one, then the one named `cfgname` is loaded.
-//  If `svccfgname` is not provided or doesn't exist, then the configuration section indicated by `cfgname` is loaded.
-//  If `cfgname` is not provided, then `the aws_config` section is loaded
-export function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string, cfgname: string) : AWSServiceConfig
+// Reads a key from within dbos-config.yaml and uses the value of that key to load an AWS configuration section
+function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string) : AWSServiceConfig
 ```

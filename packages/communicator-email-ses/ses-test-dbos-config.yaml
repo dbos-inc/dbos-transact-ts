@@ -16,7 +16,7 @@ database:
   rollback:
     - npx knex migrate:rollback
 application:
-  aws_ses_configurations: 'aws_config'
+  aws_ses_configuration: 'aws_config'
   ses_from_address: ${SES_FROM_ADDRESS}
   ses_to_address: ${SES_TO_ADDRESS}
   aws_config:
