@@ -199,7 +199,8 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     application: configFile.application || undefined,
     env: configFile.env || {},
-    http: configFile.http
+    http: configFile.http,
+    appVersion: getAppVersion(cliOptions?.appVersion),
   };
 
   /*************************************/
@@ -211,10 +212,23 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   } else {
     entrypoints.add(defaultEntryPoint);
   }
+
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints: [...entrypoints],
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 
   return [dbosConfig, runtimeConfig];
+}
+
+function getAppVersion(appVersion: string | boolean | undefined) {
+  if (typeof appVersion === "string") { return appVersion; }
+  if (appVersion === true) {
+    const envAppVersion = process.env.DBOS__APPVERSION;
+    if (envAppVersion === undefined) {
+      throw new Error("--app-version option specified but DBOS__APPVERSION environment variable is not set");
+    }
+    return envAppVersion;
+  }
+  return undefined;
 }
