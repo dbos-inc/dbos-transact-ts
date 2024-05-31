@@ -2,7 +2,7 @@ import { FileRecord, S3Ops } from "./s3_utils";
 export { S3Ops };
 import {
   TestingRuntime, createTestingRuntime,
-  ConfiguredClassType, initClassConfiguration,
+  configureInstance,
   Communicator, CommunicatorContext,
   Transaction, TransactionContext,
   WorkflowContext,
@@ -121,7 +121,7 @@ class TestUserFileTable {
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let s3IsAvailable = true;
-  let s3Cfg : ConfiguredClassType<typeof S3Ops> | undefined = undefined;
+  let s3Cfg : S3Ops | undefined = undefined;
 
   beforeAll(() => {
     // Check if S3 is available and update app config, skip the test if it's not
@@ -129,7 +129,7 @@ describe("ses-tests", () => {
       s3IsAvailable = false;
     }
     else {
-      s3Cfg = initClassConfiguration(S3Ops, 'default', {
+      s3Cfg = configureInstance(S3Ops, 'default', {
         awscfgname: 'aws_config',
         bucket: "",
         s3Callbacks: {
