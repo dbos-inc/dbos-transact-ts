@@ -1,8 +1,8 @@
 import {
   Communicator,
   CommunicatorContext,
-  Configurable,
-  initClassConfiguration,
+  ConfiguredInstance,
+  configureInstance,
   InitContext,
   Transaction,
   TransactionContext,
@@ -17,44 +17,45 @@ import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from ".
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
-@Configurable()
-class DebuggerCCTest {
-  static initConfiguration(_ctx: InitContext, _arg: {name: string}) : Promise<void> {
+class DebuggerCCTest extends ConfiguredInstance {
+  constructor(name: string) {super(name);}
+  initialize(_ctx: InitContext) : Promise<void> {
+    expect(this.name).toBe('configA');
     return Promise.resolve();
   }
 
   @Transaction({readOnly: true})
-  static async testReadOnlyFunction(txnCtxt: TestTransactionContext, number: number) {
-    txnCtxt.getConfiguredClass(DebuggerCCTest);
+  async testReadOnlyFunction(_txnCtxt: TestTransactionContext, number: number) {
+    expect(this.name).toBe('configA');
     return Promise.resolve(number);
   }
 
   @Workflow()
-  static async testWorkflow(ctxt: WorkflowContext, name: string) {
-    const cc = ctxt.getConfiguredClass(DebuggerCCTest);
-    const funcResult = await ctxt.invoke(cc).testReadOnlyFunction(5);
+  async testWorkflow(ctxt: WorkflowContext, name: string) {
+    expect(this.name).toBe('configA');
+    const funcResult = await ctxt.invoke(this).testReadOnlyFunction(5);
     return `${name}${funcResult}`;
   }
 
   @Communicator()
-  static async testCommunicator(ctxt: CommunicatorContext, inp: string) {
-    ctxt.getConfiguredClass(DebuggerCCTest);
+  async testCommunicator(_ctxt: CommunicatorContext, inp: string) {
+    expect(this.name).toBe('configA');
     return Promise.resolve(inp);
   }
 
   // Workflow that sleep, call comm, call tx, call child WF
   @Workflow()
-  static async mixedWorkflow(ctxt: WorkflowContext, num: number) {
-    const cc = ctxt.getConfiguredClass(DebuggerCCTest);
+  async mixedWorkflow(ctxt: WorkflowContext, num: number) {
+    expect(this.name).toBe('configA');
     await ctxt.sleep(1);
-    const txResult = await ctxt.invoke(cc).testReadOnlyFunction(num);
-    const cResult = await ctxt.invoke(cc).testCommunicator("comm");
-    const wfResult = await ctxt.invokeChildWorkflow(cc, DebuggerCCTest.testWorkflow, 'cwf');
-    return `${cc.configName}${txResult}${cResult}${wfResult}-${num}`;
+    const txResult = await ctxt.invoke(this).testReadOnlyFunction(num);
+    const cResult = await ctxt.invoke(this).testCommunicator("comm");
+    const wfResult = await ctxt.invokeChildWorkflow(this, DebuggerCCTest, 'testWorkflow', 'cwf');
+    return `${this.name}${txResult}${cResult}${wfResult}-${num}`;
   }
 }
 
-const configR = initClassConfiguration(DebuggerCCTest, "configA", {name:"recover"});
+const configR = configureInstance(DebuggerCCTest, "configA");
 
 describe("debugger-test", () => {
   let config: DBOSConfig;

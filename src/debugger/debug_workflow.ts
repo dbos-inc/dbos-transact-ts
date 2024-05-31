@@ -161,7 +161,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         return (check as RecordedResult<R>).output;
       }
       // If we have a proxy, then execute the user's transaction.
-      const result = await txn(tCtxt, ...args);
+      const result = await txn.call(clsinst, tCtxt, ...args);
       return result;
     };
 
