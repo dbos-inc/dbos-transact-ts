@@ -13,6 +13,7 @@ import { getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
 import { StoredProcedure, StoredProcedureContextImpl } from "../procedure";
 import { PoolClient } from "pg";
+import assert from "node:assert/strict";
 
 interface RecordedResult<R> {
   output: R;
@@ -278,7 +279,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return result;
     }
 
-    if (JSON.stringify(check.output) !== JSON.stringify(result)) {
+    try {
+      assert.deepStrictEqual(result, check.output);
+    } catch {
       this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check.output)}`);
     }
     return check.output; // Always return the recorded result.
