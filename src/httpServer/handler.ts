@@ -47,11 +47,11 @@ export type SyncHandlerWfFuncsInst<T> =
 
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
-  invoke<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): InvokeFuncsInst<T>;
+  invoke<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncsInst<T>;
+  invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;

@@ -79,7 +79,7 @@ export type WorkflowOf<WC, T extends unknown[], R> = {
 }[keyof WC];
 
 export interface WorkflowContext extends DBOSContext {
-  invoke<T extends object>(targetCfg: ConfiguredInstance): InvokeFuncsInst<T>;
+  invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
   startChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredInstance, wf: WorkflowOf<C, T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;

@@ -65,7 +65,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   }
 
   @Communicator()
-  testCommunicator(ctxt: CommunicatorContext) {
+  testCommunicator(_ctxt: CommunicatorContext) {
     const arg = this.tracker;
     expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
     expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
@@ -84,8 +84,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nByName;
 
     // Invoke a transaction and a communicator
-//    await ctxt.invoke(this).testCommunicator();
-//    await ctxt.invoke(this).testTransaction1();
+    await ctxt.invoke(this).testCommunicator();
+    await ctxt.invoke(this).testTransaction1();
   }
 
   @Workflow()
@@ -97,15 +97,9 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nByName;
 
     // Invoke a workflow that invokes a transaction and a communicator
-//    await ctxt.invokeChildWorkflow(this, testBasicWorkflow, "please");
-//    const wfh = await ctxt.startChildWorkflow(this, testBasicWorkflow, "please");
-//    await wfh.getResult();
-  }
-
-  @Workflow()
-  async testBadWorkflow(ctxt: WorkflowContext) {
-    // Invoke a workflow function without its config
-//    await ctxt.invokeChildWorkflow(DBOSTestConfiguredClass.testBasicWorkflow, "please");
+    //await ctxt.invokeChildWorkflow(this, this.testBasicWorkflow, "please");
+    //const wfh = await ctxt.startChildWorkflow(this, this.testBasicWorkflow, "please");
+    //await wfh.getResult();
   }
 
   @GetApi('/bad')
@@ -121,11 +115,6 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   }
 }
 
-/*
-const config1: ConfiguredClassType<typeof DBOSTestConfiguredClass> =
-  initClassConfiguration(DBOSTestConfiguredClass, "config1", new ConfigTracker("config1"));
-const configA = initClassConfiguration(DBOSTestConfiguredClass, "configA", new ConfigTracker("configA"));
-*/
 const config1 = configureInstance(DBOSTestConfiguredClass, "config1", 1);
 const configA = configureInstance(DBOSTestConfiguredClass, "configA", 2);
 
@@ -162,6 +151,8 @@ describe("dbos-configclass-tests", () => {
     await testRuntime.invoke(config1).testTransaction1();
     await testRuntime.invoke(configA).testTransaction1();
 
+    expect(config1.tracker.nInit).toBe(1);
+    expect(configA.tracker.nInit).toBe(1);
     expect(config1.tracker.nByName).toBe(2);
     expect(configA.tracker.nByName).toBe(2);
     expect(config1.tracker.nComm).toBe(1);
@@ -170,21 +161,19 @@ describe("dbos-configclass-tests", () => {
     expect(configA.tracker.nTrans).toBe(1);
   });
 
-/*
   test("simplewf", async() => {
     await testRuntime.invokeWorkflow(config1).testBasicWorkflow("please");
-    expect(config1.config.nTrans).toBe(1);
-    expect(config1.config.nComm).toBe(1);
-    expect(config1.config.nWF).toBe(1);
-    expect(config1.config.nByName).toBe(3);
+    expect(config1.tracker.nTrans).toBe(1);
+    expect(config1.tracker.nComm).toBe(1);
+    expect(config1.tracker.nWF).toBe(1);
+    expect(config1.tracker.nByName).toBe(3);
 
     await (await testRuntime.startWorkflow(configA).testBasicWorkflow("please")).getResult();
-    expect(configA.config.nTrans).toBe(1);
-    expect(configA.config.nComm).toBe(1);
-    expect(configA.config.nWF).toBe(1);
-    expect(configA.config.nByName).toBe(3);
+    expect(configA.tracker.nTrans).toBe(1);
+    expect(configA.tracker.nComm).toBe(1);
+    expect(configA.tracker.nWF).toBe(1);
+    expect(configA.tracker.nByName).toBe(3);
   });
-*/
 
 /*
   test("childwf", async() => {
@@ -193,17 +182,6 @@ describe("dbos-configclass-tests", () => {
     expect(config1.config.nComm).toBe(2);
     expect(config1.config.nWF).toBe(3);
     expect(config1.config.nByName).toBe(7);
-  });
-
-  test("badwf", async () => {
-    let threw = false;
-    try {
-      await testRuntime.invokeWorkflow(config1).testBadWorkflow();
-    }
-    catch (e) {
-      threw = true;
-    }
-    expect(threw).toBeTruthy();
   });
 
   test("badhandler", async() => {
