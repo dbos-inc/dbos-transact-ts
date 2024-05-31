@@ -74,16 +74,32 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-export type WorkflowOf<WC, T extends unknown[], R> = {
-  [K in keyof WC]: WC[K] extends Workflow<T, R> ? WC[K] : never
-}[keyof WC];
+type WorkflowsOfType<T> = {
+  [K in keyof T]: T[K] extends (context: WorkflowContext, ...args: any[]) => any ? K : never;
+}[keyof T];
+
+type MethodArguments<T extends ConfiguredInstance, K extends keyof T> = T[K] extends (context: WorkflowContext, ...args: infer A) => any ? A : never;
+
+type Unpromisify<T> = T extends Promise<infer U> ? U : T;
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
-  startChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredInstance, wf: WorkflowOf<C, T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  invokeChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredInstance, wf: WorkflowOf<C, T, R>, ...args: T): Promise<R>;
+
+  startChildWorkflow<C extends ConfiguredInstance, K extends WorkflowsOfType<C>> (
+    targetInst: C,
+    instanceClass: new (...args: any[]) => C,
+    wf: K,
+    ...args: MethodArguments<C, K>
+  ) : Promise<WorkflowHandle<Unpromisify<C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never>>>;
+  startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
+
+  invokeChildWorkflow<C extends ConfiguredInstance, K extends WorkflowsOfType<C>> (
+    targetInst: C,
+    instanceClass: new (...args: any[]) => C,
+    wf: K,
+    ...args: MethodArguments<C, K>
+  ) : C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never;
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow

@@ -75,7 +75,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   }
 
   @Workflow()
-  async testBasicWorkflow(ctxt: WorkflowContext, key: string) {
+  async testBasicWorkflow(ctxt: WorkflowContext, key: string): Promise<void> {
     expect(key).toBe("please");
     const arg = this.tracker;
     expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
@@ -97,9 +97,9 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nByName;
 
     // Invoke a workflow that invokes a transaction and a communicator
-    //await ctxt.invokeChildWorkflow(this, this.testBasicWorkflow, "please");
-    //const wfh = await ctxt.startChildWorkflow(this, this.testBasicWorkflow, "please");
-    //await wfh.getResult();
+    await ctxt.invokeChildWorkflow(this, DBOSTestConfiguredClass, 'testBasicWorkflow', 'please');
+    const wfh = await ctxt.startChildWorkflow(this, DBOSTestConfiguredClass, 'testBasicWorkflow', 'please');
+    await wfh.getResult();
   }
 
   @GetApi('/bad')
@@ -174,15 +174,13 @@ describe("dbos-configclass-tests", () => {
     expect(configA.tracker.nByName).toBe(3);
   });
 
-/*
   test("childwf", async() => {
     await testRuntime.invokeWorkflow(config1).testChildWorkflow();
-    expect(config1.config.nTrans).toBe(2);
-    expect(config1.config.nComm).toBe(2);
-    expect(config1.config.nWF).toBe(3);
-    expect(config1.config.nByName).toBe(7);
+    expect(config1.tracker.nTrans).toBe(2);
+    expect(config1.tracker.nComm).toBe(2);
+    expect(config1.tracker.nWF).toBe(3);
+    expect(config1.tracker.nByName).toBe(7);
   });
-*/
 
   test("badhandler", async() => {
     const response1 = await request(testRuntime.getHandlersCallback()).get("/bad");

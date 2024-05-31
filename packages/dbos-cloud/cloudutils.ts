@@ -141,8 +141,6 @@ export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): 
 
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export type ValuesOf<T> = T[keyof T];
-
 export function createDirectory(path: string): string | undefined {
   return fs.mkdirSync(path, { recursive: true });
 }
