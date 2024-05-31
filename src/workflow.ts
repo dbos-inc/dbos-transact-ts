@@ -292,8 +292,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
     }
     else {
-      // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
-      // Our argumens here are:
+      // Our arguments here are:
       //  The instance (needed)
       //  The args[0] class (for the compiler's benefit)
       //  The args[1] method name

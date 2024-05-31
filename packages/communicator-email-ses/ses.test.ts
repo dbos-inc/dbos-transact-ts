@@ -1,11 +1,11 @@
 import { SendEmailCommunicator } from "./index";
 export { SendEmailCommunicator };
-import { ConfiguredClassType, TestingRuntime, createTestingRuntime, initClassConfiguration } from "@dbos-inc/dbos-sdk";
+import { TestingRuntime, createTestingRuntime, configureInstance } from "@dbos-inc/dbos-sdk";
 
 describe("ses-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let sesIsAvailable = true;
-  let sesCfg: ConfiguredClassType<typeof SendEmailCommunicator> | undefined = undefined;
+  let sesCfg: SendEmailCommunicator | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not
@@ -14,7 +14,7 @@ describe("ses-tests", () => {
     }
     else {
       // This would normally be a global or static or something
-      sesCfg = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+      sesCfg = configureInstance(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
     }
   });
 
