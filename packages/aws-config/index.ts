@@ -12,16 +12,16 @@
  *  aws_access_key_id: ${AWS_ACCESS_KEY_ID}
  *  aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
  *
- * Then, each communicator module will support a list of AWS configurations, for
+ * Then, each communicator module will support a named AWS configuration, for
  *  example:
- * aws_ses_configurations: my_aws_config
+ * aws_ses_configuration: my_aws_config
  * 
  * By providing this list, the communicator can validate configuration information
  *  at app startup.
  * By default, these will just use a configuration called 'aws_config'.
  * 
  * When invoking the component, if there is more than one choice of config, it can
- *   be specified to the call.  The default will be the first in the list.
+ *   will be configured into the instance.
  */
 
 import { Error as DBOSError } from "@dbos-inc/dbos-sdk";

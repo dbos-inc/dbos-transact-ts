@@ -22,19 +22,19 @@ export { SendEmailCommunicator };
 Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
 ```yaml
 application:
-  aws_ses_configurations: aws_config
+  aws_ses_configuration: aws_config # Optional if the section is called `aws_config`
   aws_config:
     aws_region: ${AWS_REGION}
     aws_access_key_id: ${AWS_ACCESS_KEY_ID}
     aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 ```
 
-If a different configuration file section should be used for SES, the `aws_ses_configurations` list can be changed to indicate configuration sections for use with SES.  If multiple configurations are listed, the application should provide the name of the configuration to the communicator API.
+If a different configuration file section should be used for SES, the `aws_ses_configuration` can be changed to indicate a configuration section for use with SES.  If multiple configurations are to be used, the application code will have to name and configure them.
 
 ## Selecting A Configuration
-`SendEmailCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a configuration is created, for example:
+`SendEmailCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
-const defaultSES = initClassConfiguration(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+const defaultSES = configureInstance(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
 ```
 
 ## Sending Messages
