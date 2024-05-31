@@ -132,7 +132,7 @@ async function createDBOSTables(configFile: ConfigFile) {
   const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
   if (!txnIndexExists.rows[0].exists) {
     await pgUserClient.query(userDBIndex);
-  // }
+  }
 
   // Create the DBOS system database.
   const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
