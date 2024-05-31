@@ -11,7 +11,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
-import { InvokeFuncsConf } from "../httpServer/handler";
+import { InvokeFuncsInst } from "../httpServer/handler";
 
 interface RecordedResult<R> {
   output: R;
@@ -52,7 +52,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.functionID++;
   }
 
-  invoke<T extends object>(object: T |  ConfiguredInstance): WFInvokeFuncs<T> | InvokeFuncsConf<T>  {
+  invoke<T extends object>(object: T |  ConfiguredInstance): WFInvokeFuncs<T> | InvokeFuncsInst<T>  {
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);
 
@@ -83,7 +83,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
             (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
-      return proxy as InvokeFuncsConf<T>;
+      return proxy as InvokeFuncsInst<T>;
     }
   }
 

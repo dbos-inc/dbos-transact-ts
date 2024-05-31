@@ -257,18 +257,6 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   return registeredOperations;
 }
 
-export interface InitConfigMethod { // TODO: Remove
-  new (...args: unknown[]) : object;
-  initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
-}
-
-export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never; // TODO Remove
-
-export function Configurable<T extends InitConfigMethod>() { // TODO: Remove
-  return function (_constructor: HasInitConfigMethod<T>) {
-  };
-}
-
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
   const classReg = classesByName.get(clsname);
   if (!classReg) return null;

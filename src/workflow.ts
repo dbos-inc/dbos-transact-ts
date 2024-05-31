@@ -11,8 +11,8 @@ import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
-import { ConfiguredInstance, InitConfigMethod, getRegisteredOperations } from "./decorators";
-import { InvokeFuncsConf } from "./httpServer/handler";
+import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
+import { InvokeFuncsInst } from "./httpServer/handler";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 
@@ -25,25 +25,18 @@ type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> =
-  T extends InitConfigMethod | ConfiguredInstance
+  T extends ConfiguredInstance
     ? never
     : {
       [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
     };
 
-export type WFInvokeFuncsConf<T> = // TODO Remove
-  T extends InitConfigMethod
+export type WFInvokeFuncsInst<T> =
+  T extends ConfiguredInstance
     ? {
       [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
     }
     : never;
-
-export type WFInvokeFuncsInst<T> =
-T extends ConfiguredInstance
-  ? {
-    [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-  }
-  : never;
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -86,7 +79,7 @@ export type WorkflowOf<WC, T extends unknown[], R> = {
 }[keyof WC];
 
 export interface WorkflowContext extends DBOSContext {
-  invoke<T extends object>(targetCfg: ConfiguredInstance): InvokeFuncsConf<T>;
+  invoke<T extends object>(targetCfg: ConfiguredInstance): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
   startChildWorkflow<C, T extends unknown[], R>(targetCfg: ConfiguredInstance, wf: WorkflowOf<C, T, R>, ...args: T): Promise<WorkflowHandle<R>>;
   startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
@@ -560,7 +553,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  invoke<T extends object>(object: T | ConfiguredInstance): WFInvokeFuncs<T> | InvokeFuncsConf<T> {
+  invoke<T extends object>(object: T | ConfiguredInstance): WFInvokeFuncs<T> | InvokeFuncsInst<T> {
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);
 
@@ -587,7 +580,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
-      return proxy as InvokeFuncsConf<T>;
+      return proxy as InvokeFuncsInst<T>;
     }
   }
 

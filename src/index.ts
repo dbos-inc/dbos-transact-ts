@@ -1,5 +1,3 @@
-import { InitConfigMethod } from './decorators';
-
 export {
   createTestingRuntime,
   TestingRuntime,

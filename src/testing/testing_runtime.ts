@@ -4,7 +4,7 @@ import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
-import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncsConf, InvokeFuncs, InvokeFuncsConf, InvokeFuncsInst, SyncHandlerWfFuncs, SyncHandlerWfFuncsConf } from "../httpServer/handler";
+import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncInst, InvokeFuncs, InvokeFuncsInst, SyncHandlerWfFuncs, SyncHandlerWfFuncsInst } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
@@ -51,9 +51,9 @@ export interface WorkflowInvokeParams {
 export interface TestingRuntime {
   invoke<T extends ConfiguredInstance>(targetInst: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
+  invokeWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
+  startWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
@@ -179,37 +179,37 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return proxy as InvokeFuncs<T>;
   }
 
-  invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> | InvokeFuncsConf<T> {
+  invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, params, true, null);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as InvokeFuncsConf<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as InvokeFuncsInst<T>;
     }
   }
 
   startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams)
-    : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncsConf<T>
+    : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T>
   {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, params, true, null);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 
   invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams)
-    : SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsConf<T>
+    : SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsInst<T>
   {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, params, false, null) as unknown as SyncHandlerWfFuncs<T>;
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, false, targetInst) as unknown as SyncHandlerWfFuncsConf<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, false, targetInst) as unknown as SyncHandlerWfFuncsInst<T>;
     }
   }
 
