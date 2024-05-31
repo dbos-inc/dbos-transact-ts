@@ -1,6 +1,6 @@
 import {
-  Configurable,
-  initClassConfiguration,
+  configureInstance,
+  ConfiguredInstance,
   InitContext,
   Workflow,
   WorkflowContext,
@@ -32,29 +32,29 @@ class CCRConfig {
 /**
  * Test for the default local workflow recovery for configured classes.
  */
-@Configurable()
-class CCRecovery {
-  static initConfiguration(_ctx: InitContext, _arg: CCRConfig) : Promise<void> {
+class CCRecovery extends ConfiguredInstance {
+  constructor(name: string, readonly config: CCRConfig) {super(name);}
+
+  initialize(_ctx: InitContext) : Promise<void> {
     return Promise.resolve();
   }
 
   @Workflow()
-  static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-    const cc = ctxt.getConfiguredClass(CCRecovery);
-    cc.config.count += input;
+  async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
+    this.config.count += input;
 
     // Signal the workflow has been executed more than once.
-    if (cc.config.count > input) {
-      cc.config.resolve2!();
+    if (this.config.count > input) {
+      this.config.resolve2!();
     }
 
-    await cc.config.promise1;
-    return cc.configName;
+    await this.config.promise1;
+    return this.name;
   }
 }
 
-const configA = initClassConfiguration(CCRecovery, "configA", new CCRConfig());
-const configB = initClassConfiguration(CCRecovery, "configB", new CCRConfig());
+const configA = configureInstance(CCRecovery, "configA", new CCRConfig());
+const configB = configureInstance(CCRecovery, "configB", new CCRConfig());
 
 describe("recovery-cc-tests", () => {
   let config: DBOSConfig;
