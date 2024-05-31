@@ -1,38 +1,49 @@
-import {Communicator, CommunicatorContext, InitContext} from '@dbos-inc/dbos-sdk';
+import {Communicator, CommunicatorContext, InitContext, ConfiguredInstance} from '@dbos-inc/dbos-sdk';
 
 import { SESv2, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { AWSServiceConfig, getAWSConfigForService, loadAWSConfigByName } from '@dbos-inc/aws-config';
 
-interface SESConfig{
-    awscfgname?: string,
-    awscfg?: AWSServiceConfig,
+export interface SESConfig {
+    awscfgname?: string;
+    awscfg?: AWSServiceConfig;
 }
 
-@Configurable()
-class SendEmailCommunicator
+class SendEmailCommunicator extends ConfiguredInstance
 {
+    awscfgname?: string = undefined;
+    awscfg?: AWSServiceConfig = undefined;
+
+    constructor(name: string, cfg: SESConfig) {
+        super(name);
+        this.awscfg = cfg.awscfg;
+        this.awscfgname = cfg.awscfgname;
+    }
+
     static AWS_SES_CONFIGURATION = 'aws_ses_configuration';
-    static async initConfiguration(ctx: InitContext, arg: SESConfig) {
+    async initialize(ctx: InitContext) {
         // Get the config and call the validation
-        if (!arg.awscfg) {
-            if (arg.awscfgname) {
-                arg.awscfg = loadAWSConfigByName(ctx, arg.awscfgname);
+        if (!this.awscfg) {
+            if (this.awscfgname) {
+                this.awscfg = loadAWSConfigByName(ctx, this.awscfgname);
             }
             else {
-                arg.awscfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATION);
+                this.awscfg = getAWSConfigForService(ctx, SendEmailCommunicator.AWS_SES_CONFIGURATION);
             }
+        }
+        if (!this.awscfg) {
+            throw new Error(`AWS Configuration not specified for SendEmailCommunicator: ${this.name}`);
         }
         return Promise.resolve();
     }
 
     @Communicator()
-    static async sendEmail(
+    async sendEmail(
         ctx: CommunicatorContext,
         mail: {to?:string[], cc?:string[], bcc?:string[], from:string, subject: string, bodyHtml?:string, bodyText?:string}
     )
     {
         try {
-            const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
+            const cfg = this.awscfg!;
             const ses = SendEmailCommunicator.createSES(cfg);
 
             return await ses.sendEmail({
@@ -54,7 +65,7 @@ class SendEmailCommunicator
     }
 
     @Communicator()
-    static async sendTemplatedEmail(
+    async sendTemplatedEmail(
         ctx: CommunicatorContext,
         templatedMail: {to?: string[], cc?: string[], bcc?: string[], from: string,
             templateName: string,
@@ -62,7 +73,7 @@ class SendEmailCommunicator
         }
     )
     {
-        const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
+        const cfg = this.awscfg!;
         const ses = SendEmailCommunicator.createSES(cfg);
         const command = new SendEmailCommand(
             {
@@ -141,13 +152,12 @@ class SendEmailCommunicator
      * Create SES Email template - Communicator version
      */
     @Communicator()
-    static async createEmailTemplate(
-        ctx:CommunicatorContext,
+    async createEmailTemplate(
+        _ctx:CommunicatorContext,
         templateName:string,
         template: {subject: string, bodyHtml?:string, bodyText?:string}
     ) {
-        const cfg = ctx.getConfiguredClass(SendEmailCommunicator).config.awscfg!;
-        return await SendEmailCommunicator.createEmailTemplateFunction(cfg, templateName, template);
+        return await SendEmailCommunicator.createEmailTemplateFunction(this.awscfg!, templateName, template);
     }
 }
 
