@@ -104,8 +104,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
 
   @GetApi('/bad')
   static async testUnconfiguredHandler(_ctx: HandlerContext) {
-    // A handler in a configured class doesn't have a configuration.
-    //  The compiler won't let you ask for one.
+    // A handler in a configured class doesn't have a configuration / this.
     return Promise.resolve("This is a bad idea");
   }
 
@@ -183,26 +182,13 @@ describe("dbos-configclass-tests", () => {
     expect(config1.config.nWF).toBe(3);
     expect(config1.config.nByName).toBe(7);
   });
+*/
 
   test("badhandler", async() => {
-    let threw = false;
-    try {
-      const response = await request(testRuntime.getHandlersCallback()).get("/bad");
-      expect(response.statusCode).toBe(200);
-    }
-    catch (e) {
-      threw = true;
-    }
-    expect(threw).toBeFalsy();
+    const response1 = await request(testRuntime.getHandlersCallback()).get("/bad");
+    expect(response1.statusCode).toBe(200);
 
-    try {
-      const response = await request(testRuntime.getHandlersCallback()).get("/instance");
-      expect(response.statusCode).toBe(500);
-    }
-    catch (e) {
-      threw = true;
-    }
-    expect(threw).toBeFalsy();
+    const response2 = await request(testRuntime.getHandlersCallback()).get("/instance");
+    expect(response2.statusCode).toBe(404);
   });
-*/
 });

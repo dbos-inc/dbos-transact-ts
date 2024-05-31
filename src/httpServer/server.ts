@@ -177,6 +177,10 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
+        if (ro.isInstance) {
+          dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
+          return;
+        }
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
