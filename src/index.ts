@@ -1,4 +1,4 @@
-import { ConfiguredClass, InitConfigMethod } from './decorators';
+import { InitConfigMethod } from './decorators';
 
 export {
   createTestingRuntime,
@@ -46,9 +46,6 @@ export {
   ArgVarchar,
 
   // Class Decorators
-  Configurable,
-    initClassConfiguration,
-    ConfiguredClass,
   DefaultRequiredRole,
   DefaultArgRequired,
   DefaultArgOptional,
@@ -67,8 +64,6 @@ export {
   DBOSInitializer,
   DBOSDeploy,
 } from "./decorators";
-
-export type ConfiguredClassType<C extends InitConfigMethod> = ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>; // TODO Remove
 
 export {
   ArgSources,

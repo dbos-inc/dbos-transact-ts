@@ -3,8 +3,6 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
-import { DBOSError } from "./error";
-import { ConfiguredClass, InitConfigMethod } from "./decorators";
 
 export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
@@ -19,7 +17,6 @@ export interface CommunicatorContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
-  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
 }
 
 export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext {
@@ -28,11 +25,10 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
   readonly backoffRate: number;
-  readonly configuredClass: ConfiguredClass<unknown> | null;
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger,
-     params: CommunicatorConfig, commName: string, configuredClass: ConfiguredClass<unknown> | null)
+     params: CommunicatorConfig, commName: string)
   {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
@@ -41,13 +37,5 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
     this.maxAttempts = params.maxAttempts ?? 3;
     this.backoffRate = params.backoffRate ?? 2;
     this.applicationConfig = workflowContext.applicationConfig;
-    this.configuredClass = configuredClass;
-  }
-
-  getConfiguredClass<C extends InitConfigMethod>(cls: C): ConfiguredClass<C, Parameters<C['initConfiguration']>[1]> {
-    if (!this.configuredClass) throw new DBOSError(`Configuration is required for ${this.operationName} but was not provided.`);
-    const cc = this.configuredClass as ConfiguredClass<C, Parameters<C['initConfiguration']>[1]>;
-    if (cc.classCtor !== cls) throw new DBOSError(`Configration retrieval was attempted for class '${cls.name}' but saved for class '${cc.classCtor.name}'`);
-    return cc;
   }
 }

@@ -1,4 +1,4 @@
-import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, InitConfigMethod, ConfiguredClass } from "../decorators";
+import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, InitConfigMethod, ConfiguredInstance } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
@@ -48,11 +48,11 @@ export type SyncHandlerWfFuncsConf<T> =
 
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
-  invoke<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): InvokeFuncsConf<T>;
+  invoke<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): InvokeFuncsConf<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncsConf<T>;
+  invokeWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncsConf<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncsConf<T>;
+  startWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string): AsyncHandlerWfFuncsConf<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
@@ -142,10 +142,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredClass: ConfiguredClass<unknown> | null): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredClass };
+    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance };
 
     for (const op of ops) {
       if (asyncWf) {
@@ -171,33 +171,33 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return proxy as InvokeFuncs<T>;
   }
 
-  invoke<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string): InvokeFuncs<T> | InvokeFuncsConf<T> {
+  invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): InvokeFuncs<T> | InvokeFuncsConf<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, true, null);
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, true, targetCfg) as unknown as InvokeFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;      
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as InvokeFuncsConf<T>;
     }
   }
 
-  startWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncsConf<T> {
+  startWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncsConf<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, true, null);
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, true, targetCfg) as unknown as AsyncHandlerWfFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;      
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as AsyncHandlerWfFuncsConf<T>;
     }
   }
 
-  invokeWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsConf<T> {
+  invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsConf<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, false, null) as unknown as SyncHandlerWfFuncs<T>;
     }
     else {
-      const targetCfg = object as ConfiguredClass<T>;      
-      return this.mainInvoke(targetCfg.classCtor, workflowUUID, false, targetCfg) as unknown as SyncHandlerWfFuncsConf<T>;
+      const targetInst = object as ConfiguredInstance;
+      return this.mainInvoke(targetInst, workflowUUID, false, targetInst) as unknown as SyncHandlerWfFuncsConf<T>;
     }
   }
 

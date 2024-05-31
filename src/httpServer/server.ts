@@ -283,8 +283,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
-            // configuredClass is currently null; we don't allow configured handlers now.
-            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredClass: null };
+            // configuredInstance is currently null; we don't allow configured handlers now.
+            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {

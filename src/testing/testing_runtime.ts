@@ -2,7 +2,7 @@
 import { IncomingMessage } from "http";
 import { Communicator } from "../communicator";
 import { HTTPRequest, DBOSContextImpl } from "../context";
-import { ConfiguredClass, ConfiguredInstance, getRegisteredOperations } from "../decorators";
+import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
 import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncsConf, InvokeFuncs, InvokeFuncsConf, InvokeFuncsInst, SyncHandlerWfFuncs, SyncHandlerWfFuncsConf } from "../httpServer/handler";
 import { DBOSHttpServer } from "../httpServer/server";
@@ -51,9 +51,9 @@ export interface WorkflowInvokeParams {
 export interface TestingRuntime {
   invoke<T extends ConfiguredInstance>(targetInst: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
-  invokeWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
+  invokeWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsConf<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends object>(targetCfg: ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
+  startWorkflow<T extends object>(targetCfg: ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncsConf<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
@@ -160,9 +160,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst, configuredClass: null };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst };
     for (const op of ops) {
-      console.log(`Making an op for ${op.name}`);
       if (asyncWf) {
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args)
@@ -180,7 +179,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return proxy as InvokeFuncs<T>;
   }
 
-  invoke<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> | InvokeFuncsConf<T> {
+  invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T> | InvokeFuncsConf<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, params, true, null);
     }
@@ -202,7 +201,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
   }
 
-  invokeWorkflow<T extends object>(object: T | ConfiguredClass<T>, workflowUUID?: string, params?: WorkflowInvokeParams)
+  invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, params?: WorkflowInvokeParams)
     : SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsConf<T>
   {
     if (typeof object === 'function') {

@@ -5,7 +5,7 @@ import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
-import { DBOSNotAuthorizedError } from "./error";
+import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
 
 /**
@@ -134,6 +134,7 @@ export interface RegistrationDefaults
 
 export interface MethodRegistrationBase {
   name: string;
+  className: string;
 
   args: MethodParameter[];
 
@@ -198,13 +199,6 @@ export abstract class ConfiguredInstance {
   abstract initialize(ctx: InitContext): Promise<void>;
 }
 
-export interface ConfiguredClass<CT, T=unknown> { // TODO Get rid of
-  configName: string;
-  config: T;
-  classCtor: CT;
-  classConfigInitializerFunc: InitConfigMethod;
-}
-
 export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
 {
   name: string = "";
@@ -217,8 +211,6 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
-  configurations: Map<string, ConfiguredClass<CT>> = new Map(); // TODO Get rid of
-
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
 
   ctor: CT;
@@ -227,16 +219,16 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   }
 }
 
-const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map(); // TODO: Get Rid Of
-export function getRegisteredMethodClassName(func: unknown): string { // TODO: Get Rid Of
+// This is a bit ugly, if we got the class / instance it would help avoid this auxiliary structure
+const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
+export function getRegisteredMethodClassName(func: unknown): string {
   let rv:string = "";
   if (methodToRegistration.has(func)) {
     rv = methodToRegistration.get(func)!.className;
   }
   return rv;
 }
-
-export function getRegisteredMethodName(func: unknown): string { // TODO: Get Rid of
+export function getRegisteredMethodName(func: unknown): string {
   let rv:string = "";
   if (methodToRegistration.has(func)) {
     rv = methodToRegistration.get(func)!.name;
@@ -275,12 +267,6 @@ export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never; // 
 export function Configurable<T extends InitConfigMethod>() { // TODO: Remove
   return function (_constructor: HasInitConfigMethod<T>) {
   };
-}
-
-export function getConfiguredClass(clsname: string, cfgname: string): ConfiguredClass<unknown> | null { // TODO: Remove
-  const classReg = classesByName.get(clsname);
-  if (!classReg) return null;
-  return classReg.configurations.get(cfgname) ?? null;
 }
 
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
@@ -352,7 +338,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
     methReg.defaults = classReg;
 
-    console.log(`Registering ${classReg.name}.${methReg.name}`);
     methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const argNames = getArgNames(descriptor.value!);
@@ -559,26 +544,12 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
 {
   const inst = new cls(name, ...args);
-  // TODO Register this
+  const creg = getOrCreateClassRegistration(cls as new(...args: unknown[])=>R);
+  if (creg.configuredInstances.has(name)) {
+    throw new DBOSError(`Registration: Class ${cls.name} configuration ${name} is not unique`);
+  }
+  creg.configuredInstances.set(name, inst);
   return inst;
-}
-
-export function initClassConfiguration<T extends InitConfigMethod>( // TODO: Remove
-  ctor: T,
-  cfgname: string,
-  config: Parameters<T['initConfiguration']>[1]
-)
-{
-  //ReturnType<T['constructor']['initConfiguration']>
-  const clsreg = getOrCreateClassRegistration(ctor);
-  if (clsreg.configurations.has(cfgname)) {
-    throw new Error(`Class ${clsreg.name} already has a registered configuration named ${cfgname}`);
-  }
-  else {
-    const reg = {classCtor: ctor, classConfigInitializerFunc: ctor, config, configName: cfgname};
-    clsreg.configurations.set(cfgname, reg);
-    return reg as ConfiguredClass<T, Parameters<T['initConfiguration']>[1]>;
-  }
 }
 
 ///////////////////////
