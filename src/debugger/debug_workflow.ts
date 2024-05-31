@@ -199,7 +199,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async #executeTransaction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
+  async #executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
     const client = await this.#dbosExec.procedurePool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -262,7 +262,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let result: Awaited<R> | Error;
     try {
-      result = await this.#executeTransaction(wrappedProcedure, procInfo.config);
+      result = await this.#executeProcedure(wrappedProcedure, procInfo.config);
     } catch (e) {
       result = e as Error;
     }
