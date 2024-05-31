@@ -3,7 +3,7 @@ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executo
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
-import { DBOSDebuggerError } from "../error";
+import { DBOSDebuggerError, DBOSError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
@@ -217,11 +217,20 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
     }
     else {
+            // Our arguments here are:
+      //  The instance (needed)
+      //  The args[0] class (for the compiler's benefit)
+      //  The args[1] method name
+      //  Args 2+ go to the function
       const targetInst = wfOrCC as unknown as ConfiguredInstance;
-      const wf = args[0] as Workflow<T, R>;
-      const slicedArgs = args.slice(1) as unknown as T;
       const funcId = this.functionIDGetIncrement();
       const childUUID: string = this.workflowUUID + "-" + funcId;
+      const wfn = args[1] as string;
+      const wf = (targetInst as any)[wfn] as Workflow<T, R>;
+      if (typeof wf !== 'function') {
+        throw new DBOSError(`In startChildWorkflow of ${wfn}, this is not a function on the target instance.`);
+      }
+      const slicedArgs = args.slice(2) as unknown as T;
       return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredInstance: targetInst}, this.workflowUUID, funcId, ...slicedArgs);  
     }
   }

@@ -293,11 +293,20 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     else {
       // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+      // Our argumens here are:
+      //  The instance (needed)
+      //  The args[0] class (for the compiler's benefit)
+      //  The args[1] method name
+      //  Args 2+ go to the function
       const targetInst = wfOrCC as unknown as ConfiguredInstance;
       const funcId = this.functionIDGetIncrement();
       const childUUID: string = this.workflowUUID + "-" + funcId;
-      const wf = args[0] as Workflow<T, R>;
-      const slicedArgs = args.slice(1) as unknown as T;
+      const wfn = args[1] as string;
+      const wf = (targetInst as any)[wfn] as Workflow<T, R>;
+      if (typeof wf !== 'function') {
+        throw new DBOSError(`In startChildWorkflow of ${wfn}, this is not a function on the target instance.`);
+      }
+      const slicedArgs = args.slice(2) as unknown as T;
       return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredInstance: targetInst}, this.workflowUUID, funcId, ...slicedArgs);
     }
   }
