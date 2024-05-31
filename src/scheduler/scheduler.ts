@@ -1,6 +1,6 @@
 import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
-import { MethodRegistration, registerAndWrapFunction } from "../decorators";
+import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { TimeMatcher } from "./crontab";
 import { Workflow } from "../workflow";
 
@@ -25,17 +25,9 @@ export class SchedulerConfig {
 // Scheduled Time. Actual Time.
 export type ScheduledArgs = [Date, Date]
 
-export interface SchedulerRegistrationConfig {
-    schedulerConfig?: SchedulerConfig;
-}
-
-export class SchedulerRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return>
-    implements SchedulerRegistrationConfig
+export interface SchedulerRegistrationBase extends MethodRegistrationBase
 {
     schedulerConfig?: SchedulerConfig;
-    constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
-        super(origFunc);
-    }
 }
 
 export function Scheduled(schedulerConfig: SchedulerConfig) {
@@ -45,7 +37,7 @@ export function Scheduled(schedulerConfig: SchedulerConfig) {
         inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: ScheduledArgs) => Promise<Return>>
     ) {
         const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-        const schedRegistration = registration as unknown as SchedulerRegistration<This, ScheduledArgs, Return>;
+        const schedRegistration = registration as unknown as SchedulerRegistrationBase;
         schedRegistration.schedulerConfig = schedulerConfig;
 
         return descriptor;
@@ -65,7 +57,7 @@ export class DBOSScheduler{
 
     initScheduler() {
         for (const registeredOperation of this.dbosExec.registeredOperations) {
-            const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
+            const ro = registeredOperation as SchedulerRegistrationBase;
             if (ro.schedulerConfig) {
                 const loop = new DetachableLoop(
                     this.dbosExec,
@@ -97,7 +89,7 @@ export class DBOSScheduler{
         const logger = this.dbosExec.logger;
         logger.info("Scheduled endpoints:");
         this.dbosExec.registeredOperations.forEach((registeredOperation) => {
-            const ro = registeredOperation as SchedulerRegistration<unknown, unknown[], unknown>;
+            const ro = registeredOperation as SchedulerRegistrationBase;
             if (ro.schedulerConfig) {
                 logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval}`);
             }
@@ -112,7 +104,7 @@ class DetachableLoop {
     private timeMatcher: TimeMatcher;
 
     constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly schedMode:SchedulerMode,
-                readonly scheduledMethod: SchedulerRegistration<unknown, unknown[], unknown>)
+                readonly scheduledMethod: SchedulerRegistrationBase)
     {
         this.lastExec = new Date();
         this.lastExec.setMilliseconds(0);

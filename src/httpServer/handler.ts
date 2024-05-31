@@ -1,4 +1,4 @@
-import { MethodRegistration, MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, InitConfigMethod, ConfiguredClass } from "../decorators";
+import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, InitConfigMethod, ConfiguredClass } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
@@ -224,16 +224,6 @@ export interface HandlerRegistrationBase extends MethodRegistrationBase {
   args: HandlerParameter[];
 }
 
-export class HandlerRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
-  apiType: APITypes = APITypes.GET;
-  apiURL: string = "";
-
-  args: HandlerParameter[] = [];
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
-    super(origFunc);
-  }
-}
-
 export class HandlerParameter extends MethodParameter {
   argSource: ArgSources = ArgSources.DEFAULT;
 
@@ -254,7 +244,7 @@ export function GetApi(url: string) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as HandlerRegistration<This, Args, Return>;
+    const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = APITypes.GET;
 
@@ -270,7 +260,7 @@ export function PostApi(url: string) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as HandlerRegistration<This, Args, Return>;
+    const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = APITypes.POST;
 

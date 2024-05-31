@@ -5,7 +5,7 @@ import cors from "@koa/cors";
 import {
   RequestIDHeader,
   HandlerContextImpl,
-  HandlerRegistration,
+  HandlerRegistrationBase,
 } from "./handler";
 import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
@@ -175,7 +175,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     dbosExec.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS

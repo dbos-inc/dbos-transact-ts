@@ -74,8 +74,6 @@ export class DBOSDataType {
 }
 
 const paramMetadataKey = Symbol.for("dbos:parameter");
-const methodMetadataKey = Symbol.for("dbos:method");
-const classMetadataKey = Symbol.for("dbos:class");
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
@@ -123,9 +121,9 @@ export class MethodParameter {
   }
 }
 
-//////////////////////////
-/* REGISTRATION OBJECTS */
-//////////////////////////
+//////////////////////////////////////////
+/* REGISTRATION OBJECTS and read access */
+//////////////////////////////////////////
 
 export interface RegistrationDefaults
 {
@@ -146,6 +144,7 @@ export interface MethodRegistrationBase {
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  isInstance: boolean;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   registeredFunction: Function | undefined;
@@ -165,11 +164,13 @@ implements MethodRegistrationBase
 
   args: MethodParameter[] = [];
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>)
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean)
   {
     this.origFunction = origFunc;
+    this.isInstance = isInstance;
   }
   needInitialized: boolean = true;
+  isInstance: boolean;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
@@ -189,7 +190,15 @@ implements MethodRegistrationBase
   }
 }
 
-export interface ConfiguredClass<CT, T=unknown> {
+export abstract class ConfiguredInstance {
+  readonly name: string;
+  constructor(name: string) {
+    this.name = name;
+  }
+  abstract initialize(ctx: InitContext): Promise<void>;
+}
+
+export interface ConfiguredClass<CT, T=unknown> { // TODO Get rid of
   configName: string;
   config: T;
   classCtor: CT;
@@ -202,15 +211,82 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   needsInitialized: boolean = true;
+
   // eslint-disable-next-line @typescript-eslint/ban-types
   ormEntities: Function[] = [];
 
-  configurations: Map<string, ConfiguredClass<CT>> = new Map();
+  registeredOperations: Map<string, MethodRegistrationBase> = new Map();
+
+  configurations: Map<string, ConfiguredClass<CT>> = new Map(); // TODO Get rid of
+
+  configuredInstances: Map<string, ConfiguredInstance> = new Map();
 
   ctor: CT;
   constructor(ctor: CT) {
     this.ctor = ctor;
   }
+}
+
+const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map(); // TODO: Get Rid Of
+export function getRegisteredMethodClassName(func: unknown): string { // TODO: Get Rid Of
+  let rv:string = "";
+  if (methodToRegistration.has(func)) {
+    rv = methodToRegistration.get(func)!.className;
+  }
+  return rv;
+}
+
+export function getRegisteredMethodName(func: unknown): string { // TODO: Get Rid of
+  let rv:string = "";
+  if (methodToRegistration.has(func)) {
+    rv = methodToRegistration.get(func)!.name;
+  }
+  return rv;
+}
+
+export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
+  const registeredOperations: MethodRegistrationBase[] = [];
+
+  if (typeof target === 'function') { // Constructor case
+    const classReg = classesByName.get(target.name);
+    classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
+  }
+  else {
+    let current: object | undefined = target;
+    while (current) {
+      const cname = current.constructor.name;
+      if (classesByName.has(cname)) {
+        registeredOperations.push(...getRegisteredOperations(current.constructor));
+      }
+      current = Object.getPrototypeOf(current) as object | undefined;
+    }
+  }
+
+  return registeredOperations;
+}
+
+export interface InitConfigMethod { // TODO: Remove
+  new (...args: unknown[]) : object;
+  initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
+}
+
+export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never; // TODO Remove
+
+export function Configurable<T extends InitConfigMethod>() { // TODO: Remove
+  return function (_constructor: HasInitConfigMethod<T>) {
+  };
+}
+
+export function getConfiguredClass(clsname: string, cfgname: string): ConfiguredClass<unknown> | null { // TODO: Remove
+  const classReg = classesByName.get(clsname);
+  if (!classReg) return null;
+  return classReg.configurations.get(cfgname) ?? null;
+}
+
+export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
+  const classReg = classesByName.get(clsname);
+  if (!classReg) return null;
+  return classReg.configuredInstances.get(cfgname) ?? null;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -219,30 +295,6 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 // and making wrapped methods available for function registration at runtime
 // initialization time.
 ////////////////////////////////////////////////////////////////////////////////
-
-export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
-  const registeredOperations: MethodRegistrationBase[] = [];
-
-  if (typeof target === 'function') {
-    for (const name of Object.getOwnPropertyNames(target)) {
-      const operation = Reflect.getOwnMetadata(methodMetadataKey, target, name) as MethodRegistrationBase | undefined;
-      if (operation) { registeredOperations.push(operation); }
-    }
-  }
-  else {
-    let current: object | undefined = target;
-    while (current) {
-      for (const name of Object.getOwnPropertyNames(current)) {
-        console.log(`Looking up ${target.constructor.name}/${name}`);
-        const operation = Reflect.getOwnMetadata(methodMetadataKey, target.constructor, name) as MethodRegistrationBase | undefined;
-        if (operation) { registeredOperations.push(operation); }
-      }
-      current = Object.getPrototypeOf(current) as object | undefined;
-    }
-  }
-
-  return registeredOperations;
-}
 
 export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
   let regtarget = target;
@@ -268,43 +320,39 @@ function generateSaltedHash(data: string, salt: string): string {
   return hash.digest("hex");
 }
 
-const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
-export function getRegisteredMethodClassName(func: unknown): string {
-  let rv:string = "";
-  if (methodToRegistration.has(func)) {
-    rv = methodToRegistration.get(func)!.className;
-  }
-  return rv;
-}
-
-export function getRegisteredMethodName(func: unknown): string {
-  let rv:string = "";
-  if (methodToRegistration.has(func)) {
-    rv = methodToRegistration.get(func)!.name;
-  }
-  return rv;
-}
-
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
 ) {
-  let regtarget = target;
-  if (typeof regtarget !== 'function') {
-    // Instance method case
-    regtarget = regtarget.constructor;
+  let regtarget: AnyConstructor;
+  let isInstance = false;
+  if (typeof target === 'function') {
+    // Static method case
+    regtarget = target as AnyConstructor;
   }
-  const methReg: MethodRegistration<This, Args, Return> =
-    (Reflect.getOwnMetadata(methodMetadataKey, regtarget, propertyKey) as MethodRegistration<This, Args, Return>) || new MethodRegistration<This, Args, Return>(descriptor.value!);
+  else
+  {
+    // Instance method case
+    regtarget = target.constructor as AnyConstructor;
+    isInstance = true;
+  }
+
+  const classReg = getOrCreateClassRegistration(regtarget);
+
+  const fname = propertyKey.toString();
+  if (!classReg.registeredOperations.has(fname)) {
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance));
+  }
+  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(fname)! as MethodRegistration<This, Args, Return>;
 
   if (methReg.needInitialized) {
-    const classname = (regtarget as {name: string}).name;
+    methReg.needInitialized = false;
+    methReg.name = fname;
+    methReg.className = classReg.name;
+    methReg.defaults = classReg;
 
-    methReg.name = propertyKey.toString();
-    methReg.className = classname;
-
-    console.log(`Registering ${classname}.${methReg.name}`);
+    console.log(`Registering ${classReg.name}.${methReg.name}`);
     methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const argNames = getArgNames(descriptor.value!);
@@ -319,8 +367,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         // TODO else warn/log something
       }
     });
-
-    Reflect.defineMetadata(methodMetadataKey, methReg, regtarget, propertyKey);
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
 
@@ -388,7 +434,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     descriptor.value = wrappedMethod;
     methReg.registeredFunction = wrappedMethod;
 
-    methReg.needInitialized = false;
     methodToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
     methodToRegistration.set(methReg.origFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
   }
@@ -412,19 +457,15 @@ const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map()
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
-  const clsReg: ClassRegistration<CT> =
-    (Reflect.getOwnMetadata(classMetadataKey, ctor, "dbosclassreg") as ClassRegistration<CT>) || new ClassRegistration<CT>(ctor);
+  const name = ctor.name;
+  if (!classesByName.has(name)) {
+    classesByName.set(name, new ClassRegistration<CT>(ctor));
+  }
+  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
 
   if (clsReg.needsInitialized) {
-    clsReg.name = ctor.name;
-    classesByName.set(clsReg.name, clsReg);
-
-    Reflect.defineMetadata(classMetadataKey, clsReg, ctor, "dbosclassreg");
-
-    const ops = getRegisteredOperations(ctor);
-    ops.forEach((op) => {
-      op.defaults = clsReg;
-    });
+    clsReg.name = name;
+    clsReg.needsInitialized = false;
   }
   return clsReg;
 }
@@ -515,33 +556,11 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]) : object
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
-export abstract class ConfiguredInstance {
-  readonly name: string;
-  constructor(name: string) {
-    this.name = name;
-  }
-  abstract initialize(ctx: InitContext): Promise<void>;
-}
-
-//export type IsConfiguredInstance<T> = T extends ConfiguredInstance ? T : never;
-
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
 {
   const inst = new cls(name, ...args);
   // TODO Register this
   return inst;
-}
-
-export interface InitConfigMethod { // TODO: Remove
-  new (...args: unknown[]) : object;
-  initConfiguration(ctx: InitContext, arg: unknown): Promise<void>;
-}
-
-export type HasInitConfigMethod<T> = T extends InitConfigMethod ? T : never; // TODO Remove
-
-export function Configurable<T extends InitConfigMethod>() { // TODO: Remove
-  return function (_constructor: HasInitConfigMethod<T>) {
-  };
 }
 
 export function initClassConfiguration<T extends InitConfigMethod>( // TODO: Remove
@@ -560,12 +579,6 @@ export function initClassConfiguration<T extends InitConfigMethod>( // TODO: Rem
     clsreg.configurations.set(cfgname, reg);
     return reg as ConfiguredClass<T, Parameters<T['initConfiguration']>[1]>;
   }
-}
-
-export function getConfiguredClass(clsname: string, cfgname: string): ConfiguredClass<unknown> | null {
-  const classReg = classesByName.get(clsname);
-  if (!classReg) return null;
-  return classReg.configurations.get(cfgname) ?? null;
 }
 
 ///////////////////////
@@ -624,7 +637,6 @@ export function Communicator(config: CommunicatorConfig={}) {
     return descriptor;
   }
   return decorator;
-
 }
 
 // eslint-disable-next-line @typescript-eslint/ban-types

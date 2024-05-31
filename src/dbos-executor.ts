@@ -42,7 +42,7 @@ import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegist
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
-import { HandlerRegistration } from './httpServer/handler';
+import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { sleepms } from './utils';
@@ -859,7 +859,7 @@ export class DBOSExecutor {
   logRegisteredHTTPUrls() {
     this.logger.info("HTTP endpoints supported:");
     this.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
         this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
         const roles = ro.getRequiredRoles();
