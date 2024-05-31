@@ -217,7 +217,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
     }
     else {
-            // Our arguments here are:
+      // Our arguments here are:
       //  The instance (needed)
       //  The args[0] class (for the compiler's benefit)
       //  The args[1] method name
