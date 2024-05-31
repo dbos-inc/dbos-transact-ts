@@ -3,7 +3,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 
 export interface QueryResultBase {
   rowCount: number;
@@ -25,7 +25,7 @@ export interface StoredProcedureContext extends Pick<DBOSContext, 'logger' | 'wo
 
 export class StoredProcedureContextImpl extends DBOSContextImpl implements StoredProcedureContext {
   constructor(
-    readonly client: Pool,
+    readonly client: PoolClient,
     workflowContext: WorkflowContextImpl | WorkflowContextDebug,
     span: Span,
     logger: Logger,
@@ -33,7 +33,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
   ) {
     super(operationName, span, logger, workflowContext);
   }
-  async query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>> {
+  async query<R extends QueryResultRow = any>(sql: string, params: unknown[]): Promise<QueryResult<R>> {
     const { rowCount, rows } = await this.client.query<R>(sql, params);
     return { rowCount: rowCount ?? rows.length, rows };
   }

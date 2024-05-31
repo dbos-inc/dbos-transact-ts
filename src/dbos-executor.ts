@@ -169,8 +169,6 @@ export class DBOSExecutor {
       }
     }
 
-    this.procedurePool = new Pool(config.poolConfig);
-
     if (config.telemetry?.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
       this.telemetryCollector = new TelemetryCollector(OTLPExporter);
@@ -195,6 +193,8 @@ export class DBOSExecutor {
         }
       }
     }
+
+    this.procedurePool = new Pool(this.config.poolConfig);
 
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
