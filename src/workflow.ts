@@ -301,6 +301,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       const funcId = this.functionIDGetIncrement();
       const childUUID: string = this.workflowUUID + "-" + funcId;
       const wfn = args[1] as string;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const wf = (targetInst as any)[wfn] as Workflow<T, R>;
       if (typeof wf !== 'function') {
         throw new DBOSError(`In startChildWorkflow of ${wfn}, this is not a function on the target instance.`);
