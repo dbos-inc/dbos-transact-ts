@@ -4,6 +4,7 @@ import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
+import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery } from "../user_database";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   if (!configFile.database.password) {
@@ -119,12 +120,17 @@ async function createDBOSTables(configFile: ConfigFile) {
   await pgUserClient.connect();
 
   // Create DBOS table/schema in user DB.
-  // removed schema check since stored proc compiler emits routines in the dbos schema + creating the user db table + index is idempotent.
-  // TODO: Qian is going to update this code to correctly check table/index existence before skipping this step
-  // const schemaExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`);
-  // if (!schemaExists.rows[0].exists) {
+  // Always check if the schema/table exists before creating it to avoid locks.
+  const schemaExists = await pgUserClient.query<ExistenceCheck>(schemaExistsQuery);
+  if (!schemaExists.rows[0].exists) {
     await pgUserClient.query(createUserDBSchema);
+  }
+  const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
+  if (!txnOutputTableExists.rows[0].exists) {
     await pgUserClient.query(userDBSchema);
+  }
+  const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+  if (!txnIndexExists.rows[0].exists) {
     await pgUserClient.query(userDBIndex);
   // }
 
