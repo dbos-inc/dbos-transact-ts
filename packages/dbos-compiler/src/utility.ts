@@ -4,7 +4,7 @@ import tsm from 'ts-morph';
 // https://devblogs.microsoft.com/typescript/announcing-typescript-5-5-beta/#inferred-type-predicates
 function isValid<T>(value: T | null | undefined): value is T { return !!value; }
 
-interface DecoratorInfo {
+export interface DecoratorInfo {
   name: string;
   alias?: string;
   module?: string;
@@ -13,7 +13,7 @@ interface DecoratorInfo {
 
 // helper function to get the actual name (along with any alias) and module of a decorator
 // from its import declaration
-function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
+export function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
   const isFactory = node.isDecoratorFactory();
 
   const identifier = isFactory
@@ -42,9 +42,9 @@ function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
   return { name: node.getName(), args };
 }
 
-type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
+export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
 
-function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
+export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   switch (true) {
     case tsm.Node.isTrueLiteral(node): return true;
     case tsm.Node.isFalseLiteral(node): return false;
