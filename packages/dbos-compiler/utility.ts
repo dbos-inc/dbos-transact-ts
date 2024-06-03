@@ -2,9 +2,9 @@ import tsm from 'ts-morph';
 
 // can be removed once TS 5.5 is released
 // https://devblogs.microsoft.com/typescript/announcing-typescript-5-5-beta/#inferred-type-predicates
-export function isValid<T>(value: T | null | undefined): value is T { return !!value; }
+function isValid<T>(value: T | null | undefined): value is T { return !!value; }
 
-export interface DecoratorInfo {
+interface DecoratorInfo {
   name: string;
   alias?: string;
   module?: string;
@@ -13,7 +13,7 @@ export interface DecoratorInfo {
 
 // helper function to get the actual name (along with any alias) and module of a decorator
 // from its import declaration
-export function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
+function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
   const isFactory = node.isDecoratorFactory();
 
   const identifier = isFactory
@@ -42,9 +42,9 @@ export function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
   return { name: node.getName(), args };
 }
 
-export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
+type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
 
-export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
+function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   switch (true) {
     case tsm.Node.isTrueLiteral(node): return true;
     case tsm.Node.isFalseLiteral(node): return false;
@@ -79,7 +79,7 @@ export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
 
 type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "communicator" | "initializer";
 
-export function getDbosDecoratorKind(node: tsm.Decorator | DecoratorInfo): DbosDecoratorKind | undefined {
+function getDbosDecoratorKind(node: tsm.Decorator | DecoratorInfo): DbosDecoratorKind | undefined {
   const decoratorInfo = tsm.Node.isNode(node) ? getDecoratorInfo(node) : node;
   if (!decoratorInfo) { return undefined; }
   const { name, module } = decoratorInfo;

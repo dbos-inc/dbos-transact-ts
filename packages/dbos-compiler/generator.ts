@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from "liquidjs";
-import { TransactionConfig } from './utility';
+import type { TransactionConfig } from './utility.js';
 
 const engine = new Liquid({
   root: path.resolve(__dirname, '..', 'templates'),

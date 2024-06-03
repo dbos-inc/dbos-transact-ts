@@ -1,5 +1,5 @@
 import tsm from 'ts-morph';
-import { getDbosMethodKind } from "./utility";
+import { getDbosMethodKind } from "./utility.js";
 
 export function removeDbosMethods(file: tsm.SourceFile) {
   file.forEachDescendant((node, traversal) => {
