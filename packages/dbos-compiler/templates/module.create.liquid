@@ -1,0 +1,14 @@
+CREATE FUNCTION "{{moduleName}}{{appVersion}}_init"() RETURNS VOID AS $$
+
+var exports = {};
+
+// -- compiler output
+{{ contents }}
+// -- end compiler output
+
+globalThis.{{moduleName}}{{appVersion}} = exports;
+
+$$ LANGUAGE plv8 IMMUTABLE STRICT;
+
+-----------------------------------------------------------
+
