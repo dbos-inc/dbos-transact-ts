@@ -169,7 +169,6 @@ export class DBOSExecutor {
 
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
-
       if (this.debugProxy) {
         try {
           const url = new URL(this.config.debugProxy!);
