@@ -1,5 +1,4 @@
 {
-
   "name": "@dbos-inc/dbos-compiler",
   "version": "0.0.0-placeholder",
   "description": "Tool for generating PG stored procedures from DBOS applications",
