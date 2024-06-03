@@ -169,12 +169,12 @@ export class DBOSExecutor {
 
     if (this.debugMode) {
       this.logger.info("Running in debug mode!");
+
       if (this.debugProxy) {
         try {
           const url = new URL(this.config.debugProxy!);
           this.config.poolConfig.host = url.hostname;
           this.config.poolConfig.port = parseInt(url.port, 10);
-          console.log(this.config)
           this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
         } catch (err) {
           this.logger.error(err);
