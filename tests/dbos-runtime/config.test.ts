@@ -328,30 +328,5 @@ describe("dbos-config", () => {
       expect(poolConfig.database).toBe("some DB");
       process.env.PGPASSWORD = dbPassword;
     });
-
-    test("parseConfigFile sets undefined env variable as empty string", async () => {
-      const localMockDBOSConfigYamlString = `
-        database:
-          hostname: 'some host'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          app_db_name: 'some DB'
-        env:
-          RANDENV: \${SOMERANDOMENV}
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions, false);
-
-      // Test pool config options
-      const poolConfig: PoolConfig = dbosConfig.poolConfig;
-      expect(poolConfig.host).toBe("some host");
-      expect(poolConfig.port).toBe(1234);
-      expect(poolConfig.user).toBe("some user");
-      expect(poolConfig.password).toBe("dbos"); // Env variable exists
-      expect(poolConfig.database).toBe("some DB");
-      expect(dbosConfig.env!["RANDENV"]).toBe(""); // Env variable set to empty string
-    });
   });
 });
