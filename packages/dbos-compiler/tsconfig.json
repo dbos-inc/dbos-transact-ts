@@ -6,6 +6,9 @@
   ],
   "compilerOptions": {
     "outDir": "dist",
-    "sourceMap": true
+    "sourceMap": true,
+    "types": [
+      "vitest/importMeta"
+    ]
   }
 }

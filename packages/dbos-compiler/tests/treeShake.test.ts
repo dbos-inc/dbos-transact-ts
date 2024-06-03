@@ -2,10 +2,10 @@ import tsm from 'ts-morph';
 import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../src/treeShake.js';
 import { makeTestProject } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
-
+import { describe, it, expect } from 'vitest';
 
 describe("treeShake", () => {
-  test("removeDbosMethods", () => {
+  it("removeDbosMethods", () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow("operations.ts");
 
@@ -17,7 +17,7 @@ describe("treeShake", () => {
     expect(testClass.getStaticMethod("testProcedure")).toBeDefined();
   });
 
-  test("aliased removeDbosMethods", () => {
+  it("aliased removeDbosMethods", () => {
     const { project } = makeTestProject(sampleDbosClassAliased);
     const file = project.getSourceFileOrThrow("operations.ts");
 
@@ -29,7 +29,7 @@ describe("treeShake", () => {
     expect(testClass.getStaticMethod("testProcedure")).toBeDefined();
   });
 
-  test("getProcMethods", () => {
+  it("getProcMethods", () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow("operations.ts");
 
@@ -41,7 +41,7 @@ describe("treeShake", () => {
     expect(procMethods[0]).toEqual(testProcMethod);
   });
 
-  test("removeDecorators", () => {
+  it("removeDecorators", () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow("operations.ts");
 
@@ -57,7 +57,7 @@ describe("treeShake", () => {
   });
 
 
-  test("removeUnusedFiles removes unused files", () => {
+  it("removeUnusedFiles removes unused files", () => {
     const fileOne = /*ts*/`
       import { StoredProcedure } from "@dbos-inc/dbos-sdk";
       export class TestOne {
@@ -80,7 +80,7 @@ describe("treeShake", () => {
     expect(project.getSourceFiles().length).toBe(1);
   });
 
-  test("removeUnusedFiles does not remove used files", () => {
+  it("removeUnusedFiles does not remove used files", () => {
     const fileOne = /*ts*/`
       import { StoredProcedure } from "@dbos-inc/dbos-sdk";
       import { test_export } from './fileTwo';
