@@ -97,8 +97,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nByName;
 
     // Invoke a workflow that invokes a transaction and a communicator
-    await ctxt.invokeChildWorkflow(this, DBOSTestConfiguredClass, 'testBasicWorkflow', 'please');
-    const wfh = await ctxt.startChildWorkflow(this, DBOSTestConfiguredClass, 'testBasicWorkflow', 'please');
+    await ctxt.invokeWorkflow(this as DBOSTestConfiguredClass).testBasicWorkflow('please');
+    const wfh = await ctxt.startWorkflow(this as DBOSTestConfiguredClass).testBasicWorkflow('please');
     await wfh.getResult();
   }
 

@@ -62,7 +62,7 @@ describe("foundationdb-oaoo", () => {
       }
 
       // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.startChildWorkflow(EventStatusOAOO.setEventWorkflow);
+      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO).setEventWorkflow();
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();

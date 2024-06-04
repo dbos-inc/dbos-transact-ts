@@ -78,6 +78,15 @@ type WorkflowsOfType<T> = {
   [K in keyof T]: T[K] extends (context: WorkflowContext, ...args: any[]) => any ? K : never;
 }[keyof T];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
+export type WfInvokeWfs<T> = {
+  [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+}
+export type WfInvokeWfsAsync<T> = {
+  [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
+}
+
 type MethodArguments<T extends ConfiguredInstance, K extends keyof T> = T[K] extends (context: WorkflowContext, ...args: infer A) => any ? A : never;
 
 type Unpromisify<T> = T extends Promise<infer U> ? U : T;
@@ -103,6 +112,10 @@ export interface WorkflowContext extends DBOSContext {
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
+
+  // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
+  invokeWorkflow<T extends object>(targetClass: T): WfInvokeWfs<T>;
+  startWorkflow<T extends object>(targetClass: T): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -313,6 +326,54 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
   async invokeChildWorkflow<T extends unknown[], R>(wfOrCC: ConfiguredInstance | Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wfOrCC, ...args).then((handle) => handle.getResult());
+  }
+
+  /**
+   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
+   * to use WorkflowContext.Transaction(OpClass.someMethod, param);
+   */
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+      WfInvokeWfsAsync<T>
+  {
+    const ops = getRegisteredOperations(object);
+    const proxy: Record<string, unknown> = {};
+
+    const funcId = this.functionIDGetIncrement();
+    const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
+
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+
+
+    for (const op of ops) {
+      if (asyncWf) {  
+        proxy[op.name] = op.workflowConfig
+          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          : undefined;
+      } else {
+        proxy[op.name] = op.workflowConfig
+          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          .then((handle) => handle.getResult())
+            : undefined;
+      }
+    }
+    return proxy as WfInvokeWfsAsync<T>;
+  }  
+  
+  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+    if (typeof target === 'function') {
+      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+    }
+    else {
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+    }
+  }
+  invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
+    if (typeof target === 'function') {
+      return this.proxyInvokeWF(target, workflowUUID, false, null) as unknown as WfInvokeWfs<T>;
+    }
+    else {
+      return this.proxyInvokeWF(target, workflowUUID, false, target as ConfiguredInstance) as unknown as WfInvokeWfs<T>;
+    }
   }
 
   // Deprecated
