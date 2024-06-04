@@ -10,7 +10,8 @@ export interface QueryResultBase {
 }
 
 export interface QueryResultRow {
-  [column: string]: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [column: string]: any;
 }
 
 export interface QueryResult<R extends QueryResultRow> extends QueryResultBase {
