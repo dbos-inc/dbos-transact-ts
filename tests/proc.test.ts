@@ -50,6 +50,7 @@ CREATE OR REPLACE PROCEDURE "testProc_proc"(
     _workflow_uuid TEXT, 
     _function_id INT, 
     preset BOOLEAN, 
+    _context JSONB,
     OUT return_value JSONB,
     "name" TEXT
 )
