@@ -3,7 +3,7 @@ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executo
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
-import { DBOSDebuggerError, DBOSError } from "../error";
+import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
@@ -209,35 +209,14 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   // Invoke the debugWorkflow() function instead.
-  async startChildWorkflow<T extends any[], R>(wfOrCC: Workflow<T, R> | ConfiguredInstance, ...args: T): Promise<WorkflowHandle<R>> {
-    if (typeof wfOrCC === 'function') {
-      const wf = wfOrCC as unknown as Workflow<T, R>;
-      const funcId = this.functionIDGetIncrement();
-      const childUUID: string = this.workflowUUID + "-" + funcId;
-      return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
-    }
-    else {
-      // Our arguments here are:
-      //  The instance (needed)
-      //  The args[0] class (for the compiler's benefit)
-      //  The args[1] method name
-      //  Args 2+ go to the function
-      const targetInst = wfOrCC as unknown as ConfiguredInstance;
-      const funcId = this.functionIDGetIncrement();
-      const childUUID: string = this.workflowUUID + "-" + funcId;
-      const wfn = args[1] as string;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const wf = (targetInst as any)[wfn] as Workflow<T, R>;
-      if (typeof wf !== 'function') {
-        throw new DBOSError(`In startChildWorkflow of ${wfn}, this is not a function on the target instance.`);
-      }
-      const slicedArgs = args.slice(2) as unknown as T;
-      return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredInstance: targetInst}, this.workflowUUID, funcId, ...slicedArgs);  
-    }
+  async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends unknown[], R>(wfOrCC: ConfiguredInstance | Workflow<T, R>, ...args: T): Promise<R> {
-    return this.startChildWorkflow(wfOrCC, ...args).then((handle) => handle.getResult());
+  async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+    return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   /**

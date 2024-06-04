@@ -74,10 +74,6 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-type WorkflowsOfType<T> = {
-  [K in keyof T]: T[K] extends (context: WorkflowContext, ...args: any[]) => any ? K : never;
-}[keyof T];
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type WfInvokeWfs<T> = {
@@ -101,26 +97,13 @@ T extends ConfiguredInstance
   }
   : never;
 
-type MethodArguments<T extends ConfiguredInstance, K extends keyof T> = T[K] extends (context: WorkflowContext, ...args: infer A) => any ? A : never;
-
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
 
-  startChildWorkflow<C extends ConfiguredInstance, K extends WorkflowsOfType<C>> (
-    targetInst: C,
-    instanceClass: new (...args: any[]) => C,
-    wf: K,
-    ...args: MethodArguments<C, K>
-  ) : Promise<WorkflowHandle<Awaited<C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never>>>;
+  // Deprecated, see startWorkflow
   startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-
-  invokeChildWorkflow<C extends ConfiguredInstance, K extends WorkflowsOfType<C>> (
-    targetInst: C,
-    instanceClass: new (...args: any[]) => C,
-    wf: K,
-    ...args: MethodArguments<C, K>
-  ) : C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never;
+  // Deprecated, see invokeWorkflow
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
 
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
@@ -310,36 +293,15 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
    * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
    */
-  async startChildWorkflow<T extends unknown[], R>(wfOrCC: Workflow<T, R> | ConfiguredInstance, ...args: T): Promise<WorkflowHandle<R>> {
-    if (typeof wfOrCC === 'function') {
-      const wf = wfOrCC as unknown as Workflow<T, R>;
-      // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
-      const funcId = this.functionIDGetIncrement();
-      const childUUID: string = this.workflowUUID + "-" + funcId;
-      return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
-    }
-    else {
-      // Our arguments here are:
-      //  The instance (needed)
-      //  The args[0] class (for the compiler's benefit)
-      //  The args[1] method name
-      //  Args 2+ go to the function
-      const targetInst = wfOrCC as unknown as ConfiguredInstance;
-      const funcId = this.functionIDGetIncrement();
-      const childUUID: string = this.workflowUUID + "-" + funcId;
-      const wfn = args[1] as string;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      const wf = (targetInst as any)[wfn] as Workflow<T, R>;
-      if (typeof wf !== 'function') {
-        throw new DBOSError(`In startChildWorkflow of ${wfn}, this is not a function on the target instance.`);
-      }
-      const slicedArgs = args.slice(2) as unknown as T;
-      return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, configuredInstance: targetInst}, this.workflowUUID, funcId, ...slicedArgs);
-    }
+  async startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends unknown[], R>(wfOrCC: ConfiguredInstance | Workflow<T, R>, ...args: T): Promise<R> {
-    return this.startChildWorkflow(wfOrCC, ...args).then((handle) => handle.getResult());
+  async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+    return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
   /**
