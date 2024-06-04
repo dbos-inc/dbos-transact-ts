@@ -109,6 +109,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   @Workflow()
   async bogusChildWorkflow(ctxt: WorkflowContext) {
     // Try invokeWorkflow on something you should not invoke.
+    //  If your attention has been called to this line because it stopped compiling,
+    //    great!  You may have done something good.
     await ctxt.invokeWorkflow(this).testFunc();
   }
 
@@ -201,6 +203,13 @@ describe("dbos-configclass-tests", () => {
   });
 
   test("badwfinvoke", async() => {
-    //await testRuntime.invokeWorkflow(configA).bogusChildWorkflow();
+    let threw = false;
+    try {
+      await testRuntime.invokeWorkflow(configA).bogusChildWorkflow();
+    }
+    catch (e) {
+      threw = true;
+    }
+    expect(threw).toBeTruthy();
   })
 });
