@@ -87,9 +87,21 @@ export type WfInvokeWfsAsync<T> = {
   [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
 }
 
-type MethodArguments<T extends ConfiguredInstance, K extends keyof T> = T[K] extends (context: WorkflowContext, ...args: infer A) => any ? A : never;
+export type WfInvokeWfsInst<T> =
+  T extends ConfiguredInstance
+    ? {
+      [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    }
+    : never;
 
-type Unpromisify<T> = T extends Promise<infer U> ? U : T;
+export type WfInvokeWfsInstAsync<T> =
+T extends ConfiguredInstance
+  ? {
+    [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
+  }
+  : never;
+
+type MethodArguments<T extends ConfiguredInstance, K extends keyof T> = T[K] extends (context: WorkflowContext, ...args: infer A) => any ? A : never;
 
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
@@ -100,7 +112,7 @@ export interface WorkflowContext extends DBOSContext {
     instanceClass: new (...args: any[]) => C,
     wf: K,
     ...args: MethodArguments<C, K>
-  ) : Promise<WorkflowHandle<Unpromisify<C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never>>>;
+  ) : Promise<WorkflowHandle<Awaited<C[K] extends (context: WorkflowContext, ...args: any[]) => infer R ? R : never>>>;
   startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   invokeChildWorkflow<C extends ConfiguredInstance, K extends WorkflowsOfType<C>> (
@@ -114,7 +126,9 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
 
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
+  invokeWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T): WfInvokeWfs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInstAsync<T>;
   startWorkflow<T extends object>(targetClass: T): WfInvokeWfsAsync<T>;
 
   // These are subject to change...

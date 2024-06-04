@@ -50,7 +50,7 @@ class DebuggerCCTest extends ConfiguredInstance {
     await ctxt.sleep(1);
     const txResult = await ctxt.invoke(this).testReadOnlyFunction(num);
     const cResult = await ctxt.invoke(this).testCommunicator("comm");
-    const wfResult = await ctxt.invokeWorkflow(this as DebuggerCCTest).testWorkflow('cwf');
+    const wfResult = await ctxt.invokeWorkflow(this).testWorkflow('cwf');
     return `${this.name}${txResult}${cResult}${wfResult}-${num}`;
   }
 }
