@@ -15,4 +15,4 @@ database:
     - npx prisma migrate deploy
 runtimeConfig:
   entrypoints:
-    - dist/src/operations.js
+    - dist/operations.js

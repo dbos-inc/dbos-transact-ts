@@ -2,8 +2,8 @@
   "name": "dbos-hello-typeorm",
   "version": "0.0.1",
   "scripts": {
-    "build": "tsc",
-    "test": "npx prisma migrate reset --force && npx prisma generate && jest",
+    "build": "npx prisma generate && tsc",
+    "test": "npx prisma migrate reset --force && jest",
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
     "dev": "nodemon",
