@@ -1,5 +1,5 @@
 {
-  "name": "dbos-hello-typeorm",
+  "name": "dbos-hello-prisma",
   "version": "0.0.1",
   "scripts": {
     "build": "node generate_env.js && npx prisma generate && tsc",
