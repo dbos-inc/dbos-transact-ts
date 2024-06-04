@@ -23,7 +23,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { exaustiveCheckGuard } from '../utils';
+import { exhaustiveCheckGuard } from '../utils';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -376,7 +376,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
             break;
           default:
-            exaustiveCheckGuard(ro.apiType)
+            exhaustiveCheckGuard(ro.apiType)
         }
       }
     });

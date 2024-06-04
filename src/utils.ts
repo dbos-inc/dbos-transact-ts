@@ -77,6 +77,6 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   return value;
 }
 
-export function exaustiveCheckGuard(_: never): never {
+export function exhaustiveCheckGuard(_: never): never {
   throw new Error('Exaustive matching is not applied');
 }

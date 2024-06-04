@@ -10,7 +10,7 @@ import {
 
 import { ArgSources } from "../../src/httpServer/handlerTypes";
 import { APITypes } from "../../src/httpServer/handlerTypes";
-import { exaustiveCheckGuard } from '../../src/utils';
+import { exhaustiveCheckGuard } from '../../src/utils';
 
 import {
   createParser,
@@ -199,7 +199,7 @@ export class OpenApiGenerator {
       case APITypes.PUT: return [$path, { put: operation }];
       case APITypes.PATCH: return [$path, { patch: operation }];
       case APITypes.DELETE: return [$path, { delete: operation }];
-      default: exaustiveCheckGuard(verb)
+      default: exhaustiveCheckGuard(verb)
     }
   }
 
@@ -428,7 +428,7 @@ export class OpenApiGenerator {
         case APITypes.PUT: return ArgSources.BODY;
         case APITypes.PATCH: return ArgSources.BODY;
         case APITypes.DELETE: return ArgSources.QUERY;
-        default: exaustiveCheckGuard(verb)
+        default: exhaustiveCheckGuard(verb)
       }
     }
   }
