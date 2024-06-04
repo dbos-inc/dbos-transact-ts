@@ -287,7 +287,8 @@ describe("httpserver-tests", () => {
     extendTypes: {
       json: ["application/json", "application/custom-content-type"],
     },
-    encoding: "utf-8"
+    encoding: "utf-8",
+    parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
   }))
   class TestEndpoints {
     @GetApi("/hello")
