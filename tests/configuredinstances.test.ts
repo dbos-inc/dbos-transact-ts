@@ -102,6 +102,16 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     await wfh.getResult();
   }
 
+  async testFunc() {
+    return Promise.resolve();
+  }
+
+  @Workflow()
+  async bogusChildWorkflow(ctxt: WorkflowContext) {
+    // Try invokeWorkflow on something you should not invoke.
+    await ctxt.invokeWorkflow(this).testFunc();
+  }
+
   @GetApi('/bad')
   static async testUnconfiguredHandler(_ctx: HandlerContext) {
     // A handler in a configured class doesn't have a configuration / this.
@@ -189,4 +199,8 @@ describe("dbos-configclass-tests", () => {
     const response2 = await request(testRuntime.getHandlersCallback()).get("/instance");
     expect(response2.statusCode).toBe(404);
   });
+
+  test("badwfinvoke", async() => {
+    //await testRuntime.invokeWorkflow(configA).bogusChildWorkflow();
+  })
 });
