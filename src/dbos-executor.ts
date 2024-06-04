@@ -46,6 +46,7 @@ import { HandlerRegistration } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { sleepms } from './utils';
+import path from 'node:path';
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -207,9 +208,17 @@ export class DBOSExecutor {
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
-      const { PrismaClient } = require("@prisma/client");
+      const { PrismaClient } = require(path.join(process.cwd(), "node_modules", "@prisma", "client")); // Find the prisma client in the node_modules of the current project
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
-      this.userDatabase = new PrismaUserDatabase(new PrismaClient());
+      this.userDatabase = new PrismaUserDatabase(new PrismaClient(
+        {
+          datasources: {
+            db: {
+              url: `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`,
+            },
+          }
+        }
+      ));
       this.logger.debug("Loaded Prisma user database");
     } else if (userDbClient === UserDatabaseName.TYPEORM) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
