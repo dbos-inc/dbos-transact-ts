@@ -44,13 +44,16 @@ CREATE FUNCTION dbos.flush_buffered_results(
     }
 $$ LANGUAGE plv8;
 
-
 CREATE FUNCTION dbos.run_init() RETURNS VOID AS $$
 
-    function $run(workflow_uuid, $func) {
+    function $run(workflow_uuid, _context, $func) {
         try {
             const $ctx = {
+                request: _context.request,
                 workflowUUID: workflow_uuid,
+                authenticatedUser: _context.authenticatedUser,
+                assumedRole: _context.assumedRole,
+                authenticatedRoles: _context.authenticatedRoles,
                 query: (queryText, values) => {
                     const result = plv8.execute(queryText, values);
                     plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result));

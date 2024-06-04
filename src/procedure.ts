@@ -19,7 +19,7 @@ export interface QueryResult<R extends QueryResultRow = any> extends QueryResult
 
 export type StoredProcedure<R> = (ctxt: StoredProcedureContext, ...args: unknown[]) => Promise<R>;
 
-export interface StoredProcedureContext extends Pick<DBOSContext, 'logger' | 'workflowUUID'> {
+export interface StoredProcedureContext extends Pick<DBOSContext, 'request' | 'workflowUUID' | 'authenticatedUser' | 'assumedRole' | 'authenticatedRoles' | 'logger'> {
   query<R extends QueryResultRow = any>(sql: string, ...params: unknown[]): Promise<QueryResult<R>>;
 }
 

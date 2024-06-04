@@ -1,5 +1,6 @@
 CREATE FUNCTION "{{methodName}}{{appVersion}}_func"(
-    workflow_uuid TEXT{% for param in parameters %},
+    _workflow_uuid TEXT{% for param in parameters %},
+    _context JSONB,
     "{{param.name}}" {{param.type}}{% endfor %}
 ) RETURNS JSONB AS $$ 
 
@@ -9,7 +10,7 @@ CREATE FUNCTION "{{methodName}}{{appVersion}}_func"(
     const $run = globalThis.$run;
     const { {{className}} } = globalThis.{{moduleName}}{{appVersion}};
 
-    return $run(workflow_uuid, (ctx) => {{className}}.{{methodName}}(ctx{% for param in parameters %}, {{param.name}}{% endfor %}));
+    return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx{% for param in parameters %}, {{param.name}}{% endfor %}));
 
 $$ LANGUAGE plv8;
 
@@ -18,6 +19,7 @@ CREATE PROCEDURE "{{methodName}}{{appVersion}}_proc"(
     _workflow_uuid TEXT, 
     _function_id INT, 
     preset BOOLEAN, 
+    _context JSONB,
     OUT return_value JSONB{% for param in parameters %},
     "{{param.name}}" {{param.type}}{% endfor %}
 )
@@ -42,7 +44,7 @@ BEGIN
     PERFORM dbos.flush_buffered_results(_workflow_uuid, buffered_results);
     {% endif %}
 
-    SELECT "{{methodName}}{{appVersion}}_func"(_workflow_uuid{% for param in parameters %}, "{{param.name}}"{% endfor %}) INTO return_value;
+    SELECT "{{methodName}}{{appVersion}}_func"(_workflow_uuid, _context{% for param in parameters %}, "{{param.name}}"{% endfor %}) INTO return_value;
     SELECT pg_current_snapshot(), pg_current_xact_id_if_assigned() INTO _snapshot, _txn_id;
     SELECT return_value::jsonb->'output', return_value::jsonb->'error' INTO _output, _error;
 

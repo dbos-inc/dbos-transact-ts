@@ -281,7 +281,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       this.span,
     );
 
-    const $args = [this.workflowUUID, funcId, this.presetUUID, null, ...args];
+    const $jsonCtx = {
+      request: this.request,
+      authenticatedUser: this.authenticatedUser,
+      authenticatedRoles: this.authenticatedRoles,
+      assumedRole: this.assumedRole,
+    };
+
+    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, ...args];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
       const bufferedResults = new Array<[number, unknown, string, number?]>();
