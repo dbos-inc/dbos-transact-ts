@@ -61,6 +61,7 @@ async function dropHelloSystemDB() {
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_dbos_sys;`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma_dbos_sys;`);
   await pgSystemClient.end();
 }
 
@@ -206,6 +207,30 @@ describe("runtime-tests-typeorm", () => {
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-typeorm runtime", async () => {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "3000");
+  });
+});
+
+describe("runtime-tests-prisma", () => {
+  beforeAll(async () => {
+    await dropHelloSystemDB();
+    process.chdir("packages/create/templates/hello-prisma");
+    configureHelloExample();
+  });
+
+  afterAll(() => {
+    process.chdir("../../../..");
+  });
+
+  test("test hello-prisma tests", () => {
+    execSync("npm run test", { env: process.env }); // Make sure hello-prisma passes its own tests.
+  });
+
+  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
+  test("test hello-prisma runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
     });
