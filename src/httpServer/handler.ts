@@ -230,6 +230,10 @@ export function PutApi(url: string) {
   return generateApiDec(APITypes.PUT, url)
 }
 
+export function PatchApi(url: string) {
+  return generateApiDec(APITypes.PATCH, url)
+}
+
 export function DeleteApi(url: string) {
   return generateApiDec(APITypes.DELETE, url)
 }

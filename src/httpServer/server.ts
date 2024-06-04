@@ -250,7 +250,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
 
               let foundArg = undefined;
               const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
-              const isBodyMethod = ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT;
+              const isBodyMethod = ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
 
               if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
@@ -366,6 +366,10 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
           case APITypes.PUT:
             router.put(ro.apiURL, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
+            break;
+          case APITypes.PATCH:
+            router.patch(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
             break;
           case APITypes.DELETE:
             router.delete(ro.apiURL, wrappedHandler);
