@@ -15,6 +15,7 @@ describe("utility", () => {
         const file = project.getSourceFileOrThrow("operations.ts");
         const cls = file.getClassOrThrow("Test");
         const entries = cls.getStaticMethods().map(m => [m.getName(), getDbosMethodKind(m)]);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const actual = Object.fromEntries(entries);
         const expected = {
             testGetHandler:"handler",

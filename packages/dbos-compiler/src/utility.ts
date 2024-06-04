@@ -121,6 +121,7 @@ export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKin
         break;
       default: {
         const _never: never = kind;
+        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
         throw new Error(`Unexpected DBOS method kind: ${kind}`);
       }
     }

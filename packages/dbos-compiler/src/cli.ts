@@ -82,11 +82,11 @@ async function emitProject(project: tsm.Project, methods: (readonly [tsm.MethodD
   }
 }
 
-function getVersion() {
+function getVersion(): string {
   const __dirname = import.meta.dirname;
   const packageJsonPath = path.join(__dirname, "..", "package.json");
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-  return packageJson.version; 
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as { version: string };
+  return packageJson.version;
 }
 
 function getAppVersion(appVersion: string | boolean | undefined) {

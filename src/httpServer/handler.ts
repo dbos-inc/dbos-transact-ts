@@ -132,10 +132,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           ? (...args: any[]) => this.#workflow(op.registeredFunction as Workflow<any[], any>, params, ...args)
           : op.commConfig
-          ? (...args: any[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<any[], any>, params, ...args)
           : op.procConfig
           ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           : undefined;
       } else {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access

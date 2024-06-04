@@ -1,9 +1,6 @@
 {
   "extends": "@tsconfig/node20/tsconfig.json",
   "references": [],
-  "include": [
-    "src"
-  ],
   "compilerOptions": {
     "outDir": "dist",
     "sourceMap": true,
