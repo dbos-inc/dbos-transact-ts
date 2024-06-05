@@ -303,5 +303,30 @@ describe("dbos-config", () => {
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
+
+    test("parseConfigFile allows undefined password for debug mode with proxy", async () => {
+      const dbPassword = process.env.PGPASSWORD;
+      delete process.env.PGPASSWORD;
+      const localMockDBOSConfigYamlString = `
+        database:
+          hostname: 'some host'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          app_db_name: 'some DB'
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions, true); // Use proxy
+
+      // Test pool config options
+      const poolConfig: PoolConfig = dbosConfig.poolConfig;
+      expect(poolConfig.host).toBe("some host");
+      expect(poolConfig.port).toBe(1234);
+      expect(poolConfig.user).toBe("some user");
+      expect(poolConfig.password).toBe("PROXY-MODE"); // Should be set to "PROXY-MODE"
+      expect(poolConfig.database).toBe("some DB");
+      process.env.PGPASSWORD = dbPassword;
+    });
   });
 });
