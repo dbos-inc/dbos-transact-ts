@@ -296,30 +296,30 @@ describe("ses-tests", () => {
     expect(dfhandle).toBeDefined();
   });
 
-  async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
+    async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
         const formData = new FormData();
-    
+
         // Append all the fields from the presigned post data
         Object.keys(presignedPostData.fields).forEach(key => {
             formData.append(key, presignedPostData.fields[key]);
         });
-    
+
         // Append the file you want to upload
         const fileStream = fs.createReadStream(filePath);
         formData.append('file', fileStream);
-    
+
         return await axios.post(presignedPostData.url, formData);
     }
-    
+
     async function downloadFromS3(presignedGetUrl: string, outputPath: string) {
         const response: AxiosResponse<Readable> = await axios.get(presignedGetUrl, {
         responseType: 'stream',  // Important to handle large files
         });
-    
+
         // Use a write stream to save the file to the desired path
         const writer = fs.createWriteStream(outputPath);
         response.data.pipe(writer);
-    
+
         return new Promise((resolve, reject) => {
         writer.on('finish', resolve);
         writer.on('error', reject);
