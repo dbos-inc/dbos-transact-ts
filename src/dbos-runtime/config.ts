@@ -82,12 +82,8 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = false) {
-  if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
-  }
-
-  const poolConfig: PoolConfig = {
+export function constructPoolConfig(configFile: ConfigFile) {
+   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
@@ -98,19 +94,6 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
 
   if (!poolConfig.database) {
     throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain application database name`);
-  }
-
-  if (!poolConfig.password) {
-    if (useProxy) {
-      poolConfig.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      const pgPassword: string | undefined = process.env.PGPASSWORD;
-      if (pgPassword) {
-        poolConfig.password = pgPassword;
-      } else {
-        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
-      }
-    }
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
@@ -158,6 +141,25 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
+  // Database field must exist
+  if (!configFile.database) {
+    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
+  }
+
+  // Check for the database password
+  if (!configFile.database.password) {
+    if (useProxy) {
+      configFile.database.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
+    } else {
+      const pgPassword: string | undefined = process.env.PGPASSWORD;
+      if (pgPassword) {
+        configFile.database.password = pgPassword;
+      } else {
+        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+      }
+    }
+  }
+
   const validator = ajv.compile(dbosConfigSchema);
   if (!validator(configFile)) {
     const errorMessages = prettyPrintAjvErrors(validator);
@@ -168,7 +170,7 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile, useProxy);
+  const poolConfig = constructPoolConfig(configFile);
 
   /***************************/
   /* Handle telemetry config */
