@@ -5,7 +5,7 @@ import cors from "@koa/cors";
 import {
   RequestIDHeader,
   HandlerContextImpl,
-  HandlerRegistration,
+  HandlerRegistrationBase,
 } from "./handler";
 import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
@@ -176,8 +176,12 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     dbosExec.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
+        if (ro.isInstance) {
+          dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
+          return;
+        }
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
@@ -287,7 +291,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
-            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
+            // configuredInstance is currently null; we don't allow configured handlers now.
+            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {

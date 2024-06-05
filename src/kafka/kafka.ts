@@ -1,6 +1,6 @@
 import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
 import { DBOSContext } from "..";
-import { ClassRegistration, MethodRegistration, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
+import { ClassRegistration, MethodRegistrationBase, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
 import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
@@ -13,13 +13,9 @@ type KafkaArgs = [string, number, KafkaMessage]
 /* Kafka Method Decorators */
 /////////////////////////////
 
-export class KafkaRegistration<This, Args extends unknown[], Return> extends MethodRegistration<This, Args, Return> {
+export interface KafkaRegistrationBase extends MethodRegistrationBase {
   kafkaTopics?: string | RegExp | Array<string | RegExp>;
   consumerConfig?: ConsumerConfig;
-
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>) {
-    super(origFunc);
-  }
 }
 
 export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
@@ -29,7 +25,7 @@ export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, c
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
   ) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const kafkaRegistration = registration as unknown as KafkaRegistration<This, KafkaArgs, Return>;
+    const kafkaRegistration = registration as unknown as KafkaRegistrationBase;
     kafkaRegistration.kafkaTopics = topics;
     kafkaRegistration.consumerConfig = consumerConfig;
 
@@ -73,7 +69,7 @@ export class DBOSKafka {
 
   async initKafka() {
     for (const registeredOperation of this.dbosExec.registeredOperations) {
-      const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as KafkaRegistrationBase;
       if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
         if (!ro.txnConfig && !ro.workflowConfig) {
@@ -118,7 +114,7 @@ export class DBOSKafka {
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID };
+            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
             // All operations annotated with Kafka decorators must take in these three arguments
             const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
@@ -154,7 +150,7 @@ export class DBOSKafka {
     const logger = this.dbosExec.logger;
     logger.info("Kafka endpoints supported:");
     this.dbosExec.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as KafkaRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as KafkaRegistrationBase;
       if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
         if (Array.isArray(ro.kafkaTopics)) {

@@ -52,6 +52,8 @@ export interface WorkflowStatusInternal {
   workflowUUID: string;
   status: string;
   name: string;
+  className: string;
+  configName: string;
   authenticatedUser: string;
   output: unknown;
   error: string;  // Serialized error
@@ -136,8 +138,35 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
     await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (workflow_uuid) DO NOTHING`,
-      [initStatus.workflowUUID, initStatus.status, initStatus.name, initStatus.authenticatedUser, initStatus.assumedRole, JSON.stringify(initStatus.authenticatedRoles), JSON.stringify(initStatus.request), null, initStatus.executorID, initStatus.createdAt]
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        output,
+        executor_id,
+        created_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (workflow_uuid) DO NOTHING`,
+      [
+       initStatus.workflowUUID,
+       initStatus.status,
+       initStatus.name,
+       initStatus.className,
+       initStatus.configName,
+       initStatus.authenticatedUser,
+       initStatus.assumedRole,
+       JSON.stringify(initStatus.authenticatedRoles),
+       JSON.stringify(initStatus.request),
+       null,
+       initStatus.executorID,
+       initStatus.createdAt,
+      ]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
@@ -207,9 +236,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, error, executor_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (workflow_uuid)
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        error,
+        executor_id,
+        created_at,
+        updated_at
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
-      [workflowUUID, StatusString.ERROR, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), status.error, status.executorID, status.createdAt, Date.now()]
+      [
+       workflowUUID,
+       StatusString.ERROR,
+       status.name,
+       status.className,
+       status.configName,
+       status.authenticatedUser,
+       status.assumedRole,
+       JSON.stringify(status.authenticatedRoles),
+       JSON.stringify(status.request),
+       status.error, status.executorID,
+       status.createdAt,
+       Date.now()
+      ]
     );
   }
 
@@ -540,12 +597,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
 
-    const { rows } = await this.pool.query<workflow_status>(`SELECT status, name, authenticated_user, assumed_role, authenticated_roles, request FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>(`SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
     let value = null;
     if (rows.length > 0) {
       value = {
         status: rows[0].status,
         workflowName: rows[0].name,
+        workflowClassName: rows[0].class_name || "",
+        workflowConfigName: rows[0].config_name || "",
         authenticatedUser: rows[0].authenticated_user,
         assumedRole: rows[0].assumed_role,
         authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
