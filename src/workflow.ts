@@ -101,12 +101,13 @@ export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
 
-  // Deprecated, see startWorkflow
+  /** @deprecated See startWorkflow */
   startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
-  // Deprecated, see invokeWorkflow
+  /** @deprecated See invokeWorkflow */
   invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R>;
 
-  childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>; // Deprecated, calls startChildWorkflow
+  /** @deprecated calls startWorkflow */
+  childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
   invokeWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInst<T>;
@@ -352,7 +353,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
   }
 
-  // Deprecated
   async childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }

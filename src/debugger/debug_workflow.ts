@@ -267,7 +267,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
   }
 
-  // Deprecated
   async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }
