@@ -203,8 +203,8 @@ export class HandlerParameter extends MethodParameter {
 /* ENDPOINT DECORATORS */
 /////////////////////////
 
-export function GetApi(url: string) {
-  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
+function generateApiDec(verb: APITypes, url: string) {
+  return   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
@@ -212,27 +212,30 @@ export function GetApi(url: string) {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistration<This, Args, Return>;
     handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = APITypes.GET;
+    handlerRegistration.apiType = verb;
 
     return descriptor;
   }
-  return apidec;
+}
+
+export function GetApi(url: string) {
+  return generateApiDec(APITypes.GET, url)
 }
 
 export function PostApi(url: string) {
-  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
-  ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as HandlerRegistration<This, Args, Return>;
-    handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = APITypes.POST;
+  return generateApiDec(APITypes.POST, url)
+}
 
-    return descriptor;
-  }
-  return apidec;
+export function PutApi(url: string) {
+  return generateApiDec(APITypes.PUT, url)
+}
+
+export function PatchApi(url: string) {
+  return generateApiDec(APITypes.PATCH, url)
+}
+
+export function DeleteApi(url: string) {
+  return generateApiDec(APITypes.DELETE, url)
 }
 
 ///////////////////////////////////

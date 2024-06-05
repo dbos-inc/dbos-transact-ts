@@ -23,6 +23,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
+import { exhaustiveCheckGuard } from '../utils';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -248,12 +249,15 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
               }
 
               let foundArg = undefined;
-              if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
+              const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
+              const isBodyMethod = ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
+
+              if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
                 if (foundArg) {
                   args.push(foundArg);
                 }
-              } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
+              } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
                 if (!koaCtxt.request.body) {
                   throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
                 }
@@ -349,14 +353,30 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             await koaNext();
           }
         };
-
         // Actually register the endpoint.
-        if (ro.apiType === APITypes.GET) {
-          router.get(ro.apiURL, wrappedHandler);
-          dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
-        } else if (ro.apiType === APITypes.POST) {
-          router.post(ro.apiURL, wrappedHandler);
-          dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+        switch(ro.apiType) {
+          case APITypes.GET:
+            router.get(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
+            break;
+          case APITypes.POST:
+            router.post(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+            break;
+          case APITypes.PUT:
+            router.put(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
+            break;
+          case APITypes.PATCH:
+            router.patch(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
+            break;
+          case APITypes.DELETE:
+            router.delete(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
+            break;
+          default:
+            exhaustiveCheckGuard(ro.apiType)
         }
       }
     });

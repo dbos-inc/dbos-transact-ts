@@ -755,7 +755,7 @@ export class DBOSExecutor {
     this.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
       if (ro.apiURL) {
-        this.logger.info("    " + ro.apiType.padEnd(4) + "  :  " + ro.apiURL);
+        this.logger.info("    " + ro.apiType.padEnd(6) + "  :  " + ro.apiURL);
         const roles = ro.getRequiredRoles();
         if (roles.length > 0) {
           this.logger.info("        Required Roles: " + JSON.stringify(roles));
