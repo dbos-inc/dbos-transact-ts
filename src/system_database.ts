@@ -155,23 +155,23 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_version,
         application_id,
         created_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (workflow_uuid) DO NOTHING`,
       [
-       initStatus.workflowUUID,
-       initStatus.status,
-       initStatus.name,
-       initStatus.className,
-       initStatus.configName,
-       initStatus.authenticatedUser,
-       initStatus.assumedRole,
-       JSON.stringify(initStatus.authenticatedRoles),
-       JSON.stringify(initStatus.request),
-       null,
-       initStatus.executorID,
-       initStatus.applicationVersion,
-       initStatus.applicationID,
-       initStatus.createdAt,
+        initStatus.workflowUUID,
+        initStatus.status,
+        initStatus.name,
+        initStatus.className,
+        initStatus.configName,
+        initStatus.authenticatedUser,
+        initStatus.assumedRole,
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
+        null,
+        initStatus.executorID,
+        initStatus.applicationVersion,
+        initStatus.applicationID,
+        initStatus.createdAt,
       ]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
@@ -274,24 +274,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_version,
         created_at,
         updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
       [
-       workflowUUID,
-       StatusString.ERROR,
-       status.name,
-       status.className,
-       status.configName,
-       status.authenticatedUser,
-       status.assumedRole,
-       JSON.stringify(status.authenticatedRoles),
-       JSON.stringify(status.request),
-       status.error, status.executorID,
-       status.applicationID,
-       status.applicationVersion,
-       status.createdAt,
-       Date.now()
+        workflowUUID,
+        StatusString.ERROR,
+        status.name,
+        status.className,
+        status.configName,
+        status.authenticatedUser,
+        status.assumedRole,
+        JSON.stringify(status.authenticatedRoles),
+        JSON.stringify(status.request),
+        status.error,
+        status.executorID,
+        status.applicationID,
+        status.applicationVersion,
+        status.createdAt,
+        Date.now(),
       ]
     );
   }
