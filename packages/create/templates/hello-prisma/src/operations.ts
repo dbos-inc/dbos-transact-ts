@@ -8,7 +8,7 @@ export class Hello {
   static async helloTransaction(txnCtxt: TransactionContext<PrismaClient>, name: string)  {
     const greeting = `Hello, ${name}!`;
     const p: PrismaClient = txnCtxt.client as PrismaClient;
-    const res = await p.dBOSHello.create({
+    const res = await p.dbosHello.create({
       data: {
         greeting: greeting,
       },

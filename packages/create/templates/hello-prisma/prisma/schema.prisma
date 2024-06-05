@@ -10,7 +10,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model DBOSHello {
+model DbosHello {
   @@map("dbos_hello")
   greeting_id Int @id @default(autoincrement())
   greeting String
