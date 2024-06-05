@@ -40,12 +40,68 @@ const defaultS3 = configureInstance(S3Ops, 'default', {awscfgname: 'aws_config',
 ```
 
 ## Simple Operation Wrappers
+The `S3Ops` class provides several [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) wrappers for S3 functions.
+
+### Reading and Writing S3 From DBOS Handlers and Workflows
+
+#### Writing S3 Objects
+A string can be written to an S3 key with the following:
+```typescript
+    const putres = await ctx.invoke(defaultS3).putS3Comm('/my/test/key', "Test string from DBOS");
+```
+
+### Reading S3 Objects
+A string can be read from an S3 key with the following:
+```typescript
+    const getres = await ctx.invoke(defaultS3).getS3Comm('/my/test/key');
+```
+
+### Deleting Objects
+An S3 key can be removed/deleted with the following:
+```typescript
+    const delres = await ctx.invoke(defaultS3).deleteS3Comm('/my/test/key');
+```
+
+### Client Access To S3 Objects
+As shown below, DBOS provides a convenient and powerful way to track and manage S3 objects.  However, it is often not convenient to send or retrieve large S3 object contents through DBOS; it would be preferable to have the client talk directly to S3.  S3 accomodates this use case very well, using a feature called ["presigned URLs"](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html).
+
+In these cases, the client can place a request to DBOS that produces a presigned GET / POST URL, which the client can use for a limited time and purpose for S3 access.
+
+#### Presigned GET URLs
+A presigned GET URL can be created for an S3 key with the following:
+```typescript
+const geturl = await ctx.invoke(defaultS3).getS3KeyComm('/my/test/key', 30 /*expiration, in seconds*/);
+```
+
+The resulting URL string can be used in the same way as any other URL for placing HTTP GET requests.
+
+#### Presigned POSTs
+A presigned POST URL can be created for an S3 key with the following:
+```typescript
+const presignedPost = await ctx.invoke(defaultS3).postS3KeyComm(
+    '/my/test/key', 30/*expiration*/, {contentType: 'text/plain'}/*size/content restrictions*/);
+```
+
+The resulting `PresignedPost` object is slightly more involved than a regular URL, as it contains not just URL to be used, but also the required HTTP headers that must accompany the POST request.  An example of using the `PresignedPost` in Typescript with [Axios](https://axios-http.com/docs/intro) is:
+```typescript
+    async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
+        const formData = new FormData();
+
+        // Append all the fields from the presigned post data
+        Object.keys(presignedPostData.fields).forEach(key => {
+            formData.append(key, presignedPostData.fields[key]);
+        });
+
+        // Append the file you want to upload
+        const fileStream = fs.createReadStream(filePath);
+        formData.append('file', fileStream);
+
+        // Access the presigned post URL
+        return await axios.post(presignedPostData.url, formData);
+    }
+```
 
 ## Consistently Maintaining a Database Table of S3 Objects
-
-## Reading and Writing S3 From DBOS Workflows
-
-## Client Access To S3 Objects
 
 ## Simple Testing
 The `s3_utils.test.ts` file included in the source repository can be used to send an email and a templated email.  Before running, set the following environment variables:
