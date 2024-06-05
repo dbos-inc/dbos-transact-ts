@@ -102,6 +102,103 @@ The resulting `PresignedPost` object is slightly more involved than a regular UR
 ```
 
 ## Consistently Maintaining a Database Table of S3 Objects
+In many cases, an application wants to keep track of objects that have been stored in S3.  S3 is, as the name implies, simple storage, and it doesn't track file attributes, permissions, fine-grained ownership, dependencies, etc.
+
+Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem".  And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
+
+The `S3Ops` class provides workflows that can be used to ensure that a table of file records is maintained for an S3 bucket.  This table can have any schema suitable to the application (an example table schema can be found in `s3_utils.test.ts`), because the application provides the code to maintain it as a set of callback functions that will be triggered from the workflow.
+
+The interface for the workflow functions (described below) allows for the following callbacks:
+```typescript
+export interface FileRecord {
+    key: string; // AWS S3 Key
+}
+
+export interface S3Config{
+    s3Callbacks?: {
+        /* Called when a new active file is added to S3 */
+        newActiveFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+
+        /* Called when a new pending (still undergoing workflow processing) file is added to S3 */
+        newPendingFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+
+        /* Called when pending file becomes active */
+        fileActivated: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+
+        /* Called when a file is deleted from S3 */
+        fileDeleted: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+    },
+    //... remainder of S3 Config
+}
+```
+
+### Workflow to Upload a String to S3
+The `saveStringToFile` workflow stores a string to an S3 key, and runs the callback function to update the database.  If anything goes wrong during the workflow, S3 will be cleaned up and the database will be unchanged by the workflow.
+
+```typescript
+    await ctx.invokeWorkflow(defaultS3).saveStringToFile(fileDBRecord, 'This is my file');
+```
+
+This workflow performs the following actions:
+* Puts the string in S3
+* If there is difficulty with S3, ensures that no entry is left there and throws an error
+* Invokes the callback for a new active file record
+
+### Workflow to Retrieve a String from S3
+While a workflow function `readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)` exists, it currently performs no additional operations outside of a call to `readStringFromFileComm(fileDetails.key)`.
+
+### Workflow to Delete a File
+The `deleteFile` workflow function removes a file from both S3 and the database.
+
+```typescript
+await ctx.invokeWorkflow(defaultS3).deleteFile(fileDBRecord);
+```
+
+This workflow performs the following actions:
+* Invokes the callback for a deleted file record
+* Removes the key from S3
+
+### Workflow to Allow Client File Upload
+The workflow to allow application clients to upload to S3 directly is more involved than other workflows, as it runs concurrently with the client.  The workflow interaction generally proceeds as follows:
+* The client makes some request to a DBOS handler.
+* The handler decides that the client will be uploading a file, and starts the upload workflow.
+* The upload workflow sends the handler a presigned post, which the handler returns to the client.  The workflow continues in the background, waiting to hear that the client upload is complete.
+* The client (ideally) uploads the file using the presigned post and notifies the application; if not, the workflow times out and cleans up.  (The workflow timeout should be set to occur after the presigned post expires.)
+* If successful, the database is updated to reflect the new file, otherwise S3 is cleaned of any partial work.
+
+The workflow can be used in the following way:
+```typescript
+// Start the workflow
+const wfHandle = await ctx.startWorkflow(defaultS3)
+    .writeFileViaURL(fileDBRec, 60/*expiration*/, {contentType: 'text/plain'} /*content restrictions*/);
+
+// Get the presigned post from the workflow
+const ppost = await ctx.getEvent<PresignedPost>(wfHandle.getWorkflowUUID(), "uploadkey");
+
+// Return the ppost object to the client for use as in 'Presigned POSTs' section above
+// The workflow UUID should also be known in some way
+```
+
+Upon a completion call from the client, the following should be performed to notify the workflow to proceed:
+```typescript
+// Look up wfHandle by the workflow UUID
+const wfHandle = ctx.retrieveWorkflow(uuid);
+
+// Notify workflow
+await ctx.send<string>(wfHandle.getWorkflowUUID(), "", "uploadfinish");
+
+// Optionally, await completion of the workflow; this ensures that the database record is written,
+//  or will throw an error if anything went wrong in the workflow
+await wfHandle.getResult();
+```
+
+### Workflow to Allow Client File Download
+While a workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number)` exists, it currently performs no additional operations outside of a call to `getS3KeyComm(fileDetails.key, expiration)`.
+
+## Notes
+Do not reuse S3 keys.  Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database.  Reasons why S3 keys should not be reused:
+* S3 caches the key contents.  Even a response of "this key doesn't exist" can be cached.  If you reuse keys, you may get a stale value.
+* Workflow operations against an old use of a key may still be in process... for example a delete workflow may still be attempting to delete the old object at the same time a new file is being placed under the same key.
 
 ## Simple Testing
 The `s3_utils.test.ts` file included in the source repository can be used to send an email and a templated email.  Before running, set the following environment variables:
