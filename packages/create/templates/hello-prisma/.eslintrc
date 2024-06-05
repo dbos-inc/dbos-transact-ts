@@ -1,0 +1,19 @@
+{
+  "root": true,
+  "extends": [
+    "plugin:@dbos-inc/dbosRecommendedConfig"
+  ],
+  "plugins": [
+    "@dbos-inc"
+  ],
+  "env": {
+    "node": true,
+    "es6": true
+  },
+  "rules": {
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "project": "./tsconfig.json"
+  }
+}
