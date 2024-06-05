@@ -15,11 +15,8 @@
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
-  "include": [                                           /* Specifies an array of filenames or patterns to include in the program. */
-    "datasource.ts",  
+  "include": [                                           /* Specifies an array of filenames or patterns to include in the program. */ 
     "src",
-    "entities",
-    "migrations",
   ],
   "exclude": [
     "**/*.test.ts",

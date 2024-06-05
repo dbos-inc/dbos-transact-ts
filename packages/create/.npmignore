@@ -16,3 +16,9 @@ tsconfig.json
 templates/hello/.dbos
 templates/hello/dist
 templates/hello/node_modules
+templates/hello-prisma/.dbos
+templates/hello-prisma/dist
+templates/hello-prisma/node_modules
+templates/hello-typeorm/.dbos
+templates/hellor-typeorm/dist
+templates/hello-typeorm/node_modules
