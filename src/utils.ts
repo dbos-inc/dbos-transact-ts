@@ -55,18 +55,28 @@ export function findPackageRoot(start: string | string[]): string {
  *
  * Additional types supported:
  * - Buffer
+ * - Dates
  *
  * Currently, these are only used for operation inputs.
  * TODO: Use in other contexts where we perform serialization and deserialization.
  */
 
-export function DBOSReplacer(_key: string, value: unknown) {
-  return value;
-}
-
+const JSON_DATE_VALUE_PREFIX = 'date:'
 interface SerializedBuffer {
   type: 'Buffer';
   data: number[];
+}
+
+//https://www.typescriptlang.org/docs/handbook/2/functions.html#declaring-this-in-a-function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function DBOSReplacer(this: any, key: string, value: unknown) {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+  const actualValue = this[key];
+  if (actualValue instanceof Date) {
+    return `${JSON_DATE_VALUE_PREFIX}${actualValue.getTime()}`;
+    // return `${JSON_DATE_VALUE_PREFIX}${actualValue.toUTCString()}`;
+  }
+  return value;
 }
 
 export function DBOSReviver(_key: string, value: unknown): unknown {
@@ -74,7 +84,21 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
     return Buffer.from(candidate.data);
   }
+  if (typeof value === 'string' && value.startsWith(JSON_DATE_VALUE_PREFIX)) {
+    return new Date(parseInt(value.slice(JSON_DATE_VALUE_PREFIX.length)))
+    //return new Date(Date.parse(value.slice(JSON_DATE_VALUE_PREFIX.length)))
+  }
   return value;
+}
+
+export const DBOSJSON = {
+  parse: (text: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return JSON.parse(text, DBOSReviver)
+  },
+  stringify: (value: unknown) => {
+    return JSON.stringify(value, DBOSReplacer)
+  }
 }
 
 export function exhaustiveCheckGuard(_: never): never {
