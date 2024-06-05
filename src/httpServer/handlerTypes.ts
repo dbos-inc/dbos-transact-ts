@@ -5,7 +5,10 @@
 
 export enum APITypes {
   GET = "GET",
-  POST = "POST"
+  POST = "POST",
+  PUT = "PUT",
+  PATCH = "PATCH",
+  DELETE = "DELETE"
 }
 export enum ArgSources {
   DEFAULT = "DEFAULT",

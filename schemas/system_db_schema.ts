@@ -2,6 +2,8 @@ export interface workflow_status {
   workflow_uuid: string;
   status: string;
   name: string;
+  class_name?: string;
+  config_name?: string;
   authenticated_user: string;
   output: string;
   error: string;

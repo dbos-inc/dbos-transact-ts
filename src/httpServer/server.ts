@@ -5,7 +5,7 @@ import cors from "@koa/cors";
 import {
   RequestIDHeader,
   HandlerContextImpl,
-  HandlerRegistration,
+  HandlerRegistrationBase,
 } from "./handler";
 import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
@@ -23,6 +23,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
+import { exhaustiveCheckGuard } from '../utils';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -175,8 +176,12 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     dbosExec.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as HandlerRegistration<unknown, unknown[], unknown>;
+      const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
+        if (ro.isInstance) {
+          dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
+          return;
+        }
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
@@ -248,12 +253,15 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
               }
 
               let foundArg = undefined;
-              if ((ro.apiType === APITypes.GET && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
+              const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
+              const isBodyMethod = ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
+
+              if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
                 if (foundArg) {
                   args.push(foundArg);
                 }
-              } else if ((ro.apiType === APITypes.POST && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
+              } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
                 if (!koaCtxt.request.body) {
                   throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
                 }
@@ -283,7 +291,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
-            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID };
+            // configuredInstance is currently null; we don't allow configured handlers now.
+            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
@@ -349,14 +358,30 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             await koaNext();
           }
         };
-
         // Actually register the endpoint.
-        if (ro.apiType === APITypes.GET) {
-          router.get(ro.apiURL, wrappedHandler);
-          dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
-        } else if (ro.apiType === APITypes.POST) {
-          router.post(ro.apiURL, wrappedHandler);
-          dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+        switch(ro.apiType) {
+          case APITypes.GET:
+            router.get(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
+            break;
+          case APITypes.POST:
+            router.post(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+            break;
+          case APITypes.PUT:
+            router.put(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
+            break;
+          case APITypes.PATCH:
+            router.patch(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
+            break;
+          case APITypes.DELETE:
+            router.delete(ro.apiURL, wrappedHandler);
+            dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
+            break;
+          default:
+            exhaustiveCheckGuard(ro.apiType)
         }
       }
     });

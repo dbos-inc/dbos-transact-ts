@@ -10,6 +10,7 @@ import {
 
 import { ArgSources } from "../../src/httpServer/handlerTypes";
 import { APITypes } from "../../src/httpServer/handlerTypes";
+import { exhaustiveCheckGuard } from '../../src/utils';
 
 import {
   createParser,
@@ -195,10 +196,10 @@ export class OpenApiGenerator {
     switch (verb) {
       case APITypes.GET: return [$path, { get: operation }];
       case APITypes.POST: return [$path, { post: operation }];
-      default: {
-        const _: never = verb;
-        break;
-      }
+      case APITypes.PUT: return [$path, { put: operation }];
+      case APITypes.PATCH: return [$path, { patch: operation }];
+      case APITypes.DELETE: return [$path, { delete: operation }];
+      default: exhaustiveCheckGuard(verb)
     }
   }
 
@@ -364,16 +365,28 @@ export class OpenApiGenerator {
   }
 
   getHttpInfo(method: MethodInfo): HttpEndpointInfo | undefined {
-    const getApiDecorator = this.getDBOSDecorator(method, 'GetApi');
-    const postApiDecorator = this.getDBOSDecorator(method, 'PostApi');
-    if (getApiDecorator && postApiDecorator) {
-      this.#diags.raise(`Method ${method.name} has both GetApi and PostApi decorators`);
+    const httpDecoratorVerbs: Record<string, APITypes> = {
+      'GetApi': APITypes.GET,
+      'PostApi': APITypes.POST,
+      'PutApi': APITypes.PUT,
+      'PatchApi': APITypes.PATCH,
+      'DeleteApi': APITypes.DELETE,
+    };
+    const httpDecorators = Object.entries(httpDecoratorVerbs).map(([name, verb]) => {
+      return {
+        verb,
+        decorator: this.getDBOSDecorator(method, name)}
+    }).filter(d => !!d.decorator);
+
+    if (!httpDecorators.length) return undefined;
+
+    if (httpDecorators.length > 1) {
+      this.#diags.raise(`Method ${method.name} has more than one Api decorator`);
       return;
     }
-    if (!getApiDecorator && !postApiDecorator) return undefined;
-
-    const verb = getApiDecorator ? APITypes.GET : APITypes.POST;
-    const arg = getApiDecorator ? getApiDecorator.args[0] : postApiDecorator?.args[0];
+    const apiDecorator = httpDecorators[0];
+    const verb = apiDecorator.verb;
+    const arg = apiDecorator.decorator!.args[0];
     if (!arg) {
       this.#diags.raise(`Missing path argument for ${verb}Api decorator`, method.node);
       return;
@@ -412,10 +425,10 @@ export class OpenApiGenerator {
       switch (verb) {
         case APITypes.GET: return ArgSources.QUERY;
         case APITypes.POST: return ArgSources.BODY;
-        default: {
-          const _: never = verb;
-          return;
-        }
+        case APITypes.PUT: return ArgSources.BODY;
+        case APITypes.PATCH: return ArgSources.BODY;
+        case APITypes.DELETE: return ArgSources.QUERY;
+        default: exhaustiveCheckGuard(verb)
       }
     }
   }

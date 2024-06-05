@@ -9,8 +9,9 @@ import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContextImpl } from "../context";
-import { getRegisteredOperations } from "../decorators";
-import { WFInvokeFuncs, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
+import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
+import { WFInvokeFuncs, WfInvokeWfs, WfInvokeWfsAsync, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
+import { InvokeFuncsInst } from "../httpServer/handler";
 
 interface RecordedResult<R> {
   output: R;
@@ -26,7 +27,9 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   readonly #dbosExec;
   readonly isTempWorkflow: boolean;
 
-  constructor(dbosExec: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig, workflowName: string) {
+  constructor(dbosExec: DBOSExecutor, parentCtx: DBOSContextImpl | undefined, workflowUUID: string, readonly workflowConfig: WorkflowConfig,
+    workflowName: string)
+  {
     const span = dbosExec.tracer.startSpan(
       workflowName,
       {
@@ -49,22 +52,41 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return this.functionID++;
   }
 
-  invoke<T extends object>(object: T): WFInvokeFuncs<T> {
-    const ops = getRegisteredOperations(object);
+  invoke<T extends object>(object: T |  ConfiguredInstance): WFInvokeFuncs<T> | InvokeFuncsInst<T>  {
+    if (typeof object === 'function') {
+      const ops = getRegisteredOperations(object);
 
-    const proxy: any = {};
-    for (const op of ops) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      proxy[op.name] = op.txnConfig
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        (...args: any[]) => this.transaction(op.registeredFunction as Transaction<any[], any>, ...args)
-        : op.commConfig
-          ? // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          (...args: any[]) => this.external(op.registeredFunction as Communicator<any[], any>, ...args)
-          : undefined;
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+
+        proxy[op.name] = op.txnConfig
+          ?
+          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
+          : op.commConfig
+            ?
+            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            : undefined;
+      }
+      return proxy as WFInvokeFuncs<T>;
     }
-    return proxy as WFInvokeFuncs<T>;
+    else {
+      const targetInst = object as ConfiguredInstance;
+      const ops = getRegisteredOperations(targetInst);
+
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        proxy[op.name] = op.txnConfig
+          ?
+          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
+          : op.commConfig
+            ?
+            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            : undefined;
+      }
+      return proxy as InvokeFuncsInst<T>;
+    }
   }
+
 
   async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
     // Note: we read the recorded snapshot and transaction ID!
@@ -99,8 +121,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Execute a transactional function in debug mode.
    * If a debug proxy is provided, it connects to a debug proxy and everything should be read-only.
    */
-  async transaction<T extends any[], R>(txn: Transaction<T, R>, ...args: T): Promise<R> {
-    const txnInfo = this.#dbosExec.transactionInfoMap.get(txn.name);
+  async transaction<T extends unknown[], R>(txn: Transaction<T, R>, clsinst: ConfiguredInstance | null,  ...args: T): Promise<R> {
+    const txnInfo = this.#dbosExec.getTransactionInfo(txn as Transaction<unknown[], unknown>);
     if (txnInfo === undefined) {
       throw new DBOSDebuggerError(`Transaction ${txn.name} not registered!`);
     }
@@ -139,7 +161,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         return (check as RecordedResult<R>).output;
       }
       // If we have a proxy, then execute the user's transaction.
-      const result = await txn(tCtxt, ...args);
+      const result = await txn.call(clsinst, tCtxt, ...args);
       return result;
     };
 
@@ -168,8 +190,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends any[], R>(commFn: Communicator<T, R>, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.communicatorInfoMap.get(commFn.name);
+  async external<T extends unknown[], R>(commFn: Communicator<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
+    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }
@@ -190,14 +212,61 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   async startChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.debugWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
   }
 
-  async invokeChildWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
+  async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }
 
-  // Deprecated
+  /**
+   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
+   * to use WorkflowContext.Transaction(OpClass.someMethod, param);
+   */
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+      WfInvokeWfsAsync<T>
+  {
+    const ops = getRegisteredOperations(object);
+    const proxy: Record<string, unknown> = {};
+
+    const funcId = this.functionIDGetIncrement();
+    const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
+
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+
+
+    for (const op of ops) {
+      if (asyncWf) {  
+        proxy[op.name] = op.workflowConfig
+          ? (...args: unknown[]) => this.#dbosExec.debugWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          : undefined;
+      } else {
+        proxy[op.name] = op.workflowConfig
+          ? (...args: unknown[]) => this.#dbosExec.debugWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          .then((handle) => handle.getResult())
+            : undefined;
+      }
+    }
+    return proxy as WfInvokeWfsAsync<T>;
+  }
+
+  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+    if (typeof target === 'function') {
+      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+    }
+    else {
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+    }
+  }
+  invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
+    if (typeof target === 'function') {
+      return this.proxyInvokeWF(target, workflowUUID, false, null) as unknown as WfInvokeWfs<T>;
+    }
+    else {
+      return this.proxyInvokeWF(target, workflowUUID, false, target as ConfiguredInstance) as unknown as WfInvokeWfs<T>;
+    }
+  }
+
   async childWorkflow<T extends any[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
   }

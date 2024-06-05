@@ -50,6 +50,10 @@ export {
   // Typeorm Class Decorators
   OrmEntities,
 
+  // Class Instances
+  ConfiguredInstance,
+  configureInstance,
+
   // Method Decorators
   Transaction,
   Workflow,
