@@ -61,7 +61,7 @@ export function findPackageRoot(start: string | string[]): string {
  * TODO: Use in other contexts where we perform serialization and deserialization.
  */
 
-const JSON_DATE_VALUE_PREFIX = 'date:'
+const JSON_DATE_VALUE_PREFIX = 'DBOSJsonDate:'
 interface SerializedBuffer {
   type: 'Buffer';
   data: number[];
@@ -74,7 +74,6 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
   const actualValue = this[key];
   if (actualValue instanceof Date) {
     return `${JSON_DATE_VALUE_PREFIX}${actualValue.getTime()}`;
-    // return `${JSON_DATE_VALUE_PREFIX}${actualValue.toUTCString()}`;
   }
   return value;
 }
@@ -86,7 +85,6 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   }
   if (typeof value === 'string' && value.startsWith(JSON_DATE_VALUE_PREFIX)) {
     return new Date(parseInt(value.slice(JSON_DATE_VALUE_PREFIX.length)))
-    //return new Date(Date.parse(value.slice(JSON_DATE_VALUE_PREFIX.length)))
   }
   return value;
 }
