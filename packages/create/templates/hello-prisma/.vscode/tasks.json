@@ -1,0 +1,19 @@
+{
+    // Configure the build command for DBOS projects using VSCode.
+    // Documentation on tasks.json: https://code.visualstudio.com/docs/editor/tasks
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "npm: build",
+        "type": "npm",
+        "script": "build",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "problemMatcher": [
+          "$tsc"
+        ]
+      }
+    ]
+  }
