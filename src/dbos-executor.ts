@@ -39,7 +39,7 @@ import { DBOSContextImpl, InitContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
-import { sleepms } from './utils';
+import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 
 export interface DBOSNull { }
@@ -417,7 +417,7 @@ export class DBOSExecutor {
           }
           else {
             wfInfo = wfr;
-          }  
+          }
         }
       }
     }
@@ -441,7 +441,7 @@ export class DBOSExecutor {
           }
           else {
             txnInfo = tfr;
-          }  
+          }
         }
       }
     }
@@ -465,7 +465,7 @@ export class DBOSExecutor {
           }
           else {
             commInfo = cfr;
-          }  
+          }
         }
       }
     }
@@ -546,7 +546,7 @@ export class DBOSExecutor {
           if (wCtxt.isTempWorkflow) {
             internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
           }
-          internalStatus.error = JSON.stringify(serializeError(e));
+          internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;
           await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
@@ -609,8 +609,8 @@ export class DBOSExecutor {
     }
 
     // Make sure we use the same input.
-    if (JSON.stringify(args) !== JSON.stringify(recordedInputs)) {
-      throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${JSON.stringify(args)}\n Original: ${JSON.stringify(recordedInputs)}`);
+    if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(recordedInputs)) {
+      throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(recordedInputs)}`);
     }
 
     const workflowPromise: Promise<R> = wf.call(params.configuredInstance, wCtxt, ...args)
@@ -620,8 +620,8 @@ export class DBOSExecutor {
         if (result === undefined && !recordedResult) {
           return result;
         }
-        if (JSON.stringify(result) !== JSON.stringify(recordedResult)) {
-          this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${JSON.stringify(result)}\n Original: ${JSON.stringify(recordedResult)}`);
+        if (DBOSJSON.stringify(result) !== DBOSJSON.stringify(recordedResult)) {
+          this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
         }
         return recordedResult; // Always return the recorded result.
       });
@@ -824,7 +824,7 @@ export class DBOSExecutor {
               sqlStmt += ", ";
             }
             sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-            values.push(workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
+            values.push(workflowUUID, funcID, DBOSJSON.stringify(output), DBOSJSON.stringify(null), txnSnapshot, createdAt);
           }
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
@@ -860,7 +860,7 @@ export class DBOSExecutor {
         this.logger.info("    " + ro.apiType.padEnd(6) + "  :  " + ro.apiURL);
         const roles = ro.getRequiredRoles();
         if (roles.length > 0) {
-          this.logger.info("        Required Roles: " + JSON.stringify(roles));
+          this.logger.info("        Required Roles: " + DBOSJSON.stringify(roles));
         }
       }
     });

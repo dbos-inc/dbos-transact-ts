@@ -7,7 +7,7 @@ import { StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
-import { sleepms } from "../utils";
+import { DBOSJSON, sleepms } from "../utils";
 
 interface OperationOutput<R> {
   output: R;
@@ -70,7 +70,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     if (output === undefined || output.status === StatusString.PENDING) {
       return dbosNull;
     } else if (output.status === StatusString.ERROR) {
-      throw deserializeError(JSON.parse(output.error));
+      throw deserializeError(DBOSJSON.parse(output.error));
     } else {
       return output.output as R;
     }
@@ -186,8 +186,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     const output = (await this.operationOutputsDB.get([workflowUUID, functionID])) as OperationOutput<R> | undefined;
     if (output === undefined) {
       return dbosNull;
-    } else if (JSON.parse(output.error) !== null) {
-      throw deserializeError(JSON.parse(output.error));
+    } else if (DBOSJSON.parse(output.error) !== null) {
+      throw deserializeError(DBOSJSON.parse(output.error));
     } else {
       return output.output;
     }
@@ -208,7 +208,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
-    const serialErr = JSON.stringify(serializeError(error));
+    const serialErr = DBOSJSON.stringify(serializeError(error));
     await this.operationOutputsDB.doTransaction(async (txn) => {
       // Check if the key exists.
       const keyOutput = await txn.get([workflowUUID, functionID]);
@@ -267,7 +267,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     if (status === StatusString.SUCCESS) {
       return output.output as R;
     } else if (status === StatusString.ERROR) {
-      throw deserializeError(JSON.parse(output.error));
+      throw deserializeError(DBOSJSON.parse(output.error));
     } else {
       // StatusString.PENDING
       return this.getWorkflowResult(workflowUUID);
