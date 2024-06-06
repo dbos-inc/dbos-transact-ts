@@ -165,8 +165,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.configName,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
-        JSON.stringify(initStatus.authenticatedRoles),
-        JSON.stringify(initStatus.request),
+        DBOSJSON.stringify(initStatus.authenticatedRoles),
+        DBOSJSON.stringify(initStatus.request),
         null,
         initStatus.executorID,
         initStatus.applicationVersion,
@@ -176,9 +176,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
-      [initStatus.workflowUUID, JSON.stringify(args)]
+      [initStatus.workflowUUID, DBOSJSON.stringify(args)]
     );
-    return JSON.parse(rows[0].inputs) as T;
+    return DBOSJSON.parse(rows[0].inputs) as T;
   }
 
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {
@@ -216,9 +216,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.name,
             status.authenticatedUser,
             status.assumedRole,
-            JSON.stringify(status.authenticatedRoles),
-            JSON.stringify(status.request),
-            JSON.stringify(status.output),
+            DBOSJSON.stringify(status.authenticatedRoles),
+            DBOSJSON.stringify(status.request),
+            DBOSJSON.stringify(status.output),
             status.executorID,
             status.applicationVersion,
             status.applicationID,
@@ -285,8 +285,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         status.configName,
         status.authenticatedUser,
         status.assumedRole,
-        JSON.stringify(status.authenticatedRoles),
-        JSON.stringify(status.request),
+        DBOSJSON.stringify(status.authenticatedRoles),
+        DBOSJSON.stringify(status.request),
         status.error,
         status.executorID,
         status.applicationID,
