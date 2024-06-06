@@ -1,11 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  DBOSError,
-  DBOSInitializationError,
-  DBOSWorkflowConflictUUIDError,
-  DBOSNotRegisteredError,
-  DBOSDebuggerError,
-} from './error';
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -57,7 +51,7 @@ export interface DBOSConfig {
   readonly userDbclient?: UserDatabaseName;
   readonly telemetry?: TelemetryConfig;
   readonly system_database: string;
-  readonly env?: Record<string, string>
+  readonly env?: Record<string, string>;
   readonly application?: object;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
@@ -118,8 +112,8 @@ export class DBOSExecutor {
       DBOSExecutor.tempWorkflowName,
       {
         workflow: async () => {
-          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow")
-          return Promise.resolve()
+          this.logger.error("UNREACHABLE: Indirect invoke of temp workflow");
+          return Promise.resolve();
         },
         config: {},
       },
@@ -312,7 +306,7 @@ export class DBOSExecutor {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`
+      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`;
       throw new DBOSInitializationError(`${(err as Error).message}`);
     }
     this.initialized = true;
@@ -499,11 +493,6 @@ export class DBOSExecutor {
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
 
-    // If running in DBOS Cloud, set the executor ID
-    if (process.env.DBOS__VMID) {
-      wCtxt.executorID = process.env.DBOS__VMID
-    }
-
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.PENDING,
@@ -517,7 +506,9 @@ export class DBOSExecutor {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
-      createdAt: Date.now() // Remember the start time of this workflow
+      applicationVersion: wCtxt.applicationVersion,
+      applicationID: wCtxt.applicationID,
+      createdAt: Date.now(), // Remember the start time of this workflow
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -774,7 +765,7 @@ export class DBOSExecutor {
       };
       clsinst = null;
     } else {
-      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`)
+      this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -783,17 +774,14 @@ export class DBOSExecutor {
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(
-      status.workflowName,
-      {
-        operationUUID: workflowUUID,
-        operationType: OperationType.WORKFLOW,
-        status: status.status,
-        authenticatedUser: status.authenticatedUser,
-        assumedRole: status.assumedRole,
-        authenticatedRoles: status.authenticatedRoles,
-      },
-    );
+    const span = this.tracer.startSpan(status.workflowName, {
+      operationUUID: workflowUUID,
+      operationType: OperationType.WORKFLOW,
+      status: status.status,
+      authenticatedUser: status.authenticatedUser,
+      assumedRole: status.assumedRole,
+      authenticatedRoles: status.authenticatedRoles,
+    });
     const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
@@ -831,7 +819,7 @@ export class DBOSExecutor {
           for (const [funcID, recorded] of wfBuffer) {
             const output = recorded.output;
             const txnSnapshot = recorded.txn_snapshot;
-            const createdAt = recorded.created_at!
+            const createdAt = recorded.created_at!;
             if (paramCnt > 1) {
               sqlStmt += ", ";
             }
@@ -858,7 +846,7 @@ export class DBOSExecutor {
       // If there is a failure in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, wfBuffer] of localBuffer) {
         if (!this.workflowResultBuffer.has(workflowUUID)) {
-          this.workflowResultBuffer.set(workflowUUID, wfBuffer)
+          this.workflowResultBuffer.set(workflowUUID, wfBuffer);
         }
       }
     }

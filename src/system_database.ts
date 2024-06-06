@@ -9,7 +9,7 @@ import { notifications, operation_outputs, workflow_status, workflow_events, wor
 import { sleepms, findPackageRoot, DBOSReplacer, DBOSReviver } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
-import knex from 'knex';
+import knex from "knex";
 import path from "path";
 
 export interface SystemDatabase {
@@ -56,12 +56,14 @@ export interface WorkflowStatusInternal {
   configName: string;
   authenticatedUser: string;
   output: unknown;
-  error: string;  // Serialized error
+  error: string; // Serialized error
   assumedRole: string;
   authenticatedRoles: string[];
   request: HTTPRequest;
   executorID: string;
-  createdAt: number
+  applicationVersion: string;
+  applicationID: string;
+  createdAt: number;
 }
 
 export interface ExistenceCheck {
@@ -85,7 +87,7 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
-  readonly systemPoolConfig: PoolConfig
+  readonly systemPoolConfig: PoolConfig;
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
@@ -94,10 +96,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
   readonly workflowInputsBuffer: Map<string, any[]> = new Map();
   readonly flushBatchSize = 100;
-  static readonly connectionTimeoutMillis = 10000;  // 10 second timeout
+  static readonly connectionTimeoutMillis = 10000; // 10 second timeout
 
   constructor(readonly pgPoolConfig: PoolConfig, readonly systemDatabaseName: string, readonly logger: Logger) {
-    this.systemPoolConfig = { ...pgPoolConfig};
+    this.systemPoolConfig = { ...pgPoolConfig };
     this.systemPoolConfig.database = systemDatabaseName;
     this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
     this.pool = new Pool(this.systemPoolConfig);
@@ -112,7 +114,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
     }
-    await migrateSystemDatabase(this.systemPoolConfig)
+    await migrateSystemDatabase(this.systemPoolConfig);
     await this.listenForNotifications();
     await pgSystemClient.end();
   }
@@ -150,28 +152,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
         request,
         output,
         executor_id,
+        application_version,
+        application_id,
         created_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (workflow_uuid) DO NOTHING`,
       [
-       initStatus.workflowUUID,
-       initStatus.status,
-       initStatus.name,
-       initStatus.className,
-       initStatus.configName,
-       initStatus.authenticatedUser,
-       initStatus.assumedRole,
-       JSON.stringify(initStatus.authenticatedRoles),
-       JSON.stringify(initStatus.request),
-       null,
-       initStatus.executorID,
-       initStatus.createdAt,
+        initStatus.workflowUUID,
+        initStatus.status,
+        initStatus.name,
+        initStatus.className,
+        initStatus.configName,
+        initStatus.authenticatedUser,
+        initStatus.assumedRole,
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
+        null,
+        initStatus.executorID,
+        initStatus.applicationVersion,
+        initStatus.applicationID,
+        initStatus.createdAt,
       ]
     );
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, JSON.stringify(args, DBOSReplacer)]
-    )
+    );
     return JSON.parse(rows[0].inputs, DBOSReviver) as T;
   }
 
@@ -195,7 +201,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, created_at, updated_at) VALUES `;
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at) VALUES `;
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -203,8 +209,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
-          values.push(workflowUUID, status.status, status.name, status.authenticatedUser, status.assumedRole, JSON.stringify(status.authenticatedRoles), JSON.stringify(status.request), JSON.stringify(status.output), status.executorID, status.createdAt, Date.now());
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          values.push(
+            workflowUUID,
+            status.status,
+            status.name,
+            status.authenticatedUser,
+            status.assumedRole,
+            JSON.stringify(status.authenticatedRoles),
+            JSON.stringify(status.request),
+            JSON.stringify(status.output),
+            status.executorID,
+            status.applicationVersion,
+            status.applicationID,
+            status.createdAt,
+            Date.now()
+          );
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
 
@@ -218,7 +238,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await this.pool.query(sqlStmt, values);
 
         // Clean up after each batch succeeds
-        batchUUIDs.forEach((value) => { localBuffer.delete(value); });
+        batchUUIDs.forEach((value) => {
+          localBuffer.delete(value);
+        });
       }
     } catch (error) {
       (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
@@ -227,7 +249,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, output] of localBuffer) {
         if (!this.workflowStatusBuffer.has(workflowUUID)) {
-          this.workflowStatusBuffer.set(workflowUUID, output)
+          this.workflowStatusBuffer.set(workflowUUID, output);
         }
       }
     }
@@ -248,24 +270,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
         request,
         error,
         executor_id,
+        application_id,
+        application_version,
         created_at,
         updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
       [
-       workflowUUID,
-       StatusString.ERROR,
-       status.name,
-       status.className,
-       status.configName,
-       status.authenticatedUser,
-       status.assumedRole,
-       JSON.stringify(status.authenticatedRoles),
-       JSON.stringify(status.request),
-       status.error, status.executorID,
-       status.createdAt,
-       Date.now()
+        workflowUUID,
+        StatusString.ERROR,
+        status.name,
+        status.className,
+        status.configName,
+        status.authenticatedUser,
+        status.assumedRole,
+        JSON.stringify(status.authenticatedRoles),
+        JSON.stringify(status.request),
+        status.error,
+        status.executorID,
+        status.applicationID,
+        status.applicationVersion,
+        status.createdAt,
+        Date.now(),
       ]
     );
   }
@@ -327,7 +354,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
       for (const [workflowUUID, args] of localBuffer) {
         if (!this.workflowInputsBuffer.has(workflowUUID)) {
-          this.workflowInputsBuffer.set(workflowUUID, args)
+          this.workflowInputsBuffer.set(workflowUUID, args);
         }
       }
     }
