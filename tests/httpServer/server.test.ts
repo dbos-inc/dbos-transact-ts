@@ -12,7 +12,8 @@ import {
   Communicator,
   CommunicatorContext,
 } from "../../src";
-import { DeleteApi, PatchApi, PutApi, RequestIDHeader } from "../../src/httpServer/handler";
+import { RequestIDHeader } from "../../src/httpServer/handler";
+import { DeleteApi, PatchApi, PutApi } from "../../src";
 import { WorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
