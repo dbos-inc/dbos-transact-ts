@@ -31,12 +31,12 @@ application:
 
 If a different configuration file section should be used for S3, the `aws_s3_configuration` can be changed to indicate a configuration section for use with S3.  If multiple configurations are to be used, the application code will have to name and configure them.
 
-The application will likely need an s3 bucket.  This can be placed in the `application` section of `dbos-config.yaml` also, but the naming key is to be established by the application.
+The application will need at least one s3 bucket.  This can be placed in the `application` section of `dbos-config.yaml` also, but the naming key is to be established by the application.
 
 ## Selecting A Configuration
-`S3Ops` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`S3Ops` is a configured class.  The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
 ```typescript
-const defaultS3 = configureInstance(S3Ops, 'default', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
+const myS3 = configureInstance(S3Ops, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
 ```
 
 ## Simple Operation Wrappers
