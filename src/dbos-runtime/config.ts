@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from "../error";
-import { findPackageRoot, readFileSync } from "../utils";
+import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
@@ -13,7 +13,7 @@ import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
-const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
+const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
@@ -121,7 +121,7 @@ function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
       message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
     }
     if (error.data && error.keyword === 'not') {
-      message += `; the value ${JSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
+      message += `; the value ${DBOSJSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
     }
     return message;
   }).join(', ');
