@@ -805,11 +805,11 @@ function createPlaceholders(count: number, offset = 0) {
   })
 }
 
-function prepareForSQL(data: Record<string, unknown>, offset = 0) {
+function prepareForSQL(data: Record<string, unknown>) {
   const columns: Array<string> = Object.keys(data);
   return {
     columns: columns.join(','),
-    placeholders: createPlaceholders(columns.length, offset).join(','),
+    placeholders: createPlaceholders(columns.length).join(','),
     values: columns.map((name) => data[name]),
   }
 }
