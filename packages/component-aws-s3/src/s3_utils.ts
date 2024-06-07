@@ -35,6 +35,7 @@ export class S3Ops extends ConfiguredInstance {
     //////////
 
     static AWS_S3_CONFIGURATION = 'aws_s3_configuration';
+    s3client?: S3Client = undefined;
 
     constructor(name: string, readonly config: S3Config) {super(name);}
 
@@ -48,6 +49,7 @@ export class S3Ops extends ConfiguredInstance {
                 this.config.awscfg = getAWSConfigForService(ctx, S3Ops.AWS_S3_CONFIGURATION);
             }
         }
+        this.s3client = S3Ops.createS3Client(this.config.awscfg);
         return Promise.resolve();
     }
 
@@ -83,8 +85,7 @@ export class S3Ops extends ConfiguredInstance {
     @Communicator()
     async deleteS3Comm(_ctx: CommunicatorContext, key: string)
     {
-        const cfg = this.config;
-        return await S3Ops.deleteS3(cfg.awscfg!, cfg.bucket, key);
+        return await S3Ops.deleteS3Cmd(this.s3client!, this.config.bucket, key);
     }
 
     // Put small string
@@ -108,8 +109,7 @@ export class S3Ops extends ConfiguredInstance {
     @Communicator()
     async putS3Comm(_ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
     {
-        const cfg = this.config;
-        return await S3Ops.putS3(cfg.awscfg!, cfg.bucket, key, content, contentType);
+        return await S3Ops.putS3Cmd(this.s3client!, this.config.bucket, key, content, contentType);
     }
 
     // Get string
@@ -131,8 +131,7 @@ export class S3Ops extends ConfiguredInstance {
     @Communicator()
     async getS3Comm(_ctx: CommunicatorContext, key: string)
     {
-        const cfg = this.config;
-        return (await S3Ops.getS3(cfg.awscfg!, cfg.bucket, key)).Body?.transformToString();
+        return (await S3Ops.getS3Cmd(this.s3client!, this.config.bucket, key)).Body?.transformToString();
     }
 
     // Presigned GET key
@@ -155,10 +154,9 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async getS3KeyComm(ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
+    async getS3KeyComm(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
     {
-        const cfg = this.config;
-        return await S3Ops.getS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs);
+        return await S3Ops.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs);
     }
 
     // Presigned post key
@@ -209,8 +207,7 @@ export class S3Ops extends ConfiguredInstance {
         })
     {
         try {
-            const cfg = this.config;
-            return await S3Ops.postS3Key(cfg.awscfg!, cfg.bucket, key, expirationSecs, contentOptions);
+            return await S3Ops.postS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, contentOptions);
         }
         catch (e) {
             ctx.logger.error(e);
