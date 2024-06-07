@@ -84,7 +84,7 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
   if (actualValue instanceof Date) {
     const res: DBOSSerializedDate = {
         dbos_type: 'dbos_Date',
-        dbos_data: actualValue.toUTCString()
+        dbos_data: actualValue.toISOString()
     }
     return res;
   }
