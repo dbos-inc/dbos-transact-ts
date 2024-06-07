@@ -226,7 +226,6 @@ export class S3Ops extends ConfiguredInstance {
     // Use cases for this:
     //  App code produces (or received from the user) _small_ data to store in S3 
     //   One-shot workflow
-    //     Pick a file name
     //     Do the S3 op
     //     If it succeeds, write in table
     //     If it fails drop the partial file (if any) from S3
@@ -248,9 +247,6 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     //  App code reads a file out of S3
-    //  Just a routine, hardly worthy of a workflow
-    //    Does the DB query
-    //    Does the S3 read
     @Workflow()
     async readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
@@ -259,10 +255,8 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     //  App code deletes a file out of S3
-    //   One-shot workflow
     //     Do the table write
     //     Do the S3 op
-    //   Wrapper function to wait
     @Workflow()
     async deleteFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
@@ -278,7 +272,6 @@ export class S3Ops extends ConfiguredInstance {
     //   Especially end-user uploads, or cases where the file is accessed by outside systems
 
     //  Presigned D/L for end user
-    //    Hardly warrants a full workflow
     @Workflow()
     async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600) : Promise<string>
     {
@@ -288,13 +281,12 @@ export class S3Ops extends ConfiguredInstance {
     //  Presigned U/L for end user
     //    A workflow that creates a presigned post
     //    Sets that back for the caller
-    //    Waits for a completion
+    //    Waits for a completion notification
     //    If it gets it, adds the DB entry
-    //      Should it poll for upload in case nobody tells it?  (Do a HEAD request w/ exponential backoff, listen to SQS)
-    //      The poll will end significantly after the S3 post URL expires, so we'll know
-    //    This will support an OAOO key on the workflow, no problem.
-    //      We won't start that completion checker more than once
-    //      If you ask again, you get the same presigned post URL
+    //      The poll will end significantly after the S3 post URL expires
+    //    This supports an OAOO key on the workflow.
+    //      (Won't start that completion checker more than once)
+    //      A repeat request will get the same presigned post URL
     @Workflow()
     async writeFileViaURL(ctx: WorkflowContext, fileDetails: FileRecord,
         @ArgOptional expirationSec = 3600,
