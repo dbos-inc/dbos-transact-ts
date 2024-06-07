@@ -29,7 +29,7 @@ application:
     aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
 ```
 
-If a different configuration file section should be used for SES, the `aws_s3_configuration` can be changed to indicate a configuration section for use with SES.  If multiple configurations are to be used, the application code will have to name and configure them.
+If a different configuration file section should be used for S3, the `aws_s3_configuration` can be changed to indicate a configuration section for use with S3.  If multiple configurations are to be used, the application code will have to name and configure them.
 
 The application will likely need an s3 bucket.  This can be placed in the `application` section of `dbos-config.yaml` also, but the naming key is to be established by the application.
 
@@ -204,7 +204,7 @@ Do not reuse S3 keys.  Assigning unique identifiers to files is a much better id
 The `s3_utils.test.ts` file included in the source repository can be used to send an email and a templated email.  Before running, set the following environment variables:
 - `S3_BUCKET`: The S3 bucket for setting / retrieving test objects
 - `AWS_REGION`: AWS region to use
-- `AWS_ACCESS_KEY_ID`: The access key with permission to use the SES service
+- `AWS_ACCESS_KEY_ID`: The access key with permission to use the S3 service
 - `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
 
 ## Next Steps

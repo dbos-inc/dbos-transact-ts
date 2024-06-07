@@ -175,7 +175,7 @@ describe("ses-tests", () => {
 
   test("s3-basic-ops", async () => {
     if (!s3IsAvailable || !testRuntime) {
-      console.log("S3 unavailable, skipping SES tests");
+      console.log("S3 unavailable, skipping S3 tests");
       return;
     }
 
@@ -193,7 +193,7 @@ describe("ses-tests", () => {
 
   test("s3-presgined-ops", async () => {
     if (!s3IsAvailable || !testRuntime) {
-      console.log("S3 unavailable, skipping SES tests");
+      console.log("S3 unavailable, skipping S3 tests");
       return;
     }
   
@@ -224,7 +224,7 @@ describe("ses-tests", () => {
 
   test("s3-simple-wfs", async () => {
     if (!s3IsAvailable || !testRuntime) {
-      console.log("S3 unavailable, skipping SES tests");
+      console.log("S3 unavailable, skipping S3 tests");
       return;
     }
 
@@ -251,7 +251,7 @@ describe("ses-tests", () => {
 
   test("s3-complex-wfs", async () => {
     if (!s3IsAvailable || !testRuntime) {
-      console.log("S3 unavailable, skipping SES tests");
+      console.log("S3 unavailable, skipping S3 tests");
       return;
     }
 
