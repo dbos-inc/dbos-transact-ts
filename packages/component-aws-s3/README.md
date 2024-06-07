@@ -50,11 +50,15 @@ A string can be written to an S3 key with the following:
     const putres = await ctx.invoke(defaultS3).putS3Comm('/my/test/key', "Test string from DBOS");
 ```
 
+***Note:*** **Function arguments to workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for writing kilobytes of data to S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is large.**
+
 ### Reading S3 Objects
 A string can be read from an S3 key with the following:
 ```typescript
     const getres = await ctx.invoke(defaultS3).getS3Comm('/my/test/key');
 ```
+
+***Note:*** **Function return values from workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for reading kilobytes of data from S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client read from S3 with a signed URL](#presigned-get-urls) if the data is large.**
 
 ### Deleting Objects
 An S3 key can be removed/deleted with the following:
@@ -144,8 +148,14 @@ This workflow performs the following actions:
 * If there is difficulty with S3, ensures that no entry is left there and throws an error
 * Invokes the callback for a new active file record
 
+***Note:*** **Function arguments to workflows, transactions, and communicators are logged to the database.  This means that workflow functions are suitable for writing kilobytes of data to S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client upload to S3 with a presigned post](#workflow-to-allow-client-file-upload) if the data is large.**
+
 ### Workflow to Retrieve a String from S3
-While a workflow function `readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)` exists, it currently performs no additional operations outside of a call to `readStringFromFileComm(fileDetails.key)`.
+The workflow function `readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)` will retrieve the contents of an S3 object as a `string`.
+
+This workflow currently performs no additional operations outside of a call to `readStringFromFileComm(fileDetails.key)`.
+
+***Note:*** **Function return values from workflows, transactions, and communicators are logged to the database.  This means that workflow functions are suitable for reading kilobytes of data from S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client read from S3 with a signed URL](#workflow-to-allow-client-file-download) if the data is large.**
 
 ### Workflow to Delete a File
 The `deleteFile` workflow function removes a file from both S3 and the database.
@@ -193,12 +203,16 @@ await wfHandle.getResult();
 ```
 
 ### Workflow to Allow Client File Download
-While a workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number)` exists, it currently performs no additional operations outside of a call to `getS3KeyComm(fileDetails.key, expiration)`.
+The workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds.
+
+This workflow currently performs no additional operations outside of a call to `getS3KeyComm(fileDetails.key, expiration)`.
 
 ## Notes
 Do not reuse S3 keys.  Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database.  Reasons why S3 keys should not be reused:
 * S3 caches the key contents.  Even a response of "this key doesn't exist" can be cached.  If you reuse keys, you may get a stale value.
 * Workflow operations against an old use of a key may still be in process... for example a delete workflow may still be attempting to delete the old object at the same time a new file is being placed under the same key.
+
+DBOS Transact logs function parameters and return values to the system database.  Some functions above treat the data contents of the S3 object as a parameter or return value, and are therefore only suitable for small data items (kilobytes, maybe megabytes, not gigabytes).  For large data, use workflows where the data is sent directly to and from S3 using presigned URLs.
 
 ## Simple Testing
 The `s3_utils.test.ts` file included in the source repository can be used to send an email and a templated email.  Before running, set the following environment variables:
