@@ -75,13 +75,6 @@ export class S3Ops extends ConfiguredInstance {
         }));
     }
 
-    static async deleteS3(awscfg: AWSServiceConfig, bucket: string, key: string)
-    {
-        const s3 = S3Ops.createS3Client(awscfg);
-
-        return await S3Ops.deleteS3Cmd(s3, bucket, key);
-    }
-
     @Communicator()
     async deleteS3Comm(_ctx: CommunicatorContext, key: string)
     {
@@ -99,13 +92,6 @@ export class S3Ops extends ConfiguredInstance {
         }));
     }
 
-    static async putS3(awscfg: AWSServiceConfig, bucket: string, key: string, content: string, contentType: string)
-    {
-        const s3 = S3Ops.createS3Client(awscfg);
-
-        return await S3Ops.putS3Cmd(s3, bucket, key, content, contentType);
-    }
-
     @Communicator()
     async putS3Comm(_ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
     {
@@ -119,13 +105,6 @@ export class S3Ops extends ConfiguredInstance {
             Bucket: bucket,
             Key: key,
         }));
-    }
-
-    static async getS3(awscfg: AWSServiceConfig, bucket: string, key: string)
-    {
-        const s3 = S3Ops.createS3Client(awscfg);
-
-        return await S3Ops.getS3Cmd(s3, bucket, key);
     }
 
     @Communicator()
@@ -144,13 +123,6 @@ export class S3Ops extends ConfiguredInstance {
 
         const presignedUrl = await getSignedUrl(s3, getObjectCommand, { expiresIn: expirationSecs, });
         return presignedUrl;
-    }
-
-    static async getS3Key(awscfg: AWSServiceConfig, bucket: string, key: string, expirationSecs: number)
-    {
-        const s3 = S3Ops.createS3Client(awscfg);
-
-        return await S3Ops.getS3KeyCmd(s3, bucket, key, expirationSecs);
     }
 
     @Communicator()
@@ -184,18 +156,6 @@ export class S3Ops extends ConfiguredInstance {
             }
         );
         return {url: postPresigned.url, fields: postPresigned.fields};
-    }
-
-    static async postS3Key(awscfg: AWSServiceConfig, bucket: string, key: string, expirationSecs: number,
-        contentOptions?: {
-            contentType?: string,
-            contentLengthMin?: number,
-            contentLengthMax?: number,
-        })
-    {
-        const s3 = S3Ops.createS3Client(awscfg);
-
-        return await S3Ops.postS3KeyCmd(s3, bucket, key, expirationSecs, contentOptions);
     }
 
     @Communicator()
