@@ -76,6 +76,9 @@ export {
   // Endpoint Decorators
   GetApi,
   PostApi,
+  PatchApi,
+  PutApi,
+  DeleteApi
 } from "./httpServer/handler";
 
 export {
