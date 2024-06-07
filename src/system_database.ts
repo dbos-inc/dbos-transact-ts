@@ -23,7 +23,7 @@ export interface SystemDatabase {
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : void;
+  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
@@ -76,10 +76,10 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
     client: 'pg',
     connection: systemPoolConfig,
     migrations: {
-        directory: migrationsDirectory,
-        tableName: 'knex_migrations'
+      directory: migrationsDirectory,
+      tableName: 'knex_migrations'
     }
-};
+  };
   const knexDB = knex(knexConfig)
   await knexDB.migrate.latest()
   await knexDB.destroy()
@@ -222,16 +222,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let sqlStmt = `
           INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status
             (${columns.join(',')}) VALUES `;
-        let paramCnt = 1;
-        const values: any[] = [];
+        const values: unknown[] = [];
         const batchUUIDs: string[] = [];
 
         for (const [workflowUUID, status] of localBuffer) {
-          if (paramCnt > 1) {
-            sqlStmt += ", ";
-          }
           const placeholders = createPlaceholders(columns.length, columns.length * finishedCnt)
-          sqlStmt += `(${placeholders.join(',')})`
+          sqlStmt += `${finishedCnt ? ',' : ''} (${placeholders.join(',')}) `
           values.push(
             workflowUUID,
             status.status,
@@ -279,7 +275,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
-    const {columns, placeholders, values} = prepareForSQL({
+    const { columns, placeholders, values } = prepareForSQL({
       "workflow_uuid": workflowUUID,
       "status": StatusString.ERROR,
       "name": status.name,
@@ -399,7 +395,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
-    const {columns, placeholders, values} = prepareForSQL({
+    const { columns, placeholders, values } = prepareForSQL({
       "workflow_uuid": workflowUUID,
       "function_id": functionID,
       "output": DBOSJSON.stringify(output)
@@ -422,7 +418,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
-    const {columns, placeholders, values} = prepareForSQL({
+    const { columns, placeholders, values } = prepareForSQL({
       "workflow_uuid": workflowUUID,
       "function_id": functionID,
       "error": DBOSJSON.stringify(serializeError(error))
@@ -448,7 +444,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async recordNotificationOutput<R>(client: PoolClient, workflowUUID: string, functionID: number, output: R) {
     try {
-      const {columns, placeholders, values} = prepareForSQL({
+      const { columns, placeholders, values } = prepareForSQL({
         "workflow_uuid": workflowUUID,
         "function_id": functionID,
         "output": DBOSJSON.stringify(output)
@@ -481,7 +477,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return;
     } else {
       const endTimeMs = Date.now() + durationMS;
-      const {columns, placeholders, values} = prepareForSQL({
+      const { columns, placeholders, values } = prepareForSQL({
         "workflow_uuid": workflowUUID,
         "function_id": functionID,
         "output": DBOSJSON.stringify(endTimeMs)
@@ -513,10 +509,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     try {
+      const { columns, placeholders, values } = prepareForSQL({
+        "destination_uuid": destinationUUID,
+        "topic": topic,
+        "message": DBOSJSON.stringify(message)
+      });
+
       await client.query(`
         INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications
-        (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-        [destinationUUID, topic, DBOSJSON.stringify(message)]
+        (${columns}) VALUES (${placeholders});`,
+        values
       );
     } catch (error) {
       await client.query("ROLLBACK");
@@ -780,7 +782,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [wfn]);
 
     let v = res.rows[0]?.last_run_time ?? null;
-    if (v!== null) v = parseInt(`${v}`);
+    if (v !== null) v = parseInt(`${v}`);
     return v;
   }
 
