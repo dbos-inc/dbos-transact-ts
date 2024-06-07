@@ -11,6 +11,7 @@ import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from "knex";
 import path from "path";
+import { createPlaceholders, prepareForSQL } from "./utils_sql";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -796,20 +797,5 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [wfn, invtime]);
 
     return parseInt(`${res.rows[0].last_run_time}`);
-  }
-}
-
-function createPlaceholders(count: number, offset = 0) {
-  return Array.from(new Array(count).keys()).map((index) => {
-    return `$${index + 1 + offset}`
-  })
-}
-
-function prepareForSQL(data: Record<string, unknown>) {
-  const columns: Array<string> = Object.keys(data);
-  return {
-    columns: columns.join(','),
-    placeholders: createPlaceholders(columns.length).join(','),
-    values: columns.map((name) => data[name]),
   }
 }
