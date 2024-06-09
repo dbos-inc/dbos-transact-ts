@@ -17,6 +17,9 @@ jobs:
           packages/communicator-datetime,
           packages/communicator-bcrypt,
           packages/communicator-random,
+          packages/aws-config,
+          packages/communicator-email-ses,
+          packages/component-aws-s3,
           packages/create
         ]
     steps:
