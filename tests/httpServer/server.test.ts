@@ -58,6 +58,14 @@ describe("httpserver-tests", () => {
     expect(uuidValidate(requestID)).toBe(true);
   });
 
+  test("head-hello", async () => {
+    const headResponse = await request(testRuntime.getHandlersCallback()).head("/hello");
+    const getResponse = await request(testRuntime.getHandlersCallback()).get("/hello");
+    expect(getResponse.body.message).toBe("hello!");
+    expect(headResponse.headers['content-length']).toEqual(getResponse.headers['content-length'])
+    expect(headResponse.headers['content-type']).toEqual(getResponse.headers['content-type'])
+  });
+
   test("get-url", async () => {
     const requestID = "my-request-id";
     const response = await request(testRuntime.getHandlersCallback()).get("/hello/alice").set(RequestIDHeader, requestID);
