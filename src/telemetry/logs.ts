@@ -5,6 +5,7 @@ import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@openteleme
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { TelemetryCollector } from "./collector";
+import { DBOSJSON } from "../utils";
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -58,7 +59,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.info(logEntry, metadata);
     } else {
-      this.logger.info(JSON.stringify(logEntry), metadata);
+      this.logger.info(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -66,7 +67,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.debug(logEntry, metadata);
     } else {
-      this.logger.debug(JSON.stringify(logEntry), metadata);
+      this.logger.debug(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -74,7 +75,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.warn(logEntry, metadata);
     } else {
-      this.logger.warn(JSON.stringify(logEntry), metadata);
+      this.logger.warn(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -85,7 +86,7 @@ export class GlobalLogger {
     } else if (typeof inputError === "string") {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
-      this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
+      this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
   }
 
@@ -142,8 +143,8 @@ const consoleFormat = format.combine(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
-    const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
+    const messageString: string = typeof message === "string" ? message : DBOSJSON.stringify(message);
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? "\n" + formattedStack : ""}`;

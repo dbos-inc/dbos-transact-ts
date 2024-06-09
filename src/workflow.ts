@@ -5,7 +5,7 @@ import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl
 import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
-import { sleepms } from "./utils";
+import { DBOSJSON, sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
@@ -74,7 +74,6 @@ export const StatusString = {
   ERROR: "ERROR",
 } as const;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type WfInvokeWfs<T> = {
   [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
@@ -204,10 +203,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // recorded=false row will be first because we used ORDER BY.
     res.txn_snapshot = rows[0].txn_snapshot;
     if (rows.length === 2) {
-      if (JSON.parse(rows[1].error) !== null) {
-        throw deserializeError(JSON.parse(rows[1].error));
+      if (DBOSJSON.parse(rows[1].error) !== null) {
+        throw deserializeError(DBOSJSON.parse(rows[1].error));
       } else {
-        res.output = JSON.parse(rows[1].output) as R;
+        res.output = DBOSJSON.parse(rows[1].output) as R;
       }
     }
     return res;
@@ -238,7 +237,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           sqlStmt += ", ";
         }
         sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-        values.push(this.workflowUUID, funcID, JSON.stringify(output), JSON.stringify(null), txnSnapshot, createdAt);
+        values.push(this.workflowUUID, funcID, DBOSJSON.stringify(output), DBOSJSON.stringify(null), txnSnapshot, createdAt);
       }
       this.logger.debug(sqlStmt);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -258,7 +257,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordOutput<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
     try {
-      const serialOutput = JSON.stringify(output);
+      const serialOutput = DBOSJSON.stringify(output);
       const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now());
       return rows[0].txn_id;
     } catch (error) {
@@ -276,7 +275,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recordError(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     try {
-      const serialErr = JSON.stringify(serializeError(err));
+      const serialErr = DBOSJSON.stringify(serializeError(err));
       await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now());
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
@@ -322,7 +321,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
 
     for (const op of ops) {
-      if (asyncWf) {  
+      if (asyncWf) {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
           : undefined;
@@ -334,8 +333,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
     }
     return proxy as WfInvokeWfsAsync<T>;
-  }  
-  
+  }
+
   startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
       return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
@@ -621,7 +620,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
       const proxy: Record<string, unknown> = {};
       for (const op of ops) {
-        
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig

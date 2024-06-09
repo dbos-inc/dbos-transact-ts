@@ -23,7 +23,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Communicator } from '../communicator';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { exhaustiveCheckGuard } from '../utils';
+import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -328,8 +328,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             } else {
               // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
               // using stringify() will not produce a pretty output, because our format function uses stringify() too.
-              oc.logger.error(JSON.stringify(e));
-              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: JSON.stringify(e) });
+              oc.logger.error(DBOSJSON.stringify(e));
+              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
               koaCtxt.body = e;
               koaCtxt.status = 500;
             }

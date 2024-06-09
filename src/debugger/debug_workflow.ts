@@ -12,6 +12,7 @@ import { DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, WfInvokeWfs, WfInvokeWfsAsync, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
 import { InvokeFuncsInst } from "../httpServer/handler";
+import { DBOSJSON } from "../utils";
 
 interface RecordedResult<R> {
   output: R;
@@ -99,12 +100,12 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` + rows.toString());
     }
 
-    if (JSON.parse(rows[0].error) != null) {
-      return deserializeError(JSON.parse(rows[0].error));
+    if (DBOSJSON.parse(rows[0].error) != null) {
+      return deserializeError(DBOSJSON.parse(rows[0].error));
     }
 
     const res: RecordedResult<R> = {
-      output: JSON.parse(rows[0].output) as R,
+      output: DBOSJSON.parse(rows[0].output) as R,
       txn_snapshot: rows[0].txn_snapshot,
       txn_id: rows[0].txn_id,
     };
@@ -184,8 +185,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       return result;
     }
 
-    if (JSON.stringify(check.output) !== JSON.stringify(result)) {
-      this.logger.error(`Detected different transaction output than the original one!\n Result: ${JSON.stringify(result)}\n Original: ${JSON.stringify(check.output)}`);
+    if (DBOSJSON.stringify(check.output) !== DBOSJSON.stringify(result)) {
+      this.logger.error(`Detected different transaction output than the original one!\n Result: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(check.output)}`);
     }
     return check.output; // Always return the recorded result.
   }
@@ -236,7 +237,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
 
     for (const op of ops) {
-      if (asyncWf) {  
+      if (asyncWf) {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => this.#dbosExec.debugWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
           : undefined;
