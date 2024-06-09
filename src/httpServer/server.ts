@@ -362,9 +362,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
         switch(ro.apiType) {
           case APITypes.GET:
             router.get(ro.apiURL, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
             router.head(ro.apiURL, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered HEAD ${ro.apiURL}`);
+            dbosExec.logger.debug(`DBOS Server Registered GET/HEAD ${ro.apiURL}`);
             break;
           case APITypes.POST:
             router.post(ro.apiURL, wrappedHandler);
