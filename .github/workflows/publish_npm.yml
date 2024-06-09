@@ -18,8 +18,6 @@ jobs:
           packages/communicator-bcrypt,
           packages/communicator-random,
           packages/create,
-          packages/communicator-email-ses,
-          packages/component-aws-s3,
           packages/aws-config
         ]
     steps:
