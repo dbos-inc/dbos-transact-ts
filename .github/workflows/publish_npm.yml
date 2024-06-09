@@ -36,7 +36,7 @@ jobs:
         uses: dotnet/nbgv@v0.4.2
         with:
           stamp: ${{ matrix.package }}/package.json
-      - run: cd ${{ matrix.package }}; npm ci
+      - run: npm ci
       - run: cd ${{ matrix.package }}; npm run build
       - name: Publish release to npm
         uses: JS-DevTools/npm-publish@v3
