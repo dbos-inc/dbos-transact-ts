@@ -17,8 +17,7 @@ jobs:
           packages/communicator-datetime,
           packages/communicator-bcrypt,
           packages/communicator-random,
-          packages/create,
-          packages/aws-config
+          packages/create
         ]
     steps:
       - name: Checkout
