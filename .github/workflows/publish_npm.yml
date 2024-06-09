@@ -17,7 +17,8 @@ jobs:
           packages/communicator-datetime,
           packages/communicator-bcrypt,
           packages/communicator-random,
-          packages/create
+          packages/create,
+          packages/communicator-email-ses
         ]
     steps:
       - name: Checkout
