@@ -17,6 +17,7 @@
     "testses": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.12",
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
