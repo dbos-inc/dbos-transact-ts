@@ -17,10 +17,10 @@ jobs:
           packages/communicator-datetime,
           packages/communicator-bcrypt,
           packages/communicator-random,
+          packages/create,
           packages/aws-config,
-          packages/communicator-email-ses,
           packages/component-aws-s3,
-          packages/create
+          packages/communicator-email-ses
         ]
     steps:
       - name: Checkout
