@@ -31,7 +31,7 @@
   "dependencies": {
     "@aws-sdk/s3-presigned-post": "^3.552.0",
     "@aws-sdk/s3-request-presigner": "^3.552.0",
-    "@dbos-inc/aws-config": "^1.13.8-preview",
+    "@dbos-inc/aws-config": "^1.13.9",
     "uuid": "^9.0.1"
   }
 }
