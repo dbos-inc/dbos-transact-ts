@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "eslint --fix --ext .ts --report-unused-disable-directives --ignore-pattern foundationdb/ --ignore-pattern templates/ .",
+    "lint": "npx prisma generate --schema tests/prisma/schema.prisma && eslint --fix --ext .ts --report-unused-disable-directives --ignore-pattern foundationdb/ --ignore-pattern templates/ .",
     "lint-fdb": "eslint --fix --ext .ts --ignore-pattern templates/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
