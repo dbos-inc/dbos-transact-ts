@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Command } from "commander";
 import tsm from 'ts-morph';
 import path from 'node:path';
