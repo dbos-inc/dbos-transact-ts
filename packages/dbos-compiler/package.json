@@ -1,26 +1,21 @@
 {
   "name": "@dbos-inc/dbos-compiler",
   "version": "0.0.0-placeholder",
-  "description": "Tool for generating PG stored procedures from DBOS applications",
+  "description": "Tool for generating plv8 stored procedures for PostgreSQL from DBOS applications",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact",
-    "directory": "packages/dbos-cloud"
+    "directory": "packages/dbos-compiler"
   },
   "homepage": "https://docs.dbos.dev/",
-  "bin": {
-    "dbosc": "./dist/cli.js"
-  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "npm run build && vitest run"
   },
-  "dependencies": {
-    "commander": "^12.0.0",
-    "liquidjs": "^10.13.1",
-    "ts-morph": "^22.0.0"
+  "bin": {
+    "dbosc": "./dist/cli.js"
   },
   "devDependencies": {
     "@tsconfig/node20": "^20.1.4",
@@ -29,5 +24,10 @@
     "diff": "^5.2.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "liquidjs": "^10.13.1",
+    "ts-morph": "^22.0.0"
   }
 }
