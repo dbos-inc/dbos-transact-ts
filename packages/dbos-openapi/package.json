@@ -1,6 +1,6 @@
 {
   "name": "@dbos-inc/dbos-openapi",
-  "version": "0.0.0-placeholder",
+  "version": "1.14.3-preview.g8070d0d20c",
   "description": "Tool for integrating DBOS functions via OpenAPI",
   "license": "MIT",
   "repository": {

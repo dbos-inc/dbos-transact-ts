@@ -1,6 +1,6 @@
 {
   "name": "@dbos-inc/communicator-email-ses",
-  "version": "0.0.0-placeholder",
+  "version": "1.14.3-preview.g8070d0d20c",
   "description": "Communicator library - email in AWS with SES",
   "license": "MIT",
   "repository": {

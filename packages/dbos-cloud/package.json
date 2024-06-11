@@ -1,6 +1,6 @@
 {
   "name": "@dbos-inc/dbos-cloud",
-  "version": "0.0.0-placeholder",
+  "version": "1.14.3-preview.g8070d0d20c",
   "description": "Tool for performing application deployment to DBOS cloud",
   "license": "MIT",
   "type": "module",
