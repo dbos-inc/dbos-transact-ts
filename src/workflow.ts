@@ -258,7 +258,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async recordOutput<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
     try {
       const serialOutput = DBOSJSON.stringify(output);
-      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now());
+      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, txnSnapshot);
       return rows[0].txn_id;
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
@@ -276,7 +276,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async recordError(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
-      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now());
+      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, null, $4) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, );
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
