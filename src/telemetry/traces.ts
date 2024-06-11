@@ -8,6 +8,7 @@ import { hrTime } from '@opentelemetry/core';
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;
+  readonly applicationVersion: string;
   readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.tracer = new BasicTracerProvider({
@@ -16,8 +17,9 @@ export class Tracer {
       }),
     });
     this.tracer.register();
-    this.applicationID = process.env.DBOS__APPID  || "APP_ID_NOT_DEFINED";
-    this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
+    this.applicationID = process.env.DBOS__APPID || "";
+    this.applicationVersion = process.env.DBOS__APPVERSION || "";
+    this.executorID = process.env.DBOS__VMID || "local"; // for consistency with src/context.ts
   }
 
   startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {
@@ -40,7 +42,8 @@ export class Tracer {
   endSpan(span: Span) {
     span.end(hrTime(performance.now()));
     span.attributes.applicationID = this.applicationID;
-    if ( !("executorID" in span.attributes)) {
+    span.attributes.applicationVersion = this.applicationVersion;
+    if (!("executorID" in span.attributes)) {
       span.attributes.executorID = this.executorID;
     }
     this.telemetryCollector.push(span as ReadableSpan);

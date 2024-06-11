@@ -10,7 +10,17 @@ jobs:
       contents: read
     strategy:
       matrix:
-        package: [., packages/dbos-cloud, packages/dbos-openapi, packages/communicator-datetime, packages/communicator-bcrypt, packages/communicator-random, packages/create]
+        package: [
+          .,
+          packages/dbos-cloud,
+          packages/dbos-openapi,
+          packages/communicator-datetime,
+          packages/communicator-bcrypt,
+          packages/communicator-random,
+          packages/create,
+          packages/aws-config,
+          packages/communicator-email-ses
+        ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.1

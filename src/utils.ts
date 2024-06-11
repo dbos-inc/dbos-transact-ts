@@ -55,18 +55,40 @@ export function findPackageRoot(start: string | string[]): string {
  *
  * Additional types supported:
  * - Buffer
+ * - Dates
  *
  * Currently, these are only used for operation inputs.
  * TODO: Use in other contexts where we perform serialization and deserialization.
  */
 
-export function DBOSReplacer(_key: string, value: unknown) {
-  return value;
-}
-
 interface SerializedBuffer {
   type: 'Buffer';
   data: number[];
+}
+
+type DBOSSerializeType = 'dbos_Date';
+
+interface DBOSSerialized {
+  dbos_type: DBOSSerializeType;
+}
+interface DBOSSerializedDate extends DBOSSerialized {
+  dbos_type: 'dbos_Date';
+  dbos_data: string;
+}
+
+//https://www.typescriptlang.org/docs/handbook/2/functions.html#declaring-this-in-a-function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function DBOSReplacer(this: any, key: string, value: unknown) {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+  const actualValue = this[key];
+  if (actualValue instanceof Date) {
+    const res: DBOSSerializedDate = {
+        dbos_type: 'dbos_Date',
+        dbos_data: actualValue.toISOString()
+    }
+    return res;
+  }
+  return value;
 }
 
 export function DBOSReviver(_key: string, value: unknown): unknown {
@@ -74,5 +96,23 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
     return Buffer.from(candidate.data);
   }
+  const dateCandidate = value as DBOSSerializedDate;
+  if (dateCandidate && dateCandidate.dbos_type === 'dbos_Date') {
+    return new Date(Date.parse(dateCandidate.dbos_data))
+  }
   return value;
+}
+
+export const DBOSJSON = {
+  parse: (text: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return JSON.parse(text, DBOSReviver)
+  },
+  stringify: (value: unknown) => {
+    return JSON.stringify(value, DBOSReplacer)
+  }
+}
+
+export function exhaustiveCheckGuard(_: never): never {
+  throw new Error('Exaustive matching is not applied');
 }

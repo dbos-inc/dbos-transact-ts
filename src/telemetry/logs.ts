@@ -1,11 +1,11 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
 import TransportStream = require("winston-transport");
-import { getApplicationVersion } from "../dbos-runtime/applicationVersion";
 import { DBOSContextImpl } from "../context";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { TelemetryCollector } from "./collector";
+import { DBOSJSON } from "../utils";
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -59,7 +59,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.info(logEntry, metadata);
     } else {
-      this.logger.info(JSON.stringify(logEntry), metadata);
+      this.logger.info(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -67,7 +67,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.debug(logEntry, metadata);
     } else {
-      this.logger.debug(JSON.stringify(logEntry), metadata);
+      this.logger.debug(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -75,7 +75,7 @@ export class GlobalLogger {
     if (typeof logEntry === "string") {
       this.logger.warn(logEntry, metadata);
     } else {
-      this.logger.warn(JSON.stringify(logEntry), metadata);
+      this.logger.warn(DBOSJSON.stringify(logEntry), metadata);
     }
   }
 
@@ -86,7 +86,7 @@ export class GlobalLogger {
     } else if (typeof inputError === "string") {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
-      this.logger.error(JSON.stringify(inputError), { ...metadata, stack: new Error().stack });
+      this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
   }
 
@@ -137,14 +137,14 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = getApplicationVersion();
+    const applicationVersion = process.env.DBOS__APPVERSION || "";
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace("T", " ");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const formattedStack = stack?.split("\n").slice(1).join("\n");
 
-    const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${JSON.stringify((info.span as Span)?.attributes)}` : ""}`;
+    const messageString: string = typeof message === "string" ? message : DBOSJSON.stringify(message);
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ""}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? "\n" + formattedStack : ""}`;
@@ -155,6 +155,7 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = "OTLPLogQueueTransport";
   readonly otelLogger: OTelLogger;
   readonly applicationID: string;
+  readonly applicationVersion: string;
   readonly executorID: string;
 
   constructor(readonly telemetryCollector: TelemetryCollector, logLevel: string) {
@@ -163,8 +164,9 @@ class OTLPLogQueueTransport extends TransportStream {
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger("default");
-    this.applicationID = process.env.DBOS__APPID || "APP_ID_NOT_DEFINED";
-    this.executorID = process.env.DBOS__VMID || "VM_ID_NOT_DEFINED";
+    this.applicationID = process.env.DBOS__APPID || "";
+    this.applicationVersion = process.env.DBOS__APPVERSION || "";
+    this.executorID = process.env.DBOS__VMID || "local";
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
@@ -211,6 +213,7 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
+        applicationVersion: this.applicationVersion,
         executorID: this.executorID,
       } as LogAttributes,
     });

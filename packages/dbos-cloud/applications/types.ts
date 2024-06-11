@@ -22,7 +22,7 @@ export type ApplicationVersion = {
   ApplicationName: string;
   Version: string;
   CreationTime: string;
-}
+};
 
 export function prettyPrintApplicationVersion(version: ApplicationVersion) {
   console.log(`Application Name: ${version.ApplicationName}`);

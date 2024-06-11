@@ -4,8 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export type Communicator<T extends any[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
+export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
 export interface CommunicatorConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)
@@ -28,7 +27,9 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
   readonly backoffRate: number;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger, params: CommunicatorConfig, commName: string) {
+  constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger,
+     params: CommunicatorConfig, commName: string)
+  {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;

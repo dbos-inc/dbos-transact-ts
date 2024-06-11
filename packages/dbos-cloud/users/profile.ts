@@ -1,4 +1,4 @@
-import axios , { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, UserProfile } from "../cloudutils.js";
 
 export async function profile(host: string, json: boolean): Promise<number> {
@@ -11,15 +11,15 @@ export async function profile(host: string, json: boolean): Promise<number> {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
-      }
+      },
     });
-    const user = res.data as UserProfile
+    const user = res.data as UserProfile;
     if (json) {
       console.log(JSON.stringify(user));
     } else {
-        console.log(`Name: ${user.Name}`);
-        console.log(`Email: ${user.Email}`);
-        console.log(`Subscription Plan: ${user.SubscriptionPlan}`);
+      console.log(`Name: ${user.Name}`);
+      console.log(`Email: ${user.Email}`);
+      console.log(`Subscription Plan: ${user.SubscriptionPlan}`);
     }
     return 0;
   } catch (e) {

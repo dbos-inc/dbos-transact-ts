@@ -1,14 +1,14 @@
 import axios from "axios";
-import jwt, { JwtPayload } from 'jsonwebtoken';
-import jwksClient from 'jwks-rsa';
+import jwt, { JwtPayload } from "jsonwebtoken";
+import jwksClient from "jwks-rsa";
 import { Logger } from "winston";
-import open from 'open';
+import open from "open";
 
 const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
-const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
-const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
-const DBOSCloudIdentifier = 'dbos-cloud-api';
+const Auth0Domain = productionEnvironment ? "login.dbos.dev" : "dbos-inc.us.auth0.com";
+const DBOSClientID = productionEnvironment ? "6p7Sjxf13cyLMkdwn14MxlH7JdhILled" : "G38fLmVErczEo9ioCFjVIHea6yd0qMZu";
+const DBOSCloudIdentifier = "dbos-cloud-api";
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DeviceCodeResponse {
@@ -35,12 +35,12 @@ interface TokenResponse {
 }
 
 export interface AuthenticationResponse {
-  token: string
-  refreshToken?: string
+  token: string;
+  refreshToken?: string;
 }
 
 const client = jwksClient({
-  jwksUri: `https://${Auth0Domain}/.well-known/jwks.json`
+  jwksUri: `https://${Auth0Domain}/.well-known/jwks.json`,
 });
 
 async function getSigningKey(kid: string): Promise<string> {
@@ -51,14 +51,14 @@ async function getSigningKey(kid: string): Promise<string> {
 async function verifyToken(token: string): Promise<JwtPayload> {
   const decoded = jwt.decode(token, { complete: true });
 
-  if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
-    throw new Error('Invalid token');
+  if (!decoded || typeof decoded === "string" || !decoded.header.kid) {
+    throw new Error("Invalid token");
   }
 
   const signingKey = await getSigningKey(decoded.header.kid);
 
   return new Promise((resolve, reject) => {
-    jwt.verify(token, signingKey, { algorithms: ['RS256'] }, (err, verifiedToken) => {
+    jwt.verify(token, signingKey, { algorithms: ["RS256"] }, (err, verifiedToken) => {
       if (err) {
         reject(err);
       } else {
@@ -73,14 +73,14 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
   logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
-    method: 'POST',
+    method: "POST",
     url: `https://${Auth0Domain}/oauth/device/code`,
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { "content-type": "application/x-www-form-urlencoded" },
     data: {
       client_id: DBOSClientID,
-      scope: getRefreshToken ?  'offline_access': 'sub',
-      audience: DBOSCloudIdentifier
-    }
+      scope: getRefreshToken ? "offline_access" : "sub",
+      audience: DBOSCloudIdentifier,
+    },
   };
   let deviceCodeResponse: DeviceCodeResponse | undefined;
   try {
@@ -94,27 +94,29 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
     return null;
   }
 
-  const loginURL = deviceCodeResponse.verification_uri_complete
+  const loginURL = deviceCodeResponse.verification_uri_complete;
   console.log(`Login URL: ${loginURL}`);
   try {
-    await open(loginURL)
-  } catch (error) { /* Ignore errors from open */ }
+    await open(loginURL);
+  } catch (error) {
+    /* Ignore errors from open */
+  }
 
   const tokenRequest = {
-    method: 'POST',
+    method: "POST",
     url: `https://${Auth0Domain}/oauth/token`,
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { "content-type": "application/x-www-form-urlencoded" },
     data: {
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
       device_code: deviceCodeResponse.device_code,
-      client_id: DBOSClientID
-    }
+      client_id: DBOSClientID,
+    },
   };
   let tokenResponse: TokenResponse | undefined;
   let elapsedTimeSec = 0;
   while (elapsedTimeSec < deviceCodeResponse.expires_in) {
     try {
-      await sleepms(deviceCodeResponse.interval * 1000)
+      await sleepms(deviceCodeResponse.interval * 1000);
       elapsedTimeSec += deviceCodeResponse.interval;
       const response = await axios.request(tokenRequest);
       tokenResponse = response.data as TokenResponse;
@@ -131,19 +133,19 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
   return {
     token: tokenResponse.access_token,
     refreshToken: tokenResponse.refresh_token,
-  }
+  };
 }
 
 export async function authenticateWithRefreshToken(logger: Logger, refreshToken: string): Promise<AuthenticationResponse | null> {
   const authenticationRequest = {
-    method: 'POST',
+    method: "POST",
     url: `https://${Auth0Domain}/oauth/token`,
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { "content-type": "application/x-www-form-urlencoded" },
     data: {
       grant_type: "refresh_token",
       client_id: DBOSClientID,
-      refresh_token: refreshToken
-    }
+      refresh_token: refreshToken,
+    },
   };
   try {
     const response = await axios.request(authenticationRequest);
@@ -151,7 +153,7 @@ export async function authenticateWithRefreshToken(logger: Logger, refreshToken:
     return {
       token: responseData.access_token,
       refreshToken: refreshToken,
-    }
+    };
   } catch (e) {
     (e as Error).message = `Failed to authenticate with refresh token: ${(e as Error).message}`;
     logger.error(e);
@@ -161,13 +163,13 @@ export async function authenticateWithRefreshToken(logger: Logger, refreshToken:
 
 export async function revokeRefreshToken(logger: Logger, refreshToken: string): Promise<number> {
   const request = {
-    method: 'POST',
+    method: "POST",
     url: `https://${Auth0Domain}/oauth/revoke`,
-    headers: {'content-type': 'application/json'},
+    headers: { "content-type": "application/json" },
     data: {
       client_id: DBOSClientID,
-      token: refreshToken
-    }
+      token: refreshToken,
+    },
   };
   try {
     await axios.request(request);

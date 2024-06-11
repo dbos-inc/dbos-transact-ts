@@ -38,4 +38,4 @@ node_modules/
 # Editor temp files
 *.swp
 *.swo
-examples/hello/.env
+packages/create/templates/hello-prisma/prisma/.env

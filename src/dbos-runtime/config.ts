@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from "../error";
-import { findPackageRoot, readFileSync } from "../utils";
+import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
 import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
@@ -7,18 +7,16 @@ import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
 import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
-import { setApplicationVersion } from "./applicationVersion";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
-const dbosConfigSchema = JSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
+const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
-  version: string;
   database: {
     hostname: string;
     port: number;
@@ -84,12 +82,8 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = false) {
-  if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
-  }
-
-  const poolConfig: PoolConfig = {
+export function constructPoolConfig(configFile: ConfigFile) {
+   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
@@ -100,19 +94,6 @@ export function constructPoolConfig(configFile: ConfigFile, useProxy: boolean = 
 
   if (!poolConfig.database) {
     throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain application database name`);
-  }
-
-  if (!poolConfig.password) {
-    if (useProxy) {
-      poolConfig.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      const pgPassword: string | undefined = process.env.PGPASSWORD;
-      if (pgPassword) {
-        poolConfig.password = pgPassword;
-      } else {
-        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
-      }
-    }
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
@@ -140,7 +121,7 @@ function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
       message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
     }
     if (error.data && error.keyword === 'not') {
-      message += `; the value ${JSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
+      message += `; the value ${DBOSJSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
     }
     return message;
   }).join(', ');
@@ -160,19 +141,36 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
+  // Database field must exist
+  if (!configFile.database) {
+    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
+  }
+
+  // Check for the database password
+  if (!configFile.database.password) {
+    if (useProxy) {
+      configFile.database.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
+    } else {
+      const pgPassword: string | undefined = process.env.PGPASSWORD;
+      if (pgPassword) {
+        configFile.database.password = pgPassword;
+      } else {
+        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+      }
+    }
+  }
+
   const validator = ajv.compile(dbosConfigSchema);
   if (!validator(configFile)) {
     const errorMessages = prettyPrintAjvErrors(validator);
     throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
 
-  setApplicationVersion(configFile.version);
-
   /*******************************/
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile, useProxy);
+  const poolConfig = constructPoolConfig(configFile);
 
   /***************************/
   /* Handle telemetry config */

@@ -148,7 +148,8 @@
     "application": {},
     "env": {},
     "version": {
-      "type": "string"
+      "type": "string",
+      "deprecated": true
     }
   },
   "required": [

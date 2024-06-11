@@ -12,14 +12,14 @@ export interface UserDBInstance {
 
 function isValidPassword(logger: Logger, password: string): boolean {
   if (password.length < 8 || password.length > 128) {
-    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long")
+    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long");
     return false;
   }
-  if (password.includes('/') || password.includes('"') || password.includes('@') || password.includes(' ') || password.includes('\'')) {
-    logger.error("Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, \", ', and spaces")
+  if (password.includes("/") || password.includes('"') || password.includes("@") || password.includes(" ") || password.includes("'")) {
+    logger.error("Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, \", ', and spaces");
     return false;
   }
-  return true
+  return true;
 }
 
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
@@ -28,7 +28,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
-    return 1
+    return 1;
   }
 
   try {
@@ -78,7 +78,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, dbPassword)) {
-    return 1
+    return 1;
   }
 
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
@@ -249,7 +249,7 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
-    return 1
+    return 1;
   }
 
   try {

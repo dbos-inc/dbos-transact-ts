@@ -54,6 +54,10 @@ export {
   // Typeorm Class Decorators
   OrmEntities,
 
+  // Class Instances
+  ConfiguredInstance,
+  configureInstance,
+
   // Method Decorators
   Transaction,
   Workflow,
@@ -77,6 +81,9 @@ export {
   // Endpoint Decorators
   GetApi,
   PostApi,
+  PatchApi,
+  PutApi,
+  DeleteApi
 } from "./httpServer/handler";
 
 export {

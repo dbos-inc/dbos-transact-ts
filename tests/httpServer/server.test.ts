@@ -13,6 +13,7 @@ import {
   CommunicatorContext,
 } from "../../src";
 import { RequestIDHeader } from "../../src/httpServer/handler";
+import { DeleteApi, PatchApi, PutApi } from "../../src";
 import { WorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
@@ -71,6 +72,30 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello alice");
   });
 
+  test("get-querybody", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/querybody").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-query", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).delete("/testdeletequery?name=alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-url", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).delete("/testdeleteurl/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-body", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).delete("/testdeletebody").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
   test("post-test", async () => {
     const response = await request(testRuntime.getHandlersCallback()).post("/testpost").send({ name: "alice" });
     expect(response.statusCode).toBe(200);
@@ -82,6 +107,34 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("hello alice");
     response = await request(testRuntime.getHandlersCallback()).post("/testpost").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("put-test", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).put("/testput").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("put-test-custom-body", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).put("/testput").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(testRuntime.getHandlersCallback()).put("/testput").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("patch-test", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).patch("/testpatch").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("patch-test-custom-body", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).patch("/testpatch").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(testRuntime.getHandlersCallback()).patch("/testpatch").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
     expect(response.statusCode).toBe(400);
   });
 
@@ -235,7 +288,8 @@ describe("httpserver-tests", () => {
     extendTypes: {
       json: ["application/json", "application/custom-content-type"],
     },
-    encoding: "utf-8"
+    encoding: "utf-8",
+    parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
   }))
   class TestEndpoints {
     @GetApi("/hello")
@@ -264,8 +318,42 @@ describe("httpserver-tests", () => {
       return Promise.resolve(`hello ${name}`);
     }
 
+    @GetApi("/querybody")
+    static async helloQueryBody(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
+      ctx.logger.info(`query with name ${name}`); // Test logging.
+      return Promise.resolve(`hello ${name}`);
+    }
+
+    @DeleteApi("/testdeletequery")
+    static async testdeletequeryparam(ctx: HandlerContext, name: string) {
+      ctx.logger.info(`delete with param from query with name ${name}`);
+      return Promise.resolve(`hello ${name}`);
+    }
+
+    @DeleteApi("/testdeleteurl/:name")
+    static async testdeleteurlparam(ctx: HandlerContext, name: string) {
+      ctx.logger.info(`delete with param from url with name ${name}`);
+      return Promise.resolve(`hello ${name}`);
+    }
+
+    @DeleteApi("/testdeletebody")
+    static async testdeletebodyparam(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
+      ctx.logger.info(`delete with param from url with name ${name}`);
+      return Promise.resolve(`hello ${name}`);
+    }
+
     @PostApi("/testpost")
     static async testpost(_ctx: HandlerContext, name: string) {
+      return Promise.resolve(`hello ${name}`);
+    }
+
+    @PutApi("/testput")
+    static async testput(_ctx: HandlerContext, name: string) {
+      return Promise.resolve(`hello ${name}`);
+    }
+
+    @PatchApi("/testpatch")
+    static async testpatch(_ctx: HandlerContext, name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
