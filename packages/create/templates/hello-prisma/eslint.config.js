@@ -1,5 +1,6 @@
 const { FlatCompat } = require("@eslint/eslintrc");
 const dbosIncEslintPlugin = require("@dbos-inc/eslint-plugin");
+const typescriptEslint = require("typescript-eslint");
 const typescriptEslintParser = require("@typescript-eslint/parser");
 const globals = require("globals");
 const js = require("@eslint/js");
@@ -9,7 +10,7 @@ const compat = new FlatCompat({
   recommendedConfig: js.configs.recommended,
 });
 
-module.exports = [
+module.exports = typescriptEslint.config(
   ...compat.extends("plugin:@dbos-inc/dbosRecommendedConfig"),
   { plugins: { "@dbos-inc": dbosIncEslintPlugin } },
   { languageOptions: {
@@ -25,4 +26,4 @@ module.exports = [
     "generate_env.js",
     "start_postgres_docker.js"
   ] }
-];
+);
