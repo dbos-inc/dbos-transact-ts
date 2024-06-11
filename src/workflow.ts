@@ -276,7 +276,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async recordError(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
-      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, null, $4) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, );
+      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot) VALUES ($1, $2, $3, null, $4) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot);
     } catch (error) {
       if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
         // Serialization and primary key conflict (Postgres).
