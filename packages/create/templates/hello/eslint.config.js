@@ -5,6 +5,8 @@ const typescriptEslintParser = require("@typescript-eslint/parser");
 const globals = require("globals");
 const js = require("@eslint/js");
 
+/* TODO: for the future, should we still be pulling in this other config stuff?
+Since originally, we only used the DBOS recommended config... */
 const compat = new FlatCompat({
   baseDirectory: __dirname,
   recommendedConfig: js.configs.recommended,
