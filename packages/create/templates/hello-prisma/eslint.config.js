@@ -21,6 +21,8 @@ module.exports = [
   { ignores: [
     "dist",
     "**/*.test.ts",
-    "jest.config.js"
+    "jest.config.js",
+    "generate_env.js",
+    "start_postgres_docker.js"
   ] }
 ];
