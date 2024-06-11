@@ -4,3 +4,4 @@
 /.eslintrc.cjs
 /jest.config.js
 /tsconfig.json
+/dist/tests
