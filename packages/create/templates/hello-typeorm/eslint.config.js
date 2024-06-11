@@ -10,18 +10,21 @@ const compat = new FlatCompat({
   recommendedConfig: js.configs.recommended,
 });
 
-module.exports = typescriptEslint.config(
-  ...compat.extends("plugin:@dbos-inc/dbosRecommendedConfig"),
-  { plugins: { "@dbos-inc": dbosIncEslintPlugin } },
-  { languageOptions: {
+module.exports = typescriptEslint.config({
+  extends: compat.extends("plugin:@dbos-inc/dbosRecommendedConfig"),
+  plugins: { "@dbos-inc": dbosIncEslintPlugin },
+
+  languageOptions: {
     parser: typescriptEslintParser,
     parserOptions: { project: "./tsconfig.json" },
     globals: { ...globals.node, ...globals.es6 }
-  } },
-  { rules: {} },
-  { ignores: [
+  },
+
+  rules: {},
+
+  ignores: [
     "dist",
     "**/*.test.ts",
     "jest.config.js"
-  ] }
-);
+  ]
+});
