@@ -1,5 +1,5 @@
 import tsm from 'ts-morph';
-import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../src/treeShake.js';
+import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../treeShake.js';
 import { makeTestProject } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { describe, it, expect } from 'vitest';

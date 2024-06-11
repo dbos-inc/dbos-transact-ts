@@ -1,5 +1,5 @@
 import * as tsm from "ts-morph";
-import { DecoratorArgument, DecoratorInfo, getDbosMethodKind, getDecoratorInfo, getStoredProcConfig, parseDecoratorArgument } from "../src/utility.js";
+import { DecoratorArgument, DecoratorInfo, getDbosMethodKind, getDecoratorInfo, getStoredProcConfig, parseDecoratorArgument } from "../utility.js";
 import { sampleDbosClass, sampleDbosClassAliased } from "./test-code.js";
 import { makeTestProject } from "./test-utility.js";
 import { describe, it, expect } from 'vitest';
