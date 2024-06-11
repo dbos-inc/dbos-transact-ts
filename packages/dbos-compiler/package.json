@@ -15,7 +15,7 @@
     "test": "npm run build && vitest run"
   },
   "bin": {
-    "dbosc": "./dist/cli.js"
+    "dbos-compiler": "./dist/cli.js"
   },
   "devDependencies": {
     "@tsconfig/node20": "^20.1.4",
