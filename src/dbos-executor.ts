@@ -143,6 +143,8 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = [];
 
+  pollers: DBOSEventReceiver[] = [];
+
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugMode ?? false;
@@ -269,6 +271,9 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
         this.#registerTransaction(ro);
       } else if (ro.commConfig) {
         this.#registerCommunicator(ro);
+      }
+      for (const [poller, _cfg] of ro.eventReceiverConfigs) {
+        if (!this.pollers.includes(poller)) this.pollers.push(poller);
       }
     }
   }

@@ -6,9 +6,7 @@ import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
-import { DBOSKafka } from '../kafka/kafka';
 import { DBOSScheduler } from '../scheduler/scheduler';
-import { DBOSEventReceiver } from '../eventreceiver';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,7 +23,6 @@ export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
-  private pollers: DBOSEventReceiver[] = [];
   private scheduler: DBOSScheduler | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
@@ -45,15 +42,14 @@ export class DBOSRuntime {
       const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
-      const kafka = new DBOSKafka();
-      this.pollers.push(kafka);
+
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
-      for (const poller of this.pollers) {
+      for (const poller of this.dbosExec.pollers) {
         await poller.initialize(this.dbosExec);
       }
-      for (const poller of this.pollers) {
+      for (const poller of this.dbosExec.pollers) {
         poller.logRegisteredEndpoints();
       }
     } catch (error) {
@@ -106,11 +102,11 @@ export class DBOSRuntime {
   }
 
   /**
-   * Shut down the HTTP server and destroy workflow executor.
+   * Shut down the HTTP and other services and destroy workflow executor.
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
-    for (const poller of this.pollers) {
+    for (const poller of this.dbosExec?.pollers || []) {
       await poller.destroy();
     }
     if (this.servers) {
