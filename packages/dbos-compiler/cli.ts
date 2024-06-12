@@ -95,28 +95,18 @@ function getVersion(): string {
 
 function getAppVersion(appVersion: string | boolean | undefined) {
   if (typeof appVersion === "string") { return appVersion; }
-  if (appVersion === true) {
-    const envAppVersion = process.env.DBOS__APPVERSION;
-    if (envAppVersion === undefined) {
-      return new Error("--app-version option specified but DBOS__APPVERSION environment variable is not set");
-    }
-    return envAppVersion;
-  }
-  return undefined;
+  if (appVersion === false) { return undefined; }
+  return process.env.DBOS__APPVERSION;
 }
 
 const program = new Command()
   .version(getVersion())
   .argument('<tsconfigPath>', 'path to tsconfig.json')
   .option('-o, --out <string>', 'path to output folder')
-  .option('-v, --app-version [string]', 'emit version')
+  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
+  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (tsconfigPath: string, options: { out?: string, appVersion?: string | boolean }) => {
     const appVersion = getAppVersion(options.appVersion);
-    if (appVersion instanceof Error) {
-      console.error(appVersion.message);
-      process.exitCode = 1;
-      return;
-    }
     await compile(tsconfigPath, { appVersion, outDir: options.out ?? process.cwd() });
   });
 
