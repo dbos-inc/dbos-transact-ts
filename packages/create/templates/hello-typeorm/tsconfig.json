@@ -20,5 +20,8 @@
     "src",
     "entities",
     "migrations",
+  ],
+  "exclude": [
+    "**/*.test.ts",
   ]
 }
