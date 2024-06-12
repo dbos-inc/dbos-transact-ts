@@ -41,7 +41,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
-import { DBOSEventReceiver, DBOSExecutorPollerInterface } from "./eventreceiver";
+import { DBOSEventReceiver, DBOSExecutorPollerInterface } from ".";
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -273,9 +273,15 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
     }
   }
 
-  getRegistrationsFor(_obj: DBOSEventReceiver) {
-    // TODO: Better tracking of what goes where...
-    return this.registeredOperations;
+  getRegistrationsFor(obj: DBOSEventReceiver) {
+    const res: {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[] = [];
+    for (const r of this.registeredOperations) {
+      if (!r.eventReceiverConfigs.has(obj)) continue;
+      const minfo = r.eventReceiverConfigs.get(obj)!;
+      const cinfo = r.defaults?.eventReceiverConfigs.get(obj) ?? {};
+      res.push({method: r, minfo, cinfo})
+    }
+    return res;
   }
 
   async init(...classes: object[]): Promise<void> {

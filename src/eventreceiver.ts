@@ -4,13 +4,23 @@ import { Workflow, WorkflowHandle, WorkflowParams } from './workflow';
 import { Transaction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 
+/*
+ * Info provided to a poller at initialization,
+ *  which contains the things that it needs to do its work
+ *  (retrieve decorated endpoints, and run new transactions / workflows)
+ */
 export interface DBOSExecutorPollerInterface
 {
   readonly logger: Logger;
   readonly tracer: Tracer;
 
-  // TODO We may make this better...
-  getRegistrationsFor(eri: DBOSEventReceiver) : MethodRegistrationBase[];
+  /*
+   * Get the registrations for a receiver; this comes with:
+   *  minfo: the method info the receiver stored
+   *  cinfo: the class info the receiver stored
+   *  method: the method registration (w/ workflow, transaction, function, and other info)
+   */
+  getRegistrationsFor(eri: DBOSEventReceiver) : {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[];
 
   transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;

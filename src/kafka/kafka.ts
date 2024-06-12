@@ -1,62 +1,13 @@
 import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
 import { DBOSContext, DBOSEventReceiver } from "..";
-import { ClassRegistration, MethodRegistrationBase, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
-import { Transaction } from "../transaction";
-import { Workflow } from "../workflow";
-import { DBOSError } from "../error";
+import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from "..";
+import { TransactionFunction } from "..";
+import { WorkflowFunction } from "..";
+import { Error as DBOSError } from "..";
 import { sleepms } from "../utils";
-import { DBOSExecutorPollerInterface } from "../eventreceiver";
+import { DBOSExecutorPollerInterface } from "..";
 
 type KafkaArgs = [string, number, KafkaMessage]
-
-/////////////////////////////
-/* Kafka Method Decorators */
-/////////////////////////////
-
-export interface KafkaRegistrationBase extends MethodRegistrationBase {
-  kafkaTopics?: string | RegExp | Array<string | RegExp>;
-  consumerConfig?: ConsumerConfig;
-}
-
-export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
-  function kafkadec<This, Ctx extends DBOSContext, Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
-  ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-    const kafkaRegistration = registration as unknown as KafkaRegistrationBase;
-    kafkaRegistration.kafkaTopics = topics;
-    kafkaRegistration.consumerConfig = consumerConfig;
-
-    return descriptor;
-  }
-  return kafkadec;
-}
-
-/////////////////////////////
-/* Kafka Class Decorators  */
-/////////////////////////////
-
-export interface KafkaDefaults extends RegistrationDefaults {
-  kafkaConfig?: KafkaConfig;
-}
-
-export class KafkaClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements KafkaDefaults {
-  kafkaConfig?: KafkaConfig;
-
-  constructor(ctor: CT) {
-    super(ctor);
-  }
-}
-
-export function Kafka(kafkaConfig: KafkaConfig) {
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as KafkaClassRegistration<T>;
-    clsreg.kafkaConfig = kafkaConfig;
-  }
-  return clsdec;
-}
 
 ////////////////////////
 /* Kafka Management  */
@@ -71,16 +22,19 @@ export class DBOSKafka implements DBOSEventReceiver {
 
   async initialize(dbosExecI: DBOSExecutorPollerInterface) {
     this.dbosExec = dbosExecI;
-    const regops = this.dbosExec.getRegistrationsFor(this)
+    const regops = this.dbosExec.getRegistrationsFor(this);
     for (const registeredOperation of regops) {
-      const ro = registeredOperation as KafkaRegistrationBase;
+      const ro = registeredOperation.minfo as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {
-        const defaults = ro.defaults as KafkaDefaults;
-        if (!ro.txnConfig && !ro.workflowConfig) {
-          throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: A Kafka decorator can only be assigned to a transaction or workflow!`)
+        const defaults = registeredOperation.cinfo as KafkaDefaults;
+        const method = registeredOperation.method;
+        const cname = method.className;
+        const mname = method.name;
+        if (!method.txnConfig && !method.workflowConfig) {
+          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: A Kafka decorator can only be assigned to a transaction or workflow!`)
         }
         if (!defaults.kafkaConfig) {
-          throw new DBOSError(`Error registering method ${defaults.name}.${ro.name}: Kafka configuration not found. Does class ${defaults.name} have an @Kafka decorator?`)
+          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: Kafka configuration not found. Does class ${cname} have an @Kafka decorator?`)
         }
         const topics: Array<string | RegExp> = [];
         if (Array.isArray(ro.kafkaTopics) ) {
@@ -122,12 +76,12 @@ export class DBOSKafka implements DBOSEventReceiver {
             // All operations annotated with Kafka decorators must take in these three arguments
             const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-            if (ro.txnConfig) {
+            if (method.txnConfig) {
               // Execute the transaction
-              await this.dbosExec!.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
-            } else if (ro.workflowConfig) {
+              await this.dbosExec!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
+            } else if (method.workflowConfig) {
               // Safely start the workflow
-              await this.dbosExec!.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
+              await this.dbosExec!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
             }
           },
         })
@@ -156,17 +110,65 @@ export class DBOSKafka implements DBOSEventReceiver {
     logger.info("Kafka endpoints supported:");
     const regops = this.dbosExec.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
-      const ro = registeredOperation as KafkaRegistrationBase;
+      const ro = registeredOperation.minfo as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {
-        const defaults = ro.defaults as KafkaDefaults;
+        const cname = registeredOperation.method.className;
+        const mname = registeredOperation.method.name;
         if (Array.isArray(ro.kafkaTopics)) {
           ro.kafkaTopics.forEach( kafkaTopic => {
-            logger.info(`    ${kafkaTopic} -> ${defaults.name}.${ro.name}`);
+            logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);
           });
         } else {
-          logger.info(`    ${ro.kafkaTopics} -> ${defaults.name}.${ro.name}`);
+          logger.info(`    ${ro.kafkaTopics} -> ${cname}.${mname}`);
         }
       }
     });
   }
 }
+
+/////////////////////////////
+/* Kafka Method Decorators */
+/////////////////////////////
+
+let kafkaInst: DBOSKafka | undefined = undefined;
+
+export interface KafkaRegistrationInfo {
+  kafkaTopics?: string | RegExp | Array<string | RegExp>;
+  consumerConfig?: ConsumerConfig;
+}
+
+export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
+  function kafkadec<This, Ctx extends DBOSContext, Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
+  ) {
+    if (!kafkaInst) kafkaInst = new DBOSKafka();
+    const {descriptor, receiverInfo} = associateMethodWithEventReceiver(kafkaInst, target, propertyKey, inDescriptor);
+
+    const kafkaRegistration = receiverInfo as KafkaRegistrationInfo;
+    kafkaRegistration.kafkaTopics = topics;
+    kafkaRegistration.consumerConfig = consumerConfig;
+
+    return descriptor;
+  }
+  return kafkadec;
+}
+
+/////////////////////////////
+/* Kafka Class Decorators  */
+/////////////////////////////
+
+export interface KafkaDefaults {
+  kafkaConfig?: KafkaConfig;
+}
+
+export function Kafka(kafkaConfig: KafkaConfig) {
+  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+    if (!kafkaInst) kafkaInst = new DBOSKafka();
+    const kafkaInfo = associateClassWithEventReceiver(kafkaInst, ctor) as KafkaDefaults;
+    kafkaInfo.kafkaConfig = kafkaConfig;
+  }
+  return clsdec;
+}
+

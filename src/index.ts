@@ -11,12 +11,14 @@ export {
 export {
   TransactionContext,
   TransactionConfig,
+  TransactionFunction,
 } from './transaction';
 
 export {
   WorkflowContext,
   WorkflowConfig,
   WorkflowHandle,
+  WorkflowFunction,
   StatusString,
 } from './workflow';
 
@@ -61,6 +63,10 @@ export {
   RequiredRole,
   DBOSInitializer,
   DBOSDeploy,
+
+  // Extensions for others to register receiver/poller/handlers
+  associateMethodWithEventReceiver,
+  associateClassWithEventReceiver,
 } from "./decorators";
 
 export {
@@ -108,5 +114,6 @@ export {
 } from "./scheduler/scheduler";
 
 export {
-  DBOSEventReceiver
+  DBOSEventReceiver,
+  DBOSExecutorPollerInterface,
 } from "./eventreceiver";
