@@ -4,10 +4,10 @@ CREATE FUNCTION "{{appVersion}}{{methodName}}_func"(
     "{{param.name}}" {{param.type}}{% endfor %}
 ) RETURNS JSONB AS $$ 
 
-    if (globalThis.$run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
+    if (globalThis.${{appVersion}}run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
     if (globalThis.{{appVersion}}{{moduleName}} === undefined) plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
 
-    const $run = globalThis.$run;
+    const $run = globalThis.{{appVersion}}$run;
     const { {{className}} } = globalThis.{{appVersion}}{{moduleName}};
 
     return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx{% for param in parameters %}, {{param.name}}{% endfor %}));

@@ -80,7 +80,7 @@ CREATE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         }
     }
 
-    globalThis.$run = $run;
+    globalThis.{{appVersion}}$run = $run;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;
 

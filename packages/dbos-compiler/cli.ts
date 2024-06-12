@@ -63,7 +63,7 @@ interface EmitOptions {
 
 async function emitProject(project: tsm.Project, methods: (readonly [tsm.MethodDeclaration, TransactionConfig | undefined])[], { outDir, appVersion }: EmitOptions) {
 
-  appVersion = appVersion ? `dbos${appVersion}_` : undefined;
+  appVersion = appVersion ? `v${appVersion}_` : undefined;
 
   await fsp.mkdir(outDir, { recursive: true });
 
