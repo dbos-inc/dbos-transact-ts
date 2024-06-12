@@ -5,7 +5,7 @@ import { TransactionFunction } from "..";
 import { WorkflowFunction } from "..";
 import { Error as DBOSError } from "..";
 import { sleepms } from "../utils";
-import { DBOSExecutorPollerInterface } from "..";
+import { DBOSExecutorEventReceiverInterface } from "..";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -16,11 +16,11 @@ type KafkaArgs = [string, number, KafkaMessage]
 export class DBOSKafka implements DBOSEventReceiver {
   readonly consumers: Consumer[] = [];
 
-  dbosExec?: DBOSExecutorPollerInterface = undefined;
+  dbosExec?: DBOSExecutorEventReceiverInterface = undefined;
 
   constructor() { }
 
-  async initialize(dbosExecI: DBOSExecutorPollerInterface) {
+  async initialize(dbosExecI: DBOSExecutorEventReceiverInterface) {
     this.dbosExec = dbosExecI;
     const regops = this.dbosExec.getRegistrationsFor(this);
     for (const registeredOperation of regops) {

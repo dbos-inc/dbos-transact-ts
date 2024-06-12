@@ -41,7 +41,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
-import { DBOSEventReceiver, DBOSExecutorPollerInterface } from ".";
+import { DBOSEventReceiver, DBOSExecutorEventReceiverInterface } from ".";
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -78,7 +78,7 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
-export interface InternalWorkflowParams extends WorkflowParams {
+interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
@@ -97,7 +97,7 @@ const TempWorkflowType = {
   send: "send",
 } as const;
 
-export class DBOSExecutor implements DBOSExecutorPollerInterface{
+export class DBOSExecutor implements DBOSExecutorEventReceiverInterface {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -143,7 +143,7 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = [];
 
-  pollers: DBOSEventReceiver[] = [];
+  eventReceivers: DBOSEventReceiver[] = [];
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
@@ -272,8 +272,8 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
       } else if (ro.commConfig) {
         this.#registerCommunicator(ro);
       }
-      for (const [poller, _cfg] of ro.eventReceiverConfigs) {
-        if (!this.pollers.includes(poller)) this.pollers.push(poller);
+      for (const [evtRcvr, _cfg] of ro.eventReceiverInfo) {
+        if (!this.eventReceivers.includes(evtRcvr)) this.eventReceivers.push(evtRcvr);
       }
     }
   }
@@ -281,9 +281,9 @@ export class DBOSExecutor implements DBOSExecutorPollerInterface{
   getRegistrationsFor(obj: DBOSEventReceiver) {
     const res: {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[] = [];
     for (const r of this.registeredOperations) {
-      if (!r.eventReceiverConfigs.has(obj)) continue;
-      const minfo = r.eventReceiverConfigs.get(obj)!;
-      const cinfo = r.defaults?.eventReceiverConfigs.get(obj) ?? {};
+      if (!r.eventReceiverInfo.has(obj)) continue;
+      const minfo = r.eventReceiverInfo.get(obj)!;
+      const cinfo = r.defaults?.eventReceiverInfo.get(obj) ?? {};
       res.push({method: r, minfo, cinfo})
     }
     return res;

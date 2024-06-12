@@ -46,11 +46,11 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
-      for (const poller of this.dbosExec.pollers) {
-        await poller.initialize(this.dbosExec);
+      for (const evtRcvr of this.dbosExec.eventReceivers) {
+        await evtRcvr.initialize(this.dbosExec);
       }
-      for (const poller of this.dbosExec.pollers) {
-        poller.logRegisteredEndpoints();
+      for (const evtRcvr of this.dbosExec.eventReceivers) {
+        evtRcvr.logRegisteredEndpoints();
       }
     } catch (error) {
       this.dbosExec?.logger.error(error);
@@ -106,8 +106,8 @@ export class DBOSRuntime {
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
-    for (const poller of this.dbosExec?.pollers || []) {
-      await poller.destroy();
+    for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
+      await evtRcvr.destroy();
     }
     if (this.servers) {
       this.servers.appServer.close();

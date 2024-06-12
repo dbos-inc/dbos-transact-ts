@@ -5,11 +5,11 @@ import { Transaction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 
 /*
- * Info provided to a poller at initialization,
+ * Info provided to an event receiver at initialization,
  *  which contains the things that it needs to do its work
  *  (retrieve decorated endpoints, and run new transactions / workflows)
  */
-export interface DBOSExecutorPollerInterface
+export interface DBOSExecutorEventReceiverInterface
 {
   readonly logger: Logger;
   readonly tracer: Tracer;
@@ -37,6 +37,6 @@ export interface DBOSExecutorPollerInterface
 export interface DBOSEventReceiver
 {
     destroy() : Promise<void>;
-    initialize(executor: DBOSExecutorPollerInterface) : Promise<void>;
+    initialize(executor: DBOSExecutorEventReceiverInterface) : Promise<void>;
     logRegisteredEndpoints() : void;
 }

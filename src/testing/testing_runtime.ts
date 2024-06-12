@@ -100,8 +100,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     await dbosExec.init(...userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
-    for (const poller of dbosExec.pollers) {
-      await poller.initialize(dbosExec);
+    for (const evtRcvr of dbosExec.eventReceivers) {
+      await evtRcvr.initialize(dbosExec);
     }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
@@ -116,8 +116,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     // Only release once.
     if (this.#isInitialized) {
       await this.#scheduler?.destroyScheduler();
-      for (const poller of this.#server?.dbosExec?.pollers || []) {
-        await poller.destroy();
+      for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
+        await evtRcvr.destroy();
       }
       await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;

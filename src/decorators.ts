@@ -131,7 +131,7 @@ export interface RegistrationDefaults
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
-  eventReceiverConfigs: Map<DBOSEventReceiver, unknown>;
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 }
 
 export interface MethodRegistrationBase {
@@ -149,7 +149,7 @@ export interface MethodRegistrationBase {
   commConfig?: CommunicatorConfig;
   isInstance: boolean;
 
-  eventReceiverConfigs: Map<DBOSEventReceiver, unknown>;
+eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   registeredFunction: Function | undefined;
@@ -181,7 +181,7 @@ implements MethodRegistrationBase
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
-  eventReceiverConfigs: Map<DBOSEventReceiver, unknown> = new Map();
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
   init: boolean = false;
 
@@ -219,7 +219,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
 
-  eventReceiverConfigs: Map<DBOSEventReceiver, unknown> = new Map();
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -456,19 +456,19 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
 )
 {
   const clsReg = getOrCreateClassRegistration(ctor);
-  if (!clsReg.eventReceiverConfigs.has(rcvr)) {
-    clsReg.eventReceiverConfigs.set(rcvr, {});
+  if (!clsReg.eventReceiverInfo.has(rcvr)) {
+    clsReg.eventReceiverInfo.set(rcvr, {});
   }
-  return clsReg.eventReceiverConfigs.get(rcvr)!;
+  return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
 export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(rcvr: DBOSEventReceiver, target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
   const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-  if (!registration.eventReceiverConfigs.has(rcvr)) {
-    registration.eventReceiverConfigs.set(rcvr, {});
+  if (!registration.eventReceiverInfo.has(rcvr)) {
+    registration.eventReceiverInfo.set(rcvr, {});
   }
-  return {descriptor, registration, receiverInfo: registration.eventReceiverConfigs.get(rcvr)!};
+  return {descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)!};
 }
 
 //////////////////////////

@@ -64,7 +64,7 @@ export {
   DBOSInitializer,
   DBOSDeploy,
 
-  // Extensions for others to register receiver/poller/handlers
+  // Extensions for others to register event receivers/pollers
   associateMethodWithEventReceiver,
   associateClassWithEventReceiver,
 } from "./decorators";
@@ -115,5 +115,5 @@ export {
 
 export {
   DBOSEventReceiver,
-  DBOSExecutorPollerInterface,
+  DBOSExecutorEventReceiverInterface,
 } from "./eventreceiver";
