@@ -221,12 +221,6 @@ export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: bool
 
 function getAppVersion(appVersion: string | boolean | undefined) {
   if (typeof appVersion === "string") { return appVersion; }
-  if (appVersion === true) {
-    const envAppVersion = process.env.DBOS__APPVERSION;
-    if (envAppVersion === undefined) {
-      throw new Error("--app-version option specified but DBOS__APPVERSION environment variable is not set");
-    }
-    return envAppVersion;
-  }
-  return undefined;
+  if (appVersion === false) { return undefined; }
+  return process.env.DBOS__APPVERSION;
 }

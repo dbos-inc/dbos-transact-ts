@@ -49,7 +49,8 @@ program
   .option("-l, --loglevel <string>", "Specify log level")
   .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .option('-v, --app-version [string]', 'emit version')
+  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
+  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: DBOSCLIStartOptions) => {
     if (options?.configfile) {
       console.warn('\x1b[33m%s\x1b[0m', "The --configfile option is deprecated. Please use --appDir instead.");
@@ -67,7 +68,8 @@ program
   .option("-l, --loglevel <string>", "Specify log level")
   .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .option('-v, --app-version [string]', 'emit version')
+  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
+  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: DBOSDebugOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, options.proxy !== undefined);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
