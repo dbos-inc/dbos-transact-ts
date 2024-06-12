@@ -38,7 +38,10 @@ For more information about configuring AWS services, see [AWS Configuration](htt
 ```typescript
 import { configureInstance } from "@dbos-inc/dbos-sdk";
 
-const defaultSES = configureInstance(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+// This will use the dbos-config.yaml section named by `aws_ses_configuration` if it is specified, or `aws_config` if not
+const defaultSES = configureInstance(SendEmailCommunicator, 'default');
+// This will use the section named `aws_config_marketing`
+const marketingSES = configureInstance(SendEmailCommunicator, 'marketing', {awscfgname: 'aws_config_marketing'});
 ```
 
 ## Sending Messages
