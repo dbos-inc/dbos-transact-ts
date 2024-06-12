@@ -373,7 +373,7 @@ export function disconnect() {
     logger.error(`Error: ${dbosConfigBackupPath} not found`);
     return 1;
   }
-  copyFileSync(dbosConfigBackupPath, dbosConfigBackupPath);
+  copyFileSync(dbosConfigBackupPath, dbosConfigFilePath);
   unlinkSync(dbosConfigBackupPath);
   return 0;
 }
