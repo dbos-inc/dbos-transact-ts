@@ -22,11 +22,12 @@
     "@types/diff": "^5.2.1",
     "colors": "^1.4.0",
     "diff": "^5.2.0",
+    "strip-literal": "^2.1.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "commander": "^12.0.0",
+    "commander": "^12.1.0",
     "liquidjs": "^10.13.1",
     "ts-morph": "^22.0.0"
   }

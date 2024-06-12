@@ -357,8 +357,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.startChildWorkflow(wf, ...args);
   }
 
+  // TODO: ConfiguredInstance support
   async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
-    const procInfo = this.#dbosExec.procedureInfoMap.get(proc.name);
+    const procInfo = this.#dbosExec.getProcedureInfo(proc);
     if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
     const readOnly = procInfo.config.readOnly ?? false;
     const funcId = this.functionIDGetIncrement();
@@ -708,6 +709,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            : op.procConfig
+              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
             : undefined;
       }
       return proxy as WFInvokeFuncs<T>;
@@ -722,8 +725,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
-            : op.procConfig
-              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
