@@ -41,6 +41,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
+import { DBOSEventReceiver, DBOSExecutorPollerInterface } from "./eventreceiver";
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -77,7 +78,7 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
-interface InternalWorkflowParams extends WorkflowParams {
+export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
@@ -96,7 +97,7 @@ const TempWorkflowType = {
   send: "send",
 } as const;
 
-export class DBOSExecutor {
+export class DBOSExecutor implements DBOSExecutorPollerInterface{
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -270,6 +271,11 @@ export class DBOSExecutor {
         this.#registerCommunicator(ro);
       }
     }
+  }
+
+  getRegistrationsFor(_obj: DBOSEventReceiver) {
+    // TODO: Better tracking of what goes where...
+    return this.registeredOperations;
   }
 
   async init(...classes: object[]): Promise<void> {

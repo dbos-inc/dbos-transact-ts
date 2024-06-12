@@ -106,3 +106,7 @@ export {
   SchedulerConfig,
   Scheduled,
 } from "./scheduler/scheduler";
+
+export {
+  DBOSEventReceiver
+} from "./eventreceiver";

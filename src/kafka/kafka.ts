@@ -1,11 +1,11 @@
 import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from "kafkajs";
-import { DBOSContext } from "..";
+import { DBOSContext, DBOSEventReceiver } from "..";
 import { ClassRegistration, MethodRegistrationBase, RegistrationDefaults, getOrCreateClassRegistration, registerAndWrapFunction } from "../decorators";
-import { DBOSExecutor } from "../dbos-executor";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
 import { DBOSError } from "../error";
 import { sleepms } from "../utils";
+import { DBOSExecutorPollerInterface } from "../eventreceiver";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -62,13 +62,17 @@ export function Kafka(kafkaConfig: KafkaConfig) {
 /* Kafka Management  */
 ///////////////////////
 
-export class DBOSKafka {
+export class DBOSKafka implements DBOSEventReceiver {
   readonly consumers: Consumer[] = [];
 
-  constructor(readonly dbosExec: DBOSExecutor) { }
+  dbosExec?: DBOSExecutorPollerInterface = undefined;
 
-  async initKafka() {
-    for (const registeredOperation of this.dbosExec.registeredOperations) {
+  constructor() { }
+
+  async initialize(dbosExecI: DBOSExecutorPollerInterface) {
+    this.dbosExec = dbosExecI;
+    const regops = this.dbosExec.getRegistrationsFor(this)
+    for (const registeredOperation of regops) {
       const ro = registeredOperation as KafkaRegistrationBase;
       if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
@@ -120,10 +124,10 @@ export class DBOSKafka {
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (ro.txnConfig) {
               // Execute the transaction
-              await this.dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
+              await this.dbosExec!.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {
               // Safely start the workflow
-              await this.dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
+              await this.dbosExec!.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args);
             }
           },
         })
@@ -132,7 +136,7 @@ export class DBOSKafka {
     }
   }
 
-  async destroyKafka() {
+  async destroy() {
     for (const consumer of this.consumers) {
       await consumer.disconnect();
     }
@@ -146,10 +150,12 @@ export class DBOSKafka {
     return `dbos-kafka-group-${safeGroupIdPart}`.slice(0, 255);
   }
 
-  logRegisteredKafkaEndpoints() {
+  logRegisteredEndpoints() {
+    if (!this.dbosExec) return;
     const logger = this.dbosExec.logger;
     logger.info("Kafka endpoints supported:");
-    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+    const regops = this.dbosExec.getRegistrationsFor(this);
+    regops.forEach((registeredOperation) => {
       const ro = registeredOperation as KafkaRegistrationBase;
       if (ro.kafkaTopics) {
         const defaults = ro.defaults as KafkaDefaults;
