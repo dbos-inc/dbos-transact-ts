@@ -7,7 +7,7 @@ const js = require("@eslint/js");
 
 const compat = new FlatCompat({
   baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
+  recommendedConfig: js.configs.recommended
 });
 
 module.exports = typescriptEslint.config({

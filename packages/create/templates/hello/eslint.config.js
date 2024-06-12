@@ -9,7 +9,7 @@ const js = require("@eslint/js");
 Since originally, we only used the DBOS recommended config... */
 const compat = new FlatCompat({
   baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
+  recommendedConfig: js.configs.recommended
 });
 
 module.exports = typescriptEslint.config({
