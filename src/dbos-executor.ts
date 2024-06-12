@@ -42,6 +42,7 @@ import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
 
@@ -203,7 +204,7 @@ export class DBOSExecutor {
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const { PrismaClient } = require(path.join(process.cwd(), "node_modules", "@prisma", "client")); // Find the prisma client in the node_modules of the current project
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       this.userDatabase = new PrismaUserDatabase(new PrismaClient(
@@ -217,7 +218,7 @@ export class DBOSExecutor {
       ));
       this.logger.debug("Loaded Prisma user database");
     } else if (userDbClient === UserDatabaseName.TYPEORM) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const DataSourceExports = require("typeorm");
       try {
         this.userDatabase = new TypeORMDatabase(

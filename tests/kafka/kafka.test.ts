@@ -10,7 +10,7 @@ import { Knex } from "knex";
 // Without it, they're automatically skipped.
 // Here's a docker-compose script you can use to set up local Kafka:
 
-`
+const _ = `
 version: "3.7"
 services:
   broker:
