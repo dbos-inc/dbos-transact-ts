@@ -376,7 +376,7 @@ export class DBOSExecutor {
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
     const procName = this.config.appVersion
-      ? `${proc.name}${this.config.appVersion}_proc`
+      ? `v${this.config.appVersion}_${proc.name}_proc`
       : `${proc.name}_proc`;
 
     const sql = `CALL "${procName}"(${values.map((_v, i) => `$${i + 1}`).join()});`;
