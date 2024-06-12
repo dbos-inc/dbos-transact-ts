@@ -132,6 +132,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
+    console.warn(`npx dbos-cloud app rollback is deprecated. Please use npx dbos-cloud db connect instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
@@ -301,7 +302,7 @@ databaseCommands
   .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
   .argument("<name>", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbname: string,  options: { password: string | undefined; }) => {
+  .action(async (dbname: string, options: { password: string | undefined; }) => {
     if (!options.password) {
       options.password = prompt("Database Password: ", { echo: "*" });
     }
