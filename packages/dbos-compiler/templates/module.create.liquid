@@ -1,4 +1,4 @@
-CREATE FUNCTION "{{moduleName}}{{appVersion}}_init"() RETURNS VOID AS $$
+CREATE FUNCTION "{{appVersion}}{{moduleName}}_init"() RETURNS VOID AS $$
 
 var exports = {};
 
@@ -6,7 +6,7 @@ var exports = {};
 {{ contents }}
 // -- end compiler output
 
-globalThis.{{moduleName}}{{appVersion}} = exports;
+globalThis.{{appVersion}}{{moduleName}} = exports;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;
 

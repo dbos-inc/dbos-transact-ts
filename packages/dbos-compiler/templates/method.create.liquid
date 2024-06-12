@@ -1,20 +1,20 @@
-CREATE FUNCTION "{{methodName}}{{appVersion}}_func"(
+CREATE FUNCTION "{{appVersion}}{{methodName}}_func"(
     _workflow_uuid TEXT{% for param in parameters %},
     _context JSONB,
     "{{param.name}}" {{param.type}}{% endfor %}
 ) RETURNS JSONB AS $$ 
 
-    if (globalThis.$run === undefined) plv8.execute('SELECT dbos.run_init();');
-    if (globalThis.{{moduleName}}{{appVersion}} === undefined) plv8.execute('SELECT "{{moduleName}}{{appVersion}}_init"();');
+    if (globalThis.$run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
+    if (globalThis.{{appVersion}}{{moduleName}} === undefined) plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
 
     const $run = globalThis.$run;
-    const { {{className}} } = globalThis.{{moduleName}}{{appVersion}};
+    const { {{className}} } = globalThis.{{appVersion}}{{moduleName}};
 
     return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx{% for param in parameters %}, {{param.name}}{% endfor %}));
 
 $$ LANGUAGE plv8;
 
-CREATE PROCEDURE "{{methodName}}{{appVersion}}_proc"(
+CREATE PROCEDURE "{{appVersion}}{{methodName}}_proc"(
     {% unless readOnly %}buffered_results JSONB,{% endunless %}
     _workflow_uuid TEXT, 
     _function_id INT, 
@@ -31,7 +31,7 @@ DECLARE
     _snapshot TEXT;
     _txn_id TEXT;
 BEGIN
-    SELECT dbos.check_execution(_workflow_uuid, _function_id, preset) INTO return_value;
+    SELECT dbos.{{appVersion}}check_execution(_workflow_uuid, _function_id, preset) INTO return_value;
     if return_value IS NOT NULL THEN
         RETURN;
     END IF;
@@ -41,17 +41,17 @@ BEGIN
     {% if readOnly %}
     SET TRANSACTION READ ONLY;
     {% else %}
-    PERFORM dbos.flush_buffered_results(_workflow_uuid, buffered_results);
+    PERFORM dbos.{{appVersion}}flush_buffered_results(_workflow_uuid, buffered_results);
     {% endif %}
 
-    SELECT "{{methodName}}{{appVersion}}_func"(_workflow_uuid, _context{% for param in parameters %}, "{{param.name}}"{% endfor %}) INTO return_value;
+    SELECT "{{appVersion}}{{methodName}}_func"(_workflow_uuid, _context{% for param in parameters %}, "{{param.name}}"{% endfor %}) INTO return_value;
     SELECT pg_current_snapshot(), pg_current_xact_id_if_assigned() INTO _snapshot, _txn_id;
     SELECT return_value::jsonb->'output', return_value::jsonb->'error' INTO _output, _error;
 
     IF _error IS NOT NULL OR jsonb_typeof(_error) <> 'null' THEN
         ROLLBACK;
         {% unless readOnly %}
-        PERFORM dbos.flush_buffered_results(_workflow_uuid, buffered_results);
+        PERFORM dbos.{{appVersion}}flush_buffered_results(_workflow_uuid, buffered_results);
         INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot)
             VALUES (_workflow_uuid, _function_id, _error, _txn_id, _snapshot);
         {% endunless %}

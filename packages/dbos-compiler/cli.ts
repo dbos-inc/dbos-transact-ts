@@ -62,7 +62,9 @@ interface EmitOptions {
 }
 
 async function emitProject(project: tsm.Project, methods: (readonly [tsm.MethodDeclaration, TransactionConfig | undefined])[], { outDir, appVersion }: EmitOptions) {
-  // if (fs.existsSync(outDir)) { await fsp.rm(outDir, { recursive: true }); }
+
+  appVersion = appVersion ? `dbos${appVersion}_` : undefined;
+
   await fsp.mkdir(outDir, { recursive: true });
 
   const createPath = path.join(outDir, "create.sql");
@@ -72,7 +74,7 @@ async function emitProject(project: tsm.Project, methods: (readonly [tsm.MethodD
   await fsp.rm(createPath, { force: true });
   await fsp.rm(dropPath, { force: true });
 
-  await emitDbos(paths);
+  await emitDbos(paths, appVersion);
   for (const sourceFile of project.getSourceFiles()) {
     await emitModule(sourceFile, paths, appVersion);
   }

@@ -22,9 +22,10 @@ function mapType(type: tsm.Type) {
   throw new Error(`Unsupported type: ${type.getText()}`);
 }
 
-export async function emitDbos({ createPath, dropPath }: { createPath: string, dropPath: string }) {
-  await fsp.appendFile(createPath, await render("dbos.create.liquid"));
-  await fsp.appendFile(dropPath, await render("dbos.drop.liquid"));
+export async function emitDbos({ createPath, dropPath }: { createPath: string, dropPath: string }, appVersion: string | undefined) {
+  const context = { appVersion };
+  await fsp.appendFile(createPath, await render("dbos.create.liquid", context));
+  await fsp.appendFile(dropPath, await render("dbos.drop.liquid", context));
 }
 
 export async function emitMethod(method: tsm.MethodDeclaration, config: TransactionConfig, { createPath, dropPath }: { createPath: string, dropPath: string }, appVersion: string | undefined) {
