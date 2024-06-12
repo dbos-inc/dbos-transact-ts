@@ -725,7 +725,7 @@ export class DBOSExecutor {
     // Create a workflow and call procedure.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.procedure(proc, params.configuredInstance ?? null, ...args);
+      return await ctxtImpl.procedure(proc, ...args);
     };
     return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.procedure, tempWfName: proc.name }, ...args)).getResult();
   }
