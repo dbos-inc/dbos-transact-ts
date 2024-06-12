@@ -2,7 +2,7 @@ import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, dbosConfigBackupPath, loadConfigFile, writeConfigFile } from "../configutils.js";
-import { copyFileSync, existsSync } from "fs";
+import { copyFileSync, existsSync, unlinkSync } from "fs";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -351,7 +351,7 @@ export async function connect(host: string, dbName: string, password: string) {
     config.database.username = userDBInfo.DatabaseUsername;
     config.database.password = password;
     writeConfigFile(config, dbosConfigFilePath);
-    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}!`)
+    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`)
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;
@@ -374,5 +374,6 @@ export function disconnect() {
     return 1;
   }
   copyFileSync(dbosConfigBackupPath, dbosConfigBackupPath);
+  unlinkSync(dbosConfigBackupPath);
   return 0;
 }
