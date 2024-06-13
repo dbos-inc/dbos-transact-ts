@@ -279,11 +279,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       for (const slice of slices) {
         const promises = new Array<Promise<unknown>>();
         slice.forEach( (qv) => {
-          promises.push( this.pool.query(qv.sql, qv.params).then(() => {
+          const promise = this.pool.query(qv.sql, qv.params).then(() => {
             qv.ids.forEach((value) => {
               localBuffer.delete(value);
             });
-          }));
+          })
+          promises.push(promise);
         });
         await Promise.all(promises);
       }
