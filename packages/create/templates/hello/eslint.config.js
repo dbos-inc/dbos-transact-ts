@@ -24,10 +24,5 @@ module.exports = typescriptEslint.config({
 
   rules: {},
 
-  // TODO: somehow, try avoid repeating part of this in `tsconfig.json`
-  ignores: [
-    "dist",
-    "**/*.test.ts",
-    "jest.config.js"
-  ]
+  ignores: ["**/*.test.ts"]
 });

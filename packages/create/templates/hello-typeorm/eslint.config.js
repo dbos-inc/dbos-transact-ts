@@ -22,9 +22,5 @@ module.exports = typescriptEslint.config({
 
   rules: {},
 
-  ignores: [
-    "dist",
-    "**/*.test.ts",
-    "jest.config.js"
-  ]
+  ignores: ["**/*.test.ts"]
 });

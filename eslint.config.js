@@ -14,9 +14,7 @@ module.exports = typescriptEslint.config(
   {
     ignores: [
       "**/dist/",
-      "knexfile.ts", // TODO: should this still be used if there are no files with this name in the project?
       "**/migrations/*",
-      "examples/", // TODO: same here?
       "packages/create/templates/"
     ]
   },

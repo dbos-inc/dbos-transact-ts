@@ -22,11 +22,5 @@ module.exports = typescriptEslint.config({
 
   rules: {},
 
-  ignores: [
-    "dist",
-    "**/*.test.ts",
-    "jest.config.js",
-    "generate_env.js",
-    "start_postgres_docker.js"
-  ]
+  ignores: ["**/*.test.ts"]
 });
