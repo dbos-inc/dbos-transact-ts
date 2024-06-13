@@ -12,7 +12,7 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from "knex";
 import path from "path";
 import { createPlaceholders, prepareForSQL } from "./utils_sql";
-import { chunk } from "lodash";
+
 interface QueriesAndValues {
   sql: string;
   params: Array<unknown>;
@@ -278,7 +278,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       for (const slice of slices) {
         const promises = new Array<Promise<unknown>>();
-        slice.forEach( async (qv) => {
+        slice.forEach( (qv) => {
           promises.push( this.pool.query(qv.sql, qv.params).then(() => {
             qv.ids.forEach((value) => {
               localBuffer.delete(value);
