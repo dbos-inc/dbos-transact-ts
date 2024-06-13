@@ -21,11 +21,11 @@
     "prisma": "^5.15.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "file:../../../..",
-    "@prisma/client": "^5.15.0",
-    "typescript-eslint": "^8.0.0-alpha.30"
+    "@prisma/client": "^5.15.0"
   }
 }

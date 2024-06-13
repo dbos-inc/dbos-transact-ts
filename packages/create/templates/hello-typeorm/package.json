@@ -20,11 +20,11 @@
     "nodemon": "^3.1.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "file:../../../..",
-    "typeorm": "^0.3.20",
-    "typescript-eslint": "^8.0.0-alpha.30"
+    "typeorm": "^0.3.20"
   }
 }
