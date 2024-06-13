@@ -12,7 +12,8 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from "knex";
 import path from "path";
 import { createPlaceholders, prepareForSQL } from "./utils_sql";
-interface A {
+import { chunk } from "lodash";
+interface QueriesAndValues {
   sql: string;
   params: Array<unknown>;
   ids: Array<string>
@@ -199,12 +200,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async flushWorkflowSystemBuffers(): Promise<void> {
     // Always flush the status buffer first because of foreign key constraints
-    await Promise.all([
-      this.flushWorkflowStatusBuffer(),
-      this.flushWorkflowInputsBuffer()
-    ]);
+    await this.flushWorkflowStatusBuffer();
+    await this.flushWorkflowInputsBuffer();
   }
-  async flushWorkflowStatusBuffer(): Promise<void> {
+
+  private async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
 
@@ -225,7 +225,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       "updated_at"
     ];
 
-    const queriesAndValues : Array<A> = [];
+    const queriesAndValues : Array<QueriesAndValues> = [];
 
     try {
       let finishedCnt = 0;
@@ -270,15 +270,23 @@ export class PostgresSystemDatabase implements SystemDatabase {
           ids: batchUUIDs
         })
       }
-      const promises = new Array<Promise<unknown>>();
-      queriesAndValues.forEach( async (qv) => {
-        promises.push( this.pool.query(qv.sql, qv.params).then(() => {
-          qv.ids.forEach((value) => {
-            localBuffer.delete(value);
-          });
-        }));
-      });
-      await Promise.all(promises)
+      const MAX_CONCURRENT_CONNECTIONS = 5;
+      const slices: Array<Array<QueriesAndValues>> = [];
+      for (let i = 0; i < queriesAndValues.length; i += MAX_CONCURRENT_CONNECTIONS) {
+        const slice = queriesAndValues.slice(i, i + MAX_CONCURRENT_CONNECTIONS);
+        slices.push(slice);
+      }
+      for (const slice of slices) {
+        const promises = new Array<Promise<unknown>>();
+        slice.forEach( async (qv) => {
+          promises.push( this.pool.query(qv.sql, qv.params).then(() => {
+            qv.ids.forEach((value) => {
+              localBuffer.delete(value);
+            });
+          }));
+        });
+        await Promise.all(promises);
+      }
     } catch (error) {
       (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
       this.logger.error(error);
