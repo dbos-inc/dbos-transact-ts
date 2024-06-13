@@ -12,6 +12,11 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex from "knex";
 import path from "path";
 import { createPlaceholders, prepareForSQL } from "./utils_sql";
+interface A {
+  sql: string;
+  params: Array<unknown>;
+  ids: Array<string>
+}
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -194,31 +199,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async flushWorkflowSystemBuffers(): Promise<void> {
     // Always flush the status buffer first because of foreign key constraints
-    await this.flushWorkflowStatusBuffer();
-    await this.flushWorkflowInputsBuffer();
+    await Promise.all([
+      this.flushWorkflowStatusBuffer(),
+      this.flushWorkflowInputsBuffer()
+    ]);
   }
-
   async flushWorkflowStatusBuffer(): Promise<void> {
     const localBuffer = new Map(this.workflowStatusBuffer);
     this.workflowStatusBuffer.clear();
+
     const totalSize = localBuffer.size;
+    const columns = [
+      "workflow_uuid",
+      "status",
+      "name",
+      "authenticated_user",
+      "assumed_role",
+      "authenticated_roles",
+      "request",
+      "output",
+      "executor_id",
+      "application_version",
+      "application_id",
+      "created_at",
+      "updated_at"
+    ];
+
+    const queriesAndValues : Array<A> = [];
+
     try {
       let finishedCnt = 0;
-      const columns = [
-        "workflow_uuid",
-        "status",
-        "name",
-        "authenticated_user",
-        "assumed_role",
-        "authenticated_roles",
-        "request",
-        "output",
-        "executor_id",
-        "application_version",
-        "application_id",
-        "created_at",
-        "updated_at"
-      ]
+
       while (finishedCnt < totalSize) {
         let sqlStmt = `
           INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status
@@ -253,14 +264,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
           }
         }
         sqlStmt += " ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;";
-
-        await this.pool.query(sqlStmt, values);
-
-        // Clean up after each batch succeeds
-        batchUUIDs.forEach((value) => {
-          localBuffer.delete(value);
-        });
+        queriesAndValues.push({
+          sql: sqlStmt,
+          params: values,
+          ids: batchUUIDs
+        })
       }
+      const promises = new Array<Promise<unknown>>();
+      queriesAndValues.forEach( async (qv) => {
+        promises.push( this.pool.query(qv.sql, qv.params).then(() => {
+          qv.ids.forEach((value) => {
+            localBuffer.delete(value);
+          });
+        }));
+      });
+      await Promise.all(promises)
     } catch (error) {
       (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
       this.logger.error(error);
