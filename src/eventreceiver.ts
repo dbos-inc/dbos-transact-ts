@@ -1,6 +1,6 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { Workflow, WorkflowHandle, WorkflowParams } from './workflow';
+import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
 import { Transaction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 
@@ -23,7 +23,7 @@ export interface DBOSExecutorEventReceiverInterface
   getRegistrationsFor(eri: DBOSEventReceiver) : {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[];
 
   transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
-  workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
+  workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
 }
 
 /*
