@@ -47,7 +47,7 @@ The `S3Ops` class provides several [communicator](https://docs.dbos.dev/tutorial
 #### Writing S3 Objects
 A string can be written to an S3 key with the following:
 ```typescript
-    const putres = await ctx.invoke(defaultS3).putS3Comm('/my/test/key', "Test string from DBOS");
+    const putres = await ctx.invoke(defaultS3).put('/my/test/key', "Test string from DBOS");
 ```
 
 ***Note:*** **Function arguments to workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for writing kilobytes of data to S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is large.**
@@ -55,7 +55,7 @@ A string can be written to an S3 key with the following:
 ### Reading S3 Objects
 A string can be read from an S3 key with the following:
 ```typescript
-    const getres = await ctx.invoke(defaultS3).getS3Comm('/my/test/key');
+    const getres = await ctx.invoke(defaultS3).get('/my/test/key');
 ```
 
 ***Note:*** **Function return values from workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for reading kilobytes of data from S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client read from S3 with a signed URL](#presigned-get-urls) if the data is large.**
@@ -63,7 +63,7 @@ A string can be read from an S3 key with the following:
 ### Deleting Objects
 An S3 key can be removed/deleted with the following:
 ```typescript
-    const delres = await ctx.invoke(defaultS3).deleteS3Comm('/my/test/key');
+    const delres = await ctx.invoke(defaultS3).delete('/my/test/key');
 ```
 
 ### Client Access To S3 Objects
@@ -74,7 +74,7 @@ In these cases, the client can place a request to DBOS that produces a presigned
 #### Presigned GET URLs
 A presigned GET URL can be created for an S3 key with the following:
 ```typescript
-const geturl = await ctx.invoke(defaultS3).getS3KeyComm('/my/test/key', 30 /*expiration, in seconds*/);
+const geturl = await ctx.invoke(defaultS3).presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/);
 ```
 
 The resulting URL string can be used in the same way as any other URL for placing HTTP GET requests.
@@ -82,7 +82,7 @@ The resulting URL string can be used in the same way as any other URL for placin
 #### Presigned POSTs
 A presigned POST URL can be created for an S3 key with the following:
 ```typescript
-const presignedPost = await ctx.invoke(defaultS3).postS3KeyComm(
+const presignedPost = await ctx.invoke(defaultS3).createPresignedPost(
     '/my/test/key', 30/*expiration*/, {contentType: 'text/plain'}/*size/content restrictions*/);
 ```
 
@@ -205,7 +205,7 @@ await wfHandle.getResult();
 ### Workflow to Allow Client File Download
 The workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds.
 
-This workflow currently performs no additional operations outside of a call to `getS3KeyComm(fileDetails.key, expiration)`.
+This workflow currently performs no additional operations outside of a call to `presignedGetURL(fileDetails.key, expiration)`.
 
 ## Notes
 Do not reuse S3 keys.  Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database.  Reasons why S3 keys should not be reused:

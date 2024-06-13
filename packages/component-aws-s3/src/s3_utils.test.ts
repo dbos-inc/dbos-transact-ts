@@ -180,14 +180,14 @@ describe("ses-tests", () => {
     }
 
     const fn = `filepath/FN_${new Date().toISOString()}`;
-    const putres = await testRuntime.invoke(s3Cfg!).putS3Comm(fn, "Test string from DBOS");
+    const putres = await testRuntime.invoke(s3Cfg!).put(fn, "Test string from DBOS");
     expect(putres).toBeDefined();
 
-    const getres = await testRuntime.invoke(s3Cfg!).getS3Comm(fn);
+    const getres = await testRuntime.invoke(s3Cfg!).get(fn);
     expect(getres).toBeDefined();
     expect(getres).toBe('Test string from DBOS');
 
-    const delres = await testRuntime.invoke(s3Cfg!).deleteS3Comm(fn);
+    const delres = await testRuntime.invoke(s3Cfg!).delete(fn);
     expect(delres).toBeDefined();
   });
 
@@ -199,7 +199,7 @@ describe("ses-tests", () => {
   
     const fn = `presigned_filepath/FN_${new Date().toISOString()}`;
 
-    const postres = await testRuntime.invoke(s3Cfg!).postS3KeyComm(fn, 30, {contentType: 'text/plain'});
+    const postres = await testRuntime.invoke(s3Cfg!).createPresignedPost(fn, 30, {contentType: 'text/plain'});
     expect(postres).toBeDefined();
     try {
         const res = await uploadToS3(postres, './src/s3_utils.test.ts');
@@ -212,13 +212,13 @@ describe("ses-tests", () => {
     }
 
     // Make a fetch request to test it...
-    const geturl = await testRuntime.invoke(s3Cfg!).getS3KeyComm(fn, 30);
+    const geturl = await testRuntime.invoke(s3Cfg!).presignedGetURL(fn, 30);
     await downloadFromS3(geturl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 
     // Delete it
-    const delres = await testRuntime.invoke(s3Cfg!).deleteS3Comm(fn);
+    const delres = await testRuntime.invoke(s3Cfg!).delete(fn);
     expect(delres).toBeDefined();
   });
 

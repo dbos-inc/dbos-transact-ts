@@ -76,7 +76,7 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async deleteS3Comm(_ctx: CommunicatorContext, key: string)
+    async delete(_ctx: CommunicatorContext, key: string)
     {
         return await S3Ops.deleteS3Cmd(this.s3client!, this.config.bucket, key);
     }
@@ -93,7 +93,7 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async putS3Comm(_ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
+    async put(_ctx: CommunicatorContext, key: string, content: string, @ArgOptional contentType: string = 'text/plain')
     {
         return await S3Ops.putS3Cmd(this.s3client!, this.config.bucket, key, content, contentType);
     }
@@ -108,7 +108,7 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async getS3Comm(_ctx: CommunicatorContext, key: string)
+    async get(_ctx: CommunicatorContext, key: string)
     {
         return (await S3Ops.getS3Cmd(this.s3client!, this.config.bucket, key)).Body?.transformToString();
     }
@@ -126,7 +126,7 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async getS3KeyComm(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
+    async presignedGetURL(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
     {
         return await S3Ops.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs);
     }
@@ -159,7 +159,7 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async postS3KeyComm(ctx: CommunicatorContext, key: string, expirationSecs: number = 1200,
+    async createPresignedPost(ctx: CommunicatorContext, key: string, expirationSecs: number = 1200,
         @ArgOptional contentOptions?: {
             contentType?: string,
             contentLengthMin?: number,
@@ -192,10 +192,10 @@ export class S3Ops extends ConfiguredInstance {
     {
         // Running this as a communicator could possibly be skipped... but only for efficiency
         try {
-            await ctx.invoke(this).putS3Comm(fileDetails.key, content, contentType);
+            await ctx.invoke(this).put(fileDetails.key, content, contentType);
         }
         catch (e) {
-            await ctx.invoke(this).deleteS3Comm(fileDetails.key);
+            await ctx.invoke(this).delete(fileDetails.key);
             throw e;
         }
     
@@ -207,7 +207,7 @@ export class S3Ops extends ConfiguredInstance {
     @Workflow()
     async readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
-        const txt = await ctx.invoke(this).getS3Comm(fileDetails.key);
+        const txt = await ctx.invoke(this).get(fileDetails.key);
         return txt;
     }
 
@@ -218,7 +218,7 @@ export class S3Ops extends ConfiguredInstance {
     async deleteFile(ctx: WorkflowContext, fileDetails: FileRecord)
     {
         await this.config.s3Callbacks?.fileDeleted(ctx, fileDetails);
-        return await ctx.invoke(this).deleteS3Comm(fileDetails.key);
+        return await ctx.invoke(this).delete(fileDetails.key);
     }
 
     ////////////
@@ -232,7 +232,7 @@ export class S3Ops extends ConfiguredInstance {
     @Workflow()
     async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600) : Promise<string>
     {
-        return await ctx.invoke(this).getS3KeyComm(fileDetails.key, expirationSec);
+        return await ctx.invoke(this).presignedGetURL(fileDetails.key, expirationSec);
     }
 
     //  Presigned U/L for end user
@@ -256,7 +256,7 @@ export class S3Ops extends ConfiguredInstance {
     {
         await this.config.s3Callbacks?.newPendingFile(ctx, fileDetails);
 
-        const upkey = await ctx.invoke(this).postS3KeyComm(fileDetails.key, expirationSec, contentOptions);
+        const upkey = await ctx.invoke(this).createPresignedPost(fileDetails.key, expirationSec, contentOptions);
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {
