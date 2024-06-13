@@ -50,7 +50,7 @@ A string can be written to an S3 key with the following:
     const putres = await ctx.invoke(defaultS3).put('/my/test/key', "Test string from DBOS");
 ```
 
-***Note:*** **Function arguments to workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for writing kilobytes of data to S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is large.**
+Note that the arguments to `put` will be logged to the database.  Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is generated outside of DBOS or if the data is larger than a few megabytes.
 
 ### Reading S3 Objects
 A string can be read from an S3 key with the following:
@@ -58,7 +58,7 @@ A string can be read from an S3 key with the following:
     const getres = await ctx.invoke(defaultS3).get('/my/test/key');
 ```
 
-***Note:*** **Function return values from workflows, transactions, and communicators are logged to the database.  This means that communicator functions are suitable for reading kilobytes of data from S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client read from S3 with a signed URL](#presigned-get-urls) if the data is large.**
+Note that the return value from `get` will be logged to the database.  Consider [reading directly from S3 with a signed URL](#presigned-get-urls) if the data is large.
 
 ### Deleting Objects
 An S3 key can be removed/deleted with the following:
@@ -148,14 +148,14 @@ This workflow performs the following actions:
 * If there is difficulty with S3, ensures that no entry is left there and throws an error
 * Invokes the callback for a new active file record
 
-***Note:*** **Function arguments to workflows, transactions, and communicators are logged to the database.  This means that workflow functions are suitable for writing kilobytes of data to S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client upload to S3 with a presigned post](#workflow-to-allow-client-file-upload) if the data is large.**
+Note that the arguments to `saveStringToFile` will be logged to the database.  Consider [having the client upload to S3 with a presigned post](#workflow-to-allow-client-file-upload) if the data is larger than a few megabytes.
 
 ### Workflow to Retrieve a String from S3
 The workflow function `readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)` will retrieve the contents of an S3 object as a `string`.
 
-This workflow currently performs no additional operations outside of a call to `readStringFromFileComm(fileDetails.key)`.
+This workflow currently performs no additional operations outside of a call to `get(fileDetails.key)`.
 
-***Note:*** **Function return values from workflows, transactions, and communicators are logged to the database.  This means that workflow functions are suitable for reading kilobytes of data from S3, that megabytes will possibly work, but gigabytes will cause great pain.  Consider [having the client read from S3 with a signed URL](#workflow-to-allow-client-file-download) if the data is large.**
+Note that the return value from `readStringFromFile` will be logged to the database.  Consider [having the client read from S3 with a signed URL](#workflow-to-allow-client-file-download) if the data is larger than a few megabytes.
 
 ### Workflow to Delete a File
 The `deleteFile` workflow function removes a file from both S3 and the database.
