@@ -4,7 +4,7 @@ import { registerApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./a
 import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB, connect, disconnect } from "./databases/databases.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB, connect } from "./databases/databases.js";
 import { launchDashboard, getDashboardURL, deleteDashboard } from "./dashboards/dashboards.js";
 import { DBOSCloudHost, credentialsExist, dbosConfigFilePath, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
@@ -132,7 +132,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
-    console.warn(`npx dbos-cloud app rollback is deprecated. Please use npx dbos-cloud db connect instead and run rollback commands locally`);
+    console.warn(`npx dbos-cloud app rollback is deprecated. Please use 'npx dbos-cloud db connect' instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
@@ -307,14 +307,6 @@ databaseCommands
       options.password = prompt("Database Password: ", { echo: "*" });
     }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password);
-    process.exit(exitCode);
-  });
-
-databaseCommands
-  .command("disconnect")
-  .description(`Reset database connection parameters in ${dbosConfigFilePath}`)
-  .action(() => {
-    const exitCode = disconnect();
     process.exit(exitCode);
   });
 

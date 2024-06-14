@@ -1,8 +1,6 @@
 import { readFileSync, writeFileSync } from "fs";
 import YAML from "yaml";
 
-export const dbosConfigBackupPath = "dbos-config.yaml.bak";
-
 // A stripped-down interface containing only the fields the cloud console needs to manipulate.
 export interface ConfigFile {
   database: {

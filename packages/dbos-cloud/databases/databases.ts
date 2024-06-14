@@ -1,8 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
 import { Logger } from "winston";
-import { ConfigFile, dbosConfigBackupPath, loadConfigFile, writeConfigFile } from "../configutils.js";
-import { copyFileSync, existsSync, unlinkSync } from "fs";
+import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
+import { existsSync } from "fs";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -332,9 +332,6 @@ export async function connect(host: string, dbName: string, password: string) {
       logger.error(`Error: ${dbosConfigFilePath} not found`);
       return 1;
     }
-    logger.info(`Backing up ${dbosConfigFilePath} to ${dbosConfigBackupPath}`)
-
-    copyFileSync(dbosConfigFilePath, dbosConfigBackupPath);
 
     logger.info("Retrieving cloud database info...");
     const userDBInfo = await getUserDBInfo(host, dbName);
@@ -363,17 +360,4 @@ export async function connect(host: string, dbName: string, password: string) {
     }
     return 1;
   }
-}
-
-export function disconnect() {
-  const logger = getLogger();
-
-  logger.info(`Restoring ${dbosConfigFilePath} from ${dbosConfigBackupPath}`)
-  if(!existsSync(dbosConfigBackupPath)) {
-    logger.error(`Error: ${dbosConfigBackupPath} not found`);
-    return 1;
-  }
-  copyFileSync(dbosConfigBackupPath, dbosConfigFilePath);
-  unlinkSync(dbosConfigBackupPath);
-  return 0;
 }
