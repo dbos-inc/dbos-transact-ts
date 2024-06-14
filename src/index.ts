@@ -106,3 +106,17 @@ export {
   SchedulerConfig,
   Scheduled,
 } from "./scheduler/scheduler";
+
+export {
+  ParseOptions,
+  parseConfigFile,
+} from "./dbos-runtime/config";
+
+export {
+  DBOSRuntimeConfig,
+} from "./dbos-runtime/runtime";
+
+export {
+  DBOSConfig,
+} from "./dbos-executor"
+
