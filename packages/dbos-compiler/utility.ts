@@ -135,10 +135,10 @@ export interface TransactionConfig {
   readOnly: boolean;
 }
 
-export function getStoredProcConfig(node: tsm.MethodDeclaration): TransactionConfig | undefined {
+export function getStoredProcConfig(node: tsm.MethodDeclaration): TransactionConfig {
   const decorators = node.getDecorators().map(getDecoratorInfo);
   const procDecorator = decorators.find(d => getDbosDecoratorKind(d) === "storedProcedure");
-  if (!procDecorator) { return undefined; }
+  if (!procDecorator) { throw new Error("Missing StoredProcedure decorator");}
 
   const arg0 = procDecorator.args?.[0];
   const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<TransactionConfig> : undefined;
