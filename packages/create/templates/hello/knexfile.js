@@ -1,5 +1,4 @@
-const { parseConfigFile } = require('@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config');
-const { DBOSConfig } = require('@dbos-inc/dbos-sdk/dist/src/dbos-executor');
+const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
 
 const [dbosConfig, ] = parseConfigFile();
 

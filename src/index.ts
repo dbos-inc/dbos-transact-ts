@@ -117,3 +117,17 @@ export {
   DBOSEventReceiver,
   DBOSExecutorEventReceiverInterface,
 } from "./eventreceiver";
+
+export {
+  ParseOptions,
+  parseConfigFile,
+} from "./dbos-runtime/config";
+
+export {
+  DBOSRuntimeConfig,
+} from "./dbos-runtime/runtime";
+
+export {
+  DBOSConfig,
+} from "./dbos-executor"
+

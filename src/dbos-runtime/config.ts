@@ -5,7 +5,6 @@ import { PoolConfig } from "pg";
 import YAML from "yaml";
 import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
-import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
@@ -127,11 +126,18 @@ function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
   }).join(', ');
 }
 
+export interface ParseOptions {
+  port?: number;
+  loglevel?: string;
+  configfile?: string;
+  appDir?: string;
+}
+
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: DBOSCLIStartOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
     process.chdir(cliOptions.appDir)
   }

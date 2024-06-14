@@ -1,4 +1,4 @@
-import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config';
+import { parseConfigFile } from '@dbos-inc/dbos-sdk';
 import { TlsOptions } from 'tls';
 import { DataSource } from "typeorm";
 
