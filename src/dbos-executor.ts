@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError } from "./error";
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -42,6 +42,8 @@ import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { DBOSEventReceiver, DBOSExecutorEventReceiverInterface } from ".";
+
+import { get } from "lodash";
 
 export interface DBOSNull { }
 export const dbosNull: DBOSNull = {};
@@ -881,5 +883,14 @@ export class DBOSExecutor implements DBOSExecutorEventReceiverInterface {
         }
       }
     });
+  }
+
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
+    const value = get(this.config.application, key, defaultValue);
+    // If the key is found and the default value is provided, check whether the value is of the same type.
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
+    }
+    return value;
   }
 }

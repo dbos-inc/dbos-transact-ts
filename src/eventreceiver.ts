@@ -11,8 +11,13 @@ import { MethodRegistrationBase } from './decorators';
  */
 export interface DBOSExecutorEventReceiverInterface
 {
+  /* Logging service */
   readonly logger: Logger;
+  /* Tracing service */
   readonly tracer: Tracer;
+
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
 
   /*
    * Get the registrations for a receiver; this comes with:
