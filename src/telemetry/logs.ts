@@ -1,5 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
-import TransportStream = require("winston-transport");
+import TransportStream = require("winston-transport"); // eslint-disable-line @typescript-eslint/no-require-imports
 import { DBOSContextImpl } from "../context";
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
 import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";

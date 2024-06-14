@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import request from "supertest";
 
 import { PrismaClient, testkv } from "@prisma/client";

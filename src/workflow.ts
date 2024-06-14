@@ -46,6 +46,7 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface WorkflowConfig {
 }
 
@@ -639,7 +640,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       await this.#dbosExec.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.#dbosExec.tracer.endSpan(ctxt.span);
-      throw err;
+      throw err as Error;
     } else {
       // Record the execution and return.
       await this.#dbosExec.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
