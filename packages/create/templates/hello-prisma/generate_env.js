@@ -1,4 +1,4 @@
-const { parseConfigFile } = require('@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config');
+const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
 const fs = require('node:fs');
 const path = require('node:path');
 

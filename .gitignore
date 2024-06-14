@@ -1,6 +1,7 @@
 .dbos/
 .vscode/
 !packages/create/templates/**/.vscode
+packages/create/templates/**/package-lock.json
 
 # Logs
 logs
