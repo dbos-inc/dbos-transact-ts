@@ -131,6 +131,7 @@ export interface ParseOptions {
   loglevel?: string;
   configfile?: string;
   appDir?: string;
+  appVersion?: string | boolean;
 }
 
 /*
