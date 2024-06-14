@@ -5,7 +5,6 @@ import { PoolConfig } from "pg";
 import YAML from "yaml";
 import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 import { UserDatabaseName } from "../user_database";
-import { DBOSCLIStartOptions } from "./cli";
 import { TelemetryConfig } from "../telemetry";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
