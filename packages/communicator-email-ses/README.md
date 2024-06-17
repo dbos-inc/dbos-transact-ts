@@ -31,10 +31,17 @@ application:
 
 If a different configuration file section should be used for SES, the `aws_ses_configuration` can be changed to indicate a configuration section for use with SES.  If multiple configurations are to be used, the application code will have to name and configure them.
 
+For more information about configuring AWS services, see [AWS Configuration](https://docs.dbos.dev/api-reference/communicatorlib#aws-configuration).
+
 ## Selecting A Configuration
-`SendEmailCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`SendEmailCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created.  One instance per configuration should be created with `configureInstance` when the application code starts.  For example:
 ```typescript
-const defaultSES = configureInstance(SendEmailCommunicator, 'default', {awscfgname: 'aws_config'});
+import { configureInstance } from "@dbos-inc/dbos-sdk";
+
+// This will use the dbos-config.yaml section named by `aws_ses_configuration` if it is specified, or `aws_config` if not
+const defaultSES = configureInstance(SendEmailCommunicator, 'default');
+// This will use the section named `aws_config_marketing`
+const marketingSES = configureInstance(SendEmailCommunicator, 'marketing', {awscfgname: 'aws_config_marketing'});
 ```
 
 ## Sending Messages
