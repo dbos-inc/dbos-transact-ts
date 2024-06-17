@@ -382,7 +382,7 @@ describe("httpserver-datavalidation-tests", () => {
   */
 
 
-  class TestEndpointDataVal {
+  export class TestEndpointDataVal {
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
       return Promise.resolve({ message: "hello!" });
@@ -493,7 +493,7 @@ describe("httpserver-datavalidation-tests", () => {
   }
 
   @DefaultArgRequired
-  class DefaultArgToRequired {
+  export class DefaultArgToRequired {
     @PostApi("/rrequired")
     static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
@@ -511,7 +511,7 @@ describe("httpserver-datavalidation-tests", () => {
   }
 
   @DefaultArgOptional
-  class DefaultArgToOptional {
+  export class DefaultArgToOptional {
     @PostApi("/orequired")
     static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
@@ -528,7 +528,7 @@ describe("httpserver-datavalidation-tests", () => {
     }
   }
 
-  class DefaultArgToDefault {
+  export class DefaultArgToDefault {
     @PostApi("/drequired")
     static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });

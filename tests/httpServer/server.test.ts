@@ -291,7 +291,7 @@ describe("httpserver-tests", () => {
     encoding: "utf-8",
     parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
   }))
-  class TestEndpoints {
+  export class TestEndpoints {
     @GetApi("/hello")
     static async hello(_ctx: HandlerContext) {
       return Promise.resolve({ message: "hello!" });

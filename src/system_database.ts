@@ -648,7 +648,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
     const pollingIntervalMs: number = 1000;
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       const { rows } = await this.pool.query<workflow_status>(`SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
       if (rows.length > 0) {
