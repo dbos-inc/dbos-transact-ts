@@ -6,17 +6,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { deAsync, getProcMethods, removeDecorators, treeShake } from "./treeShake.js";
-import { generateCreate, generateDrop } from "./generator.js";
-import { TransactionConfig, getStoredProcConfig } from "./utility.js";
+import { type CompileResult, generateCreate, generateDrop } from "./generator.js";
+import { getStoredProcConfig } from "./utility.js";
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js'
-import { Client } from 'pg';
+import * as pg from 'pg'
 
-type CompileResult = {
-  project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[];
-};
-
-async function compile(tsConfigFilePath: string): Promise<tsm.Diagnostic[] | CompileResult> {
+function compile(tsConfigFilePath: string): CompileResult | undefined {
   const project = new tsm.Project({
     tsConfigFilePath,
     compilerOptions: {
@@ -35,7 +30,8 @@ async function compile(tsConfigFilePath: string): Promise<tsm.Diagnostic[] | Com
 
   const preEmitDiags = project.getPreEmitDiagnostics();
   if (preEmitDiags.length > 0) {
-    return preEmitDiags;
+    printDiagnostics(preEmitDiags);
+    return undefined;
   }
 
   treeShake(project);
@@ -63,41 +59,40 @@ function printDiagnostics(diags: readonly tsm.Diagnostic[]) {
   console.log(msg);
 }
 
-function getAppVersion(appVersion: string | boolean | undefined) {
-  if (typeof appVersion === "string") { return appVersion; }
-  if (appVersion === false) { return undefined; }
-  return process.env.DBOS__APPVERSION;
-}
 
 async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
-  appVersion = getAppVersion(appVersion);
-  
   await fsp.mkdir(outDir, { recursive: true });
 
   const createFile = await fsp.open(path.join(outDir, "create.sql"), "w");
   try {
-    const append = async (sql: string) => { await createFile.write(sql); }; 
-    await generateCreate(append, result.project, result.methods, appVersion);
+    const append = async (sql: string) => { await createFile.write(sql); };
+    await generateCreate(append, result, appVersion);
   } finally {
-    createFile.close();
+    await createFile.close();
   }
 
   const dropFile = await fsp.open(path.join(outDir, "drop.sql"), "w");
   try {
-    const append = async (sql: string) => { await dropFile.write(sql); }; 
-    await generateDrop(append, result.project, result.methods, appVersion);
+    const append = async (sql: string) => { await dropFile.write(sql); };
+    await generateDrop(append, result, appVersion);
   } finally {
-    createFile.close();
+    await createFile.close();
   }
 }
 
-async function deployToDatabase(client: Client, result: CompileResult, appVersion?: string | boolean) {
-  appVersion = getAppVersion(appVersion);
-  const append = async (sql: string) => { await client.query(sql); }; 
-  await generateCreate(append, result.project, result.methods, appVersion);
+async function deployToDatabase(config: pg.ClientConfig, result: CompileResult, appVersion?: string | boolean) {
+  const client = new pg.default.Client(config);
+  try {
+    await client.connect();
+    console.log(`Deploying to database: ${client.host}:${client.port ?? 5432}/${client.database}`);
+    const append = async (sql: string) => { await client.query(sql); };
+    await generateCreate(append, result, appVersion);
+  } finally {
+    await client.end();
+  }
 }
 
-function getVersion(): string {
+function getPackageVersion(): string {
   const __dirname = import.meta.dirname;
   const packageJsonPath = path.join(__dirname, "..", "package.json");
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as { version: string };
@@ -106,26 +101,29 @@ function getVersion(): string {
 
 const program = new Command();
 
-program.version(getVersion());
+program
+  .name("dbosc")
+  .description('DBOS Stored Procedure compiler')
+  .version(getPackageVersion());
 
 interface CompileOptions {
-  outDir: string,
+  outDir?: string,
   appVersion?: string | boolean,
 }
 
 program
+  // FYI, commander package doesn't seem to handle app version options correctly in deploy subcommand if compile isn't also a subcommand
+  .command("compile")
   .argument('<tsconfigPath>', 'path to tsconfig.json')
   .option('-o, --out <string>', 'path to output folder')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (tsconfigPath: string, options: CompileOptions) => {
-    const compileResult = await compile(tsconfigPath);
-    if (Array.isArray(compileResult)) {
-      printDiagnostics(compileResult);
-      return;
+    const compileResult = compile(tsconfigPath);
+    if (compileResult) {
+      const outDir = options.outDir ?? process.cwd();
+      await emitSqlFiles(outDir, compileResult, options.appVersion);
     }
-
-    await emitSqlFiles(options.outDir, compileResult, options.appVersion);
   });
 
 interface DeployOptions {
@@ -141,19 +139,10 @@ program
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (tsconfigPath: string, options: DeployOptions) => {
-    const compileResult = await compile(tsconfigPath);
-    if (Array.isArray(compileResult)) {
-      printDiagnostics(compileResult);
-      return;
-    }
-
-    const [dbosConfig,] = parseConfigFile(options);
-    const client = new Client(dbosConfig.poolConfig);
-    try {
-      await client.connect();
-      await deployToDatabase(client, compileResult, options.appVersion);
-    } finally {
-      await client.end();
+    const compileResult = compile(tsconfigPath);
+    if (compileResult) {
+      const [dbosConfig,] = parseConfigFile(options);
+      await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
     }
   });
 

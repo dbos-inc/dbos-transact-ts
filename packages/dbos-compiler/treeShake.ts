@@ -55,7 +55,6 @@ export function getProcMethodDeclarations(file: tsm.SourceFile) {
     if (parent) { declSet.add(parent); }
   }
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const size = declSet.size;
     for (const decl of Array.from(declSet)) {

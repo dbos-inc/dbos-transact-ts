@@ -2,7 +2,11 @@ import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from "liquidjs";
 import type { TransactionConfig } from './utility.js';
-import { invoke } from 'lodash';
+
+export type CompileResult = {
+  project: tsm.Project;
+  methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[];
+};
 
 const __dirname = import.meta.dirname;
 const engine = new Liquid({
@@ -23,22 +27,35 @@ function mapType(type: tsm.Type) {
   throw new Error(`Unsupported type: ${type.getText()}`);
 }
 
-export async function generateCreate(append: (sql: string) => Promise<void>, project: tsm.Project, methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[], appVersion?: string) {
+function getAppVersion(appVersion: string | boolean | undefined) {
+  const version = function() {
+    if (typeof appVersion === "string") { return appVersion; }
+    if (appVersion === false) { return undefined; }
+    return process.env.DBOS__APPVERSION;
+  }();
+  return version ? `v${version}_` : undefined;
+}
+
+export async function generateCreate(append: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
+  const appVersion = getAppVersion(appVersionOption);
+
   const dbosSql = await generateDbosCreate(appVersion);
   await append(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
     const moduleSql = await generateModuleCreate(sourceFile, appVersion);
-    append(moduleSql);
+    await append(moduleSql);
   }
 
   for (const [method, config] of methods) {
     const methodSql = await generateMethodCreate(method, config, appVersion);
-    append(methodSql);
+    await append(methodSql);
   }
 }
 
-export async function generateDrop(append: (sql: string) => Promise<void>, project: tsm.Project, methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[], appVersion?: string) {
+export async function generateDrop(append: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
+  const appVersion = getAppVersion(appVersionOption);
+
   const dbosSql = await generateDbosDrop(appVersion);
   await append(dbosSql);
 
