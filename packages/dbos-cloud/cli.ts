@@ -4,9 +4,9 @@ import { registerApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./a
 import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
-import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB } from "./databases/databases.js";
+import { createUserDb, getUserDb, deleteUserDb, listUserDB, resetDBCredentials, linkUserDB, unlinkUserDB, restoreUserDB, connect } from "./databases/databases.js";
 import { launchDashboard, getDashboardURL, deleteDashboard } from "./dashboards/dashboards.js";
-import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from "./cloudutils.js";
+import { DBOSCloudHost, credentialsExist, dbosConfigFilePath, deleteCredentials, getLogger } from "./cloudutils.js";
 import { getAppInfo } from "./applications/get-app-info.js";
 import promptSync from "prompt-sync";
 import chalk from "chalk";
@@ -132,6 +132,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
+    console.warn(`npx dbos-cloud app rollback is deprecated. Please use 'npx dbos-cloud db connect' instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
@@ -293,6 +294,19 @@ databaseCommands
   .argument("<name>", "database instance name")
   .action(async (dbname: string) => {
     const exitCode = await unlinkUserDB(DBOSCloudHost, dbname);
+    process.exit(exitCode);
+  });
+
+databaseCommands
+  .command("connect")
+  .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
+  .argument("<name>", "database instance name")
+  .option("-W, --password <string>", "Specify the database user password")
+  .action(async (dbname: string, options: { password: string | undefined; }) => {
+    if (!options.password) {
+      options.password = prompt("Database Password: ", { echo: "*" });
+    }
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password);
     process.exit(exitCode);
   });
 

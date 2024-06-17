@@ -1,6 +1,8 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
 import { Logger } from "winston";
+import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
+import { existsSync } from "fs";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -312,6 +314,44 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
     return 0;
   } catch (e) {
     const errorLabel = `Failed to restore database ${dbName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function connect(host: string, dbName: string, password: string) {
+  const logger = getLogger();
+
+  try {
+    if(!existsSync(dbosConfigFilePath)) {
+      logger.error(`Error: ${dbosConfigFilePath} not found`);
+      return 1;
+    }
+
+    logger.info("Retrieving cloud database info...");
+    const userDBInfo = await getUserDBInfo(host, dbName);
+    console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
+    console.log(`Host Name: ${userDBInfo.HostName}`);
+    console.log(`Port: ${userDBInfo.Port}`);
+    console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
+    console.log(`Status: ${userDBInfo.Status}`);
+
+    logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`)
+    const config: ConfigFile = loadConfigFile(dbosConfigFilePath);
+    config.database.hostname = userDBInfo.HostName;
+    config.database.port = userDBInfo.Port;
+    config.database.username = userDBInfo.DatabaseUsername;
+    config.database.password = password;
+    writeConfigFile(config, dbosConfigFilePath);
+    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`)
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to retrieve database record ${dbName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
