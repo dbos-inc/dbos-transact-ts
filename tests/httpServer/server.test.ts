@@ -28,9 +28,9 @@ import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from ".
 import { IncomingMessage } from "http";
 import { bodyParser } from "@koa/bodyparser";
 
-describe("httpserver-tests", () => {
-  const testTableName = "dbos_test_kv";
+const testTableName = "dbos_test_kv";
 
+describe("httpserver-tests", () => {
   let testRuntime: TestingRuntime;
   let config: DBOSConfig;
 
@@ -259,172 +259,172 @@ describe("httpserver-tests", () => {
       request: { url: "/handler/bob" },
     });
   });
-
-  async function testAuthMiddlware(ctx: MiddlewareContext) {
-    if (ctx.requiredRole.length > 0) {
-      const { userid } = ctx.koaContext.request.query;
-      const uid = userid?.toString();
-
-      if (!uid || uid.length === 0) {
-        const err = new DBOSNotAuthorizedError("Not logged in.", 401);
-        throw err;
-      } else {
-        if (uid === "go_away") {
-          throw new DBOSNotAuthorizedError("Go away.", 401);
-        }
-        return Promise.resolve({
-          authenticatedUser: uid,
-          authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
-        });
-      }
-    }
-    return;
-  }
-
-  type TestTransactionContext = TransactionContext<PoolClient>;
-
-  @Authentication(testAuthMiddlware)
-  @KoaBodyParser(bodyParser({
-    extendTypes: {
-      json: ["application/json", "application/custom-content-type"],
-    },
-    encoding: "utf-8",
-    parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
-  }))
-  export class TestEndpoints {
-    @GetApi("/hello")
-    static async hello(_ctx: HandlerContext) {
-      return Promise.resolve({ message: "hello!" });
-    }
-
-    @GetApi("/hello/:id")
-    static async helloUrl(ctx: HandlerContext, id: string) {
-      // Customize status code and response.
-      ctx.koaContext.body = `wow ${id}`;
-      ctx.koaContext.status = 301;
-      return Promise.resolve(`hello ${id}`);
-    }
-
-    @GetApi("/redirect")
-    static async redirectUrl(ctx: HandlerContext) {
-      const url = ctx.request.url || "bad url"; // Get the raw url from request.
-      ctx.koaContext.redirect(url + "-dbos");
-      return Promise.resolve();
-    }
-
-    @GetApi("/query")
-    static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`query with name ${name}`); // Test logging.
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @GetApi("/querybody")
-    static async helloQueryBody(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
-      ctx.logger.info(`query with name ${name}`); // Test logging.
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @DeleteApi("/testdeletequery")
-    static async testdeletequeryparam(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`delete with param from query with name ${name}`);
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @DeleteApi("/testdeleteurl/:name")
-    static async testdeleteurlparam(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`delete with param from url with name ${name}`);
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @DeleteApi("/testdeletebody")
-    static async testdeletebodyparam(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
-      ctx.logger.info(`delete with param from url with name ${name}`);
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @PostApi("/testpost")
-    static async testpost(_ctx: HandlerContext, name: string) {
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @PutApi("/testput")
-    static async testput(_ctx: HandlerContext, name: string) {
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @PatchApi("/testpatch")
-    static async testpatch(_ctx: HandlerContext, name: string) {
-      return Promise.resolve(`hello ${name}`);
-    }
-
-    @GetApi("/dbos-error")
-    @Transaction()
-    static async dbosErr(_ctx: TestTransactionContext) {
-      return Promise.reject(new DBOSResponseError("customize error", 503));
-    }
-
-    @GetApi("/handler/:name")
-    static async testHandler(ctxt: HandlerContext, name: string) {
-      const workflowUUID = ctxt.koaContext.get(WorkflowUUIDHeader);
-      // Invoke a workflow using the given UUID.
-      return ctxt
-        .invoke(TestEndpoints, workflowUUID)
-        .testWorkflow(name)
-        .then((x) => x.getResult());
-    }
-
-    @GetApi("/testStartWorkflow/:name")
-    static async testStartWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
-      return ctxt.startWorkflow(TestEndpoints).testWorkflow(name).then((x) => x.getResult());
-    }
-
-    @GetApi("/testInvokeWorkflow/:name")
-    static async testInvokeWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
-      return ctxt.invokeWorkflow(TestEndpoints).testWorkflow(name);
-    }
-
-    @PostApi("/transaction/:name")
-    @Transaction()
-    static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
-      return `hello ${rows[0].id}`;
-    }
-
-    @GetApi("/communicator/:input")
-    @Communicator()
-    static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
-      return Promise.resolve(input);
-    }
-
-    @PostApi("/workflow")
-    @Workflow()
-    static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
-      const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
-      return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
-    }
-
-    @PostApi("/error")
-    @Workflow()
-    static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
-      // This workflow should encounter duplicate primary key error.
-      let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
-      res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
-      return res;
-    }
-
-    @GetApi("/requireduser")
-    @RequiredRole(["user"])
-    static async testAuth(ctxt: HandlerContext, name: string) {
-      if (ctxt.authenticatedUser !== "a_real_user") {
-        throw new DBOSResponseError("uid not a real user!", 400);
-      }
-      if (!ctxt.authenticatedRoles.includes("user")) {
-        throw new DBOSResponseError("roles don't include user!", 400);
-      }
-      if (ctxt.assumedRole !== "user") {
-        throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
-      }
-      return Promise.resolve(`Please say hello to ${name}`);
-    }
-  }
 });
+
+async function testAuthMiddlware(ctx: MiddlewareContext) {
+  if (ctx.requiredRole.length > 0) {
+    const { userid } = ctx.koaContext.request.query;
+    const uid = userid?.toString();
+
+    if (!uid || uid.length === 0) {
+      const err = new DBOSNotAuthorizedError("Not logged in.", 401);
+      throw err;
+    } else {
+      if (uid === "go_away") {
+        throw new DBOSNotAuthorizedError("Go away.", 401);
+      }
+      return Promise.resolve({
+        authenticatedUser: uid,
+        authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
+      });
+    }
+  }
+  return;
+}
+
+type TestTransactionContext = TransactionContext<PoolClient>;
+
+@Authentication(testAuthMiddlware)
+@KoaBodyParser(bodyParser({
+  extendTypes: {
+    json: ["application/json", "application/custom-content-type"],
+  },
+  encoding: "utf-8",
+  parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
+}))
+export class TestEndpoints {
+  @GetApi("/hello")
+  static async hello(_ctx: HandlerContext) {
+    return Promise.resolve({ message: "hello!" });
+  }
+
+  @GetApi("/hello/:id")
+  static async helloUrl(ctx: HandlerContext, id: string) {
+    // Customize status code and response.
+    ctx.koaContext.body = `wow ${id}`;
+    ctx.koaContext.status = 301;
+    return Promise.resolve(`hello ${id}`);
+  }
+
+  @GetApi("/redirect")
+  static async redirectUrl(ctx: HandlerContext) {
+    const url = ctx.request.url || "bad url"; // Get the raw url from request.
+    ctx.koaContext.redirect(url + "-dbos");
+    return Promise.resolve();
+  }
+
+  @GetApi("/query")
+  static async helloQuery(ctx: HandlerContext, name: string) {
+    ctx.logger.info(`query with name ${name}`); // Test logging.
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @GetApi("/querybody")
+  static async helloQueryBody(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
+    ctx.logger.info(`query with name ${name}`); // Test logging.
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @DeleteApi("/testdeletequery")
+  static async testdeletequeryparam(ctx: HandlerContext, name: string) {
+    ctx.logger.info(`delete with param from query with name ${name}`);
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @DeleteApi("/testdeleteurl/:name")
+  static async testdeleteurlparam(ctx: HandlerContext, name: string) {
+    ctx.logger.info(`delete with param from url with name ${name}`);
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @DeleteApi("/testdeletebody")
+  static async testdeletebodyparam(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
+    ctx.logger.info(`delete with param from url with name ${name}`);
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @PostApi("/testpost")
+  static async testpost(_ctx: HandlerContext, name: string) {
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @PutApi("/testput")
+  static async testput(_ctx: HandlerContext, name: string) {
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @PatchApi("/testpatch")
+  static async testpatch(_ctx: HandlerContext, name: string) {
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @GetApi("/dbos-error")
+  @Transaction()
+  static async dbosErr(_ctx: TestTransactionContext) {
+    return Promise.reject(new DBOSResponseError("customize error", 503));
+  }
+
+  @GetApi("/handler/:name")
+  static async testHandler(ctxt: HandlerContext, name: string) {
+    const workflowUUID = ctxt.koaContext.get(WorkflowUUIDHeader);
+    // Invoke a workflow using the given UUID.
+    return ctxt
+      .invoke(TestEndpoints, workflowUUID)
+      .testWorkflow(name)
+      .then((x) => x.getResult());
+  }
+
+  @GetApi("/testStartWorkflow/:name")
+  static async testStartWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
+    return ctxt.startWorkflow(TestEndpoints).testWorkflow(name).then((x) => x.getResult());
+  }
+
+  @GetApi("/testInvokeWorkflow/:name")
+  static async testInvokeWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
+    return ctxt.invokeWorkflow(TestEndpoints).testWorkflow(name);
+  }
+
+  @PostApi("/transaction/:name")
+  @Transaction()
+  static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
+    const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
+    return `hello ${rows[0].id}`;
+  }
+
+  @GetApi("/communicator/:input")
+  @Communicator()
+  static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
+    return Promise.resolve(input);
+  }
+
+  @PostApi("/workflow")
+  @Workflow()
+  static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
+    const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+    return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
+  }
+
+  @PostApi("/error")
+  @Workflow()
+  static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
+    // This workflow should encounter duplicate primary key error.
+    let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+    res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+    return res;
+  }
+
+  @GetApi("/requireduser")
+  @RequiredRole(["user"])
+  static async testAuth(ctxt: HandlerContext, name: string) {
+    if (ctxt.authenticatedUser !== "a_real_user") {
+      throw new DBOSResponseError("uid not a real user!", 400);
+    }
+    if (!ctxt.authenticatedRoles.includes("user")) {
+      throw new DBOSResponseError("roles don't include user!", 400);
+    }
+    if (ctxt.assumedRole !== "user") {
+      throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
+    }
+    return Promise.resolve(`Please say hello to ${name}`);
+  }
+}

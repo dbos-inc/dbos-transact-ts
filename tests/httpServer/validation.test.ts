@@ -380,181 +380,181 @@ describe("httpserver-datavalidation-tests", () => {
     expect(response.body.message).toBe("This is a really nice bigint: 12345678901234567890");
   });
   */
-
-
-  export class TestEndpointDataVal {
-    @GetApi("/hello")
-    static async hello(_ctx: HandlerContext) {
-      return Promise.resolve({ message: "hello!" });
-    }
-
-    @GetApi("/string")
-    static async checkStringG(_ctx: HandlerContext, v: string) {
-      if (typeof v !== "string") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice string: ${v}` });
-    }
-
-    @PostApi("/string")
-    static async checkStringP(_ctx: HandlerContext, v: string) {
-      if (typeof v !== "string") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice string: ${v}` });
-    }
-
-    @GetApi("/varchar")
-    static async checkVarcharG(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
-      if (typeof v !== "string") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
-    }
-
-    @PostApi("/varchar")
-    static async checkVarcharP(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
-      if (typeof v !== "string") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
-    }
-
-    @GetApi("/number")
-    static async checkNumberG(_ctx: HandlerContext, v: number) {
-      if (typeof v !== "number") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice number: ${v}` });
-    }
-
-    @PostApi("/number")
-    static async checkNumberP(_ctx: HandlerContext, v: number) {
-      if (typeof v !== "number") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice number: ${v}` });
-    }
-
-    @GetApi("/bigint")
-    static async checkBigintG(_ctx: HandlerContext, v: bigint) {
-      if (typeof v !== "bigint") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
-    }
-
-    @PostApi("/bigint")
-    static async checkBigintP(_ctx: HandlerContext, v: bigint) {
-      if (typeof v !== "bigint") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
-    }
-
-    @GetApi("/date")
-    static async checkDateG(_ctx: HandlerContext, @ArgDate() v: Date) {
-      if (!(v instanceof Date)) {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
-    }
-
-    @PostApi("/date")
-    static async checkDateP(_ctx: HandlerContext, @ArgDate() v: Date) {
-      if (!(v instanceof Date)) {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
-    }
-
-    // This is in honor of Harry
-    @GetApi("/boolean")
-    static async checkBooleanG(_ctx: HandlerContext, v: boolean) {
-      if (typeof v !== "boolean") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
-    }
-
-    @PostApi("/boolean")
-    static async checkBooleanP(_ctx: HandlerContext, v: boolean) {
-      if (typeof v !== "boolean") {
-        return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
-      }
-      return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
-    }
-
-    // Types saved for another day - even the decorators are not there yet:
-    //  Integer - not working
-    //  Decimal
-    //  UUID?
-    //  JSON
-  }
-
-  @DefaultArgRequired
-  export class DefaultArgToRequired {
-    @PostApi("/rrequired")
-    static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/roptional")
-    static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/rdefault")
-    static async checkDefValueR(_ctx: HandlerContext, v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-  }
-
-  @DefaultArgOptional
-  export class DefaultArgToOptional {
-    @PostApi("/orequired")
-    static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/ooptional")
-    static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/odefault")
-    static async checkDefValueO(_ctx: HandlerContext, v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-  }
-
-  export class DefaultArgToDefault {
-    @PostApi("/drequired")
-    static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/doptional")
-    static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @PostApi("/ddefault")
-    static async checkDefValueD(_ctx: HandlerContext, v?: string) {
-      return Promise.resolve({ message: `Got string ${v}` });
-    }
-
-    @Workflow()
-    static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
-    {
-      return Promise.resolve({message: v});
-    }
-
-    @PostApi("/doworkflow")
-    static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string)
-    {
-      const wh = await ctx.invoke(DefaultArgToDefault).opworkflow(v);
-      return await wh.getResult();
-    }
-  }
 });
+
+export class TestEndpointDataVal {
+  @GetApi("/hello")
+  static async hello(_ctx: HandlerContext) {
+    return Promise.resolve({ message: "hello!" });
+  }
+
+  @GetApi("/string")
+  static async checkStringG(_ctx: HandlerContext, v: string) {
+    if (typeof v !== "string") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice string: ${v}` });
+  }
+
+  @PostApi("/string")
+  static async checkStringP(_ctx: HandlerContext, v: string) {
+    if (typeof v !== "string") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice string: ${v}` });
+  }
+
+  @GetApi("/varchar")
+  static async checkVarcharG(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+    if (typeof v !== "string") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
+  }
+
+  @PostApi("/varchar")
+  static async checkVarcharP(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+    if (typeof v !== "string") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
+  }
+
+  @GetApi("/number")
+  static async checkNumberG(_ctx: HandlerContext, v: number) {
+    if (typeof v !== "number") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice number: ${v}` });
+  }
+
+  @PostApi("/number")
+  static async checkNumberP(_ctx: HandlerContext, v: number) {
+    if (typeof v !== "number") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice number: ${v}` });
+  }
+
+  @GetApi("/bigint")
+  static async checkBigintG(_ctx: HandlerContext, v: bigint) {
+    if (typeof v !== "bigint") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
+  }
+
+  @PostApi("/bigint")
+  static async checkBigintP(_ctx: HandlerContext, v: bigint) {
+    if (typeof v !== "bigint") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
+  }
+
+  @GetApi("/date")
+  static async checkDateG(_ctx: HandlerContext, @ArgDate() v: Date) {
+    if (!(v instanceof Date)) {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
+  }
+
+  @PostApi("/date")
+  static async checkDateP(_ctx: HandlerContext, @ArgDate() v: Date) {
+    if (!(v instanceof Date)) {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
+  }
+
+  // This is in honor of Harry
+  @GetApi("/boolean")
+  static async checkBooleanG(_ctx: HandlerContext, v: boolean) {
+    if (typeof v !== "boolean") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
+  }
+
+  @PostApi("/boolean")
+  static async checkBooleanP(_ctx: HandlerContext, v: boolean) {
+    if (typeof v !== "boolean") {
+      return Promise.reject(new Error("THIS SHOULD NEVER HAPPEN"));
+    }
+    return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
+  }
+
+  // Types saved for another day - even the decorators are not there yet:
+  //  Integer - not working
+  //  Decimal
+  //  UUID?
+  //  JSON
+}
+
+@DefaultArgRequired
+export class DefaultArgToRequired {
+  @PostApi("/rrequired")
+  static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/roptional")
+  static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/rdefault")
+  static async checkDefValueR(_ctx: HandlerContext, v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+}
+
+@DefaultArgOptional
+export class DefaultArgToOptional {
+  @PostApi("/orequired")
+  static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/ooptional")
+  static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/odefault")
+  static async checkDefValueO(_ctx: HandlerContext, v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+}
+
+export class DefaultArgToDefault {
+  @PostApi("/drequired")
+  static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/doptional")
+  static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @PostApi("/ddefault")
+  static async checkDefValueD(_ctx: HandlerContext, v?: string) {
+    return Promise.resolve({ message: `Got string ${v}` });
+  }
+
+  @Workflow()
+  static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string)
+  {
+    return Promise.resolve({message: v});
+  }
+
+  @PostApi("/doworkflow")
+  static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string)
+  {
+    const wh = await ctx.invoke(DefaultArgToDefault).opworkflow(v);
+    return await wh.getResult();
+  }
+}
+
