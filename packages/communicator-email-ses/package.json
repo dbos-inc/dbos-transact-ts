@@ -28,6 +28,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.574.0",
-    "@dbos-inc/aws-config": "^1.13.9"
+    "@dbos-inc/aws-config": "^1.13.10"
   }
 }
