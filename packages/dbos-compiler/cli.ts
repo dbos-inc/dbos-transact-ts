@@ -60,18 +60,36 @@ interface CompileOptions {
   appVersion?: string | boolean,
 }
 
+function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): string | undefined {
+  cwd = cwd ?? process.cwd();
+
+  if (!tsconfigPath) {
+    tsconfigPath = path.join(cwd, "tsconfig.json");
+  }
+
+  if (!fs.existsSync(tsconfigPath)) {
+    console.error(`tsconfig file not found: ${tsconfigPath}`);
+    return undefined;
+  }
+
+  return tsconfigPath;
+}
+
 program
   // FYI, commander package doesn't seem to handle app version options correctly in deploy subcommand if compile isn't also a subcommand
   .command("compile")
-  .argument('<tsconfigPath>', 'path to tsconfig.json')
+  .argument('[tsconfigPath]', 'path to tsconfig.json')
   .option('-o, --out <string>', 'path to output folder')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (tsconfigPath: string, options: CompileOptions) => {
-    const compileResult = compile(tsconfigPath);
-    if (compileResult) {
-      const outDir = options.outDir ?? process.cwd();
-      await emitSqlFiles(outDir, compileResult, options.appVersion);
+  .action(async (tsconfigPath: string | undefined, options: CompileOptions) => {
+    tsconfigPath = verifyTsConfigPath(tsconfigPath);
+    if (tsconfigPath) {
+      const compileResult = compile(tsconfigPath);
+      if (compileResult) {
+        const outDir = options.outDir ?? process.cwd();
+        await emitSqlFiles(outDir, compileResult, options.appVersion);
+      }
     }
   });
 
@@ -83,15 +101,19 @@ interface DeployOptions {
 program
   .command("deploy")
   .description("Start the server")
-  .argument('<tsconfigPath>', 'path to tsconfig.json')
+  .argument('[tsconfigPath]', 'path to tsconfig.json')
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (tsconfigPath: string, options: DeployOptions) => {
-    const compileResult = compile(tsconfigPath);
-    if (compileResult) {
-      const [dbosConfig,] = parseConfigFile(options);
-      await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+  .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
+    tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
+
+    if (tsconfigPath) {
+      const compileResult = compile(tsconfigPath);
+      if (compileResult) {
+        const [dbosConfig,] = parseConfigFile(options);
+        await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+      }
     }
   });
 
