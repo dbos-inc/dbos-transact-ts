@@ -1,64 +1,13 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import tsm from 'ts-morph';
 import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import { deAsync, getProcMethods, removeDecorators, treeShake } from "./treeShake.js";
-import { type CompileResult, generateCreate, generateDrop } from "./generator.js";
-import { getStoredProcConfig } from "./utility.js";
+import { generateCreate, generateDrop } from "./generator.js";
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js'
 import * as pg from 'pg'
-
-function compile(tsConfigFilePath: string): CompileResult | undefined {
-  const project = new tsm.Project({
-    tsConfigFilePath,
-    compilerOptions: {
-      sourceMap: false,
-      declaration: false,
-      declarationMap: false,
-    }
-  });
-
-  // remove test files
-  for (const sourceFile of project.getSourceFiles()) {
-    if (sourceFile.getBaseName().endsWith(".test.ts")) {
-      sourceFile.delete();
-    }
-  }
-
-  const preEmitDiags = project.getPreEmitDiagnostics();
-  if (preEmitDiags.length > 0) {
-    printDiagnostics(preEmitDiags);
-    return undefined;
-  }
-
-  treeShake(project);
-
-  const methods = project.getSourceFiles()
-    .flatMap(getProcMethods)
-    .map(m => [m, getStoredProcConfig(m)] as const);
-
-  deAsync(project);
-  removeDecorators(project);
-
-  return { project, methods }
-}
-
-function printDiagnostics(diags: readonly tsm.Diagnostic[]) {
-  const formatHost: tsm.ts.FormatDiagnosticsHost = {
-    getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
-    getNewLine: () => tsm.ts.sys.newLine,
-    getCanonicalFileName: (fileName: string) => tsm.ts.sys.useCaseSensitiveFileNames
-      ? fileName : fileName.toLowerCase()
-  }
-
-  const $diags = diags.map(d => d.compilerObject);
-  const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
-  console.log(msg);
-}
-
+import { type CompileResult, compile } from "./compiler.js";
 
 async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
   await fsp.mkdir(outDir, { recursive: true });

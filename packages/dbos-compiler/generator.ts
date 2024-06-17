@@ -1,12 +1,7 @@
 import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from "liquidjs";
-import type { TransactionConfig } from './utility.js';
-
-export type CompileResult = {
-  project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[];
-};
+import type { TransactionConfig, CompileResult } from './compiler.js';
 
 const __dirname = import.meta.dirname;
 const engine = new Liquid({

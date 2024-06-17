@@ -1,10 +1,10 @@
 import tsm from 'ts-morph';
-import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../treeShake.js';
+import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../compiler.js';
 import { makeTestProject } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { describe, it, expect } from 'vitest';
 
-describe("treeShake", () => {
+describe("compiler", () => {
   it("removeDbosMethods", () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow("operations.ts");

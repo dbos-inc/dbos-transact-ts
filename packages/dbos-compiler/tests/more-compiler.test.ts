@@ -1,10 +1,10 @@
 import * as tsm from "ts-morph";
-import { DecoratorArgument, DecoratorInfo, getDbosMethodKind, getDecoratorInfo, getStoredProcConfig, parseDecoratorArgument } from "../utility.js";
+import { DecoratorArgument, DecoratorInfo, getDbosMethodKind, getDecoratorInfo, getStoredProcConfig, parseDecoratorArgument } from "../compiler.js";
 import { sampleDbosClass, sampleDbosClassAliased } from "./test-code.js";
 import { makeTestProject } from "./test-utility.js";
 import { describe, it, expect } from 'vitest';
 
-describe("utility", () => {
+describe("more compiler", () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow("operations.ts");
     const cls = file.getClassOrThrow("Test");
