@@ -14,7 +14,7 @@ describe("scheduled-wf-tests", () => {
     });
   
     beforeEach(async () => {
-        testRuntime = await createInternalTestRuntime([DBOSSchedTestClass], config);
+        testRuntime = await createInternalTestRuntime(undefined, config);
     });
   
     afterEach(async () => {

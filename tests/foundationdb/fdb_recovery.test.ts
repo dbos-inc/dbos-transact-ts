@@ -17,7 +17,7 @@ describe("foundationdb-recovery", () => {
 
   beforeEach(async () => {
     const systemDB = await createInternalTestFDB();
-    testRuntime = await createInternalTestRuntime([LocalRecovery, ExecutorRecovery], config, systemDB);
+    testRuntime = await createInternalTestRuntime(undefined, config, systemDB);
     process.env.DBOS__VMID = ""
   });
 

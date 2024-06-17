@@ -66,7 +66,7 @@ describe("recovery-cc-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([CCRecovery], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     process.env.DBOS__VMID = ""
   });
 

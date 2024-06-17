@@ -14,7 +14,7 @@ describe("httpserver-datavalidation-tests", () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
-    testRuntime = await createInternalTestRuntime([TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
   });
 
   afterAll(async () => {

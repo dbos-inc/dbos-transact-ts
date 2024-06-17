@@ -20,7 +20,7 @@ describe("http-cors-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([TestEndpointsDefCORS, TestEndpointsRegCORS, TestEndpointsSpecCORS], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
   });
 
   afterEach(async () => {

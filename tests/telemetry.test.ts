@@ -65,7 +65,7 @@ describe("dbos-telemetry", () => {
     });
 
     beforeEach(async () => {
-      testRuntime = await createInternalTestRuntime([TestClass], config);
+      testRuntime = await createInternalTestRuntime(undefined, config);
     });
 
     afterEach(async () => {
