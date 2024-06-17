@@ -16,8 +16,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "eslint --fix --ext .ts --report-unused-disable-directives --ignore-pattern foundationdb/ --ignore-pattern templates/ --ignore-pattern tests/prisma.test.ts .",
-    "lint-fdb": "eslint --fix --ext .ts --ignore-pattern templates/ .",
+    "lint": "eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ .",
+    "lint-fdb": "eslint .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npm run build-fdb && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"
@@ -37,16 +37,17 @@
     "@types/pg": "^8.11.2",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.8",
-    "@typescript-eslint/eslint-plugin": "^7.10.0",
-    "@typescript-eslint/parser": "^7.10.0",
-    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0-alpha.30",
+    "@typescript-eslint/parser": "^8.0.0-alpha.30",
+    "eslint": "^9.4.0",
     "jest": "^29.7.0",
     "nerdbank-gitversioning": "^3.6.133",
     "prisma": "^5.1.1",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
     "typeorm": "^0.3.17",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
     "@koa/bodyparser": "5.0.0",
