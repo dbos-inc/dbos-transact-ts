@@ -20,7 +20,7 @@ describe("http-cors-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([TestEndpointsDefCORS, TestEndpointsRegCORS, TestEndpointsSpecCORS], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
   });
 
   afterEach(async () => {
@@ -250,7 +250,7 @@ describe("http-cors-tests", () => {
   });
 });
 
-class TestEndpointsDefCORS {
+export class TestEndpointsDefCORS {
   @GetApi("/hellod")
   static async hello(_ctx: HandlerContext) {
     return Promise.resolve({ message: "hello!" });
@@ -258,7 +258,7 @@ class TestEndpointsDefCORS {
 }
 
 @KoaCors(cors())
-class TestEndpointsRegCORS {
+export class TestEndpointsRegCORS {
   @GetApi("/hellor")
   static async hello(_ctx: HandlerContext) {
     return Promise.resolve({ message: "hello!" });
@@ -278,7 +278,7 @@ class TestEndpointsRegCORS {
     },
   allowMethods: 'GET,OPTIONS', // Need to have options for preflight.
 }))
-class TestEndpointsSpecCORS {
+export class TestEndpointsSpecCORS {
   @GetApi("/hellos")
   static async hello(_ctx: HandlerContext) {
     return Promise.resolve({ message: "hello!" });

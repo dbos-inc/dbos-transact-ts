@@ -26,9 +26,9 @@ describe("debugger-test", () => {
   });
 
   beforeEach(async () => {
-    debugRuntime = await createInternalTestRuntime([DebuggerTest], debugConfig);
-    testRuntime = await createInternalTestRuntime([DebuggerTest], config);
-    debugProxyRuntime = await createInternalTestRuntime([DebuggerTest], debugProxyConfig);     // TODO: connect to the real proxy.
+    debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
+    testRuntime = await createInternalTestRuntime(undefined, config);
+    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig);     // TODO: connect to the real proxy.
     DebuggerTest.cnt = 0;
   });
 

@@ -143,7 +143,7 @@ describe("dbos-configclass-tests", () => {
     config1.tracker.reset();
     configA.tracker.reset();
 
-    testRuntime = await createInternalTestRuntime([DBOSTestConfiguredClass], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
   });
 
   afterEach(async () => {

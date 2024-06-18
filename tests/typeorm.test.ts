@@ -69,7 +69,7 @@ describe("typeorm-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime([KVController], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();
   });
@@ -178,7 +178,7 @@ describe("typeorm-auth-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime([UserManager], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();
   });
