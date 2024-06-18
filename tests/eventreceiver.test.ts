@@ -103,8 +103,7 @@ describe("event-receiver-tests", () => {
     beforeAll(async () => {});
   
     beforeEach(async () => {
-        testRuntime = await createInternalTestRuntime([MyEventReceiver], generateDBOSTestConfig());
-        ([MyEventReceiver]);
+        testRuntime = await createInternalTestRuntime(undefined, generateDBOSTestConfig());
     }, 30000);
   
     afterEach(async () => {
