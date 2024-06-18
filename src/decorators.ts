@@ -430,6 +430,14 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
 
+export function getAllRegisteredClasses() {
+  const ctors: AnyConstructor[] = [];
+  for (const [_cn, creg] of classesByName) {
+    ctors.push(creg.ctor);
+  }
+  return ctors;
+}
+
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {

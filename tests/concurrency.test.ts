@@ -20,7 +20,7 @@ describe("concurrency-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([ConcurrTestClass], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;

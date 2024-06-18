@@ -20,7 +20,7 @@ describe("foundationdb-dbos", () => {
 
   beforeEach(async () => {
     const systemDB = await createInternalTestFDB();
-    testRuntime = await createInternalTestRuntime([FdbTestClass], config, systemDB);
+    testRuntime = await createInternalTestRuntime(undefined, config, systemDB);
     FdbTestClass.cnt = 0;
     FdbTestClass.wfCnt = 0;
   });

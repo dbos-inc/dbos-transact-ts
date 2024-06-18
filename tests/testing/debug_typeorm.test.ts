@@ -22,8 +22,8 @@ describe("typeorm-debugger-test", () => {
 
   beforeEach(async () => {
     // TODO: connect to the real proxy.
-    debugRuntime = await createInternalTestRuntime([KVController], debugConfig);
-    testRuntime = await createInternalTestRuntime([KVController], config);
+    debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();
   });

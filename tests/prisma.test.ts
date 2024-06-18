@@ -78,7 +78,7 @@ describe("prisma-tests", () => {
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime([PrismaTestClass], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
   });

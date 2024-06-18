@@ -472,7 +472,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       let txn_snapshot = "invalid";
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {

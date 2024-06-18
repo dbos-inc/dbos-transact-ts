@@ -21,7 +21,7 @@ describe("oaoo-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([CommunicatorOAOO, WorkflowOAOO, NotificationOAOO, EventStatusOAOO], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
 
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);

@@ -66,7 +66,7 @@ describe("knex-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([TestClass], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     insertCount = 0;
@@ -166,7 +166,7 @@ describe("knex-auth-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([KUserManager], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
   });

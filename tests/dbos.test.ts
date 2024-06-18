@@ -22,7 +22,7 @@ describe("dbos-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([DBOSTestClass, ReadRecording, RetrieveWorkflowStatus], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     DBOSTestClass.cnt = 0;
   });
 
