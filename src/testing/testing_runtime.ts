@@ -20,7 +20,7 @@ import { DBOSScheduler } from "../scheduler/scheduler";
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
-export async function createTestingRuntime(userClasses: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
+export async function createTestingRuntime(userClasses?: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
   const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
 
   if (dropSysDB) {
@@ -76,7 +76,7 @@ export interface TestingRuntime {
 /**
  * For internal unit tests which allows us to provide different system DB and control its behavior.
  */
-export async function createInternalTestRuntime(userClasses: object[], testConfig: DBOSConfig, systemDB?: SystemDatabase): Promise<TestingRuntime> {
+export async function createInternalTestRuntime(userClasses: object[] | undefined, testConfig: DBOSConfig, systemDB?: SystemDatabase): Promise<TestingRuntime> {
   const otr = new TestingRuntimeImpl();
   await otr.init(userClasses, testConfig, systemDB);
   return otr;
@@ -95,10 +95,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
+  async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
-    await dbosExec.init(...userClasses);
+    await dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
     for (const evtRcvr of dbosExec.eventReceivers) {
       await evtRcvr.initialize(dbosExec);

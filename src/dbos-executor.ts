@@ -32,7 +32,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -292,10 +292,14 @@ export class DBOSExecutor implements DBOSExecutorEventReceiverInterface {
     return res;
   }
 
-  async init(...classes: object[]): Promise<void> {
+  async init(classes?: object[]): Promise<void> {
     if (this.initialized) {
       this.logger.error("Workflow executor already initialized!");
       return;
+    }
+
+    if (!classes || !classes.length) {
+      classes = getAllRegisteredClasses();
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
