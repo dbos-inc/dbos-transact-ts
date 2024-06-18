@@ -15,3 +15,6 @@ database:
     - npx knex migrate:latest
   rollback:
     - npx knex migrate:rollback
+runtimeConfig:
+  entrypoints:
+    - dist/operations.js
