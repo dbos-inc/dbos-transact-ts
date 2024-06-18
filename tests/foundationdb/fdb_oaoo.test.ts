@@ -16,7 +16,7 @@ describe("foundationdb-oaoo", () => {
 
   beforeEach(async () => {
     const systemDB = await createInternalTestFDB();
-    testRuntime = await createInternalTestRuntime([EventStatusOAOO], config, systemDB);
+    testRuntime = await createInternalTestRuntime(undefined, config, systemDB);
   });
 
   afterEach(async () => {

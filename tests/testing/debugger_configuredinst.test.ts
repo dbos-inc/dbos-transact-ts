@@ -73,9 +73,9 @@ describe("debugger-test", () => {
   });
 
   beforeEach(async () => {
-    debugRuntime = await createInternalTestRuntime([DebuggerCCTest], debugConfig);
-    testRuntime = await createInternalTestRuntime([DebuggerCCTest], config);
-    debugProxyRuntime = await createInternalTestRuntime([DebuggerCCTest], debugProxyConfig);     // TODO: connect to the real proxy.
+    debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
+    testRuntime = await createInternalTestRuntime(undefined, config);
+    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig);     // TODO: connect to the real proxy.
   });
 
   afterEach(async () => {
