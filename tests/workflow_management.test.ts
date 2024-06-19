@@ -7,6 +7,8 @@ import {
   GetWorkflowsOutput,
   GetWorkflowsInput,
   StatusString,
+  Authentication,
+  MiddlewareContext,
 } from "../src";
 import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
@@ -56,8 +58,14 @@ describe("workflow-management-tests", () => {
     }
     response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
     expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+
+    input.endTime = new Date(Date.now() - 10000).toISOString();
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
   });
 
   test("getworkflows-with-status", async () => {
@@ -97,6 +105,28 @@ describe("workflow-management-tests", () => {
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
   });
 
+  test("getworkflows-with-authentication", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const input: GetWorkflowsInput = {
+      authenticatedUser: "alice"
+    }
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+  });
+
+  async function testAuthMiddleware(_ctx: MiddlewareContext) {
+    return Promise.resolve({
+      authenticatedUser: "alice",
+      authenticatedRoles: ["aliceRole"],
+    })
+  }
+
+  @Authentication(testAuthMiddleware)
   class TestEndpoints {
     @PostApi("/workflow/:name")
     @Workflow()
