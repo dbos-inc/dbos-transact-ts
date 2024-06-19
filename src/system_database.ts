@@ -9,7 +9,7 @@ import { notifications, operation_outputs, workflow_status, workflow_events, wor
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
-import knex from "knex";
+import knex, { Knex } from "knex";
 import path from "path";
 
 export interface SystemDatabase {
@@ -91,6 +91,7 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
+  readonly knexDB: Knex;
 
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
@@ -106,6 +107,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.systemPoolConfig.database = systemDatabaseName;
     this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
     this.pool = new Pool(this.systemPoolConfig);
+    const knexConfig = {
+      client: 'pg',
+      connection: this.systemPoolConfig,
+      pool: {
+        max: 2
+      }
+    };
+    this.knexDB = knex(knexConfig);
   }
 
   async init() {
@@ -123,6 +132,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async destroy() {
+    await this.knexDB.destroy();
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
       this.notificationsClient.release();
@@ -715,13 +725,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    const knexConfig = {
-      client: 'pg',
-      connection: this.systemPoolConfig,
-    };
-    const knexDB = knex(knexConfig);
-
-    let query = knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`);
+    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`);
     if (input.workflowName) {
       query = query.where('name', input.workflowName);
     }
@@ -738,7 +742,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.where('status', input.Status);
     }
     const rows = await query.select('workflow_uuid');
-    await knexDB.destroy();
     const workflowUUIDs = rows.map(row => row.workflow_uuid);
     return {
       workflowUUIDs: workflowUUIDs
