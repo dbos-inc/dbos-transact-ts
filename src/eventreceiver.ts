@@ -9,7 +9,7 @@ import { MethodRegistrationBase } from './decorators';
  *  which contains the things that it needs to do its work
  *  (retrieve decorated endpoints, and run new transactions / workflows)
  */
-export interface DBOSExecutorEventReceiverInterface
+export interface DBOSExecutorContext
 {
   /* Logging service */
   readonly logger: Logger;
@@ -21,11 +21,11 @@ export interface DBOSExecutorEventReceiverInterface
 
   /*
    * Get the registrations for a receiver; this comes with:
-   *  minfo: the method info the receiver stored
-   *  cinfo: the class info the receiver stored
-   *  method: the method registration (w/ workflow, transaction, function, and other info)
+   *  methodConfig: the method info the receiver stored
+   *  classConfig: the class info the receiver stored
+   *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
    */
-  getRegistrationsFor(eri: DBOSEventReceiver) : {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[];
+  getRegistrationsFor(eri: DBOSEventReceiver) : {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[];
 
   transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
@@ -42,6 +42,6 @@ export interface DBOSExecutorEventReceiverInterface
 export interface DBOSEventReceiver
 {
     destroy() : Promise<void>;
-    initialize(executor: DBOSExecutorEventReceiverInterface) : Promise<void>;
+    initialize(executor: DBOSExecutorContext) : Promise<void>;
     logRegisteredEndpoints() : void;
 }

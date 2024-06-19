@@ -1,7 +1,7 @@
 import {
     DBOSContext,
     DBOSEventReceiver,
-    DBOSExecutorEventReceiverInterface,
+    DBOSExecutorContext,
     TestingRuntime,
     Workflow,
     WorkflowContext,
@@ -25,22 +25,22 @@ const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 class ERD implements DBOSEventReceiver
 {
-    executor?: DBOSExecutorEventReceiverInterface;
+    executor?: DBOSExecutorContext;
 
     async deliver3Events() {
         for (let i=1; i<=3; ++i) {
             await sleepms(100);
             const mtds = this.executor!.getRegistrationsFor(this);
             for (const mtd of mtds) {
-                const cs = (mtd.cinfo as ERDefaults).classval ?? "";
-                const ms = (mtd.minfo as ERSpecifics).methodval ?? "";
+                const cs = (mtd.classConfig as ERDefaults).classval ?? "";
+                const ms = (mtd.methodConfig as ERSpecifics).methodval ?? "";
                 await this.executor!.workflow(mtd.method.registeredFunction as unknown as WorkflowFunction<[string, string, number], unknown>, {}, cs, ms, i);
             }
         }
     }
 
     async destroy() {}
-    async initialize(executor: DBOSExecutorEventReceiverInterface) {
+    async initialize(executor: DBOSExecutorContext) {
         this.executor = executor;
         const _dropPromise = this.deliver3Events();
         return Promise.resolve();

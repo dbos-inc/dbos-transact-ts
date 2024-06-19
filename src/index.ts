@@ -115,7 +115,7 @@ export {
 
 export {
   DBOSEventReceiver,
-  DBOSExecutorEventReceiverInterface,
+  DBOSExecutorContext,
 } from "./eventreceiver";
 
 export {

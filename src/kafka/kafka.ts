@@ -5,7 +5,7 @@ import { TransactionFunction } from "..";
 import { WorkflowFunction } from "..";
 import { Error as DBOSError } from "..";
 import { sleepms } from "../utils";
-import { DBOSExecutorEventReceiverInterface } from "..";
+import { DBOSExecutorContext } from "..";
 
 type KafkaArgs = [string, number, KafkaMessage]
 
@@ -16,18 +16,18 @@ type KafkaArgs = [string, number, KafkaMessage]
 export class DBOSKafka implements DBOSEventReceiver {
   readonly consumers: Consumer[] = [];
 
-  dbosExec?: DBOSExecutorEventReceiverInterface = undefined;
+  dbosExec?: DBOSExecutorContext = undefined;
 
   constructor() { }
 
-  async initialize(dbosExecI: DBOSExecutorEventReceiverInterface) {
+  async initialize(dbosExecI: DBOSExecutorContext) {
     this.dbosExec = dbosExecI;
     const regops = this.dbosExec.getRegistrationsFor(this);
     for (const registeredOperation of regops) {
-      const ro = registeredOperation.minfo as KafkaRegistrationInfo;
+      const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {
-        const defaults = registeredOperation.cinfo as KafkaDefaults;
-        const method = registeredOperation.method;
+        const defaults = registeredOperation.classConfig as KafkaDefaults;
+        const method = registeredOperation.methodReg;
         const cname = method.className;
         const mname = method.name;
         if (!method.txnConfig && !method.workflowConfig) {
@@ -110,10 +110,10 @@ export class DBOSKafka implements DBOSEventReceiver {
     logger.info("Kafka endpoints supported:");
     const regops = this.dbosExec.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
-      const ro = registeredOperation.minfo as KafkaRegistrationInfo;
+      const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {
-        const cname = registeredOperation.method.className;
-        const mname = registeredOperation.method.name;
+        const cname = registeredOperation.methodReg.className;
+        const mname = registeredOperation.methodReg.name;
         if (Array.isArray(ro.kafkaTopics)) {
           ro.kafkaTopics.forEach( kafkaTopic => {
             logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);

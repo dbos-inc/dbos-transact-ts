@@ -41,7 +41,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
-import { DBOSEventReceiver, DBOSExecutorEventReceiverInterface } from ".";
+import { DBOSEventReceiver, DBOSExecutorContext } from ".";
 
 import { get } from "lodash";
 
@@ -100,7 +100,7 @@ const TempWorkflowType = {
   send: "send",
 } as const;
 
-export class DBOSExecutor implements DBOSExecutorEventReceiverInterface {
+export class DBOSExecutor implements DBOSExecutorContext {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -282,12 +282,12 @@ export class DBOSExecutor implements DBOSExecutorEventReceiverInterface {
   }
 
   getRegistrationsFor(obj: DBOSEventReceiver) {
-    const res: {minfo: unknown, cinfo: unknown, method: MethodRegistrationBase}[] = [];
+    const res: {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[] = [];
     for (const r of this.registeredOperations) {
       if (!r.eventReceiverInfo.has(obj)) continue;
-      const minfo = r.eventReceiverInfo.get(obj)!;
-      const cinfo = r.defaults?.eventReceiverInfo.get(obj) ?? {};
-      res.push({method: r, minfo, cinfo})
+      const methodConfig = r.eventReceiverInfo.get(obj)!;
+      const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
+      res.push({methodReg: r, methodConfig, classConfig})
     }
     return res;
   }
