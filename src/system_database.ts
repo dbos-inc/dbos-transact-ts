@@ -733,10 +733,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.where('authenticated_user', input.authenticatedUser);
     }
     if (input.startTime) {
-      query = query.where('created_at', '>=', input.startTime.getTime());
+      query = query.where('created_at', '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where('created_at', '<=', input.endTime.getTime());
+      query = query.where('created_at', '<=', new Date(input.endTime).getTime());
     }
     if (input.Status) {
       query = query.where('status', input.Status);

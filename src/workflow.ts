@@ -62,8 +62,8 @@ export interface WorkflowStatus {
 export interface GetWorkflowsInput {
   workflowName?: string;
   authenticatedUser?: string;
-  startTime?: Date;
-  endTime?: Date;
+  startTime?: string; // In RFC 3339 format
+  endTime?: string; // In RFC 3339 format
   Status?: typeof StatusString[keyof typeof StatusString]; // "PENDING" | "SUCCESS" | "ERROR"
 }
 
