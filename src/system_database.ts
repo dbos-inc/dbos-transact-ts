@@ -738,8 +738,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.endTime) {
       query = query.where('created_at', '<=', new Date(input.endTime).getTime());
     }
-    if (input.Status) {
-      query = query.where('status', input.Status);
+    if (input.status) {
+      query = query.where('status', input.status);
     }
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map(row => row.workflow_uuid);

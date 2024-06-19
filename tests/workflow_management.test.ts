@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import {
   Workflow,
-  GetApi,
   HandlerContext,
   PostApi,
   WorkflowContext,
   GetWorkflowsOutput,
   GetWorkflowsInput,
+  StatusString,
 } from "../src";
 import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
-import { TestingRuntime, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 
 describe("workflow-management-tests", () => {
@@ -58,6 +58,29 @@ describe("workflow-management-tests", () => {
     expect(response.statusCode).toBe(200);
     const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+  });
+
+  test("getworkflows-with-status", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    await dbosExec.flushWorkflowBuffers();
+
+    const input: GetWorkflowsInput = {
+      status: StatusString.SUCCESS,
+    }
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+
+    input.status = StatusString.PENDING;
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
   });
 
   class TestEndpoints {
