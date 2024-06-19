@@ -4,7 +4,7 @@ import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
-import { StatusString, WorkflowStatus } from "./workflow";
+import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
@@ -23,7 +23,7 @@ export interface SystemDatabase {
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string): Promise<Array<string>>;
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T) : void;
+  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
@@ -45,6 +45,9 @@ export interface SystemDatabase {
   //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
   getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
   setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
+
+  // Workflow management
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>
 }
 
 // For internal use, not serialized status.
@@ -76,10 +79,10 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
     client: 'pg',
     connection: systemPoolConfig,
     migrations: {
-        directory: migrationsDirectory,
-        tableName: 'knex_migrations'
+      directory: migrationsDirectory,
+      tableName: 'knex_migrations'
     }
-};
+  };
   const knexDB = knex(knexConfig)
   await knexDB.migrate.latest()
   await knexDB.destroy()
@@ -695,7 +698,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [wfn]);
 
     let v = res.rows[0]?.last_run_time ?? null;
-    if (v!== null) v = parseInt(`${v}`);
+    if (v !== null) v = parseInt(`${v}`);
     return v;
   }
 
@@ -709,5 +712,35 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [wfn, invtime]);
 
     return parseInt(`${res.rows[0].last_run_time}`);
+  }
+
+  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    const knexConfig = {
+      client: 'pg',
+      connection: this.systemPoolConfig,
+    };
+    const knexDB = knex(knexConfig);
+
+    let query = knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`);
+    if (input.workflowName) {
+      query = query.where('name', input.workflowName);
+    }
+    if (input.authenticatedUser) {
+      query = query.where('authenticated_user', input.authenticatedUser);
+    }
+    if (input.startTime) {
+      query = query.where('created_at', '>=', input.startTime.getTime());
+    }
+    if (input.endTime) {
+      query = query.where('created_at', '<=', input.endTime.getTime());
+    }
+    if (input.Status) {
+      query = query.where('status', input.Status);
+    }
+    const rows = await query.select('workflow_uuid');
+    const workflowUUIDs = rows.map(row => row.workflow_uuid);
+    return {
+      workflowUUIDs: workflowUUIDs
+    };
   }
 }

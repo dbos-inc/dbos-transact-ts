@@ -59,6 +59,18 @@ export interface WorkflowStatus {
   readonly request: HTTPRequest; // The parent request for this workflow, if any.
 }
 
+export interface GetWorkflowsInput {
+  workflowName?: string;
+  authenticatedUser?: string;
+  startTime?: Date;
+  endTime?: Date;
+  Status?: typeof StatusString[keyof typeof StatusString]; // "PENDING" | "SUCCESS" | "ERROR"
+}
+
+export interface GetWorkflowsOutput {
+  workflowUUIDs: string[];
+}
+
 export interface PgTransactionId {
   txid: string;
 }
