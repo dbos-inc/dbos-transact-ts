@@ -83,6 +83,20 @@ describe("workflow-management-tests", () => {
     expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
   });
 
+  test("getworkflows-with-wfname", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const input: GetWorkflowsInput = {
+      workflowName: "testWorkflow"
+    }
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+  });
+
   class TestEndpoints {
     @PostApi("/workflow/:name")
     @Workflow()
