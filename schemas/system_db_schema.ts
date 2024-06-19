@@ -11,6 +11,7 @@ export interface workflow_status {
   authenticated_roles: string;  // Serialized list of roles.
   request: string;  // Serialized HTTPRequest
   executor_id: string;  // Set to "local" for local deployment, set to microVM ID for cloud deployment.
+  application_version: string;
 }
 
 export interface notifications {

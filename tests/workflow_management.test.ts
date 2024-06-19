@@ -26,6 +26,7 @@ describe("workflow-management-tests", () => {
   });
 
   beforeEach(async () => {
+    process.env.DBOS__APPVERSION = "v0";
     await setUpDBOSTestDb(config);
     testRuntime = await createInternalTestRuntime([TestEndpoints], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
@@ -34,6 +35,7 @@ describe("workflow-management-tests", () => {
 
   afterEach(async () => {
     await testRuntime.destroy();
+    process.env.DBOS__APPVERSION = undefined;
   });
 
   test("simple-getworkflows", async () => {
@@ -117,6 +119,26 @@ describe("workflow-management-tests", () => {
     expect(response.statusCode).toBe(200);
     const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+  });
+
+  test("getworkflows-with-authentication", async () => {
+    let response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const input: GetWorkflowsInput = {
+      applicationVersion: "v0"
+    }
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+
+    input.applicationVersion = "v1"
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
   });
 
   async function testAuthMiddleware(_ctx: MiddlewareContext) {

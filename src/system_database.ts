@@ -741,6 +741,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.status) {
       query = query.where('status', input.status);
     }
+    if (input.applicationVersion) {
+      query = query.where('application_version', input.applicationVersion);
+    }
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map(row => row.workflow_uuid);
     return {
