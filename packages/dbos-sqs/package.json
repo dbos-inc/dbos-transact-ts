@@ -6,7 +6,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact",
-    "directory": "packages/communicator-email-sqs"
+    "directory": "packages/dbos-sqs"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/index.js",
