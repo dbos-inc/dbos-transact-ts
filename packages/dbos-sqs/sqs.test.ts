@@ -33,7 +33,7 @@ describe("sqs-tests", () => {
 
   beforeEach(async () => {
     if (sqsIsAvailable) {
-      testRuntime = await createTestingRuntime([SQSCommunicator, SQSReceiver],'sqs-test-dbos-config.yaml');
+      testRuntime = await createTestingRuntime(undefined,'sqs-test-dbos-config.yaml');
     }
     else {
       console.log("SQS Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and SQS_QUEUE_URL");

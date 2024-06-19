@@ -27,6 +27,6 @@
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.596.0",
     "@dbos-inc/aws-config": "^1.13.10",
-    "@dbos-inc/dbos-sdk": "file:../dbos-transact/dbos-inc-dbos-sdk-0.0.0-placeholder.tgz"
+    "@dbos-inc/dbos-sdk": "file:../../../dbos-transact/dbos-inc-dbos-sdk-0.0.0-placeholder.tgz"
   }
 }
