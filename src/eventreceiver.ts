@@ -1,8 +1,9 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
-import { Transaction } from './transaction';
+import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
+import { CommunicatorFunction } from './communicator';
 
 /*
  * Info provided to an event receiver at initialization,
@@ -27,8 +28,13 @@ export interface DBOSExecutorContext
    */
   getRegistrationsFor(eri: DBOSEventReceiver) : {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[];
 
-  transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
+  external<T extends unknown[], R>(commFn: CommunicatorFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+
+  send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
+  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
 }
 
 /*

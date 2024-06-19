@@ -25,6 +25,7 @@ export {
 export {
   CommunicatorContext,
   CommunicatorConfig,
+  CommunicatorFunction,
 } from './communicator';
 
 export * as Error from './error';
