@@ -738,6 +738,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.where('status', input.Status);
     }
     const rows = await query.select('workflow_uuid');
+    await knexDB.destroy();
     const workflowUUIDs = rows.map(row => row.workflow_uuid);
     return {
       workflowUUIDs: workflowUUIDs
