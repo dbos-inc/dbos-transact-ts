@@ -141,19 +141,32 @@ describe("workflow-management-tests", () => {
   });
 
   test("getworkflows-with-limit", async () => {
+
+    let response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const input: GetWorkflowsInput = {
+      limit: 10
+    }
+
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    expect(response.statusCode).toBe(200);
+    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    const firstUUID = workflowUUIDs.workflowUUIDs[0];
+
     for (let i = 0 ; i < 10; i++) {
-      const response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+      response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
       expect(response.statusCode).toBe(200);
       expect(response.text).toBe("alice");
     }
 
-    const input: GetWorkflowsInput = {
-      authenticatedUser: "alice"
-    }
-    const response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
+    response = await request(testRuntime.getHandlersCallback()).post("/getWorkflows").send({input});
     expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
+    expect(workflowUUIDs.workflowUUIDs).not.toContain(firstUUID);
   });
 
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
