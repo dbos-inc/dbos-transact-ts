@@ -59,6 +59,19 @@ export interface WorkflowStatus {
   readonly request: HTTPRequest; // The parent request for this workflow, if any.
 }
 
+export interface GetWorkflowsInput {
+  workflowName?: string; // The name of the workflow function
+  authenticatedUser?: string;
+  startTime?: string; // In RFC 3339 format
+  endTime?: string; // In RFC 3339 format
+  status?: "PENDING" | "SUCCESS" | "ERROR";
+  applicationVersion?: string;
+}
+
+export interface GetWorkflowsOutput {
+  workflowUUIDs: string[];
+}
+
 export interface PgTransactionId {
   txid: string;
 }
