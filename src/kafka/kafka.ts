@@ -16,13 +16,13 @@ type KafkaArgs = [string, number, KafkaMessage]
 export class DBOSKafka implements DBOSEventReceiver {
   readonly consumers: Consumer[] = [];
 
-  dbosExec?: DBOSExecutorContext = undefined;
+  executor?: DBOSExecutorContext = undefined;
 
   constructor() { }
 
   async initialize(dbosExecI: DBOSExecutorContext) {
-    this.dbosExec = dbosExecI;
-    const regops = this.dbosExec.getRegistrationsFor(this);
+    this.executor = dbosExecI;
+    const regops = this.executor.getRegistrationsFor(this);
     for (const registeredOperation of regops) {
       const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {
@@ -78,10 +78,10 @@ export class DBOSKafka implements DBOSEventReceiver {
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
             if (method.txnConfig) {
               // Execute the transaction
-              await this.dbosExec!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
+              await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
             } else if (method.workflowConfig) {
               // Safely start the workflow
-              await this.dbosExec!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+              await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
             }
           },
         })
@@ -105,10 +105,10 @@ export class DBOSKafka implements DBOSEventReceiver {
   }
 
   logRegisteredEndpoints() {
-    if (!this.dbosExec) return;
-    const logger = this.dbosExec.logger;
+    if (!this.executor) return;
+    const logger = this.executor.logger;
     logger.info("Kafka endpoints supported:");
-    const regops = this.dbosExec.getRegistrationsFor(this);
+    const regops = this.executor.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
       const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
       if (ro.kafkaTopics) {

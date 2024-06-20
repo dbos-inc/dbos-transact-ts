@@ -47,6 +47,7 @@ export interface DBOSExecutorContext
  */
 export interface DBOSEventReceiver
 {
+    executor ?: DBOSExecutorContext;
     destroy() : Promise<void>;
     initialize(executor: DBOSExecutorContext) : Promise<void>;
     logRegisteredEndpoints() : void;
