@@ -708,6 +708,10 @@ export interface WorkflowHandle<R> {
    * Return the workflow's UUID.
    */
   getWorkflowUUID(): string;
+  /**
+   * Return the workflow's inputs
+   */
+  getWorkflowInputs<T extends any[]>(): Promise<T>
 }
 
 /**
@@ -728,6 +732,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getResult(): Promise<R> {
     return this.workflowPromise;
   }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
+  }
 }
 
 /**
@@ -746,5 +754,9 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getResult(): Promise<R> {
     return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
+  }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
   }
 }
