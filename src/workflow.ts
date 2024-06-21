@@ -61,11 +61,12 @@ export interface WorkflowStatus {
 
 export interface GetWorkflowsInput {
   workflowName?: string; // The name of the workflow function
-  authenticatedUser?: string;
-  startTime?: string; // In RFC 3339 format
-  endTime?: string; // In RFC 3339 format
-  status?: "PENDING" | "SUCCESS" | "ERROR";
-  applicationVersion?: string;
+  authenticatedUser?: string; // The user who ran the workflow.
+  startTime?: string; // Timestamp in RFC 3339 format
+  endTime?: string; // Timestamp in RFC 3339 format
+  status?: "PENDING" | "SUCCESS" | "ERROR"; // The status of the workflow.
+  applicationVersion?: string; // The application version that ran this workflow.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
 
 export interface GetWorkflowsOutput {
@@ -708,6 +709,10 @@ export interface WorkflowHandle<R> {
    * Return the workflow's UUID.
    */
   getWorkflowUUID(): string;
+  /**
+   * Return the workflow's inputs
+   */
+  getWorkflowInputs<T extends any[]>(): Promise<T>
 }
 
 /**
@@ -728,6 +733,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getResult(): Promise<R> {
     return this.workflowPromise;
   }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
+  }
 }
 
 /**
@@ -746,5 +755,9 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getResult(): Promise<R> {
     return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
+  }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
   }
 }

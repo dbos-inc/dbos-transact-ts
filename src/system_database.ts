@@ -725,7 +725,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`);
+    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`).orderBy('created_at', 'desc');
     if (input.workflowName) {
       query = query.where('name', input.workflowName);
     }
@@ -743,6 +743,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (input.applicationVersion) {
       query = query.where('application_version', input.applicationVersion);
+    }
+    if (input.limit) {
+      query = query.limit(input.limit);
     }
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map(row => row.workflow_uuid);
