@@ -67,7 +67,8 @@ export interface WorkflowStatusInternal {
   applicationVersion: string;
   applicationID: string;
   createdAt: number;
-  maxRetries: number
+  maxRetries: number;
+  recovery: boolean;
 }
 
 export interface ExistenceCheck {
@@ -189,11 +190,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.applicationVersion,
         initStatus.applicationID,
         initStatus.createdAt,
-        true,
+        initStatus.recovery,
       ]
     );
     const workflow_retries = result.rows[0].workflow_retries;
-    if (workflow_retries >= initStatus.maxRetries) {
+    if (workflow_retries >= initStatus.maxRetries && initStatus.recovery) {
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
 

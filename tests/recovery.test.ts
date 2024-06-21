@@ -76,7 +76,10 @@ describe("recovery-tests", () => {
       expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
     }
 
-    console.log(handle.getWorkflowUUID());
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
+      await testRuntime.startWorkflow(LocalRecovery, handle.getWorkflowUUID()).doomedWorkflow();
+      expect(LocalRecovery.recoveryCount).toBe(i + LocalRecovery.maxRecoveryAttempts + 1);
+    }
   });
 
   test("local-recovery", async () => {
