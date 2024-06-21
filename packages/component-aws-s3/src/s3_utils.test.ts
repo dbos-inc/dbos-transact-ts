@@ -1,5 +1,4 @@
 import { FileRecord, S3Ops } from "./s3_utils";
-export { S3Ops };
 import {
   TestingRuntime, createTestingRuntime,
   configureInstance,
@@ -159,7 +158,7 @@ describe("ses-tests", () => {
 
   beforeEach(async () => {
     if (s3IsAvailable) {
-      testRuntime = await createTestingRuntime([S3Ops, TestUserFileTable], 'dbos-config.yaml');
+      testRuntime = await createTestingRuntime();
       s3Cfg!.config.bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
     }
     else {

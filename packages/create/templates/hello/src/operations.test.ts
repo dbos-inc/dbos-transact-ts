@@ -6,7 +6,7 @@ describe("operations-test", () => {
   let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
-    testRuntime = await createTestingRuntime([Hello]);
+    testRuntime = await createTestingRuntime();
   });
 
   afterAll(async () => {
