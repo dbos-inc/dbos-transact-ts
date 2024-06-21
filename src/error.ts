@@ -174,3 +174,10 @@ export class DBOSFailLoadOperationsError extends DBOSError {
     super(msg, FailLoadOperationsError);
   }
 }
+
+const DeadLetterQueueError = 18;
+export class DBOSDeadLetterQueueError extends DBOSError {
+  constructor(workflowUUID: string, maxRetries: number) {
+    super(`Workflow ${workflowUUID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`, DeadLetterQueueError);
+  }
+}
