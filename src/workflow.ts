@@ -66,7 +66,7 @@ export interface GetWorkflowsInput {
   endTime?: string; // Timestamp in RFC 3339 format
   status?: "PENDING" | "SUCCESS" | "ERROR"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
-  limit?: number; // Return up to this many workflows IDs. IDs are ordered by recency.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
 
 export interface GetWorkflowsOutput {
