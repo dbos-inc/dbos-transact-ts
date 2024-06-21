@@ -5,6 +5,7 @@ import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/te
 import { WorkflowRecoveryUrl } from "../src/httpServer/server";
 import request from "supertest";
 import { Client } from "pg";
+import { StatusString } from "../dist/src";
 
 describe("recovery-tests", () => {
   let config: DBOSConfig;
@@ -71,7 +72,7 @@ describe("recovery-tests", () => {
     @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
     static async doomedWorkflow(ctxt: WorkflowContext) {
       LocalRecovery.recoveryCount += 1
-      await ctxt.sleep(3);
+      await ctxt.sleep(5);
     }
   }
 
@@ -93,7 +94,8 @@ describe("recovery-tests", () => {
     }
 
     const { rows } = await systemDBClient.query<{status: string, workflow_retries: number}>(`SELECT status, workflow_retries FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(rows[0].workflow_retries).toBe(String(LocalRecovery.maxRecoveryAttempts * 2));
+    expect(rows[0].workflow_retries).toBe(String(LocalRecovery.maxRecoveryAttempts));
+    expect(rows[0].status).toBe(StatusString.DEADLETTER);
   });
 
   test("local-recovery", async () => {

@@ -195,6 +195,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
     const workflow_retries = result.rows[0].workflow_retries;
     if (workflow_retries >= initStatus.maxRetries && initStatus.recovery) {
+      await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.DEADLETTER, initStatus.workflowUUID, StatusString.PENDING]);
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
 
