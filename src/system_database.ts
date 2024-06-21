@@ -193,7 +193,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ]
     );
     const workflow_retries = result.rows[0].workflow_retries;
-    if (workflow_retries > initStatus.maxRetries) {
+    if (workflow_retries >= initStatus.maxRetries) {
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
 

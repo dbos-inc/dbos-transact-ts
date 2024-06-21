@@ -514,7 +514,7 @@ export class DBOSExecutor {
       applicationVersion: wCtxt.applicationVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
-      maxRetries: 50,
+      maxRetries: wCtxt.maxRecoveryAttempts,
     };
 
     if (wCtxt.isTempWorkflow) {

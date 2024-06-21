@@ -55,8 +55,9 @@ describe("recovery-tests", () => {
     }
 
     static recoveryCount = 0;
+    static readonly maxRecoveryAttempts = 10;
 
-    @Workflow()
+    @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
     static async doomedWorkflow(ctxt: WorkflowContext) {
       LocalRecovery.recoveryCount += 1
       await ctxt.sleep(3);
@@ -69,9 +70,10 @@ describe("recovery-tests", () => {
 
     const handle = await testRuntime.startWorkflow(LocalRecovery).doomedWorkflow();
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
       await dbosExec.recoverPendingWorkflows();
-      expect(LocalRecovery.recoveryCount <= 51);
+      expect(LocalRecovery.recoveryCount).toBeGreaterThanOrEqual(Math.min(i, LocalRecovery.maxRecoveryAttempts));
+      expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
     }
 
     console.log(handle.getWorkflowUUID());

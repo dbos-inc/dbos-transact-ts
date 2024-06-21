@@ -44,8 +44,8 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface WorkflowConfig {
+  maxRecoveryAttempts?: number;
 }
 
 export interface WorkflowStatus {
@@ -147,6 +147,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly #dbosExec;
   readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
+  readonly maxRecoveryAttempts;
 
   constructor(
     dbosExec: DBOSExecutor,
@@ -176,6 +177,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
+    this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
   }
 
   functionIDGetIncrement(): number {
