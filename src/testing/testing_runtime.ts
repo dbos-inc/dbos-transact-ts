@@ -21,7 +21,7 @@ import { DBOSScheduler } from "../scheduler/scheduler";
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
  */
-export async function createTestingRuntime(userClasses?: object[], configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
+export async function createTestingRuntime(userClasses: object[] | undefined = undefined, configFilePath: string = dbosConfigFilePath, dropSysDB: boolean = true): Promise<TestingRuntime> {
   const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
 
   if (dropSysDB) {
