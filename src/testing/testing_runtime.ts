@@ -15,7 +15,6 @@ import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
 import { get, set } from "lodash";
 import { Client } from "pg";
-import { DBOSKafka } from "../kafka/kafka";
 import { DBOSScheduler } from "../scheduler/scheduler";
 
 /**
@@ -88,7 +87,6 @@ export async function createInternalTestRuntime(userClasses: object[] | undefine
  */
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
-  #kafka: DBOSKafka | null = null;
   #scheduler: DBOSScheduler | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
@@ -102,8 +100,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     await dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
-    this.#kafka = new DBOSKafka(dbosExec);
-    await this.#kafka.initKafka();
+    for (const evtRcvr of dbosExec.eventReceivers) {
+      await evtRcvr.initialize(dbosExec);
+    }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
     this.#applicationConfig = dbosExec.config.application ?? {};
@@ -117,7 +116,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
     // Only release once.
     if (this.#isInitialized) {
       await this.#scheduler?.destroyScheduler();
-      await this.#kafka?.destroyKafka();
+      for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
+        await evtRcvr.destroy();
+      }
       await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;
     }
