@@ -53,7 +53,29 @@ describe("recovery-tests", () => {
       await LocalRecovery.promise1;
       return ctxt.authenticatedUser;
     }
+
+    static recoveryCount = 0;
+
+    @Workflow()
+    static async doomedWorkflow(ctxt: WorkflowContext) {
+      LocalRecovery.recoveryCount += 1
+      await ctxt.sleep(3);
+    }
   }
+
+  test("dead-letter-queue", async () => {
+    LocalRecovery.cnt = 0;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    const handle = await testRuntime.startWorkflow(LocalRecovery).doomedWorkflow();
+
+    for (let i = 0; i < 100; i++) {
+      await dbosExec.recoverPendingWorkflows();
+      expect(LocalRecovery.recoveryCount <= 51);
+    }
+
+    console.log(handle.getWorkflowUUID());
+  });
 
   test("local-recovery", async () => {
     LocalRecovery.cnt = 0;
