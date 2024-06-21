@@ -196,6 +196,7 @@ describe("dbos-tests", () => {
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
+    await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, "hello"])
 
     RetrieveWorkflowStatus.resolve1();
     await RetrieveWorkflowStatus.promise3;

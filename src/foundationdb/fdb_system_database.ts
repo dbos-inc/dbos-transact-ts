@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
 import { WorkflowStatusInternal, SystemDatabase } from "../system_database";
-import { StatusString, WorkflowStatus } from "../workflow";
+import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
@@ -405,5 +405,9 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
   setLastScheduledTime(_wfn: string, _invtime: number): Promise<number | null> {
     return Promise.resolve(null);
+  }
+
+  getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    throw new Error("Method not implemented.");
   }
 }

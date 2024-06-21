@@ -22,6 +22,8 @@ export {
   WorkflowConfig,
   WorkflowHandle,
   StatusString,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
 } from './workflow';
 
 export {

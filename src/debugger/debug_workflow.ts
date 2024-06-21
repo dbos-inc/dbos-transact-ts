@@ -468,4 +468,8 @@ class RetrievedHandleDebug<R> implements WorkflowHandle<R> {
   async getResult(): Promise<R> {
     return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
   }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
+  }
 }

@@ -385,7 +385,7 @@ describe("httpserver-tests", () => {
 
     @PostApi("/transaction/:name")
     @Transaction()
-    static async testTranscation(txnCtxt: TestTransactionContext, name: string) {
+    static async testTransaction(txnCtxt: TestTransactionContext, name: string) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`, [name]);
       return `hello ${rows[0].id}`;
     }
@@ -399,7 +399,7 @@ describe("httpserver-tests", () => {
     @PostApi("/workflow")
     @Workflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
-      const res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+      const res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
       return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
     }
 
@@ -407,8 +407,8 @@ describe("httpserver-tests", () => {
     @Workflow()
     static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
       // This workflow should encounter duplicate primary key error.
-      let res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
-      res = await wfCtxt.invoke(TestEndpoints).testTranscation(name);
+      let res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
+      res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
       return res;
     }
 
