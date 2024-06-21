@@ -4,22 +4,33 @@ import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { WorkflowRecoveryUrl } from "../src/httpServer/server";
 import request from "supertest";
+import { Client } from "pg";
 
 describe("recovery-tests", () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
+  let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
   });
 
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime(undefined, config);
     process.env.DBOS__VMID = ""
+    await systemDBClient.connect();
   });
 
   afterEach(async () => {
+    await systemDBClient.end();
     await testRuntime.destroy();
   });
 
@@ -80,6 +91,9 @@ describe("recovery-tests", () => {
       await testRuntime.startWorkflow(LocalRecovery, handle.getWorkflowUUID()).doomedWorkflow();
       expect(LocalRecovery.recoveryCount).toBe(i + LocalRecovery.maxRecoveryAttempts + 1);
     }
+
+    const { rows } = await systemDBClient.query<{status: string, workflow_retries: number}>(`SELECT status, workflow_retries FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(rows[0].workflow_retries).toBe(String(LocalRecovery.maxRecoveryAttempts * 2));
   });
 
   test("local-recovery", async () => {
