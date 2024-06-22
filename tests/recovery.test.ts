@@ -15,6 +15,11 @@ describe("recovery-tests", () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+  });
+
+  beforeEach(async () => {
+    testRuntime = await createInternalTestRuntime(undefined, config);
+    process.env.DBOS__VMID = ""
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -22,11 +27,6 @@ describe("recovery-tests", () => {
       password: config.poolConfig.password,
       database: config.system_database,
     });
-  });
-
-  beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    process.env.DBOS__VMID = ""
     await systemDBClient.connect();
   });
 
