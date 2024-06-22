@@ -67,12 +67,17 @@ describe("recovery-tests", () => {
     }
 
     static recoveryCount = 0;
-    static readonly maxRecoveryAttempts = 10;
+    static readonly maxRecoveryAttempts = 5;
+    static deadLetterResolve: () => void;
+    static deadLetterPromise = new Promise<void>((resolve) => {
+      LocalRecovery.deadLetterResolve = resolve;
+    });
+
 
     @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
-    static async doomedWorkflow(ctxt: WorkflowContext) {
+    static async deadLetterWorkflow(_ctxt: WorkflowContext) {
       LocalRecovery.recoveryCount += 1
-      await ctxt.sleep(5);
+      await LocalRecovery.deadLetterPromise;
     }
   }
 
@@ -80,7 +85,7 @@ describe("recovery-tests", () => {
     LocalRecovery.cnt = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const handle = await testRuntime.startWorkflow(LocalRecovery).doomedWorkflow();
+    const handle = await testRuntime.startWorkflow(LocalRecovery).deadLetterWorkflow();
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
       await dbosExec.recoverPendingWorkflows();
@@ -89,13 +94,15 @@ describe("recovery-tests", () => {
     }
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
-      await testRuntime.startWorkflow(LocalRecovery, handle.getWorkflowUUID()).doomedWorkflow();
+      await testRuntime.startWorkflow(LocalRecovery, handle.getWorkflowUUID()).deadLetterWorkflow();
       expect(LocalRecovery.recoveryCount).toBe(i + LocalRecovery.maxRecoveryAttempts + 1);
     }
 
     const { rows } = await systemDBClient.query<{status: string, workflow_retries: number}>(`SELECT status, workflow_retries FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
     expect(rows[0].workflow_retries).toBe(String(LocalRecovery.maxRecoveryAttempts));
     expect(rows[0].status).toBe(StatusString.DEADLETTER);
+
+    LocalRecovery.deadLetterResolve();
   });
 
   test("local-recovery", async () => {
