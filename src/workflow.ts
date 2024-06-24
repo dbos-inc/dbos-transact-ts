@@ -401,6 +401,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       assumedRole: this.assumedRole,
     };
 
+    // Note, node-pg converts JS arrays to postgres array literals, so args and bufferedResults must be 
+    // JSON.stringify before being passed to dbosExec.callProcedure
     const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
