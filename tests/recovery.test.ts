@@ -103,11 +103,12 @@ describe("recovery-tests", () => {
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
     LocalRecovery.deadLetterResolve();
+    await handle.getResult();
 
-    await dbosExec.flushWorkflowResultBuffer();
+    await dbosExec.flushWorkflowBuffers();
     result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
-    expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
   test("local-recovery", async () => {
