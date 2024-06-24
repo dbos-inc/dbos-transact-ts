@@ -6,7 +6,6 @@ import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
-import { DBOSKafka } from '../kafka/kafka';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { getAllRegisteredClasses } from '../decorators';
 
@@ -25,7 +24,6 @@ export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
-  private kafka: DBOSKafka | null = null;
   private scheduler: DBOSScheduler | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
@@ -48,12 +46,16 @@ export class DBOSRuntime {
       const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
-      this.kafka = new DBOSKafka(this.dbosExec);
-      await this.kafka.initKafka();
-      this.kafka.logRegisteredKafkaEndpoints();
+
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
+      for (const evtRcvr of this.dbosExec.eventReceivers) {
+        await evtRcvr.initialize(this.dbosExec);
+      }
+      for (const evtRcvr of this.dbosExec.eventReceivers) {
+        evtRcvr.logRegisteredEndpoints();
+      }
     } catch (error) {
       this.dbosExec?.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
@@ -104,11 +106,13 @@ export class DBOSRuntime {
   }
 
   /**
-   * Shut down the HTTP server and destroy workflow executor.
+   * Shut down the HTTP and other services and destroy workflow executor.
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
-    await this.kafka?.destroyKafka();
+    for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
+      await evtRcvr.destroy();
+    }
     if (this.servers) {
       this.servers.appServer.close();
       this.servers.adminServer.close();

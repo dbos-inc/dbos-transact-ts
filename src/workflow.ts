@@ -16,6 +16,7 @@ import { StoredProcedure, StoredProcedureContext } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;

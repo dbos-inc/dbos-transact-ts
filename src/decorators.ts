@@ -8,6 +8,7 @@ import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
 import { StoredProcedureContext } from "./procedure";
+import { DBOSEventReceiver } from "./eventreceiver";
 
 /**
  * Any column type column can be.
@@ -131,6 +132,7 @@ export interface RegistrationDefaults
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 }
 
 export interface MethodRegistrationBase {
@@ -148,6 +150,8 @@ export interface MethodRegistrationBase {
   commConfig?: CommunicatorConfig;
   procConfig?: TransactionConfig;
   isInstance: boolean;
+
+eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   registeredFunction: Function | undefined;
@@ -180,6 +184,8 @@ implements MethodRegistrationBase
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
   procConfig?: TransactionConfig;
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+
   init: boolean = false;
 
   invoke(pthis:This, args: Args) : Promise<Return> {
@@ -215,6 +221,8 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
+
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
   ctor: CT;
   constructor(ctor: CT) {
@@ -452,6 +460,26 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
     clsReg.needsInitialized = false;
   }
   return clsReg;
+}
+
+export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]) : object }>(
+  rcvr: DBOSEventReceiver, ctor: CT
+)
+{
+  const clsReg = getOrCreateClassRegistration(ctor);
+  if (!clsReg.eventReceiverInfo.has(rcvr)) {
+    clsReg.eventReceiverInfo.set(rcvr, {});
+  }
+  return clsReg.eventReceiverInfo.get(rcvr)!;
+}
+
+export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(rcvr: DBOSEventReceiver, target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+{
+  const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+  if (!registration.eventReceiverInfo.has(rcvr)) {
+    registration.eventReceiverInfo.set(rcvr, {});
+  }
+  return {descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)!};
 }
 
 //////////////////////////
