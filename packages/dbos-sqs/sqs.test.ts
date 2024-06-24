@@ -12,6 +12,7 @@ class SQSReceiver
   @Workflow()
   static async recvMessage(_ctx: WorkflowContext, _msg: Message) {
     ++SQSReceiver.msgRcvCount;
+    return Promise.resolve();
   }
 }
 

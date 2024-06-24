@@ -13,7 +13,7 @@ import {
   associateMethodWithEventReceiver,
 } from '@dbos-inc/dbos-sdk';
 
-import { DeleteMessageCommand, GetQueueAttributesCommand, GetQueueAttributesCommandInput, Message, ReceiveMessageCommand, ReceiveMessageCommandOutput, SQS, SQSClient, SendMessageCommand, SendMessageCommandInput } from "@aws-sdk/client-sqs";
+import { DeleteMessageCommand, GetQueueAttributesCommand, GetQueueAttributesCommandInput, Message, ReceiveMessageCommand, ReceiveMessageCommandOutput, SQSClient, SendMessageCommand, SendMessageCommandInput } from "@aws-sdk/client-sqs";
 import { AWSServiceConfig, getAWSConfigForService, loadAWSConfigByName } from '@dbos-inc/aws-config';
 
 // Create a new type that omits the QueueUrl property
@@ -123,7 +123,7 @@ class SQSReceiver implements DBOSEventReceiver
         return new Promise((resolve, reject) => {
         sqs.send(params)
             .then(response => resolve(response))
-            .catch(error => reject(error));
+            .catch(error => reject(error as Error));
         });
     }
 
@@ -163,9 +163,10 @@ class SQSReceiver implements DBOSEventReceiver
                     await SQSCommunicator.validateConnection(sqs, url);
                     executor.logger.info(`Successfully connected to SQS queue ${url} for ${cname}.${mname}`);
                 }
-                catch (e) {
-                    executor.logger.error(e);
-                    throw new DBOSError.DBOSError(`SQS Receiver for ${cname}.${mname} was unable to connect: ${e}`);
+                catch (e) { 
+                    const err = e as Error;
+                    executor.logger.error(err);
+                    throw new DBOSError.DBOSError(`SQS Receiver for ${cname}.${mname} was unable to connect: ${err.message}`);
                 }
                 this.listeners.push((async (client: SQSClient, url: string) =>
                 {
