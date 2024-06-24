@@ -98,11 +98,16 @@ describe("recovery-tests", () => {
       expect(LocalRecovery.recoveryCount).toBe(i + LocalRecovery.maxRecoveryAttempts + 1);
     }
 
-    const { rows } = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
-    expect(rows[0].status).toBe(StatusString.NORETRY);
+    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
+    expect(result.rows[0].status).toBe(StatusString.NORETRY);
 
     LocalRecovery.deadLetterResolve();
+
+    await dbosExec.flushWorkflowResultBuffer();
+    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
+    expect(result.rows[0].status).toBe(StatusString.NORETRY);
   });
 
   test("local-recovery", async () => {
