@@ -415,7 +415,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
     try {
-      const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, ...$args);
+      const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, $args);
 
       const { error, output, txn_snapshot, txn_id, created_at } = return_value;
 
