@@ -6,7 +6,7 @@ import {
   Error as DBOSError,
 
   DBOSEventReceiver,
-  DBOSExecutorEventReceiverInterface,
+  DBOSExecutorContext,
   WorkflowContext,
   WorkflowFunction,
   associateClassWithEventReceiver,
@@ -103,7 +103,7 @@ interface SQSReceiverMethodSpecifics {
 
 class SQSReceiver implements DBOSEventReceiver
 {
-    executor?: DBOSExecutorEventReceiverInterface;
+    executor?: DBOSExecutorContext;
     listeners: Promise<void>[] = [];
     isShuttingDown = false;
 
@@ -127,15 +127,15 @@ class SQSReceiver implements DBOSEventReceiver
         });
     }
 
-    async initialize(executor: DBOSExecutorEventReceiverInterface) {
+    async initialize(executor: DBOSExecutorContext) {
         this.executor = executor;
         const regops = this.executor.getRegistrationsFor(this);
         for (const registeredOperation of regops) {
-            const cro = registeredOperation.cinfo as SQSReceiverClassDefaults;
-            const mro = registeredOperation.minfo as SQSReceiverMethodSpecifics;
+            const cro = registeredOperation.classConfig as SQSReceiverClassDefaults;
+            const mro = registeredOperation.methodConfig as SQSReceiverMethodSpecifics;
             const url = cro.config?.queueURL ?? mro.config?.queueURL;
             if (url) {
-                const method = registeredOperation.method;
+                const method = registeredOperation.methodReg;
                 const cname = method.className;
                 const mname = method.name;
                 if (!method.workflowConfig) {
@@ -217,12 +217,12 @@ class SQSReceiver implements DBOSEventReceiver
         logger.info("SQS receiver endpoints:");
         const regops = this.executor.getRegistrationsFor(this);
         regops.forEach((registeredOperation) => {
-            const co = registeredOperation.cinfo as SQSReceiverClassDefaults;
-            const mo = registeredOperation.minfo as SQSReceiverMethodSpecifics;
+            const co = registeredOperation.classConfig as SQSReceiverClassDefaults;
+            const mo = registeredOperation.methodConfig as SQSReceiverMethodSpecifics;
             const url = co.config?.queueURL ?? mo.config?.queueURL;
             if (url) {
-                const cname = registeredOperation.method.className;
-                const mname = registeredOperation.method.name;
+                const cname = registeredOperation.methodReg.className;
+                const mname = registeredOperation.methodReg.name;
                 logger.info(`    ${url} -> ${cname}.${mname}`);
             }
         });    

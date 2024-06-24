@@ -24,9 +24,11 @@
     "ts-jest": "^29.1.4",
     "typescript": "^5.3.3"
   },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "^1.15.7-preview"
+  },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.596.0",
-    "@dbos-inc/aws-config": "^1.13.10",
-    "@dbos-inc/dbos-sdk": "file:../../../dbos-transact/dbos-inc-dbos-sdk-0.0.0-placeholder.tgz"
+    "@dbos-inc/aws-config": "^1.13.10"
   }
 }
