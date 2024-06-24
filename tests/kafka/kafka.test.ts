@@ -80,7 +80,7 @@ describe("kafka-tests", () => {
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
-      testRuntime = await createInternalTestRuntime([DBOSTestClass], config);
+      testRuntime = await createInternalTestRuntime(undefined, config);
     }
   }, 30000);
 

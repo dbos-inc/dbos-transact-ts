@@ -7,8 +7,9 @@ import { ValuesOf } from "./utils";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
-// Can we call it TransactionFunction
+// Can we gradually call it TransactionFunction?
 export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+export type TransactionFunction<T extends unknown[], R> = Transaction<T, R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;

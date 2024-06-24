@@ -15,6 +15,7 @@ import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { InvokeFuncsInst } from "./httpServer/handler";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
@@ -57,6 +58,20 @@ export interface WorkflowStatus {
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
   readonly request: HTTPRequest; // The parent request for this workflow, if any.
+}
+
+export interface GetWorkflowsInput {
+  workflowName?: string; // The name of the workflow function
+  authenticatedUser?: string; // The user who ran the workflow.
+  startTime?: string; // Timestamp in RFC 3339 format
+  endTime?: string; // Timestamp in RFC 3339 format
+  status?: "PENDING" | "SUCCESS" | "ERROR"; // The status of the workflow.
+  applicationVersion?: string; // The application version that ran this workflow.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+}
+
+export interface GetWorkflowsOutput {
+  workflowUUIDs: string[];
 }
 
 export interface PgTransactionId {
@@ -387,7 +402,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       this.span,
     );
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       let txn_snapshot = "invalid";
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
@@ -695,6 +710,10 @@ export interface WorkflowHandle<R> {
    * Return the workflow's UUID.
    */
   getWorkflowUUID(): string;
+  /**
+   * Return the workflow's inputs
+   */
+  getWorkflowInputs<T extends any[]>(): Promise<T>
 }
 
 /**
@@ -715,6 +734,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   async getResult(): Promise<R> {
     return this.workflowPromise;
   }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
+  }
 }
 
 /**
@@ -733,5 +756,9 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
 
   async getResult(): Promise<R> {
     return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
+  }
+
+  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+    return await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID) as T;
   }
 }

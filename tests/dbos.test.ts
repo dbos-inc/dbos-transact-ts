@@ -22,7 +22,7 @@ describe("dbos-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([DBOSTestClass, ReadRecording, RetrieveWorkflowStatus], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     DBOSTestClass.cnt = 0;
   });
 
@@ -196,6 +196,7 @@ describe("dbos-tests", () => {
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
+    await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, "hello"])
 
     RetrieveWorkflowStatus.resolve1();
     await RetrieveWorkflowStatus.promise3;

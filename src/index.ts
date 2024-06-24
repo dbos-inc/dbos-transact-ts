@@ -11,18 +11,23 @@ export {
 export {
   TransactionContext,
   TransactionConfig,
+  TransactionFunction,
 } from './transaction';
 
 export {
   WorkflowContext,
   WorkflowConfig,
   WorkflowHandle,
+  WorkflowFunction,
   StatusString,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
 } from './workflow';
 
 export {
   CommunicatorContext,
   CommunicatorConfig,
+  CommunicatorFunction,
 } from './communicator';
 
 export * as Error from './error';
@@ -61,6 +66,10 @@ export {
   RequiredRole,
   DBOSInitializer,
   DBOSDeploy,
+
+  // Extensions for others to register event receivers/pollers
+  associateMethodWithEventReceiver,
+  associateClassWithEventReceiver,
 } from "./decorators";
 
 export {
@@ -106,6 +115,11 @@ export {
   SchedulerConfig,
   Scheduled,
 } from "./scheduler/scheduler";
+
+export {
+  DBOSEventReceiver,
+  DBOSExecutorContext,
+} from "./eventreceiver";
 
 export {
   ParseOptions,

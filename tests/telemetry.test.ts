@@ -9,7 +9,7 @@ import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
-class TestClass {
+export class TestClass {
   @Transaction({ readOnly: false })
   static async test_function(txnCtxt: TestTransactionContext, name: string): Promise<string> {
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
@@ -65,7 +65,7 @@ describe("dbos-telemetry", () => {
     });
 
     beforeEach(async () => {
-      testRuntime = await createInternalTestRuntime([TestClass], config);
+      testRuntime = await createInternalTestRuntime(undefined, config);
     });
 
     afterEach(async () => {

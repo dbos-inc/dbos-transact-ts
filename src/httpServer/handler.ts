@@ -2,7 +2,7 @@ import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistra
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
-import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst } from "../workflow";
+import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst, GetWorkflowsInput, GetWorkflowsOutput } from "../workflow";
 import { Transaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -17,7 +17,7 @@ type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 export type InvokeFuncsInst<T> = WFInvokeFuncsInst<T>;
 
-export type AsyncHandlerWfFuncs<T> = 
+export type AsyncHandlerWfFuncs<T> =
   T extends ConfiguredInstance
   ? never
   : {
@@ -56,6 +56,7 @@ export interface HandlerContext extends DBOSContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
 }
 
 export const RequestIDHeader = "x-request-id";
@@ -148,21 +149,21 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
     for (const op of ops) {
       if (asyncWf) {
-         
+
         proxy[op.name] = op.txnConfig
-           
+
           ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
           : op.workflowConfig
-           
+
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
-           
+
           ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
-         
+
         proxy[op.name] = op.workflowConfig
-           
+
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) => handle.getResult())
           : undefined;
       }
@@ -175,7 +176,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       return this.mainInvoke(object, workflowUUID, true, null);
     }
     else {
-      const targetInst = object as ConfiguredInstance;      
+      const targetInst = object as ConfiguredInstance;
       return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as InvokeFuncsInst<T>;
     }
   }
@@ -185,7 +186,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       return this.mainInvoke(object, workflowUUID, true, null);
     }
     else {
-      const targetInst = object as ConfiguredInstance;      
+      const targetInst = object as ConfiguredInstance;
       return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
@@ -198,6 +199,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       const targetInst = object as ConfiguredInstance;
       return this.mainInvoke(targetInst, workflowUUID, false, targetInst) as unknown as SyncHandlerWfFuncsInst<T>;
     }
+  }
+
+  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    return this.#dbosExec.systemDatabase.getWorkflows(input);
   }
 
   //////////////////////

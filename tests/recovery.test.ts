@@ -15,7 +15,7 @@ describe("recovery-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([LocalRecovery, ExecutorRecovery], config);
+    testRuntime = await createInternalTestRuntime(undefined, config);
     process.env.DBOS__VMID = ""
   });
 

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError } from "./error";
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -32,7 +32,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext } from './context';
@@ -41,6 +41,9 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
+import { DBOSEventReceiver, DBOSExecutorContext } from ".";
+
+import { get } from "lodash";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -97,7 +100,7 @@ const TempWorkflowType = {
   send: "send",
 } as const;
 
-export class DBOSExecutor {
+export class DBOSExecutor implements DBOSExecutorContext {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -142,6 +145,8 @@ export class DBOSExecutor {
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
   entities: Function[] = [];
+
+  eventReceivers: DBOSEventReceiver[] = [];
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
@@ -270,13 +275,31 @@ export class DBOSExecutor {
       } else if (ro.commConfig) {
         this.#registerCommunicator(ro);
       }
+      for (const [evtRcvr, _cfg] of ro.eventReceiverInfo) {
+        if (!this.eventReceivers.includes(evtRcvr)) this.eventReceivers.push(evtRcvr);
+      }
     }
   }
 
-  async init(...classes: object[]): Promise<void> {
+  getRegistrationsFor(obj: DBOSEventReceiver) {
+    const res: {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[] = [];
+    for (const r of this.registeredOperations) {
+      if (!r.eventReceiverInfo.has(obj)) continue;
+      const methodConfig = r.eventReceiverInfo.get(obj)!;
+      const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
+      res.push({methodReg: r, methodConfig, classConfig})
+    }
+    return res;
+  }
+
+  async init(classes?: object[]): Promise<void> {
     if (this.initialized) {
       this.logger.error("Workflow executor already initialized!");
       return;
+    }
+
+    if (!classes || !classes.length) {
+      classes = getAllRegisteredClasses();
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
@@ -865,5 +888,14 @@ export class DBOSExecutor {
         }
       }
     });
+  }
+
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
+    const value = get(this.config.application, key, defaultValue);
+    // If the key is found and the default value is provided, check whether the value is of the same type.
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
+    }
+    return value;
   }
 }
