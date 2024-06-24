@@ -1,7 +1,7 @@
 CREATE FUNCTION "{{appVersion}}{{methodName}}_func"(
     _workflow_uuid TEXT,
     _context JSONB,
-    _params JSONB,
+    _params JSONB
 ) RETURNS JSONB AS $$ 
 
     if (globalThis.${{appVersion}}run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
@@ -21,7 +21,7 @@ CREATE PROCEDURE "{{appVersion}}{{methodName}}_proc"(
     preset BOOLEAN, 
     _context JSONB,
     OUT return_value JSONB,
-    _params JSONB,
+    _params JSONB
 )
 LANGUAGE plpgsql
 as $$
