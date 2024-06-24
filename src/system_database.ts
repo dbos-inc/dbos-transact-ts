@@ -154,7 +154,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
-    const result = await this.pool.query<{workflow_retries: number}>(
+    const result = await this.pool.query<{recovery_attempts: number}>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
         workflow_uuid,
         status,
@@ -173,8 +173,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          workflow_retries = CASE WHEN $15 THEN workflow_status.workflow_retries + 1 ELSE workflow_status.workflow_retries END
-        RETURNING workflow_retries`,
+          recovery_attempts = CASE WHEN $15 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
+        RETURNING recovery_attempts`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -193,8 +193,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.recovery,
       ]
     );
-    const workflow_retries = result.rows[0].workflow_retries;
-    if (workflow_retries >= initStatus.maxRetries && initStatus.recovery) {
+    const recovery_attempts = result.rows[0].recovery_attempts;
+    if (recovery_attempts >= initStatus.maxRetries && initStatus.recovery) {
       await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.DEADLETTER, initStatus.workflowUUID, StatusString.PENDING]);
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }

@@ -2,7 +2,7 @@ exports.up = function(knex) {
     return knex.schema.withSchema('dbos')
         .table('workflow_status', function(table) {
 
-            table.bigInteger('workflow_retries')
+            table.bigInteger('recovery_attempts')
                 .defaultTo(0);
         });
 };
@@ -10,6 +10,6 @@ exports.up = function(knex) {
 exports.down = function(knex) {
     return knex.schema.withSchema('dbos')
         .table('workflow_status', function(table) {
-            table.dropColumn('workflow_retries');
+            table.dropColumn('recovery_attempts');
         });
 };
