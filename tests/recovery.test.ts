@@ -100,7 +100,7 @@ describe("recovery-tests", () => {
 
     const { rows } = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
     expect(rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
-    expect(rows[0].status).toBe(StatusString.DEADLETTER);
+    expect(rows[0].status).toBe(StatusString.NORETRY);
 
     LocalRecovery.deadLetterResolve();
   });
