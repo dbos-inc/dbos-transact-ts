@@ -13,15 +13,6 @@ async function render(file: string, ctx?: object): Promise<string> {
   return await engine.renderFile(file, ctx) as string;
 }
 
-function mapType(type: tsm.Type) {
-  if (type.isString()) { return "TEXT"; }
-  if (type.isNumber()) { return "INT"; }
-  if (type.isBoolean()) { return "BOOLEAN"; }
-  // TODO: support more types
-
-  throw new Error(`Unsupported type: ${type.getText()}`);
-}
-
 function getAppVersion(appVersion: string | boolean | undefined) {
   const version = function() {
     if (typeof appVersion === "string") { return appVersion; }
@@ -79,9 +70,8 @@ function getMethodContext(method: tsm.MethodDeclaration, config: TransactionConf
   const methodName = method.getName();
   const className = method.getParentIfKindOrThrow(tsm.SyntaxKind.ClassDeclaration).getName();
   const moduleName = method.getSourceFile().getBaseNameWithoutExtension();
-  const parameters = method.getParameters().slice(1).map(p => ({ name: p.getName(), type: mapType(p.getType()) }));
 
-  const context = { ...config, methodName, className, moduleName, parameters, appVersion };
+  const context = { ...config, methodName, className, moduleName, appVersion };
   return context;
 }
 

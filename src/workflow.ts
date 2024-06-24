@@ -401,7 +401,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       assumedRole: this.assumedRole,
     };
 
-    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, ...args];
+    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, args];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
       const bufferedResults = new Array<[number, unknown, string, number?]>();
