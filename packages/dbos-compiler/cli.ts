@@ -14,16 +14,16 @@ async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: 
 
   const createFile = await fsp.open(path.join(outDir, "create.sql"), "w");
   try {
-    const append = async (sql: string) => { await createFile.write(sql); };
-    await generateCreate(append, result, appVersion);
+    const executeSql = async (sql: string) => { await createFile.write(sql); };
+    await generateCreate(executeSql, result, appVersion);
   } finally {
     await createFile.close();
   }
 
   const dropFile = await fsp.open(path.join(outDir, "drop.sql"), "w");
   try {
-    const append = async (sql: string) => { await dropFile.write(sql); };
-    await generateDrop(append, result, appVersion);
+    const executeSql = async (sql: string) => { await dropFile.write(sql); };
+    await generateDrop(executeSql, result, appVersion);
   } finally {
     await createFile.close();
   }
@@ -34,8 +34,8 @@ async function deployToDatabase(config: pg.ClientConfig, result: CompileResult, 
   try {
     await client.connect();
     console.log(`Deploying to database: ${client.host}:${client.port ?? 5432}/${client.database}`);
-    const append = async (sql: string) => { await client.query(sql); };
-    await generateCreate(append, result, appVersion);
+    const executeSql = async (sql: string) => { await client.query(sql); };
+    await generateCreate(executeSql, result, appVersion);
   } finally {
     await client.end();
   }

@@ -31,37 +31,37 @@ function getAppVersion(appVersion: string | boolean | undefined) {
   return version ? `v${version}_` : undefined;
 }
 
-export async function generateCreate(append: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
+export async function generateCreate(executeSql: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
   const appVersion = getAppVersion(appVersionOption);
 
   const dbosSql = await generateDbosCreate(appVersion);
-  await append(dbosSql);
+  await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
     const moduleSql = await generateModuleCreate(sourceFile, appVersion);
-    await append(moduleSql);
+    await executeSql(moduleSql);
   }
 
   for (const [method, config] of methods) {
     const methodSql = await generateMethodCreate(method, config, appVersion);
-    await append(methodSql);
+    await executeSql(methodSql);
   }
 }
 
-export async function generateDrop(append: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
+export async function generateDrop(executeSql: (sql: string) => Promise<void>, { project, methods }: CompileResult, appVersionOption?: string | boolean) {
   const appVersion = getAppVersion(appVersionOption);
 
   const dbosSql = await generateDbosDrop(appVersion);
-  await append(dbosSql);
+  await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
     const moduleSql = await generateModuleDrop(sourceFile, appVersion);
-    await append(moduleSql);
+    await executeSql(moduleSql);
   }
 
   for (const [method, config] of methods) {
     const methodSql = await generateMethodDrop(method, config, appVersion);
-    await append(methodSql);
+    await executeSql(methodSql);
   }
 }
 
