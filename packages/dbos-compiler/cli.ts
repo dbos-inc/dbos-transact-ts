@@ -90,6 +90,7 @@ function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): str
 program
   // FYI, commander package doesn't seem to handle app version options correctly in deploy subcommand if compile isn't also a subcommand
   .command("compile")
+  .description('Generate SQL files to create and drop @StoredProcedure routines from DBOS application')
   .argument('[tsconfigPath]', 'path to tsconfig.json')
   .option('-o, --out <string>', 'path to output folder')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
@@ -112,13 +113,13 @@ interface DeployOptions {
 
 program
   .command("deploy")
+  .description('Deploy DBOS application @StoredProcedure routines to database specified in dbos-config.yaml')
   .argument('[tsconfigPath]', 'path to tsconfig.json')
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
-
     if (tsconfigPath) {
       const compileResult = compile(tsconfigPath);
       if (compileResult) {
@@ -130,13 +131,13 @@ program
 
 program
   .command("drop")
+  .description('Drop DBOS application @StoredProcedure routines from database specified in dbos-config.yaml')
   .argument('[tsconfigPath]', 'path to tsconfig.json')
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
-
     if (tsconfigPath) {
       const compileResult = compile(tsconfigPath);
       if (compileResult) {
