@@ -29,6 +29,32 @@ export interface S3Config{
     }
 }
 
+interface S3GetResponseOptions {
+    PartNumber?: number;
+    Range?: string;
+
+    RequestPayer?: 'requester' | undefined;
+
+    IfMatch?: string;
+    IfModifiedSince?: Date;
+    IfNoneMatch?: string;
+    IfUnmodifiedSince?: Date;
+
+    ExpectedBucketOwner?: string;
+    SSECustomerAlgorithm?: string;
+    SSECustomerKey?: string;
+    SSECustomerKeyMD5?: string;
+
+    VersionId?: string;
+
+    ResponseCacheControl?: string;
+    ResponseContentDisposition?: string;
+    ResponseContentEncoding?: string;
+    ResponseContentLanguage?: string;
+    ResponseContentType?: string;
+    ResponseExpires?: Date;
+}
+
 export class S3Ops extends ConfiguredInstance {
     //////////
     // S3 Configuration
@@ -114,11 +140,12 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     // Presigned GET key
-    static async getS3KeyCmd(s3: S3Client, bucket: string, key: string, expirationSecs: number)
+    static async getS3KeyCmd(s3: S3Client, bucket: string, key: string, expirationSecs: number, options: S3GetResponseOptions = {})
     {
         const getObjectCommand = new GetObjectCommand({
             Bucket: bucket,
             Key: key,
+            ...options
         });
 
         const presignedUrl = await getSignedUrl(s3, getObjectCommand, { expiresIn: expirationSecs, });
@@ -126,9 +153,9 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async presignedGetURL(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600)
+    async presignedGetURL(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600, options: S3GetResponseOptions = {})
     {
-        return await S3Ops.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs);
+        return await S3Ops.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, options);
     }
 
     // Presigned post key
@@ -230,9 +257,9 @@ export class S3Ops extends ConfiguredInstance {
 
     //  Presigned D/L for end user
     @Workflow()
-    async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600) : Promise<string>
+    async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600, options: S3GetResponseOptions = {}) : Promise<string>
     {
-        return await ctx.invoke(this).presignedGetURL(fileDetails.key, expirationSec);
+        return await ctx.invoke(this).presignedGetURL(fileDetails.key, expirationSec, options);
     }
 
     //  Presigned U/L for end user
@@ -260,8 +287,11 @@ export class S3Ops extends ConfiguredInstance {
         await ctx.setEvent<PresignedPost>("uploadkey", upkey);
 
         try {
-            await ctx.recv("uploadfinish", expirationSec + 60); // 1 minute extra?
+            const res = await ctx.recv<boolean>("uploadfinish", expirationSec + 60); // 1 minute extra?
 
+            if (!res) {
+                throw new Error("S3 operation timed out or canceled");
+            }
             // TODO: Validate the file
             await this.config.s3Callbacks?.fileActivated(ctx, fileDetails);
         }
