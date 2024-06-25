@@ -12,8 +12,9 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
-import { StoredProcedure, StoredProcedureContext } from "./procedure";
+import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
+import { PoolClient } from "pg";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -373,26 +374,85 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.startChildWorkflow(wf, ...args);
   }
 
-  // TODO: ConfiguredInstance support
-  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
-    const procInfo = this.#dbosExec.getProcedureInfo(proc);
-    if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
-    const readOnly = procInfo.config.readOnly ?? false;
-    const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#dbosExec.tracer.startSpan(
-      proc.name,
-      {
-        operationUUID: this.workflowUUID,
-        operationType: OperationType.PROCEDURE,
-        authenticatedUser: this.authenticatedUser,
-        assumedRole: this.assumedRole,
-        authenticatedRoles: this.authenticatedRoles,
-        readOnly: readOnly,
-        isolationLevel: procInfo.config.isolationLevel,
-        executorID: this.executorID,
-      },
-      this.span,
-    );
+  async #invokeProcLocal<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    const readOnly = config.readOnly ?? false;
+
+    while (true) {
+      let txn_snapshot = "invalid";
+      const wrappedProcedure = async (client: PoolClient): Promise<R> => {
+        const ctxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
+
+        if (this.presetUUID) {
+          const check: BufferedResult = await this.checkExecution<R>(client, this.functionID);
+          txn_snapshot = check.txn_snapshot;
+          if (check.output !== dbosNull) {
+            ctxt.span.setAttribute("cached", true);
+            ctxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.#dbosExec.tracer.endSpan(ctxt.span);
+            return check.output as R;
+          }
+        } else {
+          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
+          txn_snapshot = await this.retrieveSnapshot(client);
+        }
+
+        // For non-read-only transactions, flush the result buffer.
+        if (!readOnly) {
+          await this.flushResultBuffer(client);
+        }
+
+        const result = await proc(ctxt, ...args);
+
+        if (readOnly) {
+          // Buffer the output of read-only transactions instead of synchronously writing it.
+          const readOutput: BufferedResult = {
+            output: result,
+            txn_snapshot: txn_snapshot,
+            created_at: Date.now(),
+          }
+          this.resultBuffer.set(funcId, readOutput);
+        } else {
+          // Synchronously record the output of write transactions and obtain the transaction ID.
+          const pg_txn_id = await this.recordOutput<R>(client, funcId, txn_snapshot, result);
+          ctxt.span.setAttribute("pg_txn_id", pg_txn_id);
+          this.resultBuffer.clear();
+        }
+
+        return result;
+      };
+
+      try {
+        const result = await this.#dbosExec.executeProcedure(wrappedProcedure, { isolationLevel: config.isolationLevel });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        }
+
+        // Record and throw other errors.
+        const e: Error = err as Error;
+        await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
+          await this.flushResultBuffer(client);
+          await this.recordError(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+        this.resultBuffer.clear();
+        throw err;
+      }
+    }
+  }
+
+  async #invokeProcRemote<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+    const readOnly = config.readOnly ?? false;
 
     const $jsonCtx = {
       request: this.request,
@@ -401,8 +461,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       assumedRole: this.assumedRole,
     };
 
-    // Note, node-pg converts JS arrays to postgres array literals, so args and bufferedResults must be 
-    // JSON.stringify before being passed to dbosExec.callProcedure
+    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on 
+    // args and bufferedResults before being passed to dbosExec.callProcedure
     const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
@@ -416,40 +476,69 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
 
     type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
+    const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, $args);
+
+    const { error, output, txn_snapshot, txn_id, created_at } = return_value;
+
+    // buffered results are persisted in r/w stored procs, even if it returns an error
+    if (!readOnly) {
+      this.resultBuffer.clear();
+    }
+
+    // if the stored proc returns an error, deserialize and throw it. 
+    // stored proc saves the error in tx_output before returning 
+    if (error) {
+      throw deserializeError(error);
+    }
+
+    // if txn_snapshot is provided, the output needs to be buffered
+    if (readOnly && txn_snapshot) {
+      this.resultBuffer.set(funcId, {
+        output,
+        txn_snapshot,
+        created_at: created_at ?? Date.now(),
+      });
+    }
+
+    if (!readOnly) {
+      this.resultBuffer.clear();
+    }
+
+    if (txn_id) {
+      span.setAttribute("pg_txn_id", txn_id);
+    }
+    span.setStatus({ code: SpanStatusCode.OK });
+    return output!;
+  }
+
+  // TODO: ConfiguredInstance support
+  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+    const procInfo = this.#dbosExec.getProcedureInfo(proc);
+    if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
+    const executeLocally = procInfo.config.executeLocally ?? false;
+    const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      proc.name,
+      {
+        operationUUID: this.workflowUUID,
+        operationType: OperationType.PROCEDURE,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
+        readOnly: procInfo.config.readOnly ?? false,
+        isolationLevel: procInfo.config.isolationLevel,
+        executeLocally,
+        executorID: this.executorID,
+      },
+      this.span,
+    );
+
     try {
-      const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, $args);
-
-      const { error, output, txn_snapshot, txn_id, created_at } = return_value;
-
-      // buffered results are persisted in r/w stored procs, even if it returns an error
-      if (!readOnly) {
-        this.resultBuffer.clear();
-      }
-
-      // if the stored proc returns an error, deserialize and throw it. 
-      // stored proc saves the error in tx_output before returning 
-      if (error) {
-        throw deserializeError(error);
-      }
-
-      // if txn_snapshot is provided, the output needs to be buffered
-      if (readOnly && txn_snapshot) {
-        this.resultBuffer.set(funcId, {
-          output,
-          txn_snapshot,
-          created_at: created_at ?? Date.now(),
-        });
-      }
-
-      if (!readOnly) {
-        this.resultBuffer.clear();
-      }
-
-      if (txn_id) {
-        span.setAttribute("pg_txn_id", txn_id);
-      }
+      const result = executeLocally
+        ? await this.#invokeProcLocal(proc, args, span, procInfo.config, funcId)
+        : await this.#invokeProcRemote(proc, args, span, procInfo.config, funcId);
       span.setStatus({ code: SpanStatusCode.OK });
-      return output!; // output will be undefined if tx function returns void
+      return result;
     } catch (e) {
       const { message } = e as { message: string };
       span.setStatus({ code: SpanStatusCode.ERROR, message });
@@ -729,7 +818,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
-            : undefined;
+              : undefined;
       }
       return proxy as WFInvokeFuncs<T>;
     }
@@ -743,7 +832,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
-              : undefined;
+            : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
     }

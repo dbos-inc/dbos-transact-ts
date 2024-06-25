@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
-import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from "../transaction";
+import { IsolationLevel, Transaction, TransactionContextImpl } from "../transaction";
 import { Communicator } from "../communicator";
 import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
@@ -88,34 +88,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
   }
 
-  async checkProcExecution<R>(client: PoolClient, funcID: number): Promise<RecordedResult<R> | Error> {
-    const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
-    const { rows } = await client.query<transaction_outputs>(query, [this.workflowUUID, funcID]);
-
-    if (rows.length === 0 || rows.length > 1) {
-      this.logger.error("Unexpected! This should never happen during debug. Found incorrect rows for transaction output.  Returned rows: " + rows.toString() + `. WorkflowUUID ${this.workflowUUID}, function ID ${funcID}`);
-      throw new DBOSDebuggerError(`This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` + rows.toString());
-    }
-
-    if (JSON.parse(rows[0].error) != null) {
-      return deserializeError(JSON.parse(rows[0].error));
-    }
-
-    const res: RecordedResult<R> = {
-      output: JSON.parse(rows[0].output) as R,
-      txn_snapshot: rows[0].txn_snapshot,
-      txn_id: rows[0].txn_id,
-    };
-
-    if (this.#dbosExec.debugProxy) {
-      // Send a signal to the debug proxy.
-      await client.query(`--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
-    }
-
-    return res;
-  }
-
-  async checkTxExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
+  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
     // Note: we read the recorded snapshot and transaction ID!
     const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
     const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
@@ -172,7 +145,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
       const tCtxt = new TransactionContextImpl(this.#dbosExec.userDatabase.getName(), client, this, span, this.#dbosExec.logger, funcID, txn.name);
-      check = await this.checkTxExecution<R>(client, funcID);
+      check = await this.checkExecution<R>(client, funcID);
 
       if (check instanceof Error) {
         if (this.#dbosExec.debugProxy) {
@@ -216,26 +189,6 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async #executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
-    const client = await this.#dbosExec.procedurePool.connect();
-    try {
-      const readOnly = config.readOnly ?? false;
-      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
-      await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
-      if (readOnly) {
-        await client.query(`SET TRANSACTION READ ONLY`);
-      }
-      const result: R = await func(client);
-      await client.query(`COMMIT`);
-      return result;
-    } catch (err) {
-      await client.query(`ROLLBACK`);
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
   async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
     const procInfo = this.#dbosExec.procedureInfoMap.get(proc.name);
     if (procInfo === undefined) { throw new DBOSDebuggerError(proc.name); }
@@ -257,7 +210,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let check: RecordedResult<R> | Error;
     const wrappedProcedure = async (client: PoolClient): Promise<R> => {
-      check = await this.checkProcExecution<R>(client, funcId);
+      check = await this.checkExecution<R>(client, funcId);
       const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
 
       if (check instanceof Error) {
@@ -279,7 +232,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let result: Awaited<R> | Error;
     try {
-      result = await this.#executeProcedure(wrappedProcedure, procInfo.config);
+      result = await this.#dbosExec.executeProcedure(wrappedProcedure, procInfo.config);
     } catch (e) {
       result = e as Error;
     }

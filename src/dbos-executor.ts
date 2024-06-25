@@ -14,14 +14,14 @@ import {
   BufferedResult,
 } from './workflow';
 
-import { Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
-import { Pool, PoolConfig, QueryResultRow } from 'pg';
+import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -41,7 +41,7 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
-import { StoredProcedure } from './procedure';
+import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
 import { DBOSEventReceiver, DBOSExecutorContext } from ".";
 
@@ -86,7 +86,7 @@ interface CommunicatorInfo {
 
 interface ProcedureInfo {
   procedure: StoredProcedure<unknown>;
-  config: TransactionConfig;
+  config: StoredProcedureConfig;
 }
 
 interface InternalWorkflowParams extends WorkflowParams {
@@ -758,6 +758,26 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return await ctxtImpl.procedure(proc, ...args);
     };
     return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.procedure, tempWfName: proc.name }, ...args)).getResult();
+  }
+
+  async executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
+    const client = await this.procedurePool.connect();
+    try {
+      const readOnly = config.readOnly ?? false;
+      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+      await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
+      if (readOnly) {
+        await client.query(`SET TRANSACTION READ ONLY`);
+      }
+      const result: R = await func(client);
+      await client.query(`COMMIT`);
+      return result;
+    } catch (err) {
+      await client.query(`ROLLBACK`);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
