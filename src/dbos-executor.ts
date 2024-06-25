@@ -399,9 +399,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
+    const procClassName = this.getProcedureClassName(proc);
+    const plainProcName = `${procClassName}_${proc.name}_p`;
     const procName = this.config.appVersion
-      ? `v${this.config.appVersion}_${proc.name}_proc`
-      : `${proc.name}_proc`;
+      ? `v${this.config.appVersion}_${plainProcName}`
+      : plainProcName;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {
@@ -567,6 +569,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
+  }
+
+  getProcedureClassName(pf: StoredProcedure<unknown>) {
+    return getRegisteredMethodClassName(pf);
   }
 
   getProcedureInfo(pf: StoredProcedure<unknown>) {
