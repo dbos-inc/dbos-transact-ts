@@ -1,5 +1,5 @@
 import tsm from 'ts-morph';
-import { getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../compiler.js';
+import { checkStoredProcNames, getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../compiler.js';
 import { makeTestProject } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { describe, it, expect } from 'vitest';
@@ -104,5 +104,23 @@ describe("compiler", () => {
 
     expect(project.getSourceFiles().length).toBe(2);
   });
+
+  it("fails to compile really long routine names", () => {
+    const longMethodNameFile = /*ts*/`
+      import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+      export class TestOne {
+        @StoredProcedure()
+        static async testStoredProcedureWithReallyLongNameThatIsLongerThanTheMaximumAllowedLength(): Promise<void> {}
+      }`;
+
+      const { project } = makeTestProject(longMethodNameFile);
+      const file = project.getSourceFileOrThrow("operations.ts");
+      const procMethods = getProcMethods(file);
+      expect(procMethods.length).toBe(1);
+
+      const diags = checkStoredProcNames(procMethods);
+      expect(diags.length).toBe(1);
+      expect(diags[0].category === tsm.DiagnosticCategory.Error);
+  })
 });
 

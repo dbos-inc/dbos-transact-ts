@@ -11,42 +11,72 @@ export interface TransactionConfig {
   readOnly: boolean;
 }
 
-export function compile(tsConfigFilePath: string): CompileResult | undefined {
-  const project = new tsm.Project({
-    tsConfigFilePath,
-    compilerOptions: {
-      sourceMap: false,
-      declaration: false,
-      declarationMap: false,
-    }
-  });
-
-  // remove test files
-  for (const sourceFile of project.getSourceFiles()) {
-    if (sourceFile.getBaseName().endsWith(".test.ts")) {
-      sourceFile.delete();
-    }
-  }
-
-  const preEmitDiags = project.getPreEmitDiagnostics();
-  if (preEmitDiags.length > 0) {
-    printDiagnostics(preEmitDiags);
-    return undefined;
-  }
-
-  treeShake(project);
-
-  const methods = project.getSourceFiles()
-    .flatMap(getProcMethods)
-    .map(m => [m, getStoredProcConfig(m)] as const);
-
-  deAsync(project);
-  removeDecorators(project);
-
-  return { project, methods }
+function hasError(diags: readonly tsm.ts.Diagnostic[]) {
+  return diags.some(diag => diag.category === tsm.ts.DiagnosticCategory.Error);
 }
 
-function printDiagnostics(diags: readonly tsm.Diagnostic[]) {
+export function compile(tsConfigFilePath: string): CompileResult | undefined {
+  const diags = new Array<tsm.ts.Diagnostic>();
+  try {
+    const project = new tsm.Project({
+      tsConfigFilePath,
+      compilerOptions: {
+        sourceMap: false,
+        declaration: false,
+        declarationMap: false,
+      }
+    });
+
+    // remove test files
+    for (const sourceFile of project.getSourceFiles()) {
+      if (sourceFile.getBaseName().endsWith(".test.ts")) {
+        sourceFile.delete();
+      }
+    }
+
+    diags.push(...project.getPreEmitDiagnostics().map(d => d.compilerObject));
+    if (hasError(diags)) { return undefined; }
+
+    treeShake(project);
+
+    const methods = project.getSourceFiles()
+      .flatMap(getProcMethods)
+      .map(m => [m, getStoredProcConfig(m)] as const);
+
+    diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
+    if (hasError(diags)) { return undefined; }
+
+    deAsync(project);
+    removeDecorators(project);
+
+    return { project, methods }
+  } finally {
+    printDiagnostics(diags);
+  }
+}
+
+interface DiagnosticOptions {
+  code?: number,
+  node?: tsm.Node,
+  category?: tsm.ts.DiagnosticCategory
+};
+
+function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm.ts.Diagnostic {
+  const node = options?.node;
+  const category = options?.category ?? tsm.ts.DiagnosticCategory.Error;
+  const code = options?.code ?? 0;
+  return {
+      category,
+      code,
+      file: node?.getSourceFile().compilerNode,
+      length: node ? node.getEnd() - node.getPos() : undefined,
+      messageText,
+      start: node?.getPos(),
+      source: node?.print()
+  };
+}
+
+function printDiagnostics(diags: readonly tsm.ts.Diagnostic[]) {
   const formatHost: tsm.ts.FormatDiagnosticsHost = {
     getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
     getNewLine: () => tsm.ts.sys.newLine,
@@ -54,9 +84,25 @@ function printDiagnostics(diags: readonly tsm.Diagnostic[]) {
       ? fileName : fileName.toLowerCase()
   }
 
-  const $diags = diags.map(d => d.compilerObject);
-  const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
+  const msg = tsm.ts.formatDiagnosticsWithColorAndContext(diags, formatHost);
   console.log(msg);
+}
+
+export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]): readonly tsm.ts.Diagnostic[] {
+  const diags = new Array<tsm.ts.Diagnostic>();
+  for (const method of methods) {
+    const $class = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
+    if (!$class) {
+      diags.push(createDiagnostic("Stored procedure method must be a static method of a class", { node: method, category: tsm.ts.DiagnosticCategory.Error }));
+    }
+
+    const className = $class?.getName() ?? "";
+    const methodName = method.getName();
+    if (className.length + methodName.length > 48) {
+      diags.push(createDiagnostic("Stored procedure class and method names combined must not be longer that 48 characters", { node: method, category: tsm.ts.DiagnosticCategory.Error }));
+    }
+  }
+  return diags;
 }
 
 export function removeDbosMethods(file: tsm.SourceFile) {
@@ -131,7 +177,7 @@ function getProcMethodDeclarations(file: tsm.SourceFile) {
     }
     if (declSet.size === size) { break; }
   }
-  
+
   return declSet;
 }
 
@@ -148,7 +194,7 @@ function shakeFile(file: tsm.SourceFile) {
     if (tsm.Node.isMethodDeclaration(node)) {
       traverse.skip();
     }
-    
+
     switch (true) {
       case tsm.Node.isClassDeclaration(node):
       case tsm.Node.isEnumDeclaration(node):
@@ -372,7 +418,7 @@ export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKin
 export function getStoredProcConfig(node: tsm.MethodDeclaration): TransactionConfig {
   const decorators = node.getDecorators().map(getDecoratorInfo);
   const procDecorator = decorators.find(d => getDbosDecoratorKind(d) === "storedProcedure");
-  if (!procDecorator) { throw new Error("Missing StoredProcedure decorator");}
+  if (!procDecorator) { throw new Error("Missing StoredProcedure decorator"); }
 
   const arg0 = procDecorator.args?.[0];
   const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<TransactionConfig> : undefined;
