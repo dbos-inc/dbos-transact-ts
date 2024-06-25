@@ -2,13 +2,14 @@ import tsm from 'ts-morph';
 
 export type CompileResult = {
   project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, TransactionConfig])[];
+  methods: (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[];
 };
 
 export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
-export interface TransactionConfig {
+export interface StoredProcedureConfig {
   isolationLevel: IsolationLevel;
   readOnly: boolean;
+  executeLocally: boolean
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
@@ -44,6 +45,8 @@ export function compile(tsConfigFilePath: string): CompileResult | undefined {
       .map(m => [m, getStoredProcConfig(m)] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
+    diags.push(...checkStoredProcConfig(methods, false));
+
     if (hasError(diags)) { return undefined; }
 
     deAsync(project);
@@ -100,6 +103,17 @@ export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]):
     const methodName = method.getName();
     if (className.length + methodName.length > 48) {
       diags.push(createDiagnostic("Stored procedure class and method names combined must not be longer that 48 characters", { node: method, category: tsm.ts.DiagnosticCategory.Error }));
+    }
+  }
+  return diags;
+}
+
+export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
+  const category = error ? tsm.ts.DiagnosticCategory.Error : tsm.ts.DiagnosticCategory.Warning;
+  const diags = new Array<tsm.ts.Diagnostic>();
+  for (const [method, config] of methods) {
+    if (config.executeLocally) {
+      diags.push(createDiagnostic(`executeLocally enabled for ${method.getName()}`, { node: method, category }));
     }
   }
   return diags;
@@ -415,14 +429,15 @@ export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKin
   return isHandler ? "handler" : undefined;
 }
 
-export function getStoredProcConfig(node: tsm.MethodDeclaration): TransactionConfig {
+export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedureConfig {
   const decorators = node.getDecorators().map(getDecoratorInfo);
   const procDecorator = decorators.find(d => getDbosDecoratorKind(d) === "storedProcedure");
   if (!procDecorator) { throw new Error("Missing StoredProcedure decorator"); }
 
   const arg0 = procDecorator.args?.[0];
-  const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<TransactionConfig> : undefined;
+  const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<StoredProcedureConfig> : undefined;
   const readOnly = configArg?.readOnly ?? false;
+  const executeLocally = configArg?.executeLocally ?? false;
   const isolationLevel = configArg?.isolationLevel ?? "SERIALIZABLE";
-  return { isolationLevel, readOnly };
+  return { isolationLevel, readOnly, executeLocally };
 }

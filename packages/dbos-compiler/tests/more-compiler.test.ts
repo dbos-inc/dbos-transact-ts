@@ -107,27 +107,26 @@ describe("more compiler", () => {
         it("testProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: false, isolationLevel: "SERIALIZABLE" });
+            expect(config).toEqual({ readOnly: false, isolationLevel: "SERIALIZABLE", executeLocally: false });
         });
 
         it("testReadOnlyProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testReadOnlyProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "SERIALIZABLE" });
+            expect(config).toEqual({ readOnly: true, isolationLevel: "SERIALIZABLE", executeLocally: false  });
         });
 
         it("testRepeatableReadProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testRepeatableReadProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: false, isolationLevel: "REPEATABLE READ" });
+            expect(config).toEqual({ readOnly: false, isolationLevel: "REPEATABLE READ", executeLocally: false  });
         });
 
         it("testConfiguredProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testConfiguredProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED" });
+            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: false  });
         });
-
     })
 });
 

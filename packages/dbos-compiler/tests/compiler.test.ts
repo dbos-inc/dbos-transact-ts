@@ -1,5 +1,5 @@
 import tsm from 'ts-morph';
-import { checkStoredProcNames, getProcMethods, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../compiler.js';
+import { checkStoredProcConfig, checkStoredProcNames, getProcMethods, getStoredProcConfig, removeDbosMethods, removeDecorators, removeUnusedFiles } from '../compiler.js';
 import { makeTestProject } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { describe, it, expect } from 'vitest';
@@ -121,6 +121,29 @@ describe("compiler", () => {
       const diags = checkStoredProcNames(procMethods);
       expect(diags.length).toBe(1);
       expect(diags[0].category === tsm.DiagnosticCategory.Error);
+  });
+
+  it("executeLocally warns or errors", () => {
+    const executeLocallyFile = /*ts*/`
+    import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+
+    export class TestOne {
+      @StoredProcedure({ executeLocally: true })
+      static async testStoredProcedure(): Promise<void> {}
+    }`;
+    const { project } = makeTestProject(executeLocallyFile);
+    const file = project.getSourceFileOrThrow("operations.ts");
+    const procMethods = getProcMethods(file).map(m => [m, getStoredProcConfig(m)] as const);
+    expect(procMethods.length).toBe(1);
+    expect(procMethods[0][1].executeLocally).toBe(true);
+
+    const diags = checkStoredProcConfig(procMethods);
+    expect(diags.length).toBe(1);
+    expect(diags[0].category === tsm.DiagnosticCategory.Warning);
+
+    const diags2 = checkStoredProcConfig(procMethods, true);
+    expect(diags2.length).toBe(1);
+    expect(diags2[0].category === tsm.DiagnosticCategory.Warning);
   })
 });
 

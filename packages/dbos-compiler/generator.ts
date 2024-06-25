@@ -1,7 +1,7 @@
 import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from "liquidjs";
-import type { TransactionConfig, CompileResult } from './compiler.js';
+import type { StoredProcedureConfig, CompileResult } from './compiler.js';
 
 const __dirname = import.meta.dirname;
 const engine = new Liquid({
@@ -66,7 +66,7 @@ async function generateDbosDrop(appVersion: string | undefined) {
   return await render("dbos.drop.liquid", context);
 }
 
-function getMethodContext(method: tsm.MethodDeclaration, config: TransactionConfig, appVersion: string | undefined) {
+function getMethodContext(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
   const methodName = method.getName();
   const className = method.getParentIfKindOrThrow(tsm.SyntaxKind.ClassDeclaration).getName();
   const moduleName = method.getSourceFile().getBaseNameWithoutExtension();
@@ -75,13 +75,13 @@ function getMethodContext(method: tsm.MethodDeclaration, config: TransactionConf
   return context;
 }
 
-async function generateMethodCreate(method: tsm.MethodDeclaration, config: TransactionConfig, appVersion: string | undefined) {
+async function generateMethodCreate(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
   const context = getMethodContext(method, config, appVersion);
   return await render("method.create.liquid", context);
 }
 
 
-async function generateMethodDrop(method: tsm.MethodDeclaration, config: TransactionConfig, appVersion: string | undefined) {
+async function generateMethodDrop(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
   const context = getMethodContext(method, config, appVersion);
   return await render("method.drop.liquid", context);
 }

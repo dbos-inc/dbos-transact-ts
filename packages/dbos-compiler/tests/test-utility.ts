@@ -69,13 +69,18 @@ declare module "@dbos-inc/dbos-sdk" {
     maxAttempts?: number;
     backoffRate?: number;
   }
+  export interface StoredProcedureConfig {
+    isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
+    readOnly?: boolean;
+    executeLocally?: boolean;
+  }
 
   export function GetApi(url:string);
   export function PostApi(url:string);
   export function Workflow(config?: WorkflowConfig);
   export function Communicator(config?: CommunicatorConfig);
   export function Transaction(config?: TransactionConfig);
-  export function StoredProcedure(config?: TransactionConfig);
+  export function StoredProcedure(config?: StoredProcedureConfig);
   export function DBOSDeploy();
   export function DBOSInitializer();
 
