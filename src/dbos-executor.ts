@@ -533,6 +533,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       applicationVersion: wCtxt.applicationVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
+      maxRetries: wCtxt.maxRecoveryAttempts,
+      recovery: params.recovery === true,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -748,7 +750,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (wfInfo) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, configuredInstance: configuredInst }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -793,7 +795,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst}, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
