@@ -4,9 +4,14 @@ import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { PoolClient } from "pg";
+import { TransactionConfig } from "./transaction";
 
 export interface QueryResultBase {
   rowCount: number;
+}
+
+export interface StoredProcedureConfig extends TransactionConfig {
+  executeLocally?: boolean
 }
 
 export interface QueryResultRow {

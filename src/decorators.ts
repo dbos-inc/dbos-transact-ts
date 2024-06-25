@@ -7,7 +7,7 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
-import { StoredProcedureContext } from "./procedure";
+import { StoredProcedureConfig, StoredProcedureContext } from "./procedure";
 import { DBOSEventReceiver } from "./eventreceiver";
 
 /**
@@ -624,7 +624,7 @@ export function Transaction(config: TransactionConfig={}) {
   return decorator;
 }
 
-export function StoredProcedure(config: TransactionConfig={}) {
+export function StoredProcedure(config: StoredProcedureConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
