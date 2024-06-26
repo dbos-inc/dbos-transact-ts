@@ -61,21 +61,28 @@ export function compile(tsConfigFilePath: string): CompileResult | undefined {
 interface DiagnosticOptions {
   code?: number,
   node?: tsm.Node,
+  endNode?: tsm.Node,
   category?: tsm.ts.DiagnosticCategory
 };
 
 function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm.ts.Diagnostic {
   const node = options?.node;
+  const endNode = options?.endNode;
   const category = options?.category ?? tsm.ts.DiagnosticCategory.Error;
   const code = options?.code ?? 0;
+  const length = node 
+    ? endNode 
+      ? endNode.getEnd() - node.getPos()
+      : node.getEnd() - node.getPos()
+    : undefined;
+
   return {
     category,
     code,
     file: node?.getSourceFile().compilerNode,
-    length: node ? node.getEnd() - node.getPos() : undefined,
+    length,
     messageText,
     start: node?.getPos(),
-    source: node?.print()
   };
 }
 
@@ -115,7 +122,8 @@ export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDec
     if (config.executeLocally) {
       const decorator = getStoredProcDecorator(method);
       const node = decorator ?? method;
-      diags.push(createDiagnostic(`executeLocally enabled for ${method.getName()}`, { node, category }));
+      const endNode = decorator ? method.getFirstChildByKind(tsm.SyntaxKind.CloseParenToken) : undefined;
+      diags.push(createDiagnostic(`executeLocally enabled for ${method.getName()}`, { node, category, endNode }));
     }
   }
   return diags;
