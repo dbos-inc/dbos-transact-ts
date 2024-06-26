@@ -45,7 +45,7 @@ describe("stored-proc-tests", () => {
 })
 
 const create = `
-CREATE OR REPLACE PROCEDURE "testProc_proc"(
+CREATE OR REPLACE PROCEDURE "ProcTest_testProc_p"(
     buffered_results JSONB,
     _workflow_uuid TEXT, 
     _function_id INT, 
@@ -69,4 +69,4 @@ BEGIN
 END; $$;
 `
 
-const drop = `DROP ROUTINE IF EXISTS "testProc_proc";`
+const drop = `DROP ROUTINE IF EXISTS "ProcTest_testProc_p";`
