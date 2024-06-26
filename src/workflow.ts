@@ -46,10 +46,11 @@ export interface WorkflowParams {
   workflowUUID?: string;
   parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
+  recovery?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface WorkflowConfig {
+  maxRecoveryAttempts?: number;
 }
 
 export interface WorkflowStatus {
@@ -68,7 +69,7 @@ export interface GetWorkflowsInput {
   authenticatedUser?: string; // The user who ran the workflow.
   startTime?: string; // Timestamp in RFC 3339 format
   endTime?: string; // Timestamp in RFC 3339 format
-  status?: "PENDING" | "SUCCESS" | "ERROR"; // The status of the workflow.
+  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
@@ -91,6 +92,7 @@ export const StatusString = {
   PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
+  RETRIES_EXCEEDED: "RETRIES_EXCEEDED",
 } as const;
 
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
@@ -151,6 +153,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   readonly #dbosExec;
   readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
+  readonly maxRecoveryAttempts;
 
   constructor(
     dbosExec: DBOSExecutor,
@@ -180,6 +183,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
+    this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
   }
 
   functionIDGetIncrement(): number {

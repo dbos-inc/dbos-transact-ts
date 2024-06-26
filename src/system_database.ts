@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError } from "./error";
+import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
 import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
@@ -67,6 +67,8 @@ export interface WorkflowStatusInternal {
   applicationVersion: string;
   applicationID: string;
   createdAt: number;
+  maxRetries: number;
+  recovery: boolean;
 }
 
 export interface ExistenceCheck {
@@ -152,7 +154,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
-    await this.pool.query<workflow_status>(
+    const result = await this.pool.query<{recovery_attempts: number}>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
         workflow_uuid,
         status,
@@ -169,7 +171,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_id,
         created_at
       ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       ON CONFLICT (workflow_uuid) DO NOTHING`,
+       ON CONFLICT (workflow_uuid)
+        DO UPDATE SET
+          recovery_attempts = CASE WHEN $15 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
+        RETURNING recovery_attempts`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -185,8 +190,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.applicationVersion,
         initStatus.applicationID,
         initStatus.createdAt,
+        initStatus.recovery,
       ]
     );
+    const recovery_attempts = result.rows[0].recovery_attempts;
+    if (recovery_attempts >= initStatus.maxRetries && initStatus.recovery) {
+      await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING]);
+      throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
+    }
+
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, DBOSJSON.stringify(args)]
