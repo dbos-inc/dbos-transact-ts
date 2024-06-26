@@ -69,13 +69,13 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
   const category = options?.category ?? tsm.ts.DiagnosticCategory.Error;
   const code = options?.code ?? 0;
   return {
-      category,
-      code,
-      file: node?.getSourceFile().compilerNode,
-      length: node ? node.getEnd() - node.getPos() : undefined,
-      messageText,
-      start: node?.getPos(),
-      source: node?.print()
+    category,
+    code,
+    file: node?.getSourceFile().compilerNode,
+    length: node ? node.getEnd() - node.getPos() : undefined,
+    messageText,
+    start: node?.getPos(),
+    source: node?.print()
   };
 }
 
@@ -113,10 +113,19 @@ export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDec
   const diags = new Array<tsm.ts.Diagnostic>();
   for (const [method, config] of methods) {
     if (config.executeLocally) {
-      diags.push(createDiagnostic(`executeLocally enabled for ${method.getName()}`, { node: method, category }));
+      const decorator = getStoredProcDecorator(method);
+      const node = decorator ?? method;
+      diags.push(createDiagnostic(`executeLocally enabled for ${method.getName()}`, { node, category }));
     }
   }
   return diags;
+
+  function getStoredProcDecorator(method: tsm.MethodDeclaration) {
+    for (const decorator of method.getDecorators()) {
+      const kind = getDbosDecoratorKind(decorator);
+      if (kind === "storedProcedure") { return decorator; }
+    }
+  }
 }
 
 export function removeDbosMethods(file: tsm.SourceFile) {
@@ -262,7 +271,7 @@ export function removeUnusedFiles(project: tsm.Project) {
     })
   }
 
-  // remove all files that don't have @StoredProcedure methods and are not 
+  // remove all files that don't have @StoredProcedure methods and are not
   // imported by files with @StoredProcedure methods
   for (const file of project.getSourceFiles()) {
     if (!procImports.has(file)) {
@@ -401,7 +410,7 @@ function getDbosDecoratorKind(node: tsm.Decorator | DecoratorInfo): DbosDecorato
 // helper function to determine the kind of DBOS method
 export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKind | undefined {
   // Note, other DBOS method decorators (Scheduled, KafkaConsume, RequiredRole) modify runtime behavior
-  //       of DBOS methods, but are not their own unique kind. 
+  //       of DBOS methods, but are not their own unique kind.
   //       Get/PostApi decorators are atypical in that they can be used on @Communicator/@Transaction/@Workflow
   //       methods as well as on their own.
   let isHandler = false;
