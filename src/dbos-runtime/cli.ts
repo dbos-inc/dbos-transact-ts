@@ -9,7 +9,7 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
-import { getWorkflow, listWorkflows } from './workflow_management';
+import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from './workflow_management';
 import { GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
 
@@ -115,7 +115,7 @@ workflowCommands
   .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
   .option('--request', 'Retrieve workflow request information')
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (options: {limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, request: boolean}) => {
+  .action(async (options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     if (options.status && !Object.values(StatusString).includes(options.status as typeof StatusString[keyof typeof StatusString])) {
       console.error("Invalid status: ", options.status);
@@ -138,10 +138,40 @@ workflowCommands
   .argument("<uuid>", "Target workflow UUID")
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--request', 'Retrieve workflow request information')
-  .action(async (uuid: string, options: {appDir?: string, request: boolean}) => {
+  .action(async (uuid: string, options: { appDir?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
     console.log(JSON.stringify(output))
+  });
+
+workflowCommands
+  .command('cancel')
+  .description('Cancel a workflow, preventing it from being retried')
+  .argument("<uuid>", "Target workflow UUID")
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    await cancelWorkflow(dbosConfig, uuid);
+  });
+
+workflowCommands
+  .command('retry')
+  .description('Retry a workflow from where it left off with its existing UUID')
+  .argument("<uuid>", "Target workflow UUID")
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
+    await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, false);
+  });
+
+workflowCommands
+  .command('restart')
+  .description('Restart a workflow from the beginning with a new UUID')
+  .argument("<uuid>", "Target workflow UUID")
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
+    await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
   });
 
 /////////////
