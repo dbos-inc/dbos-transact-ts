@@ -51,6 +51,7 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
   return info;
 }
 
+// Cancelling a workflow prevents it from being recovered or restarting, but active executions are not halted.
 export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
   await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED)
