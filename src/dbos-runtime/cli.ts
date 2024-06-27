@@ -129,10 +129,9 @@ workflowCommands
     console.log(JSON.stringify(output))
   });
 
-/////////////////////////
-/* WORKFLOW MANAGEMENT */
-/////////////////////////
-
+/////////////
+/* PARSING */
+/////////////
 
 program.parse(process.argv);
 
