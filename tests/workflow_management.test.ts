@@ -8,6 +8,8 @@ import {
   StatusString,
   Authentication,
   MiddlewareContext,
+  TransactionContext,
+  Transaction,
 } from "../src";
 import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
@@ -15,6 +17,7 @@ import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from ".
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { WorkflowInformation, cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from "../src/dbos-runtime/workflow_management";
 import { Client } from "pg";
+import { Knex } from "knex";
 
 describe("workflow-management-tests", () => {
   const testTableName = "dbos_test_kv";
@@ -248,6 +251,34 @@ describe("workflow-management-tests", () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
+  test("test-restart-transaction", async () => {
+    TestEndpoints.tries = 0;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    await testRuntime.invoke(TestEndpoints).testTransaction();
+    expect(TestEndpoints.tries).toBe(1);
+    await dbosExec.flushWorkflowBuffers();
+
+    let result = await systemDBClient.query<{status: string, workflow_uuid: string, name: string}>(`SELECT status, workflow_uuid, name FROM dbos.workflow_status`, []);
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+    expect(result.rows[0].name).toBe("temp_workflow-transaction-testTransaction");
+    const workflowUUID = result.rows[0].workflow_uuid;
+
+    await reattemptWorkflow(config, null, workflowUUID, true);
+    expect(TestEndpoints.tries).toBe(2);
+    await dbosExec.flushWorkflowBuffers();
+
+    result = await systemDBClient.query<{status: string, workflow_uuid: string, name: string}>(`SELECT status, workflow_uuid, name FROM dbos.workflow_status WHERE workflow_uuid!=$1`, [workflowUUID]);
+    expect(result.rows.length).toBe(1);
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+    expect(result.rows[0].name).toBe("temp_workflow-transaction-testTransaction");
+    const restartedWorkflowUUID = result.rows[0].workflow_uuid;
+
+    await reattemptWorkflow(config, null, restartedWorkflowUUID, true);
+    expect(TestEndpoints.tries).toBe(3);
+  });
+
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
     return Promise.resolve({
       authenticatedUser: "alice",
@@ -278,6 +309,12 @@ describe("workflow-management-tests", () => {
     static async waitingWorkflow(_ctxt: WorkflowContext) {
       TestEndpoints.tries += 1
       await TestEndpoints.testPromise;
+    }
+
+    @Transaction()
+    static async testTransaction(_ctxt: TransactionContext<Knex>) {
+      TestEndpoints.tries += 1
+      return Promise.resolve();
     }
   }
 });
