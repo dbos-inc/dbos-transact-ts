@@ -146,7 +146,7 @@ workflowCommands
 
 workflowCommands
   .command('cancel')
-  .description('Cancel a workflow, preventing it from being retried')
+  .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument("<uuid>", "Target workflow UUID")
   .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (uuid: string, options: { appDir?: string }) => {
