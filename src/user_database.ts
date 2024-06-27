@@ -52,6 +52,19 @@ interface ExistenceCheck {
   exists: boolean;
 }
 
+export function pgNodeIsKeyConflictError(error: unknown): boolean {
+  if (!(error instanceof PGDatabaseError)) {
+    return false;
+  }
+  const pge = getPostgresErrorCode(error);
+  return pge === "23505";
+
+  function getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
+    return dbErr.code ? dbErr.code : null;
+  }
+}
+
 /**
  * node-postgres user data access interface
  */
@@ -109,12 +122,10 @@ export class PGNodeUserDatabase implements UserDatabase {
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
     const client: PoolClient = await this.pool.connect();
-    try
-    {
-       return func(client as C, ...args);
+    try {
+      return func(client as C, ...args);
     }
-    finally
-    {
+    finally {
       client.release();
     }
   }
@@ -157,7 +168,7 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   async dropSchema(): Promise<void> {
-    return Promise.reject( new Error("dropSchema() is not supported in PG user database."));
+    return Promise.reject(new Error("dropSchema() is not supported in PG user database."));
   }
 }
 
@@ -394,15 +405,15 @@ export class KnexUserDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      const schemaExists = await this.knex.raw<{rows: ExistenceCheck[]}>(schemaExistsQuery);
+      const schemaExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
         await this.knex.raw(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.knex.raw<{rows: ExistenceCheck[]}>(txnOutputIndexExistsQuery);
+      const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
         await this.knex.raw(userDBSchema);
       }
-      const txnIndexExists = await this.knex.raw<{rows: ExistenceCheck[]}>(txnOutputIndexExistsQuery);
+      const txnIndexExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
       if (!txnIndexExists.rows[0].exists) {
         await this.knex.raw(userDBIndex);
       }
@@ -442,7 +453,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await func(transactionClient as unknown as C, ...args);
       },
-      { isolationLevel: "read committed", readOnly : true }
+      { isolationLevel: "read committed", readOnly: true }
     );
     return result;
   }

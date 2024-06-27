@@ -23,6 +23,8 @@ interface RecordedResult<R> {
   txn_id: string;
 }
 
+type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
+
 /**
  * Context used for debugging a workflow
  */
@@ -88,10 +90,10 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     }
   }
 
-  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
+  async #checkExecution<R>(queryFunc: QueryFunction, funcID: number): Promise<RecordedResult<R> | Error> {
     // Note: we read the recorded snapshot and transaction ID!
     const query = "SELECT output, error, txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2";
-    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, query, this.workflowUUID, funcID);
+    const rows = await queryFunc<transaction_outputs>(query, [this.workflowUUID, funcID]);
 
     if (rows.length === 0 || rows.length > 1) {
       this.logger.error("Unexpected! This should never happen during debug. Found incorrect rows for transaction output.  Returned rows: " + rows.toString() + `. WorkflowUUID ${this.workflowUUID}, function ID ${funcID}`);
@@ -110,10 +112,20 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     if (this.#dbosExec.debugProxy) {
       // Send a signal to the debug proxy.
-      await this.#dbosExec.userDatabase.queryWithClient(client, `--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`);
+      await queryFunc(`--proxy:${res.txn_id ?? ''}:${res.txn_snapshot}`, []);
     }
 
     return res;
+  }
+
+  async checkTxExecution<R>(client: UserDatabaseClient, funcID: number): Promise<RecordedResult<R> | Error> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#checkExecution<R>(func, funcID);
+  }
+
+  async checkProcExecution<R>(client: PoolClient, funcID: number): Promise<RecordedResult<R> | Error> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#checkExecution<R>(func, funcID);
   }
 
   /**
@@ -145,7 +157,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
       // Original result must exist during replay.
       const tCtxt = new TransactionContextImpl(this.#dbosExec.userDatabase.getName(), client, this, span, this.#dbosExec.logger, funcID, txn.name);
-      check = await this.checkExecution<R>(client, funcID);
+      check = await this.checkTxExecution<R>(client, funcID);
 
       if (check instanceof Error) {
         if (this.#dbosExec.debugProxy) {
@@ -210,7 +222,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let check: RecordedResult<R> | Error;
     const wrappedProcedure = async (client: PoolClient): Promise<R> => {
-      check = await this.checkExecution<R>(client, funcId);
+      check = await this.checkProcExecution<R>(client, funcId);
       const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
 
       if (check instanceof Error) {
