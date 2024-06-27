@@ -200,12 +200,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return rows[0].txn_snapshot;
   }
 
-  async retrieveTxSnapshot(client: UserDatabaseClient): Promise<string> {
+  retrieveTxSnapshot(client: UserDatabaseClient): Promise<string> {
     const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
     return this.#retrieveSnapshot(func);
   }
 
-  async retrieveProcSnapshot(client: PoolClient): Promise<string> {
+  retrieveProcSnapshot(client: PoolClient): Promise<string> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
     return this.#retrieveSnapshot(func);
   }
@@ -245,12 +245,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return res;
   }
 
-  async checkTxExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
+  checkTxExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
     const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
     return this.#checkExecution<R>(func, funcID);
   }
 
-  async checkProcExecution<R>(client: PoolClient, funcID: number): Promise<BufferedResult> {
+  checkProcExecution<R>(client: PoolClient, funcID: number): Promise<BufferedResult> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
     return this.#checkExecution<R>(func, funcID);
   }
@@ -324,12 +324,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
   }
 
-  async recordOutputTx<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
+  recordOutputTx<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
     const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
     return this.#recordOutput(func, funcID, txnSnapshot, output, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
   }
 
-  async recordOutputProc<R>(client: PoolClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
+  recordOutputProc<R>(client: PoolClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
     return this.#recordOutput(func, funcID, txnSnapshot, output, pgNodeIsKeyConflictError);
   }
@@ -352,14 +352,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
   }
 
-  async recordErrorTx(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<string> {
+  recordErrorTx(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#recordOutput(func, funcID, txnSnapshot, err, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
+    return this.#recordError(func, funcID, txnSnapshot, err, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
   }
 
-  async recordErrorProc(client: PoolClient, funcID: number, txnSnapshot: string, err: Error): Promise<string> {
+  recordErrorProc(client: PoolClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-    return this.#recordOutput(func, funcID, txnSnapshot, err, pgNodeIsKeyConflictError);
+    return this.#recordError(func, funcID, txnSnapshot, err, pgNodeIsKeyConflictError);
   }
 
   /**
