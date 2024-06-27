@@ -13,13 +13,15 @@ import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { WorkflowInformation, getWorkflow, listWorkflows } from "../src/dbos-runtime/workflow_management";
+import { WorkflowInformation, cancelWorkflow, getWorkflow, listWorkflows } from "../src/dbos-runtime/workflow_management";
+import { Client } from "pg";
 
 describe("workflow-management-tests", () => {
   const testTableName = "dbos_test_kv";
 
   let testRuntime: TestingRuntime;
   let config: DBOSConfig;
+  let systemDBClient: Client;
 
   beforeAll(() => {
     config = generateDBOSTestConfig();
@@ -31,9 +33,19 @@ describe("workflow-management-tests", () => {
     testRuntime = await createInternalTestRuntime([TestEndpoints], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
+
+    systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    await systemDBClient.connect();
   });
 
   afterEach(async () => {
+    await systemDBClient.end();
     await testRuntime.destroy();
     process.env.DBOS__APPVERSION = undefined;
   });
@@ -198,6 +210,30 @@ describe("workflow-management-tests", () => {
     expect(info).toEqual(getInfo);
   });
 
+  test("test-cancel-workflow", async () => {
+    TestEndpoints.tries = 0;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    const handle = await testRuntime.startWorkflow(TestEndpoints).waitingWorkflow();
+    expect(TestEndpoints.tries).toBe(1);
+    await cancelWorkflow(config, handle.getWorkflowUUID());
+
+    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    expect(result.rows[0].status).toBe(StatusString.CANCELLED);
+
+    await dbosExec.recoverPendingWorkflows();
+    expect(TestEndpoints.tries).toBe(1);
+
+    TestEndpoints.testResolve();
+    await handle.getResult();
+
+    await dbosExec.flushWorkflowBuffers();
+    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+  });
+
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
     return Promise.resolve({
       authenticatedUser: "alice",
@@ -216,6 +252,18 @@ describe("workflow-management-tests", () => {
     @PostApi("/getWorkflows")
     static async getWorkflows(ctxt: HandlerContext, input: GetWorkflowsInput) {
       return await ctxt.getWorkflows(input);
+    }
+
+    static tries = 0;
+    static testResolve: () => void;
+    static testPromise = new Promise<void>((resolve) => {
+      TestEndpoints.testResolve = resolve;
+    });
+
+    @Workflow()
+    static async waitingWorkflow(_ctxt: WorkflowContext) {
+      TestEndpoints.tries += 1
+      await TestEndpoints.testPromise;
     }
   }
 });
