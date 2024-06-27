@@ -7,7 +7,7 @@ import { HTTPRequest } from "../context";
 
 export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
-  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
+  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
   const workflowInfos = await Promise.all(workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)))
   await systemDatabase.destroy();
   return workflowInfos;
