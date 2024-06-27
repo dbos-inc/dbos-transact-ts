@@ -253,6 +253,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return value;
   }
 
+  setWorkflowStatus(_workflowUUID: string, _status: typeof StatusString[keyof typeof StatusString]): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+
   async getWorkflowResult<R>(workflowUUID: string): Promise<R> {
     const watch = await this.workflowStatusDB.getAndWatch(workflowUUID);
     let value = watch.value;
