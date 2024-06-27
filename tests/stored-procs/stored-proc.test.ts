@@ -10,7 +10,7 @@ describe("stored-proc-tests", () => {
 
         execSync("npm install");
         execSync("npm run build");
-        execSync("npx dbosc compile");
+        execSync("npx dbos migrate");
     })
 
     afterAll(() => {
