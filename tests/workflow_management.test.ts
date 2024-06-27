@@ -13,6 +13,7 @@ import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
+import { WorkflowInformation, listWorkflows } from "../src/dbos-runtime/workflow_management";
 
 describe("workflow-management-tests", () => {
   const testTableName = "dbos_test_kv";
@@ -167,6 +168,21 @@ describe("workflow-management-tests", () => {
     workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
     expect(workflowUUIDs.workflowUUIDs).not.toContain(firstUUID);
+  });
+
+  test("getworkflows-cli", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+
+    const input: GetWorkflowsInput = {
+      workflowName: "testWorkflow"
+    }
+    const infos = await listWorkflows(config, input, false);
+    expect(infos.length).toBe(1);
+    const info = infos[0] as WorkflowInformation;
+    expect(info.authenticatedUser).toBe("alice");
+    expect(info.workflowName).toBe("testWorkflow");
   });
 
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
