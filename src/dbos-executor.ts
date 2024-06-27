@@ -737,7 +737,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return handlerArray;
   }
 
-  async executeWorkflowUUID(workflowUUID: string): Promise<WorkflowHandle<unknown>> {
+  async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
     const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
     if (!inputs || !wfStatus) {
@@ -748,9 +748,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const {wfInfo, configuredInst} = this.getWorkflowInfoByStatus(wfStatus);
 
+    // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
+    const workflowStartUUID = startNewWorkflow ? undefined : workflowUUID;
+
     if (wfInfo) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -795,7 +798,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true}, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow

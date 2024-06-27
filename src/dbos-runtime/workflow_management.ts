@@ -61,15 +61,17 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   await systemDatabase.destroy();
 }
 
-export async function retryWorkflow(config: DBOSConfig, runtimeConfig: DBOSRuntimeConfig | null, workflowUUID: string) {
+export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSRuntimeConfig | null, workflowUUID: string, startNewWorkflow: boolean) {
   const dbosExec = new DBOSExecutor(config);
   const classes = runtimeConfig !== null ? await DBOSRuntime.loadClasses(runtimeConfig.entrypoints) : [];
   for (const cls of getAllRegisteredClasses()) {
     if (!classes.includes(cls)) classes.push(cls);
   }
   await dbosExec.init(classes);
-  await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING);
-  const handle = await dbosExec.executeWorkflowUUID(workflowUUID);
+  if (!startNewWorkflow) {
+    await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING);
+  }
+  const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
   await handle.getResult();
   await dbosExec.destroy();
 }
