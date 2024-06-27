@@ -107,12 +107,12 @@ const workflowCommands = program.command("workflow").alias("workflows").alias("w
 workflowCommands
   .command('list')
   .description('List workflows from your application')
-  .option('-l, --limit <number>', 'Limit the results returned')
+  .option('-l, --limit <number>', 'Limit the results returned', "10")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (options: {limit?: number, appDir?: string}) => {
+  .action(async (options: {limit?: string, appDir?: string}) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const input: GetWorkflowsInput = {
-      limit: options.limit
+      limit: Number(options.limit)
     }
     const output = await listWorkflows(dbosConfig, input);
     console.log(JSON.stringify(output))
