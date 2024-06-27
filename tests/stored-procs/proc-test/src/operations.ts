@@ -7,7 +7,7 @@ export interface dbos_hello {
   greet_count: number;
 }
 
-export class Hello {
+export class StoredProcTest {
 
   // @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
   // static async helloHandler(context: HandlerContext, @ArgSource(ArgSources.URL) user: string) {
@@ -34,8 +34,8 @@ export class Hello {
   static async procGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
 
     // Retrieve the number of times this user has been greeted.
-    const count = await ctxt.invoke(Hello).getGreetCount(user);
-    const greeting = await ctxt.invoke(Hello).helloProcedure(user);
+    const count = await ctxt.invoke(StoredProcTest).getGreetCount(user);
+    const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
 
     return { count, greeting };
   }
@@ -61,8 +61,8 @@ export class Hello {
   @Workflow()
   static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
-    const count = await ctxt.invoke(Hello).getGreetCountLocal(user);
-    const greeting = await ctxt.invoke(Hello).helloProcedureLocal(user);
+    const count = await ctxt.invoke(StoredProcTest).getGreetCountLocal(user);
+    const greeting = await ctxt.invoke(StoredProcTest).helloProcedureLocal(user);
 
     return { count, greeting };
   }
@@ -72,6 +72,7 @@ export class Hello {
   @Transaction({ readOnly: true })
   static async getGreetCountTx(ctxt: TransactionContext<Knex>, user: string): Promise<number> {
     const query = "SELECT greet_count FROM dbos_hello WHERE name = $1;";
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const { rows } = await ctxt.client.raw(query, [user]) as { rows: dbos_hello[] };
     return rows.length === 0 ? 0 : rows[0].greet_count;
   }
@@ -80,6 +81,7 @@ export class Hello {
   static async helloTransaction(ctxt: TransactionContext<Knex>, user: string) {
     // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const { rows } = await ctxt.client.raw(query, [user]) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
@@ -88,8 +90,8 @@ export class Hello {
   @Workflow()
   static async txLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
-    const count = await ctxt.invoke(Hello).getGreetCountTx(user);
-    const greeting = await ctxt.invoke(Hello).helloTransaction(user);
+    const count = await ctxt.invoke(StoredProcTest).getGreetCountTx(user);
+    const greeting = await ctxt.invoke(StoredProcTest).helloTransaction(user);
 
     return { count, greeting };
   }

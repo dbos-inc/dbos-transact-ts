@@ -8,14 +8,16 @@ database:
   port: 5432
   username: postgres
   password: ${PGPASSWORD}
-  app_db_name: hello
+  app_db_name: proc_test
   connectionTimeoutMillis: 3000
   app_db_client: knex
   migrate:
     - npx knex migrate:latest
     - npx dbosc deploy
-  # rollback:
-  #   - npx knex migrate:rollback
+  rollback:
+    - npx dbosc drop
+    - npx knex migrate:rollback
+
 runtimeConfig:
   entrypoints:
     - dist/operations.js
