@@ -766,12 +766,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     let temp_workflow: Workflow<unknown[], unknown>;
     let clsinst: ConfiguredInstance | null = null;
+    let tempWfType: string;
+    let tempWfName: string | undefined;
+    let tempWfClass: string | undefined;
     if (nameArr[1] === TempWorkflowType.transaction) {
       const {txnInfo, clsInst} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!txnInfo) {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
+      tempWfType = TempWorkflowType.transaction;
+      tempWfName = getRegisteredMethodName(txnInfo.transaction);
+      tempWfClass = getRegisteredMethodClassName(txnInfo.transaction);
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.transaction(txnInfo.transaction, clsInst, ...args);
@@ -783,12 +789,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
+      tempWfType = TempWorkflowType.external;
+      tempWfName = getRegisteredMethodName(commInfo.communicator);
+      tempWfClass = getRegisteredMethodClassName(commInfo.communicator);
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.external(commInfo.communicator, clsInst, ...args);
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.send) {
+      tempWfType = TempWorkflowType.send;
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         return await ctxt.send<unknown>(args[0] as string, args[1], args[2] as string); // id, value, topic
       };
@@ -798,7 +808,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true}, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true, tempWfType, tempWfClass, tempWfName}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
