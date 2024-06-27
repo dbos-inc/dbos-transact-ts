@@ -1,5 +1,5 @@
 import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
-import { StoredProcTest, dbos_hello } from "./operations";
+import { StoredProcTest } from "./operations";
 import { v5 as uuidv5 } from "uuid";
 import { transaction_outputs } from "../../../../schemas/user_db_schema";
 
