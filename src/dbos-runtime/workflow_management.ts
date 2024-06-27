@@ -3,23 +3,25 @@ import { DBOSConfig, GetWorkflowsInput, StatusString } from "..";
 import { PostgresSystemDatabase, SystemDatabase } from "../system_database";
 import { GlobalLogger } from "../telemetry/logs";
 import { WorkflowStatus } from "../workflow";
+import { HTTPRequest } from "../context";
 
-export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput) {
+export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
   const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
-  const workflowInfos = await Promise.all(workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i)))
+  const workflowInfos = await Promise.all(workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)))
   await systemDatabase.destroy();
   return workflowInfos;
 }
 
-export type WorkflowInformation = WorkflowStatus & {
+export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
   workflowUUID: string,
   input?: unknown[],
   output?: unknown,
   error?: unknown,
+  request?: HTTPRequest,
 }
 
-export async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string) {
+export async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string, getRequest: boolean) {
   const info = await systemDatabase.getWorkflowStatus(workflowUUID) as WorkflowInformation;
   info.workflowUUID = workflowUUID;
   if (info === null) {
@@ -36,12 +38,15 @@ export async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUU
     const result = await systemDatabase.getWorkflowResult(workflowUUID);
     info.error = result;
   }
+  if (!getRequest) {
+    delete info.request;
+  }
   return info;
 }
 
-export async function getWorkflow(config: DBOSConfig, workflowUUID: string) {
+export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
-  const info = await getWorkflowInfo(systemDatabase, workflowUUID);
+  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
   await systemDatabase.destroy();
   return info;
 }

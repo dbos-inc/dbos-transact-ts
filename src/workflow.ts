@@ -64,8 +64,8 @@ export interface WorkflowStatus {
 export interface GetWorkflowsInput {
   workflowName?: string; // The name of the workflow function
   authenticatedUser?: string; // The user who ran the workflow.
-  startTime?: string; // Timestamp in RFC 3339 format
-  endTime?: string; // Timestamp in RFC 3339 format
+  startTime?: string; // Timestamp in ISO 8601 format
+  endTime?: string; // Timestamp in ISO 8601 format
   status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.

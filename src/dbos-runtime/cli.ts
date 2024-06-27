@@ -10,7 +10,8 @@ import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
 import { getWorkflow, listWorkflows } from './workflow_management';
-import { GetWorkflowsInput } from '..';
+import { GetWorkflowsInput, StatusString } from '..';
+import { exit } from 'node:process';
 
 const program = new Command();
 
@@ -108,13 +109,26 @@ workflowCommands
   .command('list')
   .description('List workflows from your application')
   .option('-l, --limit <number>', 'Limit the results returned', "10")
+  .option('-u, --user <string>', 'Retrieve workflows run by this user')
+  .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
+  .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
+  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, or RETRIES_EXCEEDED)')
+  .option('--request', 'Retrieve workflow request information')
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (options: {limit?: string, appDir?: string}) => {
+  .action(async (options: {limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, request: boolean}) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    const input: GetWorkflowsInput = {
-      limit: Number(options.limit)
+    if (options.status && !Object.values(StatusString).includes(options.status as typeof StatusString[keyof typeof StatusString])) {
+      console.error("Invalid status: ", options.status);
+      exit(1);
     }
-    const output = await listWorkflows(dbosConfig, input);
+    const input: GetWorkflowsInput = {
+      limit: Number(options.limit),
+      authenticatedUser: options.user,
+      startTime: options.startTime,
+      endTime: options.endTime,
+      status: options.status as typeof StatusString[keyof typeof StatusString]
+    }
+    const output = await listWorkflows(dbosConfig, input, options.request);
     console.log(JSON.stringify(output))
   });
 
@@ -123,9 +137,10 @@ workflowCommands
   .description('Retrieve the status of a workflow')
   .argument("<uuid>", "Target workflow UUID")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (uuid: string, options: {appDir?: string}) => {
+  .option('--request', 'Retrieve workflow request information')
+  .action(async (uuid: string, options: {appDir?: string, request: boolean}) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    const output = await getWorkflow(dbosConfig, uuid);
+    const output = await getWorkflow(dbosConfig, uuid, options.request);
     console.log(JSON.stringify(output))
   });
 
