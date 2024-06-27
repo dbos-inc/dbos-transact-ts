@@ -156,7 +156,7 @@ workflowCommands
 
 workflowCommands
   .command('retry')
-  .description('Retry a workflow from where it left off with its existing UUID')
+  .description('Retry a workflow from the last step it executed, keeping its UUID')
   .argument("<uuid>", "Target workflow UUID")
   .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (uuid: string, options: { appDir?: string }) => {
