@@ -9,7 +9,7 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
-import { listWorkflows } from './workflow_management';
+import { getWorkflow, listWorkflows } from './workflow_management';
 import { GetWorkflowsInput } from '..';
 
 const program = new Command();
@@ -115,6 +115,17 @@ workflowCommands
       limit: options.limit
     }
     const output = await listWorkflows(dbosConfig, input);
+    console.log(JSON.stringify(output))
+  });
+
+workflowCommands
+  .command('get')
+  .description('Retrieve the status of a workflow')
+  .argument("<uuid>", "Target workflow UUID")
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (uuid: string, options: {appDir?: string}) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    const output = await getWorkflow(dbosConfig, uuid);
     console.log(JSON.stringify(output))
   });
 
