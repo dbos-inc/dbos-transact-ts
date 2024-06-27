@@ -21,7 +21,7 @@ export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
   request?: HTTPRequest,
 }
 
-export async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string, getRequest: boolean) {
+async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string, getRequest: boolean) {
   const info = await systemDatabase.getWorkflowStatus(workflowUUID) as WorkflowInformation;
   info.workflowUUID = workflowUUID;
   if (info === null) {

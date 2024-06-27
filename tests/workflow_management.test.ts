@@ -13,7 +13,7 @@ import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { WorkflowInformation, listWorkflows } from "../src/dbos-runtime/workflow_management";
+import { WorkflowInformation, getWorkflow, listWorkflows } from "../src/dbos-runtime/workflow_management";
 
 describe("workflow-management-tests", () => {
   const testTableName = "dbos_test_kv";
@@ -175,6 +175,9 @@ describe("workflow-management-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("alice");
 
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    await dbosExec.flushWorkflowBuffers();
+
     const input: GetWorkflowsInput = {
       workflowName: "testWorkflow"
     }
@@ -183,6 +186,16 @@ describe("workflow-management-tests", () => {
     const info = infos[0] as WorkflowInformation;
     expect(info.authenticatedUser).toBe("alice");
     expect(info.workflowName).toBe("testWorkflow");
+    expect(info.status).toBe(StatusString.SUCCESS);
+    expect(info.workflowClassName).toBe("TestEndpoints");
+    expect(info.assumedRole).toBe("");
+    expect(info.workflowConfigName).toBe("");
+    expect(info.error).toBeUndefined();
+    expect(info.output).toBe("alice");
+    expect(info.input).toEqual(["alice"])
+
+    const getInfo = await getWorkflow(config, info.workflowUUID, false) as WorkflowInformation;
+    expect(info).toEqual(getInfo);
   });
 
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
