@@ -13,7 +13,7 @@ import request from "supertest";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { WorkflowInformation, cancelWorkflow, getWorkflow, listWorkflows } from "../src/dbos-runtime/workflow_management";
+import { WorkflowInformation, cancelWorkflow, getWorkflow, listWorkflows, retryWorkflow } from "../src/dbos-runtime/workflow_management";
 import { Client } from "pg";
 
 describe("workflow-management-tests", () => {
@@ -210,7 +210,7 @@ describe("workflow-management-tests", () => {
     expect(info).toEqual(getInfo);
   });
 
-  test("test-cancel-workflow", async () => {
+  test("test-cancel-retry-workflow", async () => {
     TestEndpoints.tries = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -226,11 +226,13 @@ describe("workflow-management-tests", () => {
     expect(TestEndpoints.tries).toBe(1);
 
     TestEndpoints.testResolve();
+    await retryWorkflow(config, null, handle.getWorkflowUUID());
+    expect(TestEndpoints.tries).toBe(2);
     await handle.getResult();
 
     await dbosExec.flushWorkflowBuffers();
     result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    expect(result.rows[0].recovery_attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
