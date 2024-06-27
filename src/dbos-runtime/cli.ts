@@ -9,6 +9,8 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
+import { listWorkflows } from './workflow_management';
+import { GetWorkflowsInput } from '..';
 
 const program = new Command();
 
@@ -95,6 +97,31 @@ program
 program
   .command('rollback')
   .action(async () => { await runAndLog(rollbackMigration); });
+
+/////////////////////////
+/* WORKFLOW MANAGEMENT */
+/////////////////////////
+
+const workflowCommands = program.command("workflow").alias("workflows").alias("wf").description("Manage DBOS workflows");
+
+workflowCommands
+  .command('list')
+  .description('List workflows from your application')
+  .option('-l, --limit <number>', 'Limit the results returned')
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (options: {limit?: number, appDir?: string}) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    const input: GetWorkflowsInput = {
+      limit: options.limit
+    }
+    const output = await listWorkflows(dbosConfig, input);
+    console.log(JSON.stringify(output))
+  });
+
+/////////////////////////
+/* WORKFLOW MANAGEMENT */
+/////////////////////////
+
 
 program.parse(process.argv);
 
