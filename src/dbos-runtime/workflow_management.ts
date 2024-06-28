@@ -57,7 +57,7 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
 // Cancelling a workflow prevents it from being automatically recovered, but active executions are not halted.
 export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
-  await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED)
+  await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false)
   await systemDatabase.destroy();
 }
 
@@ -69,7 +69,7 @@ export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSR
   }
   await dbosExec.init(classes);
   if (!startNewWorkflow) {
-    await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING);
+    await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
   }
   const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
   const output = await handle.getResult();

@@ -253,7 +253,7 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  setWorkflowStatus(_workflowUUID: string, _status: typeof StatusString[keyof typeof StatusString]): Promise<void> {
+  setWorkflowStatus(_workflowUUID: string, _status: typeof StatusString[keyof typeof StatusString], _resetRecoveryAttempts: boolean): Promise<void> {
     throw new Error("Method not implemented.");
   }
 
