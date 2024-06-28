@@ -33,6 +33,6 @@ describe("stored-proc-tests", () => {
     });
 
     test("npm run test", () => {
-        // execSync("npm run test", { env: process.env });
+        execSync("npm run test", { env: process.env });
     });
 });

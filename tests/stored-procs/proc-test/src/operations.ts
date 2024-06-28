@@ -23,7 +23,6 @@ export class StoredProcTest {
 
   @StoredProcedure()  // Run this function as a database transaction
   static async helloProcedure(ctxt: StoredProcedureContext, user: string): Promise<string> {
-    // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
     const { rows } = await ctxt.query<dbos_hello>(query, [user]);
     const greet_count = rows[0].greet_count;
@@ -32,12 +31,21 @@ export class StoredProcTest {
 
   @Workflow()
   static async procGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
-
-    // Retrieve the number of times this user has been greeted.
     const count = await ctxt.invoke(StoredProcTest).getGreetCount(user);
     const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
-
     return { count, greeting };
+  }
+
+  @StoredProcedure()
+  static async procError(ctxt: StoredProcedureContext): Promise<void> {
+    throw new Error("This is a test error");
+  }
+
+  @Workflow()
+  static async procErrorWorkflow(ctxt: WorkflowContext, user: string): Promise<string> {
+    const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
+    await ctxt.invoke(StoredProcTest).procError();
+    return greeting;
   }
 
 
