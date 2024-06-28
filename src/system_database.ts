@@ -32,6 +32,7 @@ export interface SystemDatabase {
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
+  setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
@@ -638,6 +639,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
+  }
+
+  async setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void> {
+    await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2`, [status, workflowUUID]);
+    if (resetRecoveryAttempts) {
+      await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET recovery_attempts=0 WHERE workflow_uuid=$1`, [workflowUUID]);
+    }
   }
 
   async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
