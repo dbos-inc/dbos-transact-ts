@@ -61,8 +61,11 @@ export class StoredProcTest {
   @Workflow()
   static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
+    // const count 
+    // const greeting = await ctxt.invoke(StoredProcTest).helloProcedureLocal(user);
+
     const count = await ctxt.invoke(StoredProcTest).getGreetCountLocal(user);
-    const greeting = await ctxt.invoke(StoredProcTest).helloProcedureLocal(user);
+    const greeting = "Plugh!";
 
     return { count, greeting };
   }
@@ -71,10 +74,11 @@ export class StoredProcTest {
 
   @Transaction({ readOnly: true })
   static async getGreetCountTx(ctxt: TransactionContext<Knex>, user: string): Promise<number> {
-    const query = "SELECT greet_count FROM dbos_hello WHERE name = $1;";
+    const query = "SELECT greet_count FROM dbos_hello WHERE name = ?;";
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    const { rows } = await ctxt.client.raw(query, [user]) as { rows: dbos_hello[] };
-    return rows.length === 0 ? 0 : rows[0].greet_count;
+    const result = await ctxt.client.raw(query, user) as { rows: dbos_hello[] } | undefined;
+    if (result && result.rows.length > 0) { return result.rows[0].greet_count; }
+    return 0;
   }
 
   @Transaction()  // Run this function as a database transaction
@@ -88,7 +92,7 @@ export class StoredProcTest {
   }
 
   @Workflow()
-  static async txLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
+  static async txGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
     const count = await ctxt.invoke(StoredProcTest).getGreetCountTx(user);
     const greeting = await ctxt.invoke(StoredProcTest).helloTransaction(user);
