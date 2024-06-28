@@ -72,6 +72,7 @@ export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSR
     await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING);
   }
   const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
-  await handle.getResult();
+  const output = await handle.getResult();
   await dbosExec.destroy();
+  return output;
 }

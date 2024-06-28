@@ -163,7 +163,8 @@ workflowCommands
   .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (uuid: string, options: { appDir?: string }) => {
     const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, false);
+    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, false);
+    console.log(`Workflow output: ${JSON.stringify(output)}`);
   });
 
 workflowCommands
@@ -173,7 +174,8 @@ workflowCommands
   .option("-d, --appDir <string>", "Specify the application root directory")
   .action(async (uuid: string, options: { appDir?: string }) => {
     const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
+    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
+    console.log(`Workflow output: ${JSON.stringify(output)}`);
   });
 
 /////////////
