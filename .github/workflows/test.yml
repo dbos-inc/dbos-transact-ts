@@ -10,7 +10,7 @@ jobs:
     services:
       # Postgres service container
       postgres:
-        image: postgres:16.1
+        image: sibedge/postgres-plv8:bookworm
         env:
           # Specify the password for Postgres superuser.
           POSTGRES_PASSWORD: dbos
