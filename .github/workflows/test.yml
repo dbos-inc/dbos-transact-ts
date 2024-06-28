@@ -53,8 +53,8 @@ jobs:
 
     steps:
       - name: "Setup postgres config"
+        # docker exec -i ${{ job.services.postgres.id }} apt update
         run: |
-          docker exec -i ${{ job.services.postgres.id }} apt update
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v4.1.1
