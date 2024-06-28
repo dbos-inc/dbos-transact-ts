@@ -113,9 +113,10 @@ workflowCommands
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
   .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
+  .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
   .option('--request', 'Retrieve workflow request information')
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, request: boolean }) => {
+  .action(async (options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     if (options.status && !Object.values(StatusString).includes(options.status as typeof StatusString[keyof typeof StatusString])) {
       console.error("Invalid status: ", options.status);
@@ -126,7 +127,8 @@ workflowCommands
       authenticatedUser: options.user,
       startTime: options.startTime,
       endTime: options.endTime,
-      status: options.status as typeof StatusString[keyof typeof StatusString]
+      status: options.status as typeof StatusString[keyof typeof StatusString],
+      applicationVersion: options.applicationVersion,
     }
     const output = await listWorkflows(dbosConfig, input, options.request);
     console.log(JSON.stringify(output))
