@@ -763,7 +763,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.procedure(proc, ...args);
     };
-    return (await this.workflow(temp_workflow, { ...params, tempWfType: TempWorkflowType.procedure, tempWfName: proc.name }, ...args)).getResult();
+    return (await this.workflow(temp_workflow, 
+      { ...params, 
+        tempWfType: TempWorkflowType.procedure, 
+        tempWfName: getRegisteredMethodName(proc),
+        tempWfClass: getRegisteredMethodClassName(proc),
+        }, ...args)).getResult();
   }
 
   async executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
