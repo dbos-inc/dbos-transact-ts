@@ -37,7 +37,8 @@ export class StoredProcTest {
   }
 
   @StoredProcedure()
-  static async procError(ctxt: StoredProcedureContext): Promise<void> {
+  static async procError(_ctxt: StoredProcedureContext): Promise<void> {
+    await Promise.resolve();
     throw new Error("This is a test error");
   }
 
