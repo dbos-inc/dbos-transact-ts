@@ -164,7 +164,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
-    readonly tempWfOperationType: string = "", // "transaction", "external", or "send"
+    readonly tempWfOperationType: string = "", // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = "" // Name for the temporary workflow operation
   ) {
     const span = dbosExec.tracer.startSpan(

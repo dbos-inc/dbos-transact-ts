@@ -629,7 +629,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction) {
+    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction
+      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure
+    ) {
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     }
 
@@ -666,7 +668,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       } finally {
         this.tracer.endSpan(wCtxt.span);
-        if (wCtxt.tempWfOperationType === TempWorkflowType.transaction) {
+        if (wCtxt.tempWfOperationType === TempWorkflowType.transaction
+          || wCtxt.tempWfOperationType === TempWorkflowType.procedure
+        ) {
           // For single-transaction workflows, asynchronously record inputs.
           // We must buffer inputs after workflow status is buffered/flushed because workflow_inputs table has a foreign key reference to the workflow_status table.
           this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
