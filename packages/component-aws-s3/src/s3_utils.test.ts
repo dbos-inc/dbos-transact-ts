@@ -276,7 +276,7 @@ describe("ses-tests", () => {
         expect(e).toBeUndefined();
     }
     //    Notify WF
-    await testRuntime.send<string>(wfhandle.getWorkflowUUID(), "", "uploadfinish");
+    await testRuntime.send<boolean>(wfhandle.getWorkflowUUID(), true, "uploadfinish");
 
     //    Wait for WF complete
     const _myFileRecord = await wfhandle.getResult();
