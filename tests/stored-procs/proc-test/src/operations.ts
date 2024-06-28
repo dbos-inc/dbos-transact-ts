@@ -100,10 +100,10 @@ export class StoredProcTest {
   }
 
   @Workflow()
-  static async txGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
+  static async txAndProcGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
     const count = await ctxt.invoke(StoredProcTest).getGreetCountTx(user);
-    const greeting = await ctxt.invoke(StoredProcTest).helloTransaction(user);
+    const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
 
     return { count, greeting };
   }

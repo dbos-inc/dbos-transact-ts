@@ -38,7 +38,7 @@ describe("operations-test", () => {
     const wfid = uuidv1();
 
     const user = "txWF";
-    const res = await testRuntime.invokeWorkflow(StoredProcTest, wfid).txGreetingWorkflow(user);
+    const res = await testRuntime.invokeWorkflow(StoredProcTest, wfid).txAndProcGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
 
@@ -56,7 +56,7 @@ describe("operations-test", () => {
   test("test-procLocalGreetingWorkflow", async () => {
     const wfid = uuidv1();
     const user = "procLocalWF";
-    const res = await testRuntime.invokeWorkflow(StoredProcTest, wfid).txGreetingWorkflow(user);
+    const res = await testRuntime.invokeWorkflow(StoredProcTest, wfid).txAndProcGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
 
