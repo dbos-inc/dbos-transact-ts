@@ -2,7 +2,7 @@ import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitial
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
-import { PoolClient } from "pg";
+import { Client, PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -16,6 +16,7 @@ describe("debugger-test", () => {
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
   let debugProxyRuntime: TestingRuntime;
+  let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -30,9 +31,18 @@ describe("debugger-test", () => {
     testRuntime = await createInternalTestRuntime(undefined, config);
     debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig);     // TODO: connect to the real proxy.
     DebuggerTest.cnt = 0;
+    systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    await systemDBClient.connect();
   });
 
   afterEach(async () => {
+    await systemDBClient.end();
     await debugRuntime.destroy();
     await testRuntime.destroy();
     await debugProxyRuntime.destroy();
@@ -123,6 +133,15 @@ describe("debugger-test", () => {
     }
   }
 
+  // Test we're robust to duplicated function names
+  class DebuggerTestDup {
+    @Transaction()
+    static async voidFunction(_txnCtxt: TestTransactionContext) {
+      // Nothing here
+      return Promise.resolve();
+    }
+  }
+
   test("debug-workflow", async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
@@ -175,9 +194,13 @@ describe("debugger-test", () => {
 
   test("debug-void-transaction", async () => {
     const wfUUID = uuidv1();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
     expect(DebuggerTest.cnt).toBe(1);
+
+    // Duplicated function name should not affect the execution
+    await expect(testRuntime.invoke(DebuggerTestDup).voidFunction()).resolves.toBeUndefined();
     await testRuntime.destroy();
 
     // Execute again in debug mode.
@@ -187,6 +210,13 @@ describe("debugger-test", () => {
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.cnt).toBe(1);
+
+    // Make sure we correctly record the function's class name
+    await dbosExec.flushWorkflowBuffers();
+    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
+    expect(result.rows[0].class_name).toBe("DebuggerTest");
+    expect(result.rows[0].name).toContain("voidFunction");
+    expect(result.rows[0].status).toBe("SUCCESS");
   });
 
   test("debug-transaction", async () => {
@@ -237,6 +267,8 @@ describe("debugger-test", () => {
 
   test("debug-communicator", async () => {
     const wfUUID = uuidv1();
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).testCommunicator()).resolves.toBe(1);
     await testRuntime.destroy();
@@ -253,6 +285,13 @@ describe("debugger-test", () => {
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testCommunicator()).rejects.toThrow("Workflow UUID not found!");
+
+    // Make sure we correctly record the function's class name
+    await dbosExec.flushWorkflowBuffers();
+    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
+    expect(result.rows[0].class_name).toBe("DebuggerTest");
+    expect(result.rows[0].name).toContain("testCommunicator");
+    expect(result.rows[0].status).toBe("SUCCESS");
   });
 
   test("debug-workflow-notifications", async() => {
