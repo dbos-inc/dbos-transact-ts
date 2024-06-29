@@ -138,7 +138,7 @@ describe("debugger-test", () => {
     @Transaction()
     static async voidFunction(_txnCtxt: TestTransactionContext) {
       // Nothing here
-      return;
+      return Promise.resolve();
     }
   }
 
@@ -213,7 +213,7 @@ describe("debugger-test", () => {
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
-    let result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
+    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
     expect(result.rows[0].class_name).toBe("DebuggerTest");
     expect(result.rows[0].name).toContain("voidFunction");
     expect(result.rows[0].status).toBe("SUCCESS");
@@ -288,7 +288,7 @@ describe("debugger-test", () => {
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
-    let result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
+    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
     expect(result.rows[0].class_name).toBe("DebuggerTest");
     expect(result.rows[0].name).toContain("testCommunicator");
     expect(result.rows[0].status).toBe("SUCCESS");
