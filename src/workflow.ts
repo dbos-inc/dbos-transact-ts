@@ -54,7 +54,7 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, or ERROR.
+  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED.
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
   readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
@@ -67,9 +67,9 @@ export interface WorkflowStatus {
 export interface GetWorkflowsInput {
   workflowName?: string; // The name of the workflow function
   authenticatedUser?: string; // The user who ran the workflow.
-  startTime?: string; // Timestamp in RFC 3339 format
-  endTime?: string; // Timestamp in RFC 3339 format
-  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED"; // The status of the workflow.
+  startTime?: string; // Timestamp in ISO 8601 format
+  endTime?: string; // Timestamp in ISO 8601 format
+  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
@@ -93,6 +93,7 @@ export const StatusString = {
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
   RETRIES_EXCEEDED: "RETRIES_EXCEEDED",
+  CANCELLED: "CANCELLED",
 } as const;
 
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
