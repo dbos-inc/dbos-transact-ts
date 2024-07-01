@@ -153,14 +153,14 @@ export class S3Ops extends ConfiguredInstance {
     }
 
     @Communicator()
-    async presignedGetURL(_ctx: CommunicatorContext, key: string, expirationSecs: number = 3600, options: S3GetResponseOptions = {})
+    async presignedGetURL(_ctx: CommunicatorContext, key: string, @ArgOptional expirationSecs: number = 3600, @ArgOptional options: S3GetResponseOptions = {})
     {
         return await S3Ops.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, options);
     }
 
     // Presigned post key
     static async postS3KeyCmd(s3: S3Client, bucket: string, key: string, expirationSecs: number,
-        contentOptions?: {
+        @ArgOptional contentOptions?: {
             contentType?: string,
             contentLengthMin?: number,
             contentLengthMax?: number,
@@ -172,7 +172,7 @@ export class S3Ops extends ConfiguredInstance {
             {
                 Conditions: [
                     ["content-length-range", contentOptions?.contentLengthMin ?? 1,
-                                            contentOptions?.contentLengthMax ?? 10000000], // 10MB
+                                             contentOptions?.contentLengthMax ?? 10000000], // 10MB
                 ],
                 Bucket: bucket,
                 Key: key,
@@ -257,7 +257,7 @@ export class S3Ops extends ConfiguredInstance {
 
     //  Presigned D/L for end user
     @Workflow()
-    async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600, options: S3GetResponseOptions = {}) : Promise<string>
+    async getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, @ArgOptional expirationSec = 3600, @ArgOptional options: S3GetResponseOptions = {}) : Promise<string>
     {
         return await ctx.invoke(this).presignedGetURL(fileDetails.key, expirationSec, options);
     }
