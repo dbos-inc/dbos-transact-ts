@@ -16,6 +16,7 @@ export {
 
 export {
   StoredProcedureContext,  
+  StoredProcedureConfig,
 } from './procedure';
 
 export {
