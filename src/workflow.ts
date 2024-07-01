@@ -131,10 +131,10 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
-  invokeWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInst<T>;
-  invokeWorkflow<T extends object>(targetClass: T): WfInvokeWfs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T): WfInvokeWfsAsync<T>;
+  invokeWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInst<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -393,7 +393,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
     const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
-
 
     for (const op of ops) {
       if (asyncWf) {

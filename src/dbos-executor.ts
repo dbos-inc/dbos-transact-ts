@@ -175,7 +175,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
       this.telemetryCollector = new TelemetryCollector(OTLPExporter);
     } else {
-      // We always an collector to drain the signals queue, even if we don't have an exporter.
+      // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
@@ -430,7 +430,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await sleepms(1000);
     }
     await this.systemDatabase.destroy();
-    await this.userDatabase.destroy();
+    if (this.userDatabase) {
+      await this.userDatabase.destroy();
+    }
     await this.procedurePool.end();
     await this.logger.destroy();
   }
