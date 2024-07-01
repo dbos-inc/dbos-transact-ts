@@ -13,7 +13,7 @@ describe("compiler", () => {
 
     const testClass = file.getClassOrThrow("Test");
     const methods = testClass.getStaticMethods();
-    expect(methods.length).toBe(4);
+    expect(methods.length).toBe(8);
     expect(testClass.getStaticMethod("testProcedure")).toBeDefined();
   });
 
@@ -25,7 +25,7 @@ describe("compiler", () => {
 
     const testClass = file.getClassOrThrow("Test");
     const methods = testClass.getStaticMethods();
-    expect(methods.length).toBe(4);
+    expect(methods.length).toBe(8);
     expect(testClass.getStaticMethod("testProcedure")).toBeDefined();
   });
 
@@ -35,7 +35,7 @@ describe("compiler", () => {
 
     const procMethods = getProcMethods(file);
 
-    expect(procMethods.length).toBe(4);
+    expect(procMethods.length).toBe(8);
     const testClass = file.getClassOrThrow("Test");
     const testProcMethod = testClass.getStaticMethodOrThrow("testProcedure");
     expect(procMethods[0]).toEqual(testProcMethod);

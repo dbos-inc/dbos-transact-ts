@@ -7,9 +7,9 @@ export type CompileResult = {
 
 export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
 export interface StoredProcedureConfig {
-  isolationLevel: IsolationLevel;
-  readOnly: boolean;
-  executeLocally: boolean
+  isolationLevel?: IsolationLevel;
+  readOnly?: boolean;
+  executeLocally?: boolean
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
@@ -453,8 +453,8 @@ export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedur
 
   const arg0 = procDecorator.args?.[0];
   const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<StoredProcedureConfig> : undefined;
-  const readOnly = configArg?.readOnly ?? false;
-  const executeLocally = configArg?.executeLocally ?? false;
-  const isolationLevel = configArg?.isolationLevel ?? "SERIALIZABLE";
+  const readOnly = configArg?.readOnly;
+  const executeLocally = configArg?.executeLocally;
+  const isolationLevel = configArg?.isolationLevel;
   return { isolationLevel, readOnly, executeLocally };
 }

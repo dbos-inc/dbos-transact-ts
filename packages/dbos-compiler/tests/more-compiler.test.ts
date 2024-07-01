@@ -18,20 +18,24 @@ describe("more compiler", () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const actual = Object.fromEntries(entries);
         const expected = {
-            testGetHandler:"handler",
-            testGetHandlerWorkflow:"workflow",
-            testGetHandlerTx:"transaction",
-            testGetHandlerComm:"communicator",
-            testPostHandler:"handler",
-            testWorkflow:"workflow",
-            testCommunicator:"communicator",
-            testTransaction:"transaction",
-            testProcedure:"storedProcedure",
-            testReadOnlyProcedure:"storedProcedure",
-            testRepeatableReadProcedure:"storedProcedure",
-            testConfiguredProcedure:"storedProcedure",
-            testDBOSInitializer:"initializer",
-            testDBOSDeploy:"initializer"
+            testGetHandler: "handler",
+            testGetHandlerWorkflow: "workflow",
+            testGetHandlerTx: "transaction",
+            testGetHandlerComm: "communicator",
+            testPostHandler: "handler",
+            testWorkflow: "workflow",
+            testCommunicator: "communicator",
+            testTransaction: "transaction",
+            testProcedure: "storedProcedure",
+            testReadOnlyProcedure: "storedProcedure",
+            testRepeatableReadProcedure: "storedProcedure",
+            testConfiguredProcedure: "storedProcedure",
+            testLocalProcedure: "storedProcedure",
+            testLocalReadOnlyProcedure: "storedProcedure",
+            testLocalRepeatableReadProcedure: "storedProcedure",
+            testLocalConfiguredProcedure: "storedProcedure",
+            testDBOSInitializer: "initializer",
+            testDBOSDeploy: "initializer"
         };
         expect(actual).toEqual(expected);
     });
@@ -78,7 +82,7 @@ describe("more compiler", () => {
                 alias: undefined,
                 module: "@dbos-inc/dbos-sdk",
                 args: ["/test"]
-            },{
+            }, {
                 name: "Workflow",
                 alias: undefined,
                 module: "@dbos-inc/dbos-sdk",
@@ -107,25 +111,49 @@ describe("more compiler", () => {
         it("testProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: false, isolationLevel: "SERIALIZABLE", executeLocally: false });
+            expect(config).toEqual({});
         });
 
         it("testReadOnlyProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testReadOnlyProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "SERIALIZABLE", executeLocally: false  });
+            expect(config).toEqual({ readOnly: true });
         });
 
         it("testRepeatableReadProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testRepeatableReadProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: false, isolationLevel: "REPEATABLE READ", executeLocally: false  });
+            expect(config).toEqual({ isolationLevel: "REPEATABLE READ" });
         });
 
         it("testConfiguredProcedure", () => {
             const method = cls.getStaticMethodOrThrow("testConfiguredProcedure");
             const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: false  });
+            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED" });
+        });
+
+        it("testLocalProcedure", () => {
+            const method = cls.getStaticMethodOrThrow("testLocalProcedure");
+            const config = getStoredProcConfig(method);
+            expect(config).toEqual({ executeLocally: true });
+        });
+
+        it("testLocalReadOnlyProcedure", () => {
+            const method = cls.getStaticMethodOrThrow("testLocalReadOnlyProcedure");
+            const config = getStoredProcConfig(method);
+            expect(config).toEqual({ readOnly: true, executeLocally: true });
+        });
+
+        it("testLocalRepeatableReadProcedure", () => {
+            const method = cls.getStaticMethodOrThrow("testLocalRepeatableReadProcedure");
+            const config = getStoredProcConfig(method);
+            expect(config).toEqual({ isolationLevel: "REPEATABLE READ", executeLocally: true });
+        });
+
+        it("testLocalConfiguredProcedure", () => {
+            const method = cls.getStaticMethodOrThrow("testLocalConfiguredProcedure");
+            const config = getStoredProcConfig(method);
+            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true });
         });
     })
 });

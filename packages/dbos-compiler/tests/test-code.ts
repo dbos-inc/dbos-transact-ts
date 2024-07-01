@@ -61,6 +61,22 @@ export class Test {
   static async testConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
   }
 
+  @StoredProcedure({ executeLocally: true})
+  static async testLocalProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @StoredProcedure({ readOnly: true, executeLocally: true })
+  static async testLocalReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @StoredProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
+  static async testLocalRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @StoredProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
+  static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
   @DBOSInitializer()
   static async testDBOSInitializer(ctxt: InitContext): Promise<void> {
   }
@@ -133,6 +149,23 @@ export class Test {
   @TestStoredProcedure({ readOnly: true, isolationLevel: "READ COMMITTED" })
   static async testConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
   }
+
+  @TestStoredProcedure({ executeLocally: true})
+  static async testLocalProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @TestStoredProcedure({ readOnly: true, executeLocally: true })
+  static async testLocalReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @TestStoredProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
+  static async testLocalRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
+  @TestStoredProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
+  static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {
+  }
+
 
   @TestInitializer()
   static async testDBOSInitializer(ctxt: InitContext): Promise<void> {

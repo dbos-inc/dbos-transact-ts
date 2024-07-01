@@ -66,12 +66,24 @@ async function generateDbosDrop(appVersion: string | undefined) {
 }
 
 function getMethodContext(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
+  const readOnly = config?.readOnly ?? false;
+  const executeLocally = config?.executeLocally ?? false;
+  const isolationLevel = config?.isolationLevel ?? "SERIALIZABLE";
+
   const methodName = method.getName();
   const className = method.getParentIfKindOrThrow(tsm.SyntaxKind.ClassDeclaration).getName();
+  if (!className) throw new Error("Method must be a member of a class");
   const moduleName = method.getSourceFile().getBaseNameWithoutExtension();
 
-  const context = { ...config, methodName, className, moduleName, appVersion };
-  return context;
+  return { 
+    readOnly, 
+    isolationLevel, 
+    executeLocally, 
+    methodName, 
+    className, 
+    moduleName, 
+    appVersion 
+  };
 }
 
 async function generateMethodCreate(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
