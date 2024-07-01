@@ -32,6 +32,7 @@ export interface SystemDatabase {
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
+  setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
@@ -226,7 +227,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at) VALUES `;
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at, class_name, config_name) VALUES `;
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -234,7 +235,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
           values.push(
             workflowUUID,
             status.status,
@@ -248,7 +249,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.applicationVersion,
             status.applicationID,
             status.createdAt,
-            Date.now()
+            Date.now(),
+            status.className,
+            status.configName
           );
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
@@ -638,6 +641,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
+  }
+
+  async setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void> {
+    await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2`, [status, workflowUUID]);
+    if (resetRecoveryAttempts) {
+      await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET recovery_attempts=0 WHERE workflow_uuid=$1`, [workflowUUID]);
+    }
   }
 
   async getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null> {
