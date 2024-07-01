@@ -4,7 +4,7 @@ import { Liquid } from "liquidjs";
 import type { StoredProcedureConfig, CompileResult } from './compiler.js';
 
 const engine = new Liquid({
-  root: path.resolve(__dirname, '..', 'templates'),
+  root: path.resolve(__dirname, 'templates'),
   extname: ".liquid"
 });
 
