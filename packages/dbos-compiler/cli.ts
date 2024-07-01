@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { generateCreate, generateDrop } from "./generator.js";
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js'
-import * as pg from 'pg'
+import { Client, ClientConfig } from 'pg'
 import { type CompileResult, compile } from "./compiler.js";
 
 async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
@@ -29,8 +29,8 @@ async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: 
   }
 }
 
-async function deployToDatabase(config: pg.ClientConfig, result: CompileResult, appVersion?: string | boolean) {
-  const client = new pg.default.Client(config);
+async function deployToDatabase(config: ClientConfig, result: CompileResult, appVersion?: string | boolean) {
+  const client = new Client(config);
   try {
     await client.connect();
     console.log(`Deploying to database: ${client.host}:${client.port ?? 5432}/${client.database}`);
@@ -41,8 +41,8 @@ async function deployToDatabase(config: pg.ClientConfig, result: CompileResult, 
   }
 }
 
-async function dropFromDatabase(config: pg.ClientConfig, result: CompileResult, appVersion?: string | boolean) {
-  const client = new pg.default.Client(config);
+async function dropFromDatabase(config: ClientConfig, result: CompileResult, appVersion?: string | boolean) {
+  const client = new Client(config);
   try {
     await client.connect();
     console.log(`Dropping from database: ${client.host}:${client.port ?? 5432}/${client.database}`);
@@ -54,7 +54,6 @@ async function dropFromDatabase(config: pg.ClientConfig, result: CompileResult, 
 }
 
 function getPackageVersion(): string {
-  const __dirname = import.meta.dirname;
   const packageJsonPath = path.join(__dirname, "..", "package.json");
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as { version: string };
   return packageJson.version;

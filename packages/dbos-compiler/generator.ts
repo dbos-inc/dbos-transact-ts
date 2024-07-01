@@ -3,7 +3,6 @@ import tsm from 'ts-morph';
 import { Liquid } from "liquidjs";
 import type { StoredProcedureConfig, CompileResult } from './compiler.js';
 
-const __dirname = import.meta.dirname;
 const engine = new Liquid({
   root: path.resolve(__dirname, '..', 'templates'),
   extname: ".liquid"

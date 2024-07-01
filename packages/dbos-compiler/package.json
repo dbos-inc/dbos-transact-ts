@@ -3,7 +3,6 @@
   "version": "0.0.0-placeholder",
   "description": "Tool for generating plv8 stored procedures for PostgreSQL from DBOS applications",
   "license": "MIT",
-  "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact",
