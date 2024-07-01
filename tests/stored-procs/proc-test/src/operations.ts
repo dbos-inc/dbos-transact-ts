@@ -45,6 +45,7 @@ export class StoredProcTest {
   @Workflow()
   static async procErrorWorkflow(ctxt: WorkflowContext, user: string): Promise<string> {
     const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
+    const _count = await ctxt.invoke(StoredProcTest).getGreetCount(user);
     await ctxt.invoke(StoredProcTest).procError();
     return greeting;
   }

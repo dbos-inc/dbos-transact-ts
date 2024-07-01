@@ -78,16 +78,20 @@ describe("operations-test", () => {
 
     const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfid);
 
-    expect(txRows.length).toBe(2);
+    expect(txRows.length).toBe(3);
 
     expect(txRows[0].function_id).toBe(0);
     expect(txRows[0].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
     expectNullResult(txRows[0].error);
 
     expect(txRows[1].function_id).toBe(1);
-    expectNullResult(txRows[1].output);
+    expect(txRows[1].output).toMatch(`1`);
+    expectNullResult(txRows[1].error);
+
+    expect(txRows[2].function_id).toBe(2);
+    expectNullResult(txRows[2].output);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(JSON.parse(txRows[1].error).message).toMatch("This is a test error");
+    expect(JSON.parse(txRows[2].error).message).toMatch("This is a test error");
   })
 });
 
