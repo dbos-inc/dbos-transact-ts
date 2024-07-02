@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { existsSync, readFileSync } from "fs";
+import { statSync, existsSync, readFileSync } from "fs";
 import {
   handleAPIErrors,
   dbosConfigFilePath,
@@ -30,6 +30,12 @@ function convertPathForGlob(p: string) {
   }
   return p;
 }
+
+function getFilePermissions(filePath: string) {
+  const stats = statSync(filePath);
+  return stats.mode;
+}
+
 async function createZipData(logger: CLILogger): Promise<string> {
   const zip = new JSZip();
 
@@ -45,7 +51,9 @@ async function createZipData(logger: CLILogger): Promise<string> {
     logger.debug(`    Zipping file ${file}`);
     const relativePath = path.relative(process.cwd(), file).replace(/\\/g, "/");
     const fileData = readFileSync(file);
-    zip.file(relativePath, fileData, { binary: true });
+    const filePerms = getFilePermissions(file);
+    logger.debug(`      File permissions: ${filePerms.toString(8)}`);
+    zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms});
   });
 
   // Add the interpolated config file at package root
@@ -56,7 +64,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
-  const buffer = await zip.generateAsync({ type: "nodebuffer" });
+  const buffer = await zip.generateAsync({ platform: "UNIX", type: "nodebuffer" });
   logger.debug(`    ... zip archive complete (${buffer.length} bytes).`);
   return buffer.toString("base64");
 }
