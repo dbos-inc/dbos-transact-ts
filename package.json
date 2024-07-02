@@ -16,8 +16,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ .",
-    "lint-fdb": "eslint .",
+    "lint": "eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
+    "lint-fdb": "eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npm run build-fdb && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"

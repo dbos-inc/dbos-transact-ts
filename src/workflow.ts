@@ -51,7 +51,7 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, or ERROR.
+  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED.
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
   readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
@@ -64,9 +64,9 @@ export interface WorkflowStatus {
 export interface GetWorkflowsInput {
   workflowName?: string; // The name of the workflow function
   authenticatedUser?: string; // The user who ran the workflow.
-  startTime?: string; // Timestamp in RFC 3339 format
-  endTime?: string; // Timestamp in RFC 3339 format
-  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED"; // The status of the workflow.
+  startTime?: string; // Timestamp in ISO 8601 format
+  endTime?: string; // Timestamp in ISO 8601 format
+  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
@@ -90,6 +90,7 @@ export const StatusString = {
   SUCCESS: "SUCCESS",
   ERROR: "ERROR",
   RETRIES_EXCEEDED: "RETRIES_EXCEEDED",
+  CANCELLED: "CANCELLED",
 } as const;
 
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
@@ -127,10 +128,10 @@ export interface WorkflowContext extends DBOSContext {
   childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>>;
 
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
-  invokeWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInst<T>;
-  invokeWorkflow<T extends object>(targetClass: T): WfInvokeWfs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetClass: T): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T): WfInvokeWfsAsync<T>;
+  invokeWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInst<T>;
+  invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -338,7 +339,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
     const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
-
 
     for (const op of ops) {
       if (asyncWf) {

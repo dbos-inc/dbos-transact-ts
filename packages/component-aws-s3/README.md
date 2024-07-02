@@ -36,7 +36,7 @@ The application will need at least one s3 bucket.  This can be placed in the `ap
 ## Selecting A Configuration
 `S3Ops` is a configured class.  The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
 ```typescript
-const myS3 = configureInstance(S3Ops, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
+const defaultS3 = configureInstance(S3Ops, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
 ```
 
 ## Simple Operation Wrappers
@@ -78,6 +78,13 @@ const geturl = await ctx.invoke(defaultS3).presignedGetURL('/my/test/key', 30 /*
 ```
 
 The resulting URL string can be used in the same way as any other URL for placing HTTP GET requests.
+
+It may be desired to return the `Content-Type`, `Content-Disposition`, or other headers to the client that ultimately makes the S3 GET request.  This can be controlled by providing [response options](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/GetObjectCommandInput/).
+
+```typescript
+// Let the client know it is downloading a .zip file
+const geturl = await ctx.invoke(defaultS3).presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/, {ResponseContentType: 'application/zip', ResponseContentDisposition: `attachment; filename="file.zip"`});
+```
 
 #### Presigned POSTs
 A presigned POST URL can be created for an S3 key with the following:
@@ -194,8 +201,8 @@ Upon a completion call from the client, the following should be performed to not
 // Look up wfHandle by the workflow UUID
 const wfHandle = ctx.retrieveWorkflow(uuid);
 
-// Notify workflow
-await ctx.send<string>(wfHandle.getWorkflowUUID(), "", "uploadfinish");
+// Notify workflow - truish means success, any falsy value indicates failure / cancel
+await ctx.send<boolean>(wfHandle.getWorkflowUUID(), true, "uploadfinish");
 
 // Optionally, await completion of the workflow; this ensures that the database record is written,
 //  or will throw an error if anything went wrong in the workflow
@@ -203,9 +210,9 @@ await wfHandle.getResult();
 ```
 
 ### Workflow to Allow Client File Download
-The workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds.
+The workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number, options: S3GetResponseOptions)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds, and using any provided [response options](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/GetObjectCommandInput/).
 
-This workflow currently performs no additional operations outside of a call to `presignedGetURL(fileDetails.key, expiration)`.
+This workflow currently performs no additional operations outside of a call to `presignedGetURL(fileDetails.key, expiration, options)`.
 
 ## Notes
 Do not reuse S3 keys.  Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database.  Reasons why S3 keys should not be reused:
@@ -215,7 +222,7 @@ Do not reuse S3 keys.  Assigning unique identifiers to files is a much better id
 DBOS Transact logs function parameters and return values to the system database.  Some functions above treat the data contents of the S3 object as a parameter or return value, and are therefore only suitable for small data items (kilobytes, maybe megabytes, not gigabytes).  For large data, use workflows where the data is sent directly to and from S3 using presigned URLs.
 
 ## Simple Testing
-The `s3_utils.test.ts` file included in the source repository can be used to send an email and a templated email.  Before running, set the following environment variables:
+The `s3_utils.test.ts` file included in the source repository can be used to upload and download files to/from S3 using various approaches.  Before running, set the following environment variables:
 - `S3_BUCKET`: The S3 bucket for setting / retrieving test objects
 - `AWS_REGION`: AWS region to use
 - `AWS_ACCESS_KEY_ID`: The access key with permission to use the S3 service

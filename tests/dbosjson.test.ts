@@ -33,4 +33,21 @@ describe("dbos-json-reviver-replacer", () => {
     const parsed = DBOSJSON.parse(stringified) as typeof obj;
     expect(_.isEqual(obj, parsed)).toBe(true);
   });
+
+  test("Replace revive bigint", () => {
+    const obj = {
+      value: BigInt("12345678901234567890"),
+      values: { 
+        value: BigInt("12345678901234567890"),
+      },
+      valueArray: [
+        BigInt("12345678901234567890"),
+        BigInt("12345678901234567890"),
+        BigInt("12345678901234567890"),
+      ]
+    }
+    const stringified = DBOSJSON.stringify(obj);
+    const parsed = DBOSJSON.parse(stringified) as typeof obj;
+    expect(_.isEqual(obj, parsed)).toBe(true);
+  });
 });

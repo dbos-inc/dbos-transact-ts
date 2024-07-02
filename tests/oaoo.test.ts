@@ -107,6 +107,24 @@ describe("oaoo-tests", () => {
       return await wfCtxt.invokeWorkflow(WorkflowOAOO).testTxWorkflow(name);
     }
 
+    static numberOfChildInvocationsMax1 = 0;
+
+    @Communicator()
+    static async nestedWorkflowCommunicatorToRunOnce(_ctxt: CommunicatorContext) {
+      ++WorkflowOAOO.numberOfChildInvocationsMax1;
+      return Promise.resolve();
+    }
+
+    @Workflow()
+    static async nestedWorkflowChildToRunOnce(wfCtxt: WorkflowContext) {
+      return await wfCtxt.invoke(WorkflowOAOO).nestedWorkflowCommunicatorToRunOnce();
+    }
+
+    @Workflow()
+    static async nestedWorkflowRunChildOnce(wfCtxt: WorkflowContext) {
+      return await wfCtxt.invokeWorkflow(WorkflowOAOO, 'constant-idempotency-run-once').nestedWorkflowChildToRunOnce();
+    }
+
     @Workflow()
     static async sleepWorkflow(wfCtxt: WorkflowContext, durationSec: number) {
       await wfCtxt.sleep(durationSec);
@@ -170,6 +188,11 @@ describe("oaoo-tests", () => {
     await dbosExec.flushWorkflowBuffers();
     const retrievedHandle = testRuntime.retrieveWorkflow(workflowUUID + "-0");
     await expect(retrievedHandle.getResult()).resolves.toBe(1);
+
+    // Nested with OAOO key calculated
+    await testRuntime.invokeWorkflow(WorkflowOAOO).nestedWorkflowRunChildOnce();
+    await testRuntime.invokeWorkflow(WorkflowOAOO).nestedWorkflowRunChildOnce();
+    expect(WorkflowOAOO.numberOfChildInvocationsMax1).toBe(1);
   });
 
   /**

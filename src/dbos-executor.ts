@@ -164,7 +164,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
       this.telemetryCollector = new TelemetryCollector(OTLPExporter);
     } else {
-      // We always an collector to drain the signals queue, even if we don't have an exporter.
+      // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
@@ -372,7 +372,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await sleepms(1000);
     }
     await this.systemDatabase.destroy();
-    await this.userDatabase.destroy();
+    if (this.userDatabase) {
+      await this.userDatabase.destroy();
+    }
     await this.logger.destroy();
   }
 
@@ -737,7 +739,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return handlerArray;
   }
 
-  async executeWorkflowUUID(workflowUUID: string): Promise<WorkflowHandle<unknown>> {
+  async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
     const inputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
     if (!inputs || !wfStatus) {
@@ -748,9 +750,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const {wfInfo, configuredInst} = this.getWorkflowInfoByStatus(wfStatus);
 
+    // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
+    const workflowStartUUID = startNewWorkflow ? undefined : workflowUUID;
+
     if (wfInfo) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
+      return this.workflow(wfInfo.workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -763,12 +768,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     let temp_workflow: Workflow<unknown[], unknown>;
     let clsinst: ConfiguredInstance | null = null;
+    let tempWfType: string;
+    let tempWfName: string | undefined;
+    let tempWfClass: string | undefined;
     if (nameArr[1] === TempWorkflowType.transaction) {
       const {txnInfo, clsInst} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!txnInfo) {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
+      tempWfType = TempWorkflowType.transaction;
+      tempWfName = getRegisteredMethodName(txnInfo.transaction);
+      tempWfClass = getRegisteredMethodClassName(txnInfo.transaction);
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.transaction(txnInfo.transaction, clsInst, ...args);
@@ -780,12 +791,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
+      tempWfType = TempWorkflowType.external;
+      tempWfName = getRegisteredMethodName(commInfo.communicator);
+      tempWfClass = getRegisteredMethodClassName(commInfo.communicator);
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
         return await ctxtImpl.external(commInfo.communicator, clsInst, ...args);
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.send) {
+      tempWfType = TempWorkflowType.send;
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         return await ctxt.send<unknown>(args[0] as string, args[1], args[2] as string); // id, value, topic
       };
@@ -795,7 +810,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(wfName);
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true}, ...inputs);
+    return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true, tempWfType, tempWfClass, tempWfName}, ...inputs);
   }
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
