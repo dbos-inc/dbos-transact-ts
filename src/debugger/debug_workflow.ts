@@ -202,7 +202,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
-    const procInfo = this.#dbosExec.procedureInfoMap.get(proc.name);
+    const procInfo = this.#dbosExec.getProcedureInfo(proc);
     if (procInfo === undefined) { throw new DBOSDebuggerError(proc.name); }
     const funcId = this.functionIDGetIncrement();
 

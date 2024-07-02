@@ -16,17 +16,19 @@ function hasError(diags: readonly tsm.ts.Diagnostic[]) {
   return diags.some(diag => diag.category === tsm.ts.DiagnosticCategory.Error);
 }
 
-export function compile(tsConfigFilePath: string): CompileResult | undefined {
+export function compile(configFileOrProject: string | tsm.Project): CompileResult | undefined {
   const diags = new Array<tsm.ts.Diagnostic>();
   try {
-    const project = new tsm.Project({
-      tsConfigFilePath,
-      compilerOptions: {
-        sourceMap: false,
-        declaration: false,
-        declarationMap: false,
-      }
-    });
+    const project = typeof configFileOrProject === 'string'
+      ? new tsm.Project({
+        tsConfigFilePath: configFileOrProject,
+        compilerOptions: {
+          sourceMap: false,
+          declaration: false,
+          declarationMap: false,
+        }
+      })
+      : configFileOrProject;
 
     // remove test files
     for (const sourceFile of project.getSourceFiles()) {
@@ -70,8 +72,8 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
   const endNode = options?.endNode;
   const category = options?.category ?? tsm.ts.DiagnosticCategory.Error;
   const code = options?.code ?? 0;
-  const length = node 
-    ? endNode 
+  const length = node
+    ? endNode
       ? endNode.getEnd() - node.getPos()
       : node.getEnd() - node.getPos()
     : undefined;

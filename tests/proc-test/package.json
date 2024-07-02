@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
-    "test": "npx dbos rollback && npx dbos migrate && jest",
+    "test": "npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
     "dev": "nodemon",
@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@dbos-inc/dbos-cloud": "^1.15.9",
-    "@dbos-inc/dbos-compiler": "file:../../../packages/dbos-compiler",
+    "@dbos-inc/dbos-compiler": "file:../../packages/dbos-compiler",
     "@dbos-inc/eslint-plugin": "^0.0.6",
     "@types/jest": "^29.5.12",
     "@types/supertest": "^2.0.16",
@@ -24,7 +24,7 @@
     "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "file:../../..",
+    "@dbos-inc/dbos-sdk": "file:../..",
     "knex": "3.1.0"
   }
 }
