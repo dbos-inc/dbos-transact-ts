@@ -1,0 +1,45 @@
+import axios, { AxiosError } from "axios";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { ApplicationVersion } from "./types.js";
+
+export interface ListWorkflowsInput {
+  workflow_name?: string; // The name of the workflow function
+  authenticated_user?: string; // The user who ran the workflow.
+  start_time?: string; // Timestamp in ISO 8601 format
+  end_time?: string; // Timestamp in ISO 8601 format
+  status?: string; // The status of the workflow.
+  application_version?: string; // The application version that ran this workflow.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+}
+
+export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials();
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  appName = appName ?? retrieveApplicationName(logger);
+  if (!appName) {
+    return 1;
+  }
+
+  try {
+    const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/workflows`, input, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    const versions = res.data as ApplicationVersion[];
+    console.log(JSON.stringify(versions));
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to list workflows for application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
