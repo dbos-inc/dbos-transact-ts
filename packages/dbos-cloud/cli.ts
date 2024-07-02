@@ -18,6 +18,7 @@ import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
 import { orgInvite, orgListUsers, renameOrganization, joinOrganization } from "./organizations/organization.js";
+import { ListWorkflowsInput, listWorkflows } from "./applications/manage-workflows.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -383,6 +384,36 @@ orgCommands
     const exitCode = await joinOrganization(DBOSCloudHost, organization, secret);
     process.exit(exitCode);
   });
+
+////////////////////////////
+/* WORKFLOW COMMANDS */
+////////////////////////////
+
+const workflowCommands = program.command("workflow").alias("workflows").alias("wf").description("Manage DBOS workflows");
+workflowCommands
+  .command('list')
+  .description('List workflows from your application')
+  .argument("[string]", "application name (Default: name from package.json)")
+  .option('-l, --limit <number>', 'Limit the results returned', "10")
+  .option('-u, --user <string>', 'Retrieve workflows run by this user')
+  .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
+  .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
+  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
+  .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
+  .option('--request', 'Retrieve workflow request information')
+  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, request: boolean }) => {
+    const input: ListWorkflowsInput = {
+      limit: Number(options.limit),
+      authenticated_user: options.user,
+      start_time: options.startTime,
+      end_time: options.endTime,
+      status: options.status,
+      application_version: options.applicationVersion,
+    }
+    const exitCode = await listWorkflows(DBOSCloudHost, input, appName);
+    process.exit(exitCode)
+  });
+
 
 program.parse(process.argv);
 
