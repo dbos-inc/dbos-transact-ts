@@ -66,13 +66,19 @@ interface SerializedBuffer {
   data: number[];
 }
 
-type DBOSSerializeType = 'dbos_Date';
+type DBOSSerializeType = 'dbos_Date' | 'dbos_BigInt';
 
 interface DBOSSerialized {
   dbos_type: DBOSSerializeType;
 }
+
 interface DBOSSerializedDate extends DBOSSerialized {
   dbos_type: 'dbos_Date';
+  dbos_data: string;
+}
+
+interface DBOSSerializedBigInt extends DBOSSerialized {
+  dbos_type: 'dbos_BigInt';
   dbos_data: string;
 }
 
@@ -87,20 +93,47 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
         dbos_data: actualValue.toISOString()
     }
     return res;
-  }
+  } 
+  
+  if (typeof actualValue === 'bigint') {
+    const res: DBOSSerializedBigInt = {
+      dbos_type: 'dbos_BigInt',
+      dbos_data: actualValue.toString(),
+    };
+    return res;
+  } 
   return value;
 }
 
+function isSerializedBuffer(value: unknown): value is SerializedBuffer {
+  return typeof value === 'object' 
+    && value !== null
+    && (value as Record<string, unknown>).type === 'Buffer';
+}
+
+function isSerializedDate(value: unknown): value is DBOSSerializedDate {
+  return typeof value === 'object' 
+    && value !== null
+    && (value as Record<string, unknown>).dbos_type === 'dbos_Date';
+}
+
+function isSerializedBigInt(value: unknown): value is DBOSSerializedBigInt {
+  return typeof value === 'object' 
+    && value !== null
+    && (value as Record<string, unknown>).dbos_type === 'dbos_BigInt';
+}
+
 export function DBOSReviver(_key: string, value: unknown): unknown {
-  const candidate = value as SerializedBuffer;
-  if (candidate && candidate.type === 'Buffer' && Array.isArray(candidate.data)) {
-    return Buffer.from(candidate.data);
+  switch (true) {
+    case isSerializedBuffer(value):
+      return Buffer.from(value.data);
+    case isSerializedDate(value):
+      return new Date(Date.parse(value.dbos_data));
+    case isSerializedBigInt(value):
+      return BigInt(value.dbos_data);
+    default:
+      return value;
   }
-  const dateCandidate = value as DBOSSerializedDate;
-  if (dateCandidate && dateCandidate.dbos_type === 'dbos_Date') {
-    return new Date(Date.parse(dateCandidate.dbos_data))
-  }
-  return value;
 }
 
 export const DBOSJSON = {
