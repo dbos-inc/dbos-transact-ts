@@ -16,7 +16,7 @@ function hasError(diags: readonly tsm.ts.Diagnostic[]) {
   return diags.some(diag => diag.category === tsm.ts.DiagnosticCategory.Error);
 }
 
-export function compile(configFileOrProject: string | tsm.Project): CompileResult | undefined {
+export function compile(configFileOrProject: string | tsm.Project, suppressWarnings: boolean = false): CompileResult | undefined {
   const diags = new Array<tsm.ts.Diagnostic>();
   try {
     const project = typeof configFileOrProject === 'string'
@@ -56,7 +56,7 @@ export function compile(configFileOrProject: string | tsm.Project): CompileResul
 
     return { project, methods }
   } finally {
-    printDiagnostics(diags);
+    printDiagnostics(diags, suppressWarnings);
   }
 }
 
@@ -88,7 +88,7 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
   };
 }
 
-function printDiagnostics(diags: readonly tsm.ts.Diagnostic[]) {
+function printDiagnostics(diags: readonly tsm.ts.Diagnostic[], suppressWarnings: boolean = false) {
   const formatHost: tsm.ts.FormatDiagnosticsHost = {
     getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
     getNewLine: () => tsm.ts.sys.newLine,
@@ -96,7 +96,11 @@ function printDiagnostics(diags: readonly tsm.ts.Diagnostic[]) {
       ? fileName : fileName.toLowerCase()
   }
 
-  const msg = tsm.ts.formatDiagnosticsWithColorAndContext(diags, formatHost);
+  const $diags = suppressWarnings
+    ? diags.filter(diag => diag.category !== tsm.ts.DiagnosticCategory.Warning)
+    : diags;
+
+  const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
   console.log(msg);
 }
 

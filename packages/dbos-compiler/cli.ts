@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -66,9 +66,13 @@ program
   .description('DBOS Stored Procedure compiler')
   .version(getPackageVersion());
 
-interface CompileOptions {
-  outDir?: string,
+export interface CommonOptions {
   appVersion?: string | boolean,
+  suppressWarnings?: boolean,
+}
+
+interface CompileOptions extends CommonOptions {
+  outDir?: string,
 }
 
 function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): string | undefined {
@@ -86,6 +90,8 @@ function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): str
   return tsconfigPath;
 }
 
+const suppressWarningsOption = new Option('--suppress-warnings', 'Suppress warnings').hideHelp();
+
 program
   // FYI, commander package doesn't seem to handle app version options correctly in deploy subcommand if compile isn't also a subcommand
   .command("compile")
@@ -94,10 +100,11 @@ program
   .option('-o, --out <string>', 'path to output folder')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .addOption(suppressWarningsOption)
   .action(async (tsconfigPath: string | undefined, options: CompileOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath);
+      const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const outDir = options.outDir ?? process.cwd();
         await emitSqlFiles(outDir, compileResult, options.appVersion);
@@ -105,9 +112,8 @@ program
     }
   });
 
-interface DeployOptions {
+interface DeployOptions extends CommonOptions {
   appDir?: string;
-  appVersion?: string | boolean;
 }
 
 program
@@ -117,10 +123,11 @@ program
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .addOption(suppressWarningsOption)
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath);
+      const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const [dbosConfig,] = parseConfigFile(options);
         await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
@@ -135,10 +142,11 @@ program
   .option("-d, --appDir <string>", "Specify the application root directory")
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .addOption(suppressWarningsOption)
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath);
+      const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const [dbosConfig,] = parseConfigFile(options);
         await dropFromDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
