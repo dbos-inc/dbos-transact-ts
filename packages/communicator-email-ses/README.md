@@ -13,10 +13,9 @@ First, ensure that the DBOS SES communicator is installed into the application:
 npm install --save @dbos-inc/communicator-email-ses
 ```
 
-Second, ensure that the communicator is imported and exported from an application entrypoint source file:
+Second, ensure that the communicator is imported into the relevant source file(s):
 ```typescript
 import { SendEmailCommunicator } from "@dbos-inc/communicator-email-ses";
-export { SendEmailCommunicator };
 ```
 
 Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
