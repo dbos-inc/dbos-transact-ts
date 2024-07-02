@@ -400,8 +400,7 @@ workflowCommands
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
   .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .option('--request', 'Retrieve workflow request information')
-  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, request: boolean }) => {
+  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string }) => {
     const input: ListWorkflowsInput = {
       limit: Number(options.limit),
       authenticated_user: options.user,
