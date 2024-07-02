@@ -23,16 +23,12 @@ describe("stored-proc-tests", () => {
         await runSql({...config.poolConfig, database: "postgres"}, async (client) => {
             await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
             await client.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
+            await client.query(`CREATE DATABASE ${config.poolConfig.database};`);
+
         });
 
         execSync("npm install");
         execSync("npm run build");
-        execSync("npx dbos migrate");
-
-        await runSql(config.poolConfig, async (client) => {
-            await client.query(`DROP ROUTINE "StoredProcTest_getGreetCountLocal_p";  DROP ROUTINE "StoredProcTest_getGreetCountLocal_f";`);
-            await client.query(`DROP ROUTINE "StoredProcTest_helloProcedureLocal_p"; DROP ROUTINE "StoredProcTest_helloProcedureLocal_f";`);
-        });
     }, 120000)
 
     afterAll(() => {
