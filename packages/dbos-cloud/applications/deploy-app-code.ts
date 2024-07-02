@@ -65,7 +65,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
   const buffer = await zip.generateAsync({ platform: 'UNIX', type: "nodebuffer" });
-  logger.debug(`    ... zip archive complete.`);
+  logger.debug(`    ... zip archive complete (${buffer.length} bytes).`);
   return buffer.toString("base64");
 }
 
