@@ -1,6 +1,5 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
-import { ApplicationVersion } from "./types.js";
 
 export interface ListWorkflowsInput {
   workflow_name?: string; // The name of the workflow function
