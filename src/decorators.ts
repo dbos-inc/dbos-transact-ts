@@ -7,6 +7,7 @@ import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
+import { StoredProcedureConfig, StoredProcedureContext } from "./procedure";
 import { DBOSEventReceiver } from "./eventreceiver";
 
 /**
@@ -147,6 +148,7 @@ export interface MethodRegistrationBase {
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  procConfig?: TransactionConfig;
   isInstance: boolean;
 
 eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
@@ -181,6 +183,7 @@ implements MethodRegistrationBase
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: CommunicatorConfig;
+  procConfig?: TransactionConfig;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
   init: boolean = false;
@@ -616,6 +619,19 @@ export function Transaction(config: TransactionConfig={}) {
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
+    return descriptor;
+  }
+  return decorator;
+}
+
+export function StoredProcedure(config: StoredProcedureConfig={}) {
+  function decorator<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>)
+  {
+    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    registration.procConfig = config;
     return descriptor;
   }
   return decorator;

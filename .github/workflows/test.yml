@@ -10,7 +10,7 @@ jobs:
     services:
       # Postgres service container
       postgres:
-        image: postgres:16.1
+        image: sibedge/postgres-plv8
         env:
           # Specify the password for Postgres superuser.
           POSTGRES_PASSWORD: dbos
@@ -54,7 +54,6 @@ jobs:
     steps:
       - name: "Setup postgres config"
         run: |
-          docker exec -i ${{ job.services.postgres.id }} apt update
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v4.1.1

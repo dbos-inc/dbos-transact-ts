@@ -14,14 +14,14 @@ import {
   BufferedResult,
 } from './workflow';
 
-import { Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
 import { CommunicatorConfig, Communicator } from './communicator';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
-import { PoolConfig } from 'pg';
+import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
 import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -41,6 +41,8 @@ import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
+import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { NoticeMessage } from "pg-protocol/dist/messages";
 import { DBOSEventReceiver, DBOSExecutorContext } from ".";
 
 import { get } from "lodash";
@@ -59,6 +61,7 @@ export interface DBOSConfig {
   readonly application?: object;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
+  readonly appVersion?: string;
   readonly http?: {
     readonly cors_middleware?: boolean;
     readonly credentials?: boolean;
@@ -81,6 +84,11 @@ interface CommunicatorInfo {
   config: CommunicatorConfig;
 }
 
+interface ProcedureInfo {
+  procedure: StoredProcedure<unknown>;
+  config: StoredProcedureConfig;
+}
+
 interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
@@ -92,10 +100,12 @@ export const OperationType = {
   WORKFLOW: "workflow",
   TRANSACTION: "transaction",
   COMMUNICATOR: "communicator",
+  PROCEDURE: "procedure",
 } as const;
 
 const TempWorkflowType = {
   transaction: "transaction",
+  procedure: "procedure",
   external: "external",
   send: "send",
 } as const;
@@ -106,6 +116,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   userDatabase: UserDatabase = null as unknown as UserDatabase;
   // System Database
   readonly systemDatabase: SystemDatabase;
+  readonly procedurePool: Pool;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   static readonly tempWorkflowName = "temp_workflow";
@@ -125,7 +136,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ]);
   readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
-
+  readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
@@ -184,6 +195,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       }
     }
+
+    this.procedurePool = new Pool(this.config.poolConfig);
 
     if (systemDatabase) {
       this.logger.debug("Using provided system database"); // XXX print the name or something
@@ -274,6 +287,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.#registerTransaction(ro);
       } else if (ro.commConfig) {
         this.#registerCommunicator(ro);
+      } else if (ro.procConfig) {
+        this.#registerProcedure(ro);
       }
       for (const [evtRcvr, _cfg] of ro.eventReceiverInfo) {
         if (!this.eventReceivers.includes(evtRcvr)) this.eventReceivers.push(evtRcvr);
@@ -357,6 +372,49 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.info("Workflow executor initialized");
   }
 
+  #logNotice(msg: NoticeMessage) {
+    switch (msg.severity) {
+      case "INFO":
+      case "LOG":
+      case "NOTICE":
+        this.logger.info(msg.message);
+        break;
+      case "WARNING":
+        this.logger.warn(msg.message);
+        break;
+      case "DEBUG":
+        this.logger.debug(msg.message);
+        break;
+      case "ERROR":
+      case "FATAL":
+      case "PANIC":
+        this.logger.error(msg.message);
+        break;
+      default:
+        this.logger.error(`Unknown notice severity: ${msg.severity} - ${msg.message}`);
+    }
+  }
+
+  async callProcedure<R extends QueryResultRow = any>(proc: StoredProcedure<unknown>, args: unknown[]): Promise<R[]> {
+    const client = await this.procedurePool.connect();
+    const log = (msg: NoticeMessage) => this.#logNotice(msg);
+
+    const procClassName = this.getProcedureClassName(proc);
+    const plainProcName = `${procClassName}_${proc.name}_p`;
+    const procName = this.config.appVersion
+      ? `v${this.config.appVersion}_${plainProcName}`
+      : plainProcName;
+
+    const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
+    try {
+      client.on('notice', log);
+      return await client.query<R>(sql, args).then(value => value.rows);
+    } finally {
+      client.off('notice', log);
+      client.release();
+    }
+  }
+
   async destroy() {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
@@ -375,6 +433,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.userDatabase) {
       await this.userDatabase.destroy();
     }
+    await this.procedurePool.end();
     await this.logger.destroy();
   }
 
@@ -424,6 +483,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
     };
     this.communicatorInfoMap.set(cfn, commInfo);
     this.logger.debug(`Registered communicator ${cfn}`);
+  }
+
+  #registerProcedure(ro: MethodRegistrationBase) {
+    const proc = ro.registeredFunction as StoredProcedure<unknown>;
+    const cfn = ro.className + '.' + ro.name;
+
+    if (this.procedureInfoMap.has(cfn)) {
+      throw new DBOSError(`Repeated Procedure name: ${cfn}`);
+    }
+    const procInfo: ProcedureInfo = {
+      procedure: proc,
+      config: {...ro.procConfig},
+    };
+    this.procedureInfoMap.set(cfn, procInfo);
+    this.logger.debug(`Registered stored proc ${cfn}`);
   }
 
   getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
@@ -499,6 +573,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
+  getProcedureClassName(pf: StoredProcedure<unknown>) {
+    return getRegisteredMethodClassName(pf);
+  }
+
+  getProcedureInfo(pf: StoredProcedure<unknown>) {
+    const pfName = getRegisteredMethodClassName(pf) + '.' + pf.name;
+    return this.procedureInfoMap.get(pfName);
+  }
+  // TODO: getProcedureInfoByNames??
+
+
   async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     if (this.debugMode) {
       return this.debugWorkflow(wf, params, undefined, undefined, ...args);
@@ -546,7 +631,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction) {
+    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction
+      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure
+    ) {
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     }
 
@@ -583,7 +670,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       } finally {
         this.tracer.endSpan(wCtxt.span);
-        if (wCtxt.tempWfOperationType === TempWorkflowType.transaction) {
+        if (wCtxt.tempWfOperationType === TempWorkflowType.transaction
+          || wCtxt.tempWfOperationType === TempWorkflowType.procedure
+        ) {
           // For single-transaction workflows, asynchronously record inputs.
           // We must buffer inputs after workflow status is buffered/flushed because workflow_inputs table has a foreign key reference to the workflow_status table.
           this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
@@ -668,6 +757,40 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfName: getRegisteredMethodName(txn),
       tempWfClass: getRegisteredMethodClassName(txn),
     }, ...args)).getResult();
+  }
+
+  async procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+    // Create a workflow and call procedure.
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+      const ctxtImpl = ctxt as WorkflowContextImpl;
+      return await ctxtImpl.procedure(proc, ...args);
+    };
+    return (await this.workflow(temp_workflow, 
+      { ...params, 
+        tempWfType: TempWorkflowType.procedure, 
+        tempWfName: getRegisteredMethodName(proc),
+        tempWfClass: getRegisteredMethodClassName(proc),
+        }, ...args)).getResult();
+  }
+
+  async executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
+    const client = await this.procedurePool.connect();
+    try {
+      const readOnly = config.readOnly ?? false;
+      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+      await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
+      if (readOnly) {
+        await client.query(`SET TRANSACTION READ ONLY`);
+      }
+      const result: R = await func(client);
+      await client.query(`COMMIT`);
+      return result;
+    } catch (err) {
+      await client.query(`ROLLBACK`);
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {

@@ -18,7 +18,7 @@ if (!process.env.PGPASSWORD) {
 }
 
 try {
-  execSync(`docker run --rm --name=dbos-db --env=POSTGRES_PASSWORD="${process.env.PGPASSWORD}" --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p ${port}:5432 -d postgres:16.1`);
+  execSync(`docker run --rm --name=dbos-db --env=POSTGRES_PASSWORD="${process.env.PGPASSWORD}" --env=PGDATA=/var/lib/postgresql/data --volume=/var/lib/postgresql/data -p ${port}:5432 -d sibedge/postgres-plv8`);
   console.log("Waiting for PostgreSQL to start...");
 
   let attempts = 30;
