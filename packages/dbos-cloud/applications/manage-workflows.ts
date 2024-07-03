@@ -17,7 +17,7 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
   const userCredentials = await getCloudCredentials();
   const bearerToken = "Bearer " + userCredentials.token;
 
-  appName = appName ?? retrieveApplicationName(logger);
+  appName = appName ?? retrieveApplicationName(logger, true);
   if (!appName) {
     return 1;
   }
