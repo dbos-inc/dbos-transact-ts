@@ -4,7 +4,7 @@ import { v1 as uuidv1 } from "uuid";
 
 import { transaction_outputs } from "../../../schemas/user_db_schema";
 import { workflow_status } from "../../../schemas/system_db_schema";
-import { createInternalTestRuntime } from "@dbos-inc/dbos-sdk/dist/src/testing/testing_runtime";
+import { TestingRuntimeImpl, createInternalTestRuntime } from "@dbos-inc/dbos-sdk/dist/src/testing/testing_runtime";
 import { DBOSConfig } from "@dbos-inc/dbos-sdk";
 import { Client, ClientConfig } from "pg";
 
@@ -96,8 +96,8 @@ describe("operations-test", () => {
     const debugRuntime = await createInternalTestRuntime([StoredProcTest], debugConfig);
     try {
       expect(debugRuntime).toBeDefined();
-      const debugRes = await debugRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user);
-      expect(debugRes).toEqual(res);
+      await expect(debugRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user)).resolves.toEqual(res);
+      await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toEqual(res);
     } finally {
       await debugRuntime.destroy();
     }
