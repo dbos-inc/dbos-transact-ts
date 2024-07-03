@@ -44,7 +44,7 @@ const marketingSES = configureInstance(SendEmailCommunicator, 'marketing', {awsc
 ```
 
 ## Sending Messages
-Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SendEmailCommunicator` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SendEmailCommunicator` function from the workflow context:
 ```typescript
     const result = await workflowContext.invoke(defaultSES).sendEmail(
         {

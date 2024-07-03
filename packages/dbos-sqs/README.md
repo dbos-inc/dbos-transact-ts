@@ -40,7 +40,7 @@ const sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_c
 ```
 
 ### Sending With Standard Queues
-Within a [DBOS Transact Worflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SQSCommunicator` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SQSCommunicator` function from the workflow context:
 ```typescript
     const sendRes = await ctx.invoke(sqsCfg).sendMessage(
         {
