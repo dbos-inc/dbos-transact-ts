@@ -20,6 +20,7 @@ jobs:
           packages/create,
           packages/aws-config,
           packages/component-aws-s3,
+          packages/dbos-sqs,
           packages/communicator-email-ses
         ]
     steps:
