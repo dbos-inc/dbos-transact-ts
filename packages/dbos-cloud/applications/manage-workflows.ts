@@ -29,8 +29,7 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
         Authorization: bearerToken,
       },
     });
-    const versions = res.data as ApplicationVersion[];
-    console.log(JSON.stringify(versions));
+    console.log(JSON.stringify(res.data));
     return 0;
   } catch (e) {
     const errorLabel = `Failed to list workflows for application ${appName}`;
