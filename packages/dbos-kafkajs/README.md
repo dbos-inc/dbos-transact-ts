@@ -1,29 +1,16 @@
-# DBOS AWS Simple Queue Service (SQS) Library
+# DBOS Kafka Library (KafkaJS Version)
 
-Message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in another programming environment.  Due to its flexibility, robustness, integration, and low cost, [Amazon Simple Queue Service](https://aws.amazon.com/sqs/) is the most popular message queuing service underpinning distributed systems in AWS.
+Publish/subscribe message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in multiple client programming environments.  Due to its performance, flexibility, and simple, scalable design, [Kafka](https://www.confluent.io/cloud-kafka) is a popular choice for publish/subscribe.
 
-This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending messages using SQS, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
+This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending Kafka messages, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
 
-## Getting Started
-In order to send and receive messages with SQS, it is necessary to register with AWS, create a queue, and create access keys for the queue. (See [Send Messages Between Distributed Applications](https://aws.amazon.com/getting-started/hands-on/send-messages-distributed-applications/) in AWS documentation.)
+This package is based on [KafkaJS](https://kafka.js.org/).  We are working on other client libraries for Kafka, please reach out to [us](https://www.dbos.dev/) if you are interested in a different client library.
 
-## Configuring a DBOS Application with AWS SQS
-First, ensure that the DBOS SQS package is installed into the application:
+## Configuring a DBOS Application with Kafka
+Ensure that the DBOS SQS package is installed into the application:
 ```
-npm install --save @dbos-inc/dbos-sqs
+npm install --save @dbos-inc/dbos-kafkajs
 ```
-
-Second, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
-```yaml
-application:
-  aws_sqs_configuration: aws_config # Optional if the section is called `aws_config`
-  aws_config:
-    aws_region: ${AWS_REGION}
-    aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-    aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-```
-
-If a different configuration file section should be used for SQS, the `aws_sqs_configuration` can be changed to indicate a configuration section for use with SQS.  If multiple configurations are to be used, the application code is responsible for naming them.
 
 ## Sending Messages
 
