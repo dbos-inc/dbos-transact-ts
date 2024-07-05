@@ -1,0 +1,7 @@
+/.vscode/
+/src/
+/tests/
+/.eslintrc.cjs
+/jest.config.js
+/tsconfig.json
+/dist/tests

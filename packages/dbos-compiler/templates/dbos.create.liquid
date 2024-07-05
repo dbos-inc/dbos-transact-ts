@@ -1,0 +1,88 @@
+CREATE EXTENSION IF NOT EXISTS plv8;
+CREATE SCHEMA IF NOT EXISTS dbos;
+
+CREATE FUNCTION dbos.{{appVersion}}check_execution(_workflow_uuid TEXT, _function_id INT, preset BOOLEAN)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    _output JSONB;
+    _error JSONB;
+BEGIN
+    IF preset THEN
+        SELECT output, error INTO _output, _error 
+        FROM dbos.transaction_outputs 
+        WHERE workflow_uuid = _workflow_uuid AND function_id = _function_id;
+        RAISE DEBUG 'check_execution(%, %)', _output, _error;
+
+        -- check for both SQL and JSON NULL
+        IF _error IS NOT NULL AND jsonb_typeof(_error) <> 'null' THEN
+            RETURN jsonb_build_object('error', _error);
+        END IF;
+
+        -- in output table, SQL NULL is used for void functions and JSON NULL is used 
+        IF jsonb_typeof(_output) <> 'null' THEN
+            RETURN jsonb_build_object('output', _output);
+        END IF;
+    END IF;
+
+    RETURN NULL;
+END;
+$$;
+
+CREATE FUNCTION dbos.{{appVersion}}flush_buffered_results(
+    workflow_uuid TEXT,
+    buffered_results JSONB
+) RETURNS void AS $$ 
+    if (buffered_results !== null) { 
+        buffered_results.sort((a, b) => a.functionID - b.functionID);
+        for (const [functionID, output, txn_snapshot, created_at] of buffered_results) {
+            plv8.elog(DEBUG1, `flush_buffered_results (${workflow_uuid}/${functionID}, "${JSON.stringify(output)}" ${txn_snapshot}, ${created_at})`);
+            plv8.execute(`INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_snapshot, created_at) VALUES ($1, $2, $3, $4, $5)`, 
+                [workflow_uuid, functionID, JSON.stringify(output), txn_snapshot, created_at]);
+        }
+    }
+$$ LANGUAGE plv8;
+
+CREATE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
+
+    function $run(workflow_uuid, _context, $func) {
+        try {
+            const $ctx = {
+                request: _context.request,
+                workflowUUID: workflow_uuid,
+                authenticatedUser: _context.authenticatedUser,
+                assumedRole: _context.assumedRole,
+                authenticatedRoles: _context.authenticatedRoles,
+                query: (queryText, values) => {
+                    const result = plv8.execute(queryText, values);
+                    plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result));
+                    if (typeof result === 'number') {
+                        return { rowCount: result };
+                    } else if (Array.isArray(result)) {
+                        return { rowCount: result.length, rows: result };
+                    } else {
+                        throw new Error(`unexpected result from plv8.execute ${typeof result}`);
+                    }
+                },
+                logger: {
+                    info: (msg) => { plv8.elog(INFO, msg); },
+                    debug: (msg) => { plv8.elog(DEBUG1, msg); },
+                    warn: (msg) => { plv8.elog(WARNING, msg); },
+                    error: (msg) => { plv8.elog(ERROR, msg); },
+                }
+            };
+            const output = $func($ctx);
+            return { output };
+        } catch (e) {
+            // -- TODO: investigate using serialize-error
+            return { error: { name: e.name, message: e.message, stack: e.stack } };
+        }
+    }
+
+    globalThis.{{appVersion}}$run = $run;
+
+$$ LANGUAGE plv8 IMMUTABLE STRICT;
+
+-----------------------------------------------------------
+

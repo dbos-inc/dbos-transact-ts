@@ -131,6 +131,7 @@ export interface ParseOptions {
   loglevel?: string;
   configfile?: string;
   appDir?: string;
+  appVersion?: string | boolean;
 }
 
 /*
@@ -203,7 +204,8 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     application: configFile.application || undefined,
     env: configFile.env || {},
-    http: configFile.http
+    http: configFile.http,
+    appVersion: getAppVersion(cliOptions?.appVersion),
   };
 
   /*************************************/
@@ -215,10 +217,17 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   } else {
     entrypoints.add(defaultEntryPoint);
   }
+
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints: [...entrypoints],
     port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
   };
 
   return [dbosConfig, runtimeConfig];
+}
+
+function getAppVersion(appVersion: string | boolean | undefined) {
+  if (typeof appVersion === "string") { return appVersion; }
+  if (appVersion === false) { return undefined; }
+  return process.env.DBOS__APPVERSION;
 }

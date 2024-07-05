@@ -16,6 +16,7 @@ import { SystemDatabase } from "../system_database";
 import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
+import { StoredProcedure } from "../procedure";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -170,7 +171,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
             ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
             : op.commConfig
               ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
-              : undefined;
+              : op.procConfig
+                ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown>, wfParams, ...args)
+                : undefined;
       } else {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args).then((handle) => handle.getResult())

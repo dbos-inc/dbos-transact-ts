@@ -10,6 +10,7 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
+import { StoredProcedure } from "../procedure";
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,7 +82,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
     const extractedSpanContext = trace.getSpanContext(
-        httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter)
+      httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter)
     )
     let span: Span;
     const spanAttributes = {
@@ -159,6 +160,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           : op.commConfig
 
           ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
+          : op.procConfig
+
+          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
           : undefined;
       } else {
 
@@ -220,6 +224,10 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   async #external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.external(commFn, params, ...args);
   }
+
+  async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+    return this.#dbosExec.procedure(proc, params, ...args);
+  }
 }
 
 export interface HandlerRegistrationBase extends MethodRegistrationBase {
@@ -242,7 +250,7 @@ export class HandlerParameter extends MethodParameter {
 /////////////////////////
 
 function generateApiDec(verb: APITypes, url: string) {
-  return   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
+  return function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>

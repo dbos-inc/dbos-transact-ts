@@ -15,6 +15,11 @@ export {
 } from './transaction';
 
 export {
+  StoredProcedureContext,  
+  StoredProcedureConfig,
+} from './procedure';
+
+export {
   WorkflowContext,
   WorkflowConfig,
   WorkflowHandle,
@@ -63,6 +68,7 @@ export {
   Transaction,
   Workflow,
   Communicator,
+  StoredProcedure,
   RequiredRole,
   DBOSInitializer,
   DBOSDeploy,

@@ -7,12 +7,14 @@ import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from
 import { serializeError, deserializeError } from "serialize-error";
 import { DBOSJSON, sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
-import { UserDatabaseClient } from "./user_database";
+import { UserDatabaseClient, pgNodeIsKeyConflictError } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
+import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
+import { PoolClient } from "pg";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -23,21 +25,22 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 // local type declarations for transaction and communicator functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
+type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes transaction/communicator functions + converts the method signature to exclude the context parameter
+// Utility type that only includes transaction/communicator/proc functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> =
   T extends ConfiguredInstance
-    ? never
-    : {
-      [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-    };
+  ? never
+  : {
+    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  };
 
 export type WFInvokeFuncsInst<T> =
   T extends ConfiguredInstance
-    ? {
-      [P in keyof T as T[P] extends TxFunc | CommFunc ? P : never]: T[P] extends TxFunc | CommFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-    }
-    : never;
+  ? {
+    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  }
+  : never;
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -103,13 +106,13 @@ export type WfInvokeWfsAsync<T> = {
 
 export type WfInvokeWfsInst<T> =
   T extends ConfiguredInstance
-    ? {
-      [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-    }
-    : never;
+  ? {
+    [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  }
+  : never;
 
 export type WfInvokeWfsInstAsync<T> =
-T extends ConfiguredInstance
+  T extends ConfiguredInstance
   ? {
     [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
   }
@@ -146,6 +149,8 @@ export interface WorkflowContext extends DBOSContext {
   sleep(durationSec: number): Promise<void>;
 }
 
+type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
+
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #dbosExec;
@@ -160,7 +165,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
-    readonly tempWfOperationType: string = "", // "transaction", "external", or "send"
+    readonly tempWfOperationType: string = "", // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = "" // Name for the temporary workflow operation
   ) {
     const span = dbosExec.tracer.startSpan(
@@ -191,9 +196,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Retrieve the transaction snapshot information of the current transaction
    */
-  async retrieveSnapshot(client: UserDatabaseClient): Promise<string> {
-    const rows = await this.#dbosExec.userDatabase.queryWithClient<{ txn_snapshot: string }>(client, "SELECT pg_current_snapshot()::text as txn_snapshot;");
+  async #retrieveSnapshot(query: QueryFunction): Promise<string> {
+    const rows = await query<{ txn_snapshot: string }>("SELECT pg_current_snapshot()::text as txn_snapshot;", []);
     return rows[0].txn_snapshot;
+  }
+
+  retrieveTxSnapshot(client: UserDatabaseClient): Promise<string> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#retrieveSnapshot(func);
+  }
+
+  retrieveProcSnapshot(client: PoolClient): Promise<string> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#retrieveSnapshot(func);
   }
 
   /**
@@ -203,13 +218,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Otherwise, return DBOSNull.
    * Also return the transaction snapshot information of this current transaction.
    */
-  async checkExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
+  async #checkExecution<R>(query: QueryFunction, funcID: number): Promise<BufferedResult> {
     // Note: we read the current snapshot, not the recorded one!
-    const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs & { recorded: boolean }>(
-      client,
+    const rows = await query<transaction_outputs & { recorded: boolean }>(
       "(SELECT output, error, txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
-      this.workflowUUID,
-      funcID
+      [this.workflowUUID, funcID]
     );
 
     if (rows.length === 0 || rows.length > 2) {
@@ -233,11 +246,21 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return res;
   }
 
+  checkTxExecution<R>(client: UserDatabaseClient, funcID: number): Promise<BufferedResult> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#checkExecution<R>(func, funcID);
+  }
+
+  checkProcExecution<R>(client: PoolClient, funcID: number): Promise<BufferedResult> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#checkExecution<R>(func, funcID);
+  }
+
   /**
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.
    */
-  async flushResultBuffer(client: UserDatabaseClient): Promise<void> {
+  async #flushResultBuffer(query: QueryFunction, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
     if (funcIDs.length === 0) {
       return;
@@ -261,10 +284,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         values.push(this.workflowUUID, funcID, DBOSJSON.stringify(output), DBOSJSON.stringify(null), txnSnapshot, createdAt);
       }
       this.logger.debug(sqlStmt);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await this.#dbosExec.userDatabase.queryWithClient(client, sqlStmt, ...values);
+      await query(sqlStmt, values);
     } catch (error) {
-      if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
+      if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
       } else {
@@ -273,39 +295,72 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
   }
 
+  flushResultBuffer(client: UserDatabaseClient): Promise<void> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#flushResultBuffer(func, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
+  }
+
+  flushResultBufferProc(client: PoolClient): Promise<void> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#flushResultBuffer(func, pgNodeIsKeyConflictError);
+  }
+
+
   /**
    * Write a operation's output to the database.
    */
-  async recordOutput<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
+  async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown)=> boolean): Promise<string> {
     try {
       const serialOutput = DBOSJSON.stringify(output);
-      const rows = await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now());
+      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", 
+        [this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()]);
       return rows[0].txn_id;
     } catch (error) {
-      if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
+      if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
     }
+  }
+
+  recordOutputTx<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#recordOutput(func, funcID, txnSnapshot, output, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
+  }
+
+  recordOutputProc<R>(client: PoolClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#recordOutput(func, funcID, txnSnapshot, output, pgNodeIsKeyConflictError);
   }
 
   /**
    * Record an error in an operation to the database.
    */
-  async recordError(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
+  async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
-      await this.#dbosExec.userDatabase.queryWithClient<transaction_outputs>(client, "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now());
+      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", 
+        [this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now()]);
     } catch (error) {
-      if (this.#dbosExec.userDatabase.isKeyConflictError(error)) {
+      if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
       } else {
         throw error;
       }
     }
+  }
+
+  recordErrorTx(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
+    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
+    return this.#recordError(func, funcID, txnSnapshot, err, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
+  }
+
+  recordErrorProc(client: PoolClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
+    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
+    return this.#recordError(func, funcID, txnSnapshot, err, pgNodeIsKeyConflictError);
   }
 
   /**
@@ -318,7 +373,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID}, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -330,8 +385,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
   proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
-      WfInvokeWfsAsync<T>
-  {
+    WfInvokeWfsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
@@ -348,8 +402,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       } else {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
-          .then((handle) => handle.getResult())
-            : undefined;
+            .then((handle) => handle.getResult())
+          : undefined;
       }
     }
     return proxy as WfInvokeWfsAsync<T>;
@@ -374,6 +428,185 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
   async childWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     return this.startChildWorkflow(wf, ...args);
+  }
+
+  async #invokeProcLocal<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    const readOnly = config.readOnly ?? false;
+
+    while (true) {
+      let txn_snapshot = "invalid";
+      const wrappedProcedure = async (client: PoolClient): Promise<R> => {
+        const ctxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
+
+        if (this.presetUUID) {
+          const check: BufferedResult = await this.checkProcExecution<R>(client, this.functionID);
+          txn_snapshot = check.txn_snapshot;
+          if (check.output !== dbosNull) {
+            ctxt.span.setAttribute("cached", true);
+            ctxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.#dbosExec.tracer.endSpan(ctxt.span);
+            return check.output as R;
+          }
+        } else {
+          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
+          txn_snapshot = await this.retrieveProcSnapshot(client);
+        }
+
+        // For non-read-only transactions, flush the result buffer.
+        if (!readOnly) {
+          await this.flushResultBufferProc(client);
+        }
+
+        const result = await proc(ctxt, ...args);
+
+        if (readOnly) {
+          // Buffer the output of read-only transactions instead of synchronously writing it.
+          const readOutput: BufferedResult = {
+            output: result,
+            txn_snapshot: txn_snapshot,
+            created_at: Date.now(),
+          }
+          this.resultBuffer.set(funcId, readOutput);
+        } else {
+          // Synchronously record the output of write transactions and obtain the transaction ID.
+          const pg_txn_id = await this.recordOutputProc<R>(client, funcId, txn_snapshot, result);
+          ctxt.span.setAttribute("pg_txn_id", pg_txn_id);
+          this.resultBuffer.clear();
+        }
+
+        return result;
+      };
+
+      try {
+        const result = await this.#dbosExec.executeProcedure(wrappedProcedure, { isolationLevel: config.isolationLevel });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        }
+
+        // Record and throw other errors.
+        const e: Error = err as Error;
+        await this.#dbosExec.executeProcedure(async (client: PoolClient) => {
+          await this.flushResultBufferProc(client);
+          await this.recordErrorProc(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+
+        await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
+          await this.flushResultBuffer(client);
+          await this.recordErrorTx(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+        this.resultBuffer.clear();
+        throw err;
+      }
+    }
+  }
+
+  async #invokeProcRemote<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+    const readOnly = config.readOnly ?? false;
+
+    const $jsonCtx = {
+      request: this.request,
+      authenticatedUser: this.authenticatedUser,
+      authenticatedRoles: this.authenticatedRoles,
+      assumedRole: this.assumedRole,
+    };
+
+    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on 
+    // args and bufferedResults before being passed to dbosExec.callProcedure
+    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
+    if (!readOnly) {
+      // function_id, output, txn_snapshot, created_at
+      const bufferedResults = new Array<[number, unknown, string, number?]>();
+      for (const [functionID, { output, txn_snapshot, created_at }] of this.resultBuffer.entries()) {
+        bufferedResults.push([functionID, output, txn_snapshot, created_at]);
+      }
+      // sort by function ID
+      bufferedResults.sort((a, b) => a[0] - b[0]);
+      $args.unshift(bufferedResults.length > 0 ? JSON.stringify(bufferedResults) : null);
+    }
+
+    type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
+    const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, $args);
+
+    const { error, output, txn_snapshot, txn_id, created_at } = return_value;
+
+    // buffered results are persisted in r/w stored procs, even if it returns an error
+    if (!readOnly) {
+      this.resultBuffer.clear();
+    }
+
+    // if the stored proc returns an error, deserialize and throw it. 
+    // stored proc saves the error in tx_output before returning 
+    if (error) {
+      throw deserializeError(error);
+    }
+
+    // if txn_snapshot is provided, the output needs to be buffered
+    if (readOnly && txn_snapshot) {
+      this.resultBuffer.set(funcId, {
+        output,
+        txn_snapshot,
+        created_at: created_at ?? Date.now(),
+      });
+    }
+
+    if (!readOnly) {
+      this.resultBuffer.clear();
+    }
+
+    if (txn_id) {
+      span.setAttribute("pg_txn_id", txn_id);
+    }
+    span.setStatus({ code: SpanStatusCode.OK });
+    return output!;
+  }
+
+  // TODO: ConfiguredInstance support
+  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+    const procInfo = this.#dbosExec.getProcedureInfo(proc);
+    if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
+    const executeLocally = procInfo.config.executeLocally ?? false;
+    const funcId = this.functionIDGetIncrement();
+    const span: Span = this.#dbosExec.tracer.startSpan(
+      proc.name,
+      {
+        operationUUID: this.workflowUUID,
+        operationType: OperationType.PROCEDURE,
+        authenticatedUser: this.authenticatedUser,
+        assumedRole: this.assumedRole,
+        authenticatedRoles: this.authenticatedRoles,
+        readOnly: procInfo.config.readOnly ?? false,
+        isolationLevel: procInfo.config.isolationLevel,
+        executeLocally,
+        executorID: this.executorID,
+      },
+      this.span,
+    );
+
+    try {
+      const result = executeLocally
+        ? await this.#invokeProcLocal(proc, args, span, procInfo.config, funcId)
+        : await this.#invokeProcRemote(proc, args, span, procInfo.config, funcId);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (e) {
+      const { message } = e as { message: string };
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
+      throw e;
+    } finally {
+      this.#dbosExec.tracer.endSpan(span);
+    }
   }
 
   /**
@@ -417,7 +650,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
         if (this.presetUUID) {
-          const check: BufferedResult = await this.checkExecution<R>(client, funcId);
+          const check: BufferedResult = await this.checkTxExecution<R>(client, funcId);
           txn_snapshot = check.txn_snapshot;
           if (check.output !== dbosNull) {
             tCtxt.span.setAttribute("cached", true);
@@ -427,7 +660,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           }
         } else {
           // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
-          txn_snapshot = await this.retrieveSnapshot(client);
+          txn_snapshot = await this.retrieveTxSnapshot(client);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -449,7 +682,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           this.resultBuffer.set(funcId, readOutput);
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
-          const pg_txn_id = await this.recordOutput<R>(client, funcId, txn_snapshot, result);
+          const pg_txn_id = await this.recordOutputTx<R>(client, funcId, txn_snapshot, result);
           tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
           this.resultBuffer.clear();
         }
@@ -477,7 +710,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         const e: Error = err as Error;
         await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client);
-          await this.recordError(client, funcId, txn_snapshot, e);
+          await this.recordErrorTx(client, funcId, txn_snapshot, e);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         this.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -644,7 +877,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
-            : undefined;
+            : op.procConfig
+              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
+              : undefined;
       }
       return proxy as WFInvokeFuncs<T>;
     }
