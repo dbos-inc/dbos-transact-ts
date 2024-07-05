@@ -84,25 +84,27 @@ describe("kafka-tests", () => {
       kafkaIsAvailable = false;
     }
 
-    // This would normally be a global or static or something
-    wfKafkaCfg = configureInstance(KafkaProduceCommunicator, 'wfKafka', kafkaConfig, wfTopic, {
-      createPartitioner: Partitioners.DefaultPartitioner
-    });
-    txKafkaCfg = configureInstance(KafkaProduceCommunicator, 'txKafka', kafkaConfig, txnTopic, {
-      createPartitioner: Partitioners.DefaultPartitioner
-    });
     return Promise.resolve();
   }, 30000);
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
+      // This would normally be a global or static or something
+      wfKafkaCfg = configureInstance(KafkaProduceCommunicator, 'wfKafka', kafkaConfig, wfTopic, {
+        createPartitioner: Partitioners.DefaultPartitioner
+      });
+      txKafkaCfg = configureInstance(KafkaProduceCommunicator, 'txKafka', kafkaConfig, txnTopic, {
+        createPartitioner: Partitioners.DefaultPartitioner
+      });
       testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');
     }
   }, 30000);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
+      console.log(`Do destroy`);
       await testRuntime?.destroy();
+      console.log(`Done destroy`);
     }
   }, 30000);
 
@@ -115,16 +117,22 @@ describe("kafka-tests", () => {
     // Send messages
     await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage});
     await testRuntime?.invoke(wfKafkaCfg!).sendMessage({value: wfMessage});
+    console.log(`Done send`);
 
     // Check that both messages are consumed
     await DBOSTestClass.txnPromise;
+    console.log(`Done await txn`);
     expect(txnCounter).toBe(1);
     await DBOSTestClass.wfPromise;
+    console.log(`Done await wf`);
     expect(wfCounter).toBe(1);
     await DBOSTestClass.patternTopicPromise;
+    console.log(`Done await pattern`);
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
+
+    console.log(`Done here`);
   }, 30000);
 });
 
@@ -155,6 +163,7 @@ class DBOSTestClass {
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
     if (topic == txnTopic && message.value?.toString() === txnMessage) {
+      console.log(`In TX`);
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve();
     }
@@ -164,6 +173,7 @@ class DBOSTestClass {
   @KafkaConsume(wfTopic)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    console.log(`In WF`);
     if (topic == wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
@@ -174,6 +184,7 @@ class DBOSTestClass {
   @KafkaConsume(patternTopic)
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    console.log(`In CTBP`);
     const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
@@ -188,6 +199,7 @@ class DBOSTestClass {
   @KafkaConsume(arrayTopics)
   @Workflow()
   static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+    console.log(`In CTA`);
     const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
