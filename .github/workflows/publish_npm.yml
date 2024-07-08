@@ -21,6 +21,7 @@ jobs:
           packages/aws-config,
           packages/component-aws-s3,
           packages/dbos-sqs,
+          packages/dbos-kafkajs,
           packages/communicator-email-ses
         ]
     steps:
