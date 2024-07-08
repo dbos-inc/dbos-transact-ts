@@ -1,0 +1,69 @@
+CREATE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
+    _workflow_uuid TEXT,
+    _context JSONB,
+    _params JSONB
+) RETURNS JSONB AS $$ 
+
+    if (globalThis.${{appVersion}}run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
+    if (globalThis.{{appVersion}}{{moduleName}} === undefined) plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
+
+    const $run = globalThis.{{appVersion}}$run;
+    const { {{className}} } = globalThis.{{appVersion}}{{moduleName}};
+
+    return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx, ..._params));
+
+$$ LANGUAGE plv8;
+
+CREATE PROCEDURE "{{appVersion}}{{className}}_{{methodName}}_p"(
+    {% unless readOnly %}buffered_results JSONB,{% endunless %}
+    _workflow_uuid TEXT, 
+    _function_id INT, 
+    preset BOOLEAN, 
+    _context JSONB,
+    OUT return_value JSONB,
+    _params JSONB
+)
+LANGUAGE plpgsql
+as $$
+DECLARE
+    _output JSONB;
+    _error JSONB;
+    _snapshot TEXT;
+    _txn_id TEXT;
+BEGIN
+    SELECT dbos.{{appVersion}}check_execution(_workflow_uuid, _function_id, preset) INTO return_value;
+    if return_value IS NOT NULL THEN
+        RETURN;
+    END IF;
+
+    ROLLBACK; 
+    SET TRANSACTION ISOLATION LEVEL {{isolationLevel}};
+    {% if readOnly %}
+    SET TRANSACTION READ ONLY;
+    {% else %}
+    PERFORM dbos.{{appVersion}}flush_buffered_results(_workflow_uuid, buffered_results);
+    {% endif %}
+
+    SELECT "{{appVersion}}{{className}}_{{methodName}}_f"(_workflow_uuid, _context, _params) INTO return_value;
+    SELECT pg_current_snapshot(), pg_current_xact_id_if_assigned() INTO _snapshot, _txn_id;
+    SELECT return_value::jsonb->'output', return_value::jsonb->'error' INTO _output, _error;
+
+    IF _error IS NOT NULL OR jsonb_typeof(_error) <> 'null' THEN
+        ROLLBACK;
+        {% unless readOnly %}
+        PERFORM dbos.{{appVersion}}flush_buffered_results(_workflow_uuid, buffered_results);
+        INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot)
+            VALUES (_workflow_uuid, _function_id, _error, _txn_id, _snapshot);
+        {% endunless %}
+    ELSE 
+        {% unless readOnly %}
+        INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot)
+            VALUES (_workflow_uuid, _function_id, _output, _txn_id, _snapshot);
+        {% endunless %}
+        SELECT return_value::jsonb || jsonb_build_object('txn_snapshot', pg_current_snapshot(), 'txn_id', pg_current_xact_id_if_assigned()) INTO return_value;
+    END IF;
+
+END; $$;
+
+-----------------------------------------------------------
+
