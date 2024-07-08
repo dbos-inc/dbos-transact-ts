@@ -15,100 +15,46 @@ npm install --save @dbos-inc/dbos-kafkajs
 ## Sending Messages
 
 ### Imports
-First, ensure that the communicator is imported:
+First, ensure that the communicator and associated classes are imported:
 ```typescript
-import { SQSCommunicator } from "@dbos-inc/dbos-sqs";
+import {
+  KafkaConfig,
+  logLevel,
+  KafkaProduceCommunicator,
+  Partitioners,
+} from "@dbos-inc/dbos-kafkajs";
 ```
 
 ### Selecting A Configuration
-`SQSCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`KafkaProduceCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
-const sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config'});
+const kafkaConfig: KafkaConfig = {
+  clientId: 'dbos-kafka-test',
+  brokers: [`${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`],
+  requestTimeout: 100, // FOR TESTING
+  retry: { // FOR TESTING
+    retries: 5
+  },
+  logLevel: logLevel.NOTHING, // FOR TESTING
+}
+
+kafkaCfg = configureInstance(KafkaProduceCommunicator, 'defKafka', kafkaConfig, defTopic, {
+    createPartitioner: Partitioners.DefaultPartitioner
+});
 ```
 
-### Sending With Standard Queues
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SQSCommunicator` function from the workflow context:
-```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
-        {
-            MessageBody: "{/*app data goes here*/}",
-        },
-    );
-```
-
-### FIFO Queues
-Sending to [SQS FIFO queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fifo-queues.html) is the same as with standard queues, except that FIFO queues need a `MessageDeduplicationId` (or content-based deduplication) and can be sharded by a `MessageGroupId`.
-
-```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
-        {
-            MessageBody: "{/*app data goes here*/}",
-            MessageDeduplicationId: "Message key goes here",
-            MessageGroupId: "Message grouping key goes here",
-        },
-    );
+### Sending
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `KafkaProduceCommunicator` function from the workflow context:
+```typescript   
+const sendRes = await wfCtx.invoke(kafkaCfg).sendMessage({value: ourMessage});
 ```
 
 ## Receiving Messages
-
-The DBOS SQS receiver provides the capability of running DBOS Transact workflows exactly once per SQS message, even on standard "at-least-once" SQS queues.  
-
-The package uses decorators to configure message receipt and identify the functions that will be invoked during message dispatch.
-
-### Imports
-First, ensure that the method decorators are imported:
-```typescript
-import { SQSMessageConsumer, SQSConfigure } from "@dbos-inc/dbos-sqs";
-```
-
-### Receiver Configuration
-The `@SQSConfigure` decorator should be applied at the class level to identify the credentials useed by receiver functions in the class:
-```typescript
-interface SQSConfig {
-    awscfgname?: string;
-    awscfg?: AWSServiceConfig;
-    queueURL?: string;
-    getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
-}
-
-@SQSConfigure({awscfgname: 'sqs_receiver'})
-class SQSEventProcessor {
-    ...
-}
-```
-
-Then, within the class, one or more methods should be decorated to handle SQS messages:
-```typescript
-@SQSConfigure({awscfgname: 'sqs_receiver'})
-class SQSEventProcessor {
-  @SQSMessageConsumer({queueURL: process.env['SQS_QUEUE_URL']})
-  @Workflow()
-  static async recvMessage(ctx: WorkflowContext, msg: Message) {
-    // Workflow code goes here...
-  }
-}
-```
-
-### Once-And-Only-Once (OAOO) Semantics
-Typical application processing for standard SQS queues implements "at least once" processing of the message:
-* Receive the message from the SQS queue
-* If necessary, extend the visibility timeout of the message during the course of processing
-* After all processing is complete, delete the message from the queue
-If there are any failures, the message will remain in the queue and be redelivered to another consumer.
-
-The DBOS receiver proceeds differently:
-* Receive the message from the SQS queue
-* Start a workflow (using an OAOO key computed from the message)
-* Quickly delete the message
-
-This means that, instead of the SQS service redelivering the message in the case of a transient failure, it is up to DBOS to restart any interrupted workflows.  Also, since DBOS workflows execute to completion exactly once, it is not necessary to use a SQS FIFO queue for exactly-once processing.
+A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/kafka-integration).
 
 ## Simple Testing
-The `sqs.test.ts` file included in the source repository demonstrates sending and processing SQS messages.  Before running, set the following environment variables:
-- `SQS_QUEUE_URL`: SQS queue URL with access for sending and receiving messages
-- `AWS_REGION`: AWS region to use
-- `AWS_ACCESS_KEY_ID`: The access key with permission to use the SQS service
-- `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
+The `kafkajs.test.ts` file included in the source repository demonstrates sending and processing Kafka messages.  Before running, set the following environment variables:
+- `KAFKA_BROKER`: Broker URL
 
 ## Next Steps
 - For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
