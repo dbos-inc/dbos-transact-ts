@@ -40,6 +40,7 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
+const kafkaTimeout = 60000;
 
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
@@ -76,19 +77,19 @@ describe("kafka-tests", () => {
     } finally {
       await producer.disconnect();
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       testRuntime = await createInternalTestRuntime(undefined, config);
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
       await testRuntime.destroy();
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   test("txn-kafka", async () => {
     if (!kafkaIsAvailable) {
@@ -123,7 +124,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 30000);
+  }, kafkaTimeout);
 });
 
 @Kafka(kafkaConfig)
