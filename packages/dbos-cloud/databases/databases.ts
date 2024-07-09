@@ -2,7 +2,7 @@ import axios, { AxiosError } from "axios";
 import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
-import { existsSync } from "fs";
+import { copyFileSync, existsSync } from "fs";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -324,6 +324,15 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
+function generateRandomSuffix(length: number) {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
 export async function connect(host: string, dbName: string, password: string) {
   const logger = getLogger();
 
@@ -332,6 +341,10 @@ export async function connect(host: string, dbName: string, password: string) {
       logger.error(`Error: ${dbosConfigFilePath} not found`);
       return 1;
     }
+
+    const backupConfigFilePath = `dbos-config.yaml.${generateRandomSuffix(6)}.bak`;
+    logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
+    copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
     logger.info("Retrieving cloud database info...");
     const userDBInfo = await getUserDBInfo(host, dbName);
