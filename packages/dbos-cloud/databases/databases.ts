@@ -324,15 +324,6 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-function generateRandomSuffix(length: number) {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result;
-}
-
 export async function connect(host: string, dbName: string, password: string) {
   const logger = getLogger();
 
@@ -342,7 +333,7 @@ export async function connect(host: string, dbName: string, password: string) {
       return 1;
     }
 
-    const backupConfigFilePath = `dbos-config.yaml.${generateRandomSuffix(6)}.bak`;
+    const backupConfigFilePath = `dbos-config.yaml.${Date.now()}.bak`;
     logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
     copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
