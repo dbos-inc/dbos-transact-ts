@@ -1,7 +1,7 @@
 CREATE EXTENSION IF NOT EXISTS plv8;
 CREATE SCHEMA IF NOT EXISTS dbos;
 
-CREATE FUNCTION dbos.{{appVersion}}check_execution(_workflow_uuid TEXT, _function_id INT, preset BOOLEAN)
+CREATE OR REPLACE FUNCTION dbos.{{appVersion}}check_execution(_workflow_uuid TEXT, _function_id INT, preset BOOLEAN)
 RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
@@ -30,7 +30,7 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION dbos.{{appVersion}}flush_buffered_results(
+CREATE OR REPLACE FUNCTION dbos.{{appVersion}}flush_buffered_results(
     workflow_uuid TEXT,
     buffered_results JSONB
 ) RETURNS void AS $$ 
@@ -44,7 +44,7 @@ CREATE FUNCTION dbos.{{appVersion}}flush_buffered_results(
     }
 $$ LANGUAGE plv8;
 
-CREATE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
+CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
 
     function $run(workflow_uuid, _context, $func) {
         try {
