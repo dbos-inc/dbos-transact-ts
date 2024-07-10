@@ -2,6 +2,7 @@ import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 
 export interface ListWorkflowsInput {
+  workflow_uuids?: string[] // Specific workflow UUIDs to retrieve.
   workflow_name?: string; // The name of the workflow function
   authenticated_user?: string; // The user who ran the workflow.
   start_time?: string; // Timestamp in ISO 8601 format
