@@ -395,14 +395,16 @@ workflowCommands
   .description('List workflows from your application')
   .argument("[string]", "application name (Default: name from package.json)")
   .option('-l, --limit <number>', 'Limit the results returned', "10")
-  .option('-u, --user <string>', 'Retrieve workflows run by this user')
+  .option('-u, --workflowUUIDs <uuid...>', 'Retrieve specific UUIDs')
+  .option('-U, --user <string>', 'Retrieve workflows run by this user')
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
   .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string }) => {
+  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, workflow_uuids?: string[] }) => {
     const input: ListWorkflowsInput = {
       limit: Number(options.limit),
+      workflow_uuids: options.workflow_uuids,
       authenticated_user: options.user,
       start_time: options.startTime,
       end_time: options.endTime,
