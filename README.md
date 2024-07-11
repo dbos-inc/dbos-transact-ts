@@ -40,7 +40,7 @@ And DBOS Cloud:
 | [Serverless App Deployment](https://docs.dbos.dev/cloud-tutorials/application-management)      | Deploy apps to DBOS Cloud in minutes.
 | [Interactive Time Travel](https://docs.dbos.dev/cloud-tutorials/interactive-timetravel)        | Query your application database as of any past point in time.
 | [Time Travel Debugging](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging)            | Replay any DBOS Cloud trace locally on your computer.
-| [Cloud Database Management](https://docs.dbos.dev/cloud-tutorials/database-management)         | Provision cloud Postgres instances for your applications. Alternatively, [bring your own database](https://docs.dbos.dev/cloud-tutorials/database-management).
+| [Cloud Database Management](https://docs.dbos.dev/cloud-tutorials/database-management)         | Provision cloud Postgres instances for your applications. Alternatively, [bring your own database](https://docs.dbos.dev/cloud-tutorials/byod-management).
 | [Built-in Observability](https://docs.dbos.dev/cloud-tutorials/monitoring-dashboard)           | Built-in log capture, request tracing, and dashboards.
 
 ## Community
