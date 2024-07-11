@@ -10,6 +10,7 @@ export interface ListWorkflowsInput {
   status?: string; // The status of the workflow.
   application_version?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+  offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
 }
 
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
