@@ -1,5 +1,5 @@
 # Code of Conduct
-As contributors and maintainers of the DBOS Typescript SDK project, we pledge to respect everyone who contributes by posting issues, updating documentation, submitting pull requests, providing feedback in comments, and any other activities.
+As contributors and maintainers of DBOS Transact, we pledge to respect everyone who contributes by posting issues, updating documentation, submitting pull requests, providing feedback in comments, and any other activities.
 
 ## Our Standards
 Examples of behavior that contributes to creating a positive environment include:

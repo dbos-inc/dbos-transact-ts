@@ -1,10 +1,10 @@
-# Contributing to DBOS-TS
+# Contributing to DBOS Transact
 
-Thank you for considering contributing to the DBOS Typescript SDK. We welcome contributions from everyone, including bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
+Thank you for considering contributing to DBOS Transact. We welcome contributions from everyone, including bug fixes, feature enhancements, documentation improvements, or any other form of contribution.
 
 ## How to Contribute
 
-To get started with DBOS-TS, please read the [README](README.md).
+To get started with DBOS Transact, please read the [README](README.md).
 
 You can contribute in many ways. Some simple ways are:
 * Use the SDK and open issues to report any bugs, questions, concern with the SDK, samples or documentation.
