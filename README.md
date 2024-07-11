@@ -4,10 +4,10 @@ DBOS Transact is a **modern TypeScript framework** for backend applications.
 
 You want to build your next application with DBOS Transact because you need:
 
-- **Blazing-fast, developer-friendly serverless**.  Develop your project locally and run it anywhere. When you're ready, [deploy it for free to DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart#deploying-to-dbos-cloud) and we'll host it for you, [25x faster](https://www.dbos.dev/blog/dbos-vs-aws-step-functions-benchmark) and [15x cheaper](https://www.dbos.dev/blog/dbos-vs-lambda-cost) than AWS Lambda.
 - **Resilience to any failure**.  If your app is interrupted for any reason, it [automatically resumes from where it left off](https://docs.dbos.dev/tutorials/workflow-tutorial#reliability-guarantees).  Reliable message delivery is [built in](https://docs.dbos.dev/tutorials/workflow-communication-tutorial#reliability-guarantees-1). Idempotency is [built in](https://docs.dbos.dev/tutorials/idempotency-tutorial).
 - **Built-in observability**. Automatically emit [OpenTelemetry](https://opentelemetry.io/)-compatible [logs and traces](https://docs.dbos.dev/tutorials/logging) from any application. Query your app's history from the [command line](https://docs.dbos.dev/api-reference/cli#workflow-management-commands) or [with SQL](https://docs.dbos.dev/api-reference/system-tables).
 - **A framework built for the tools you love**. Build with TypeScript and **any** PostgreSQL database. Use raw SQL or your favorite query builder or ORM&mdash;we support [Knex](https://docs.dbos.dev/tutorials/using-knex), [TypeORM](https://docs.dbos.dev/tutorials/using-typeorm), and [Prisma](https://docs.dbos.dev/tutorials/using-prisma) out of the box.
+- **Blazing-fast, developer-friendly serverless**.  Develop your project locally and run it anywhere. When you're ready, [deploy it for free to DBOS Cloud](https://docs.dbos.dev/getting-started/quickstart#deploying-to-dbos-cloud) and we'll host it for you, [25x faster](https://www.dbos.dev/blog/dbos-vs-aws-step-functions-benchmark) and [15x cheaper](https://www.dbos.dev/blog/dbos-vs-lambda-cost) than AWS Lambda.
 
 ## Getting Started
 
