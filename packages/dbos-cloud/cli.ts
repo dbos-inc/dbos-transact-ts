@@ -402,10 +402,10 @@ workflowCommands
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
   .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, workflow_uuids?: string[], offset?: string }) => {
+  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, workflowUUIDs?: string[], offset?: string }) => {
     const input: ListWorkflowsInput = {
       limit: Number(options.limit),
-      workflow_uuids: options.workflow_uuids,
+      workflow_uuids: options.workflowUUIDs,
       authenticated_user: options.user,
       start_time: options.startTime,
       end_time: options.endTime,
