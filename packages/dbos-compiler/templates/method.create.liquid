@@ -1,4 +1,4 @@
-CREATE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
+CREATE OR REPLACE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
     _workflow_uuid TEXT,
     _context JSONB,
     _params JSONB
@@ -14,7 +14,7 @@ CREATE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
 
 $$ LANGUAGE plv8;
 
-CREATE PROCEDURE "{{appVersion}}{{className}}_{{methodName}}_p"(
+CREATE OR REPLACE PROCEDURE "{{appVersion}}{{className}}_{{methodName}}_p"(
     {% unless readOnly %}buffered_results JSONB,{% endunless %}
     _workflow_uuid TEXT, 
     _function_id INT, 
