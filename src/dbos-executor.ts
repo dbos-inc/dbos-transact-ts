@@ -354,6 +354,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       } else if (err instanceof Error) {
         const errorMessage = `Failed to initialize workflow executor: ${err.message}`;
         throw new DBOSInitializationError(errorMessage);
+      } else {
+        const errorMessage = `Failed to initialize workflow executor: ${err}`;
+        throw new DBOSInitializationError(errorMessage);
       }
     }
     this.initialized = true;
