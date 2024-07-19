@@ -167,7 +167,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Set configured environment variables
     if (config.env) {
       for (const [key, value] of Object.entries(config.env)) {
-        process.env[key] = value;
+        if (typeof value === "string") {
+          process.env[key] = value; // Only set the value if it's a string, because it could also be null.
+        }
       }
     }
 
