@@ -163,7 +163,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugMode ?? false;
     this.debugProxy = config.debugProxy;
-  
+
     // Set configured environment variables
     if (config.env) {
       for (const [key, value] of Object.entries(config.env)) {
