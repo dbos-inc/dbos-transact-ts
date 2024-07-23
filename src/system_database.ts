@@ -138,8 +138,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } catch (e) {
       const tableExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
       if (tableExists.rows[0].exists) {
-        // If the table has been created by someone else. Ignore the error.
-        this.logger.warn(`System schema migration failed, may conflict with concurrent tasks: ${(e as Error).message}`);
+        this.logger.warn(`System database migration failed, you may be running an old version of DBOS Transact: ${(e as Error).message}`);
       } else {
         throw e;
       }
