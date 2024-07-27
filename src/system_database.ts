@@ -37,7 +37,7 @@ export interface SystemDatabase {
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
   send<T>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
-  recv<T>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
+  recv<T>(workflowUUID: string, functionID: number, timeoutFunctionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
@@ -524,7 +524,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async recv<T>(workflowUUID: string, functionID: number, topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async recv<T>(
+    workflowUUID: string,
+    functionID: number,
+    timeoutFunctionID: number,
+    topic?: string,
+    timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec
+  ): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const checkRows = (await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID])).rows;
@@ -545,7 +551,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       let timer: NodeJS.Timeout;
       const timeoutPromise = new Promise<void>(async (resolve, reject) => {
         try {
-          await this.sleepms(workflowUUID, functionID, timeoutSeconds * 1000);
+          await this.sleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
           resolve();
         } catch (e) {
           this.logger.error(e);
