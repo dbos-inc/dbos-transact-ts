@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env node --no-warnings=ExperimentalWarning
 
 import { registerApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
 import { Command } from "commander";
