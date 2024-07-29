@@ -136,9 +136,9 @@ class DetachableLoop {
                   });
                 await Promise.race([
                     timeoutPromise,
-                    new Promise<void>((resolve) => this.interruptResolve = resolve)
+                    new Promise<void>((_, reject) => this.interruptResolve = reject)
                 ])
-                .catch(); // Interrupt sleep throws
+                .catch(() => {this.dbosExec.logger.debug("Scheduler loop interrupted!")}); // Interrupt sleep throws
                 clearTimeout(timer!);
             }
 
