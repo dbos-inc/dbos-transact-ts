@@ -7,7 +7,6 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
-import { getAllRegisteredClasses } from '../decorators';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,11 +37,8 @@ export class DBOSRuntime {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
-      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
-      for (const cls of getAllRegisteredClasses()) {
-        if (!classes.includes(cls)) classes.push(cls);
-      }
-      await this.dbosExec.init(classes);
+      await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
+      await this.dbosExec.init();
       const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();

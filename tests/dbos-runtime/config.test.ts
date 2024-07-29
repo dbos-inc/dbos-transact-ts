@@ -196,12 +196,14 @@ describe("dbos-config", () => {
           app_db_name: 'some DB'
         env:
           FOOFOO: barbar
+          RANDENV: \${SOMERANDOMENV}
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);
       expect(process.env.FOOFOO).toBe("barbar");
+      expect(process.env.RANDENV).toBe(""); // Empty string
       // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();

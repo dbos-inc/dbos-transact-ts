@@ -279,6 +279,18 @@ describe("workflow-management-tests", () => {
     expect(TestEndpoints.tries).toBe(3);
   });
 
+  test("systemdb-migration-backward-compatible", async () => {
+    // Make sure the system DB migration failure is handled correctly.
+    // If there is a migration failure, the system DB should still be able to start.
+    // This happens when the old code is running with a new system DB schema.
+    await testRuntime.destroy();
+    await systemDBClient.query(`INSERT INTO knex_migrations (name, batch, migration_time) VALUES ('faketest.js', 1, now());`);
+    testRuntime = await createInternalTestRuntime([TestEndpoints], config);
+    const response = await request(testRuntime.getHandlersCallback()).post("/workflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+  });
+
   async function testAuthMiddleware(_ctx: MiddlewareContext) {
     return Promise.resolve({
       authenticatedUser: "alice",

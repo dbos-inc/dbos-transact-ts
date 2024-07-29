@@ -86,9 +86,12 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
       tableName: 'knex_migrations'
     }
   };
-  const knexDB = knex(knexConfig)
-  await knexDB.migrate.latest()
-  await knexDB.destroy()
+  const knexDB = knex(knexConfig);
+  try {
+    await knexDB.migrate.latest();
+  } finally {
+    await knexDB.destroy();
+  }
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -129,9 +132,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Create the DBOS system database.
       await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
     }
-    await migrateSystemDatabase(this.systemPoolConfig);
+
+    try {
+      await migrateSystemDatabase(this.systemPoolConfig);
+    } catch (e) {
+      const tableExists = await this.pool.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
+      if (tableExists.rows[0].exists) {
+        this.logger.warn(`System database migration failed, you may be running an old version of DBOS Transact: ${(e as Error).message}`);
+      } else {
+        throw e;
+      }
+    } finally {
+      await pgSystemClient.end();
+    }
     await this.listenForNotifications();
-    await pgSystemClient.end();
   }
 
   async destroy() {

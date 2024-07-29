@@ -167,7 +167,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Set configured environment variables
     if (config.env) {
       for (const [key, value] of Object.entries(config.env)) {
-        process.env[key] = value;
+        if (typeof value === "string") {
+          process.env[key] = value;
+        } else {
+          console.warn(`Invalid value type for environment variable ${key}: ${typeof value}`);
+        }
       }
     }
 
@@ -345,8 +349,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.recoverPendingWorkflows();
       }
     } catch (err) {
-      (err as Error).message = `failed to initialize workflow executor: ${(err as Error).message}`;
-      throw new DBOSInitializationError(`${(err as Error).message}`);
+      if (err instanceof AggregateError) {
+        let combinedMessage = 'Failed to initialize workflow executor: ';
+        for (const error of err.errors) {
+          combinedMessage += `${(error as Error).message}; `;
+        }
+        throw new DBOSInitializationError(combinedMessage);
+      } else if (err instanceof Error) {
+        const errorMessage = `Failed to initialize workflow executor: ${err.message}`;
+        throw new DBOSInitializationError(errorMessage);
+      } else {
+        const errorMessage = `Failed to initialize workflow executor: ${String(err)}`;
+        throw new DBOSInitializationError(errorMessage);
+      }
     }
     this.initialized = true;
 

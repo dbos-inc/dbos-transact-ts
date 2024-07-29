@@ -12,16 +12,17 @@ jobs:
       matrix:
         package: [
           .,
-          packages/dbos-cloud,
-          packages/dbos-openapi,
-          packages/communicator-datetime,
-          packages/communicator-bcrypt,
-          packages/communicator-random,
-          packages/create,
           packages/aws-config,
+          packages/communicator-bcrypt,
+          packages/communicator-datetime,
+          packages/communicator-email-ses,
+          packages/communicator-random,
           packages/component-aws-s3,
+          packages/create,
+          packages/dbos-cloud,
+          packages/dbos-compiler,
+          packages/dbos-openapi,
           packages/dbos-sqs,
-          packages/communicator-email-ses
         ]
     steps:
       - name: Checkout
