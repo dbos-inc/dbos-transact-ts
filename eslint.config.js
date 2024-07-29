@@ -1,4 +1,5 @@
 const { FlatCompat } = require("@eslint/eslintrc");
+const dbosIncEslintPlugin = require("@dbos-inc/eslint-plugin");
 const typescriptEslint = require("typescript-eslint");
 const typescriptEslintPlugin = require("@typescript-eslint/eslint-plugin");
 const typescriptEslintParser = require("@typescript-eslint/parser");
@@ -22,8 +23,13 @@ module.exports = typescriptEslint.config(
   {
     files: ["**/*.ts"],
 
-    extends: compat.extends("plugin:@typescript-eslint/recommended", "plugin:@typescript-eslint/recommended-type-checked"),
-    plugins: { "@typescript-eslint": typescriptEslintPlugin },
+    extends: compat.extends(
+      "plugin:@typescript-eslint/recommended",
+      "plugin:@typescript-eslint/recommended-type-checked",
+      "plugin:@dbos-inc/dbosRecommendedConfig"
+    ),
+
+    plugins: { "@typescript-eslint": typescriptEslintPlugin, "@dbos-inc": dbosIncEslintPlugin },
 
     languageOptions: {
         parser: typescriptEslintParser,
