@@ -128,11 +128,18 @@ class DetachableLoop {
 
             if (sleepTime > 0) {
                 // Wait for either the timeout or an interruption
+                let timer: NodeJS.Timeout;
+                const timeoutPromise = new Promise<void>((resolve) => {
+                    timer = setTimeout(() => {
+                      resolve();
+                    }, sleepTime);
+                  });
                 await Promise.race([
-                    this.sleepms(sleepTime),
-                    new Promise<void>((_, reject) => this.interruptResolve = reject)
+                    timeoutPromise,
+                    new Promise<void>((resolve) => this.interruptResolve = resolve)
                 ])
                 .catch(); // Interrupt sleep throws
+                clearTimeout(timer!);
             }
 
             if (!this.isRunning) {

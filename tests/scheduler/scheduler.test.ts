@@ -44,4 +44,11 @@ class DBOSSchedTestClass {
 
         await ctxt.sleepms(2000);
     }
+
+    // This should run every 30 minutes. Making sure the testing runtime can correctly exit within a reasonable time.
+    @Scheduled({crontab: '*/30 * * * *'})
+    @Workflow()
+    static async scheduledLong(ctxt: WorkflowContext, _schedTime: Date, _startTime: Date) {
+        await ctxt.sleepms(100);
+    }
 }
