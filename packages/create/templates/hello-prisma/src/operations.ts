@@ -4,14 +4,15 @@ import { PrismaClient } from "@prisma/client";
 export class Hello {
 
   @GetApi('/') // Serve a quick readme for the app
-  static async readme(ctxt: HandlerContext) {
-    return '<html><body><p>' +
+  static async readme(_ctxt: HandlerContext) {
+    const readme = '<html><body><p>' +
            'Welcome to the DBOS Hello App!<br><br>' +
            'Visit the route /greeting/:name to be greeted!<br>' +
            'For example, visit <a href="/greeting/dbos">/greeting/dbos</a>.<br>' +
            'The counter increments with each page visit.<br>' +
-           'If you visit with a new name like <a href="/greeting/alice">/greeting/alice</a> the counter starts at 1.' +
-           '</p></body></html>'
+           'If you visit a new name like <a href="/greeting/alice">/greeting/alice</a>, the counter starts at 1.' +
+           '</p></body></html>';
+    return Promise.resolve(readme);
   }
 
   @GetApi('/greeting/:name')
