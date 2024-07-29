@@ -1,4 +1,4 @@
-import { TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from '@dbos-inc/dbos-sdk';
+import { HandlerContext, TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from '@dbos-inc/dbos-sdk';
 import { Knex } from 'knex';
 
 // The schema of the database table used in this example.
@@ -8,6 +8,18 @@ export interface dbos_hello {
 }
 
 export class Hello {
+
+  @GetApi('/') // Serve a quick readme for the app
+  static async readme(_ctxt: HandlerContext) {
+    const readme = '<html><body><p>' +
+           'Welcome to the DBOS Hello App!<br><br>' +
+           'Visit the route /greeting/:name to be greeted!<br>' +
+           'For example, visit <a href="/greeting/dbos">/greeting/dbos</a>.<br>' +
+           'The counter increments with each page visit.<br>' +
+           'If you visit a new name like <a href="/greeting/alice">/greeting/alice</a>, the counter starts at 1.' +
+           '</p></body></html>';
+    return Promise.resolve(readme);
+  }
 
   @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
   @Transaction()  // Run this function as a database transaction
