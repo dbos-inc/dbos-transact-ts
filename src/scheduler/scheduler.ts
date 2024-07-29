@@ -128,11 +128,18 @@ class DetachableLoop {
 
             if (sleepTime > 0) {
                 // Wait for either the timeout or an interruption
+                let timer: NodeJS.Timeout;
+                const timeoutPromise = new Promise<void>((resolve) => {
+                    timer = setTimeout(() => {
+                      resolve();
+                    }, sleepTime);
+                  });
                 await Promise.race([
-                    this.sleepms(sleepTime),
+                    timeoutPromise,
                     new Promise<void>((_, reject) => this.interruptResolve = reject)
                 ])
-                .catch(); // Interrupt sleep throws
+                .catch(() => {this.dbosExec.logger.debug("Scheduler loop interrupted!")}); // Interrupt sleep throws
+                clearTimeout(timer!);
             }
 
             if (!this.isRunning) {
