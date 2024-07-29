@@ -628,24 +628,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
 
+    // Register the key with the global notifications listener.
+    let resolveNotification: () => void;
+    const valuePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        resolve();
+      }, timeoutSeconds * 1000);
+    });
+    const received = Promise.race([valuePromise, timeoutPromise]);
+
     // Check if the key is already in the DB, then wait for the notification if it isn't.
     const initRecvRows = (await this.pool.query<workflow_events>(`SELECT key, value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
     if (initRecvRows.length === 0) {
-      // Register the key with the global notifications listener.
-      let resolveNotification: () => void;
-      const valuePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>((resolve) => {
-        timer = setTimeout(() => {
-          resolve();
-        }, timeoutSeconds * 1000);
-      });
-      await Promise.race([valuePromise, timeoutPromise]);
-      clearTimeout(timer!);
+      await received;
     }
+    clearTimeout(timer!);
 
     // Return the value if it's in the DB, otherwise return null.
     let value: T | null = null;
