@@ -4,12 +4,21 @@ import fs from 'fs'
 import { execSync } from 'child_process'
 import validator from 'validator';
 import { fileURLToPath } from 'url';
+import YAML from "yaml";
 
 interface CopyOption {
   rename?: (basename: string) => string;
 }
 
+// A stripped-down interface containing only the fields create needs to update
+interface ConfigFile {
+  database: {
+    app_db_name: string;
+  };
+}
+
 const identity = (x: string) => x;
+const dbosConfigFilePath = "dbos-config.yaml";
 
 export const copy = async (
   src: string,
@@ -98,6 +107,30 @@ function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>):
     return joined.replaceAll('\n#','\n\n#');
 }
 
+function updateAppConfig(configFilePath: string, appName: string): void {
+  try {
+    const content = fs.readFileSync(configFilePath, 'utf-8');
+    // Preserve the comments at the top
+    const commentsContent = content.split(/\r?\n/).filter(line => line.startsWith('#')).join('\n') + '\n\n';
+    const configFile = YAML.parse(content) as ConfigFile;
+    // Change the app_db_name field to the sanitized appName, replacing dashes with underscores
+    let appDbName = appName.replaceAll('-', '_');
+    if (appDbName.match(/^\d/)) {
+      appDbName = "_" + appDbName; // Append an underscore if the name starts with a digit
+    }
+    configFile.database.app_db_name = appDbName;
+
+    const newContent = commentsContent + YAML.stringify(configFile);
+    fs.writeFileSync(configFilePath, newContent);
+  } catch (e) {
+    if (e instanceof Error) {
+      throw new Error(`Failed to load config from ${configFilePath}: ${e.message}`);
+    } else {
+      throw e;
+    }
+  }
+}
+
 function mergeGitignoreFiles(existingFilePath: string, templateFilePath: string, outputFilePath: string): void {
     const existingSet = loadGitignoreFile(existingFilePath);
     const templateSet = loadGitignoreFile(templateFilePath);
@@ -134,5 +167,6 @@ export async function init(appName: string, templateName: string) {
   execSync("npm install --no-fund --save @dbos-inc/dbos-sdk@latest --loglevel=error", {cwd: appName, stdio: 'inherit'})
   execSync("npm i --no-fund --loglevel=error", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest", {cwd: appName, stdio: 'inherit'})
+  updateAppConfig(path.join(appName, dbosConfigFilePath), appName);
   console.log("Application initialized successfully!")
 }
