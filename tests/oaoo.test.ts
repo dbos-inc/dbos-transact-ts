@@ -130,18 +130,37 @@ describe("oaoo-tests", () => {
       await wfCtxt.sleep(durationSec);
       return;
     }
+
+    @Workflow()
+    static async recvWorkflow(wfCtxt: WorkflowContext, timeoutSeconds: number) {
+      await wfCtxt.recv('a-topic', timeoutSeconds);
+      return;
+    }
+
   }
 
   test("workflow-sleep-oaoo", async () => {
     const workflowUUID = uuidv1();
     const initTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1500);
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(2000);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+  });
+
+  test("workflow-recv-oaoo", async () => {
+    const workflowUUID = uuidv1();
+    const initTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(2000);
+
+    // Rerunning should skip the sleep
+    const startTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
   });
 
   test("workflow-oaoo", async () => {
