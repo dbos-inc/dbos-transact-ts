@@ -363,6 +363,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   async recv<T>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
+    //Increment once more to account for the timeoutFunctionID created by workflow
+    this.functionIDGetIncrement();
 
     // Original result must exist during replay.
     const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);

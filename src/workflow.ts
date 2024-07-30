@@ -312,7 +312,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown)=> boolean): Promise<string> {
     try {
       const serialOutput = DBOSJSON.stringify(output);
-      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", 
+      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;",
         [this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()]);
       return rows[0].txn_id;
     } catch (error) {
@@ -341,7 +341,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
-      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", 
+      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;",
         [this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now()]);
     } catch (error) {
       if (isKeyConflict(error)) {
@@ -522,7 +522,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       assumedRole: this.assumedRole,
     };
 
-    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on 
+    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
     // args and bufferedResults before being passed to dbosExec.callProcedure
     const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
     if (!readOnly) {
@@ -546,8 +546,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       this.resultBuffer.clear();
     }
 
-    // if the stored proc returns an error, deserialize and throw it. 
-    // stored proc saves the error in tx_output before returning 
+    // if the stored proc returns an error, deserialize and throw it.
+    // stored proc saves the error in tx_output before returning
     if (error) {
       throw deserializeError(error);
     }
@@ -839,13 +839,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recv<T>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
+    const timeoutFunctionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
+    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds);
   }
 
   /**
