@@ -114,7 +114,7 @@ function updateAppConfig(configFilePath: string, appName: string): void {
     const commentsContent = content.split(/\r?\n/).filter(line => line.startsWith('#')).join('\n') + '\n\n';
     const configFile = YAML.parse(content) as ConfigFile;
     // Change the app_db_name field to the sanitized appName, replacing dashes with underscores
-    let appDbName = appName.replace('-', '_');
+    let appDbName = appName.replaceAll('-', '_');
     if (appDbName.match(/^\d/)) {
       appDbName = "_" + appDbName; // Append an underscore if the name starts with a digit
     }
