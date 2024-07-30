@@ -110,6 +110,8 @@ function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>):
 function updateAppConfig(configFilePath: string, appName: string): void {
   try {
     const content = fs.readFileSync(configFilePath, 'utf-8');
+    // Preserve the comments at the top
+    const commentsContent = content.split(/\r?\n/).filter(line => line.startsWith('#')).join('\n') + '\n\n';
     const configFile = YAML.parse(content) as ConfigFile;
     // Change the app_db_name field to the sanitized appName, replacing dashes with underscores
     let appDbName = appName.replace('-', '_');
@@ -117,7 +119,8 @@ function updateAppConfig(configFilePath: string, appName: string): void {
       appDbName = "_" + appDbName; // Append an underscore if the name starts with a digit
     }
     configFile.database.app_db_name = appDbName;
-    const newContent = YAML.stringify(configFile);
+
+    const newContent = commentsContent + YAML.stringify(configFile);
     fs.writeFileSync(configFilePath, newContent);
   } catch (e) {
     if (e instanceof Error) {
