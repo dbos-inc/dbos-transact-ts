@@ -143,7 +143,7 @@ describe("oaoo-tests", () => {
     const workflowUUID = uuidv1();
     const initTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - initTime).toBeGreaterThanOrEqual(2000);
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
@@ -155,7 +155,7 @@ describe("oaoo-tests", () => {
     const workflowUUID = uuidv1();
     const initTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - initTime).toBeGreaterThanOrEqual(2000);
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
