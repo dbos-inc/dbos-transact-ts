@@ -94,17 +94,10 @@ export async function deployAppCode(
   // Verify lock file exists
   logger.debug("Checking for package-lock.json...");
   const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
-  const yarnLockJsonExists = existsSync(path.join(process.cwd(), "yarn.lock"));
-  logger.debug(`  ... package-log.json found: ${packageLockJsonExists}`);
-  logger.debug(`  ... yarn.lock found: ${yarnLockJsonExists}`);
+  logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
 
-  if (!packageLockJsonExists && !yarnLockJsonExists) {
-    logger.error("Neither yarn.lock or package-lock.json found. Please run 'yarn install' or 'npm install' before deploying.");
-    return 1;
-  }
-
-  if (packageLockJsonExists && yarnLockJsonExists) {
-    logger.error("Only one of yarn.lock or package-lock.json should be provided.");
+  if (!packageLockJsonExists) {
+    logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
     return 1;
   }
 
