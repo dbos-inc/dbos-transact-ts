@@ -40,7 +40,15 @@ export interface SystemDatabase {
   recv<T>(workflowUUID: string, functionID: number, timeoutFunctionID: number, topic?: string, timeoutSeconds?: number): Promise<T | null>;
 
   setEvent<T>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null>;
+  getEvent<T>(
+    workflowUUID: string,
+    key: string,
+    timeoutSeconds: number,
+    callerWorkflow?: {
+      workflowUUID: string,
+      functionID: number,
+      timeoutFunctionID: number
+    }): Promise<T | null>;
 
   // Scheduler queries
   //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
@@ -619,51 +627,81 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client.release();
   }
 
-  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number, callerUUID?: string, functionID?: number): Promise<T | null> {
+  async getEvent<T>(
+    workflowUUID: string,
+    key: string,
+    timeoutSeconds: number,
+    callerWorkflow?: {
+      workflowUUID: string,
+      functionID: number,
+      timeoutFunctionID: number
+    }): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    if (callerUUID !== undefined && functionID !== undefined) {
-      const { rows } = await this.pool.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [callerUUID, functionID]);
+    if (callerWorkflow) {
+      const { rows } = await this.pool.query<operation_outputs>(`
+        SELECT output
+        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+        WHERE workflow_uuid=$1 AND function_id=$2`,
+        [callerWorkflow.workflowUUID, callerWorkflow.functionID]);
       if (rows.length > 0) {
         return DBOSJSON.parse(rows[0].output) as T;
       }
     }
 
-    // Register the key with the global notifications listener.
-    let resolveNotification: () => void;
-    const valuePromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
-    });
-    this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-    let timer: NodeJS.Timeout;
-    const timeoutPromise = new Promise<void>((resolve) => {
-      timer = setTimeout(() => {
-        resolve();
-      }, timeoutSeconds * 1000);
-    });
-    const received = Promise.race([valuePromise, timeoutPromise]);
-
     // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (await this.pool.query<workflow_events>(`SELECT key, value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
-    if (initRecvRows.length === 0) {
-      await received;
-    }
-    clearTimeout(timer!);
+    const initRecvRows = (await this.pool.query<workflow_events>(`
+      SELECT key, value
+      FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+      WHERE workflow_uuid=$1 AND key=$2;`,
+      [workflowUUID, key])).rows;
 
     // Return the value if it's in the DB, otherwise return null.
     let value: T | null = null;
     if (initRecvRows.length > 0) {
       value = DBOSJSON.parse(initRecvRows[0].value) as T;
     } else {
-      // Read it again from the database.
-      const finalRecvRows = (await this.pool.query<workflow_events>(`SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events WHERE workflow_uuid=$1 AND key=$2;`, [workflowUUID, key])).rows;
-      if (finalRecvRows.length > 0) {
-        value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+      // Register the key with the global notifications listener.
+      let resolveNotification: () => void;
+      const valuePromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+      let timer: NodeJS.Timeout;
+      const timeoutMillis = timeoutSeconds * 1000;
+      const timeoutPromise = callerWorkflow
+        ? new Promise<void>(async (resolve, reject) => {
+            try {
+              await this.sleepms(callerWorkflow.workflowUUID, callerWorkflow.timeoutFunctionID, timeoutMillis);
+              resolve();
+            } catch (e) {
+              this.logger.error(e);
+              reject(new Error('sleepms failed'));
+            }
+          })
+        : new Promise<void>((resolve) => {
+            timer = setTimeout(() => {
+              resolve();
+            }, timeoutMillis);
+          });
+
+      try {
+        await Promise.race([valuePromise, timeoutPromise]);
+      } finally {
+        clearTimeout(timer!);
       }
+      const finalRecvRows = (await this.pool.query<workflow_events>(`
+          SELECT value
+          FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+          WHERE workflow_uuid=$1 AND key=$2;`,
+          [workflowUUID, key])).rows;
+        if (finalRecvRows.length > 0) {
+          value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+        }
     }
 
     // Record the output if it is inside a workflow.
-    if (callerUUID !== undefined && functionID !== undefined) {
-      await this.recordOperationOutput(callerUUID, functionID, value);
+    if (callerWorkflow) {
+      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value);
     }
     return value;
   }
