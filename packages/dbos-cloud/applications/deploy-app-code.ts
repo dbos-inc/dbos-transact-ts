@@ -94,7 +94,7 @@ export async function deployAppCode(
   // Verify lock file exists
   logger.debug("Checking for package-lock.json...");
   const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
-  logger.debug(`  ... package-log.json found: ${packageLockJsonExists}`);
+  logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
 
   if (!packageLockJsonExists) {
     logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
