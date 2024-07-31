@@ -284,8 +284,8 @@ describe("oaoo-tests", () => {
         res += "-" + status.status;
       }
 
-      // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO).setEventWorkflow();
+      // Set the child workflow UUID to targetUUID.
+      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO, targetUUID).setEventWorkflow();
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
@@ -309,7 +309,7 @@ describe("oaoo-tests", () => {
     clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
-    const setUUID = getUUID + "-2";
+    const setUUID = uuidv1();
 
     await expect(testRuntime.invokeWorkflow(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID)).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(2);
