@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { statSync, readFileSync } from "fs";
+import { statSync, existsSync, readFileSync } from "fs";
 import {
   handleAPIErrors,
   dbosConfigFilePath,
