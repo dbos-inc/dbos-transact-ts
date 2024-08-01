@@ -905,7 +905,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   getEvent<T>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
+    const timeoutFunctionID = this.functionIDGetIncrement();
+    const params = {
+      workflowUUID: this.workflowUUID,
+      functionID,
+      timeoutFunctionID
+    };
+    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, params);
   }
 
   /**

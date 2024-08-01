@@ -137,6 +137,12 @@ describe("oaoo-tests", () => {
       return;
     }
 
+    @Workflow()
+    static async getEventWorkflow(wfCtxt: WorkflowContext, timeoutSeconds: number) {
+      await wfCtxt.getEvent(uuidv1(), 'a-key', timeoutSeconds);
+      return;
+    }
+
   }
 
   test("workflow-sleep-oaoo", async () => {
@@ -160,6 +166,18 @@ describe("oaoo-tests", () => {
     // Rerunning should skip the sleep
     const startTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+  });
+
+  test("workflow-getEvent-oaoo", async () => {
+    const workflowUUID = uuidv1();
+    const initTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).getEventWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // Rerunning should skip the sleep
+    const startTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).getEventWorkflow(2)).resolves.toBeFalsy();
     expect(Date.now() - startTime).toBeLessThanOrEqual(200);
   });
 
