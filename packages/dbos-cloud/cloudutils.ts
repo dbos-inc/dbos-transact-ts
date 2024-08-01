@@ -4,6 +4,7 @@ import { AxiosError } from "axios";
 import jwt from "jsonwebtoken";
 import path from "node:path";
 import { authenticateWithRefreshToken } from "./users/authentication.js";
+import { loadConfigFile } from "./configutils.js";
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -24,8 +25,16 @@ export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
 
 export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | undefined {
+  const configFile = loadConfigFile(dbosConfigFilePath);
+  let appName = configFile.name;
+  if (appName !== undefined) {
+    if (!silent) {
+      logger.info(`Loaded application name from dbos-config.yaml: ${appName}`);
+    }
+    return appName
+  }
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
-  const appName = packageJson.name;
+  appName = packageJson.name;
   if (appName === undefined) {
     logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.");
     return undefined;

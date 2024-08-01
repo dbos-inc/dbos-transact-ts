@@ -3,6 +3,8 @@ import YAML from "yaml";
 
 // A stripped-down interface containing only the fields the cloud console needs to manipulate.
 export interface ConfigFile {
+  name?: string;
+  language?: string;
   database: {
     hostname: string;
     port: number;

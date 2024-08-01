@@ -13,6 +13,8 @@ import { get } from "lodash";
 describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
   const mockDBOSConfigYamlString = `
+      name: 'some app'
+      language: 'typescript'
       database:
         hostname: 'some host'
         port: 1234
@@ -134,6 +136,22 @@ describe("dbos-config", () => {
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
       `;
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
+
+    test("config file specifies the wrong language", () => {
+      const localMockDBOSConfigYamlString = `
+      language: 'python'
+      database:
+        hostname: 'some host'
+        port: 1234
+        username: 'some user'
+        password: \${PGPASSWORD}
+        app_db_name: 'some DB'
+        ssl: false
+    `;
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
