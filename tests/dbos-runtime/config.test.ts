@@ -141,7 +141,7 @@ describe("dbos-config", () => {
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
-    test("config file specifies invalid language", () => {
+    test("config file specifies the wrong language", () => {
       const localMockDBOSConfigYamlString = `
       language: 'python'
       database:
