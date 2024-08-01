@@ -45,6 +45,11 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
   return appName;
 }
 
+export function retrieveApplicationLanguage() {
+  const configFile = loadConfigFile(dbosConfigFilePath);
+  return configFile.language || "typescript";
+}
+
 export type CLILogger = ReturnType<typeof createLogger>;
 let curLogger: Logger | undefined = undefined;
 export function getLogger(verbose?: boolean): CLILogger {
