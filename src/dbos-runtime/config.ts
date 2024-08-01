@@ -16,6 +16,8 @@ const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as o
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
+  name?: string;
+  language?: string;
   database: {
     hostname: string;
     port: number;
@@ -171,6 +173,10 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   if (!validator(configFile)) {
     const errorMessages = prettyPrintAjvErrors(validator);
     throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
+  }
+
+  if (configFile.language && configFile.language != "typescript") {
+    throw new DBOSInitializationError(`dbos-config.yaml specifies invalid language ${configFile.language}`)
   }
 
   /*******************************/
