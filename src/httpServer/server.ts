@@ -128,7 +128,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
         await koaNext();
       };
       router.get(HealthUrl, healthHandler);
-      dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
+      dbosExec.logger.debug(`DBOS Server Registered Healthz GET ${HealthUrl}`);
     }
 
   /**
@@ -167,7 +167,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
       await koaNext();
     };
     router.get(PerfUrl, perfHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Perf GET ${HealthUrl}`);
   }
 
   /**
