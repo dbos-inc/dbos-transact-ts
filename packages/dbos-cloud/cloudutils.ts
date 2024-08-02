@@ -20,6 +20,11 @@ export interface UserProfile {
   SubscriptionPlan: string;
 }
 
+export enum AppLanguages {
+  Node = "node",
+  Python = "python",
+}
+
 export const dbosConfigFilePath = "dbos-config.yaml";
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
 export const dbosEnvPath = ".dbos";
@@ -43,6 +48,11 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
     logger.info(`Loaded application name from package.json: ${appName}`);
   }
   return appName;
+}
+
+export function retrieveApplicationLanguage() {
+  const configFile = loadConfigFile(dbosConfigFilePath);
+  return configFile.language || AppLanguages.Node;
 }
 
 export type CLILogger = ReturnType<typeof createLogger>;

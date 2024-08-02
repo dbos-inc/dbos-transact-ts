@@ -12,6 +12,8 @@ import {
   dbosEnvPath,
   CloudAPIErrorResponse,
   CLILogger,
+  retrieveApplicationLanguage,
+  AppLanguages,
 } from "../cloudutils.js";
 import path from "path";
 import { Application } from "./types.js";
@@ -91,13 +93,28 @@ export async function deployAppCode(
   }
   logger.debug(`  ... app name is ${appName}.`);
 
-  // Verify lock file exists
-  logger.debug("Checking for package-lock.json...");
-  const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
-  logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
+  const appLanguage = retrieveApplicationLanguage();
 
-  if (!packageLockJsonExists) {
-    logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
+  if (appLanguage === AppLanguages.Node as string) {
+    logger.debug("Checking for package-lock.json...");
+    const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
+    logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
+
+    if (!packageLockJsonExists) {
+      logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
+      return 1;
+    }
+  } else if (appLanguage === AppLanguages.Python as string) {
+    logger.debug("Checking for requirements.txt...");
+    const requirementsTxtExists = existsSync(path.join(process.cwd(), "requirements.txt"));
+    logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
+
+    if (!requirementsTxtExists) {
+      logger.error("No requirements.txt found. Please create one before deploying.");
+      return 1;
+    }
+  } else {
+    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
     return 1;
   }
 
