@@ -47,7 +47,7 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
 
 export function retrieveApplicationLanguage() {
   const configFile = loadConfigFile(dbosConfigFilePath);
-  return configFile.language || "typescript";
+  return configFile.language || "node";
 }
 
 export type CLILogger = ReturnType<typeof createLogger>;
