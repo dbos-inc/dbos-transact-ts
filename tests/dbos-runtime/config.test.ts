@@ -14,7 +14,7 @@ describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
   const mockDBOSConfigYamlString = `
       name: 'some app'
-      language: 'typescript'
+      language: 'node'
       database:
         hostname: 'some host'
         port: 1234

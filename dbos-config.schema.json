@@ -12,7 +12,7 @@
       "type": "string",
       "description": "The language used in your application",
       "enum": [
-        "typescript",
+        "node",
         "python"
       ]
     },

@@ -175,7 +175,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
 
-  if (configFile.language && configFile.language != "typescript") {
+  if (configFile.language && configFile.language != "node") {
     throw new DBOSInitializationError(`dbos-config.yaml specifies invalid language ${configFile.language}`)
   }
 
