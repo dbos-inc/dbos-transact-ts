@@ -25,10 +25,10 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "^1.15.9"
+    "@dbos-inc/dbos-sdk": "*",
+    "@dbos-inc/aws-config": "*"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.596.0",
-    "@dbos-inc/aws-config": "^1.13.10"
+    "@aws-sdk/client-sqs": "^3.596.0"
   }
 }
