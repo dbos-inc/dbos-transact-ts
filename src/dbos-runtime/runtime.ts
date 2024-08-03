@@ -83,7 +83,7 @@ export class DBOSRuntime {
       const classes: object[] = [];
       for (const key in exports) {
         if (isObject(exports[key])) {
-          classes.push(exports[key] as object);
+          classes.push(exports[key]);
         }
       }
       allClasses.push(...classes);

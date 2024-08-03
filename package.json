@@ -16,8 +16,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
-    "lint-fdb": "eslint --ignore-pattern **/coverage/ .",
+    "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
+    "lint-fdb": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npm run build-fdb && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"
@@ -27,6 +27,8 @@
     "dbos-sdk": "./dist/src/dbos-runtime/cli.js"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.1.0",
+    "@eslint/js": "^9.8.0",
     "@prisma/client": "^5.3.1",
     "@types/inquirer": "^8.2.10",
     "@types/koa": "^2.15.0",
@@ -37,17 +39,18 @@
     "@types/pg": "^8.11.2",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.8",
-    "@typescript-eslint/eslint-plugin": "^8.0.0-alpha.30",
-    "@typescript-eslint/parser": "^8.0.0-alpha.30",
+    "@typescript-eslint/eslint-plugin": "^7.17.0",
+    "@typescript-eslint/parser": "^7.17.0",
     "axios": "^1.6.7",
-    "eslint": "^9.4.0",
+    "eslint": "^8.57.0",
+    "globals": "^15.9.0",
     "jest": "^29.7.0",
     "prisma": "^5.1.1",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
     "typeorm": "^0.3.17",
     "typescript": "^5.4.5",
-    "typescript-eslint": "^8.0.0-alpha.30"
+    "typescript-eslint": "^7.17.0"
   },
   "dependencies": {
     "@koa/bodyparser": "5.0.0",

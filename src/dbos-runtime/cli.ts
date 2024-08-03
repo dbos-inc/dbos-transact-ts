@@ -41,7 +41,7 @@ interface DBOSDebugOptions {
   appVersion?: string | boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const packageJson = require("../../../package.json") as { version: string };
 program.version(packageJson.version);
 
