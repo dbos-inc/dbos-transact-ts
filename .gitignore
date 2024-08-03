@@ -2,6 +2,7 @@
 .vscode/
 !packages/create/templates/**/.vscode
 packages/create/templates/**/package-lock.json
+tests/**/package-lock.json
 .DS_Store
 
 # Logs
