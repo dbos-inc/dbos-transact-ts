@@ -537,11 +537,22 @@ export class DrizzleUserDatabase implements UserDatabase {
   }
 
   async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+    let isolationLevel: 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
+    if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
+      isolationLevel = "read uncommitted";
+    } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
+      isolationLevel = "read committed";
+    } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
+      isolationLevel = "repeatable read";
+    } else {
+      isolationLevel = "serializable";
+    }
+    const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
     const result = await this.db.transaction<R>(
       async (tx) => {
         return await transactionFunction(tx, ...args);
       },
-      { }
+      { isolationLevel, accessMode }
     );
     return result;
   }
