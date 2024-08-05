@@ -3,7 +3,9 @@ import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryRe
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Knex } from "knex";
+import { sql } from "drizzle-orm";
 
 export interface UserDatabase {
   init(debugMode?: boolean): Promise<void>;
@@ -34,13 +36,14 @@ export interface UserDatabase {
 type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
+export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | NodePgDatabase;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
   TYPEORM: "typeorm",
   KNEX: "knex",
+  DRIZZLE: "drizzle",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -409,7 +412,7 @@ export class KnexUserDatabase implements UserDatabase {
       if (!schemaExists.rows[0].exists) {
         await this.knex.raw(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
+      const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
         await this.knex.raw(userDBSchema);
       }
@@ -491,5 +494,92 @@ export class KnexUserDatabase implements UserDatabase {
 
   async dropSchema(): Promise<void> {
     return Promise.reject(new Error("dropSchema() is not supported in Knex user database."));
+  }
+}
+
+
+/**
+ * Drizzle user data access interface
+ */
+export class DrizzleUserDatabase implements UserDatabase {
+
+  readonly pool
+  readonly db
+
+  constructor(readonly poolConfig: PoolConfig) {
+    this.pool = new Pool(poolConfig);
+    this.db = drizzle(this.pool);
+  }
+
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      const schemaExists = await this.db.execute(sql.raw(schemaExistsQuery));
+      if (!schemaExists.rows[0].exists) {
+        await this.db.execute(sql.raw(createUserDBSchema));
+      }
+      const txnOutputTableExists = await this.db.execute(sql.raw(txnOutputTableExistsQuery));
+      if (!txnOutputTableExists.rows[0].exists) {
+        await this.db.execute(sql.raw(userDBSchema));
+      }
+      const txnIndexExists =  await this.db.execute(sql.raw(txnOutputIndexExistsQuery));
+      if (!txnIndexExists.rows[0].exists) {
+        await this.db.execute(sql.raw(userDBIndex));
+      }
+    }
+  }
+
+  async destroy(): Promise<void> {
+    await this.pool.end();
+  }
+
+  getName() {
+    return UserDatabaseName.DRIZZLE;
+  }
+
+  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+    const result = await this.db.transaction<R>(
+      async (tx) => {
+        return await transactionFunction(tx, ...args);
+      },
+      { }
+    );
+    return result;
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    return func(this.db as C, ...args);
+  }
+
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
+    return this.queryWithClient(this.db, sql, ...params);
+  }
+
+  async queryWithClient<R, T extends unknown[]>(client: NodePgDatabase, sqlString: string, ...params: T): Promise<R[]> {
+    const session = client._.session as unknown as {client: PoolClient}
+    return session.client.query<QueryResultRow>(sqlString, params).then((value) => {
+      return value.rows as R[];
+    });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
+    return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "23505";
+  }
+
+  async createSchema(): Promise<void> {
+    return Promise.reject(new Error("createSchema() is not supported in Drizzle user database."));
+  }
+
+  async dropSchema(): Promise<void> {
+    return Promise.reject(new Error("dropSchema() is not supported in Drizzle user database."));
   }
 }
