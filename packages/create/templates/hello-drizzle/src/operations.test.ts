@@ -18,11 +18,11 @@ describe("operations-test", () => {
    */
   test("test-transaction", async () => {
     const res = await testRuntime.invoke(Hello).helloTransaction("dbos");
-    expect(res).toMatch("Hello, dbos! You have been greeted");
+    expect(res).toMatch("Hello, dbos! We have made");
 
     // Check the greet count.
-    const rows = await testRuntime.queryUserDB("SELECT * FROM dbos_hello WHERE name=$1", "dbos") as {greet_count: number}[];
-    expect(rows[0].greet_count).toBeGreaterThanOrEqual(1);
+    const rows = await testRuntime.queryUserDB("SELECT * FROM dbos_hello WHERE greet_count=1");
+    expect(rows.length).toEqual(1);
   });
 
   /**
@@ -33,6 +33,6 @@ describe("operations-test", () => {
       "/greeting/dbos"
     );
     expect(res.statusCode).toBe(200);
-    expect(res.text).toMatch("Hello, dbos! You have been greeted");
+    expect(res.text).toMatch("Hello, dbos! We have made");
   });
 });
