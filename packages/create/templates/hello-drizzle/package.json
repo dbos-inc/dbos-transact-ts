@@ -1,5 +1,5 @@
 {
-  "name": "dbos-hello",
+  "name": "dbos-hello-drizzle",
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
