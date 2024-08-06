@@ -1,6 +1,6 @@
 # DBOS Hello with Prisma
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init` and using [Prisma](https://docs.dbos.dev/tutorials/using-prisma).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Prisma](https://docs.dbos.dev/tutorials/using-prisma).
 
 ## Getting Started
 

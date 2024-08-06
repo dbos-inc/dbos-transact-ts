@@ -1,6 +1,6 @@
 # DBOS Hello with TypeORM
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init` and using [TypeORM](https://docs.dbos.dev/tutorials/using-typeorm).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [TypeORM](https://docs.dbos.dev/tutorials/using-typeorm).
 
 ## Getting Started
 

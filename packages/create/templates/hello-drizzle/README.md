@@ -1,6 +1,6 @@
 # DBOS Hello with Drizzle
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/dbos-sdk init`.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`.
 
 ## Getting Started
 
