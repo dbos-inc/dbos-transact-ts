@@ -36,7 +36,7 @@ export interface UserDatabase {
 type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | NodePgDatabase;
+export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | DrizzleClient;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
@@ -497,6 +497,14 @@ export class KnexUserDatabase implements UserDatabase {
   }
 }
 
+export interface DrizzleClient {
+  select(): unknown;
+  selectDistinct(): unknown;
+  update(table: unknown): unknown;
+  insert(table: unknown): unknown;
+  delete(table: unknown): unknown;
+  execute(query: unknown): unknown;
+}
 
 /**
  * Drizzle user data access interface
@@ -558,7 +566,7 @@ export class DrizzleUserDatabase implements UserDatabase {
   }
 
   async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
-    return func(this.db as C, ...args);
+    return func(this.db as unknown as C, ...args);
   }
 
   async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {

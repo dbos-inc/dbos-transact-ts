@@ -15,7 +15,7 @@ export {
 } from './transaction';
 
 export {
-  StoredProcedureContext,  
+  StoredProcedureContext,
   StoredProcedureConfig,
 } from './procedure';
 
