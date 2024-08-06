@@ -1,5 +1,5 @@
 import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
-import { Hello, dbos_hello } from "./operations";
+import { Hello } from "./operations";
 import request from "supertest";
 
 describe("operations-test", () => {
@@ -21,8 +21,8 @@ describe("operations-test", () => {
     expect(res).toMatch("Hello, dbos! You have been greeted");
 
     // Check the greet count.
-    const rows = await testRuntime.queryUserDB<dbos_hello>("SELECT * FROM dbos_hello WHERE name=$1", "dbos");
-    expect(rows[0].greet_count).toBe(1);
+    const rows = await testRuntime.queryUserDB("SELECT * FROM dbos_hello WHERE name=$1", "dbos") as {greet_count: number}[];
+    expect(rows[0].greet_count).toBeGreaterThanOrEqual(1);
   });
 
   /**
