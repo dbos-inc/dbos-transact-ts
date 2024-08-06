@@ -1,6 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Knex](https://docs.dbos.dev/tutorials/using-knex).
 
 ## Getting Started
 

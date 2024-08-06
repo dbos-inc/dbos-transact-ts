@@ -19,8 +19,7 @@ export class Hello {
   @Transaction()
   static async helloTransaction(ctxt: TransactionContext<NodePgDatabase>, user: string) {
     const greeting = `Hello, ${user}!`;
-    const output = await ctxt.client.insert(dbosHello).values({greeting}).returning({greet_count: dbosHello.greet_count});
-    const greet_count = output[0].greet_count;
-    return `${greeting} We have made ${greet_count} greetings.\n`;
+    const greetings_output = await ctxt.client.insert(dbosHello).values({greeting}).returning({greet_count: dbosHello.greet_count});
+    return `${greeting} We have made ${greetings_output[0].greet_count} greetings.\n`;
   }
 }
