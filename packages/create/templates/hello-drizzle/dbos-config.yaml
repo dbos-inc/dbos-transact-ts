@@ -13,7 +13,7 @@ database:
   connectionTimeoutMillis: 3000
   app_db_client: drizzle
   migrate:
-    - npx drizzle-kit push
+    - npx drizzle-kit migrate
 runtimeConfig:
   entrypoints:
     - dist/operations.js
