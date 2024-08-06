@@ -112,8 +112,9 @@ applicationCommands
   .description("Register this application")
   .argument("[string]", "application name (Default: name from package.json)")
   .requiredOption("-d, --database <string>", "Specify a Postgres database instance for this application")
-  .action(async (appName: string | undefined, options: { database: string }) => {
-    const exitCode = await registerApp(options.database, DBOSCloudHost, appName);
+  .option("--enable-timetravel", "Enable time travel for the application", false)
+  .action(async (appName: string | undefined, options: { database: string, enableTimetravel: boolean }) => {
+    const exitCode = await registerApp(options.database, DBOSCloudHost, options.enableTimetravel, appName);
     process.exit(exitCode);
   });
 
