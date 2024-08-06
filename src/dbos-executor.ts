@@ -31,6 +31,7 @@ import {
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
+  DrizzleUserDatabase,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -275,6 +276,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
+    } else if (userDbClient === UserDatabaseName.DRIZZLE) {
+      this.userDatabase = new DrizzleUserDatabase(userDBConfig);
+      this.logger.debug("Loaded Drizzle user database");
     } else {
       this.userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug("Loaded Postgres user database");
@@ -780,9 +784,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.procedure(proc, ...args);
     };
-    return (await this.workflow(temp_workflow, 
-      { ...params, 
-        tempWfType: TempWorkflowType.procedure, 
+    return (await this.workflow(temp_workflow,
+      { ...params,
+        tempWfType: TempWorkflowType.procedure,
         tempWfName: getRegisteredMethodName(proc),
         tempWfClass: getRegisteredMethodClassName(proc),
         }, ...args)).getResult();
