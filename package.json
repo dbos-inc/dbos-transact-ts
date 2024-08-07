@@ -16,8 +16,8 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
-    "lint-fdb": "eslint --ignore-pattern **/coverage/ .",
+    "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
+    "lint-fdb": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
     "test-fdb": "npm run build-fdb && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"
@@ -46,7 +46,7 @@
     "nerdbank-gitversioning": "^3.6.133",
     "prisma": "^5.1.1",
     "supertest": "^7.0.0",
-    "ts-jest": "^29.1.2",
+    "ts-jest": "^29.2.4",
     "typeorm": "^0.3.17",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.0.0-alpha.30"
@@ -74,12 +74,20 @@
     "lodash": "4.17.21",
     "openapi-types": "12.1.3",
     "pg": "8.11.3",
+    "pg-protocol": "^1.6.1",
     "reflect-metadata": "^0.2.2",
     "serialize-error": "8.1.0",
     "uuid": "9.0.1",
     "winston": "3.12.0",
     "winston-transport": "4.7.0",
     "yaml": "2.4.1"
+  },
+  "peerDependencies": {
+    "@types/koa": "^2.15.0",
+    "@types/koa__cors": "^5.0.0",
+    "@types/koa__router": "^12.0.4",
+    "@types/node": "^20.11.25",
+    "@types/pg": "^8.11.2"
   },
   "optionalDependencies": {
     "foundationdb": "^2.0.1"
