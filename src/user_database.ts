@@ -3,9 +3,7 @@ import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryRe
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
-import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Knex } from "knex";
-import { sql } from "drizzle-orm";
 
 export interface UserDatabase {
   init(debugMode?: boolean): Promise<void>;
@@ -504,6 +502,10 @@ export interface DrizzleClient {
   insert(table: unknown): unknown;
   delete(table: unknown): unknown;
   execute(query: unknown): unknown;
+  _: {
+    session: any;
+  }
+  transaction<R>(fn: (tx: any) => Promise<R>, options: { isolationLevel: any, accessMode: any }): Promise<R>;
 }
 
 /**
@@ -511,27 +513,24 @@ export interface DrizzleClient {
  */
 export class DrizzleUserDatabase implements UserDatabase {
 
-  readonly pool
-  readonly db
-
-  constructor(readonly poolConfig: PoolConfig) {
-    this.pool = new Pool(poolConfig);
-    this.db = drizzle(this.pool);
+  constructor(readonly pool: Pool, readonly db: DrizzleClient) {
   }
 
   async init(debugMode: boolean = false): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const poolClient = this.db._.session.client as PoolClient;
     if (!debugMode) {
-      const schemaExists = await this.db.execute(sql.raw(schemaExistsQuery));
+      const schemaExists = await poolClient.query<ExistenceCheck>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
-        await this.db.execute(sql.raw(createUserDBSchema));
+        await poolClient.query(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.db.execute(sql.raw(txnOutputTableExistsQuery));
+      const txnOutputTableExists = await poolClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
-        await this.db.execute(sql.raw(userDBSchema));
+        await  poolClient.query(userDBSchema);
       }
-      const txnIndexExists =  await this.db.execute(sql.raw(txnOutputIndexExistsQuery));
+      const txnIndexExists =  await poolClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
       if (!txnIndexExists.rows[0].exists) {
-        await this.db.execute(sql.raw(userDBIndex));
+        await poolClient.query(userDBIndex);
       }
     }
   }
@@ -557,7 +556,7 @@ export class DrizzleUserDatabase implements UserDatabase {
     }
     const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
     const result = await this.db.transaction<R>(
-      async (tx) => {
+      async (tx: DrizzleClient) => {
         return await transactionFunction(tx, ...args);
       },
       { isolationLevel, accessMode }
@@ -573,9 +572,10 @@ export class DrizzleUserDatabase implements UserDatabase {
     return this.queryWithClient(this.db, sql, ...params);
   }
 
-  async queryWithClient<R, T extends unknown[]>(client: NodePgDatabase, sqlString: string, ...params: T): Promise<R[]> {
-    const session = client._.session as unknown as {client: PoolClient}
-    return session.client.query<QueryResultRow>(sqlString, params).then((value) => {
+  async queryWithClient<R, T extends unknown[]>(client: DrizzleClient, sqlString: string, ...params: T): Promise<R[]> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const sessionClient = client._.session.client as PoolClient;
+    return sessionClient.query<QueryResultRow>(sqlString, params).then((value) => {
       return value.rows as R[];
     });
   }
