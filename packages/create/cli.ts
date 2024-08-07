@@ -4,7 +4,7 @@ import { init } from './init.js';
 import fs from 'fs'
 import path from "path";
 import { Package } from "update-notifier";
-import inquirer from "inquirer";
+import { input } from "@inquirer/prompts";
 
 const program = new Command();
 
@@ -31,24 +31,18 @@ program
       template = template || 'hello';
     }
     else {
-      const res = await inquirer.prompt([
+      appName = await input(
         {
-          type: 'input',
-          name: 'template',
           message: 'What is the template to use for the application?',
           // Providing a default value
           default: 'hello',
-        },
+        });
+      template = await input(
         {
-          type: 'input',
-          name: 'appName',
           message: 'What is the application/directory name to create?',
           // Providing a default value
           default: 'dbos-hello-app',
-        },
-      ]) as {appName: string, template: string};
-      appName = res.appName;
-      template = res.template;
+        });
     }
     await init(appName, template);
   })

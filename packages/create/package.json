@@ -18,7 +18,6 @@
     "create": "./dist/cli.js"
   },
   "devDependencies": {
-    "@types/inquirer": "^9.0.7",
     "@types/node": "^20.6.3",
     "@types/prompt-sync": "^4.2.3",
     "@types/update-notifier": "^6.0.8",
@@ -26,11 +25,11 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@inquirer/prompts": "^5.3.8",
     "axios": "^1.6.7",
     "chalk": "4.1.2",
     "commander": "^12.0.0",
     "fast-glob": "^3.3.2",
-    "inquirer": "^9.2.16",
     "open": "^10.1.0",
     "prompt-sync": "^4.2.0",
     "update-notifier": "^7.0.0",
