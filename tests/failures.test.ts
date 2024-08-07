@@ -179,7 +179,7 @@ class FailureTestClass {
     return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
   }
 
-  @Communicator({ intervalSeconds: 1, maxAttempts: 2 })
+  @Communicator({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
   static async testFailCommunicator(ctxt: CommunicatorContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
