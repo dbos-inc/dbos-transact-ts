@@ -781,7 +781,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         try {
           result = await commFn.call(clsInst, ctxt, ...args);
         } catch (error) {
-          this.logger.error(error);
+          const e = error as Error
+          this.logger.error(`Communicator error being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. Error: ${e.message}`);
           span.addEvent(`Communicator attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
