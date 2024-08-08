@@ -15,7 +15,7 @@ export enum SchedulerMode {
 
 export class SchedulerConfig {
     crontab: string = '* * * * *'; // Every minute
-    mode ?: SchedulerMode = SchedulerMode.ExactlyOncePerInterval;
+    mode ?: SchedulerMode = SchedulerMode.ExactlyOncePerIntervalWhenActive;
 }
 
 ////

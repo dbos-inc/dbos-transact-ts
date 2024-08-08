@@ -311,7 +311,10 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             if (e instanceof Error) {
-              oc.logger.error(e);
+              const annotated_e = e as Error & {dbos_already_logged?: boolean};
+              if (annotated_e.dbos_already_logged !== true) {
+                oc.logger.error(e);
+              }
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = (e as DBOSResponseError)?.status || 500;
               const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
