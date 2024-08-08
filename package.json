@@ -80,11 +80,7 @@
     "yaml": "2.4.1"
   },
   "peerDependencies": {
-    "@types/koa": "^2.15.0",
-    "@types/koa__cors": "^5.0.0",
-    "@types/koa__router": "^12.0.4",
-    "@types/node": "^20.11.25",
-    "@types/pg": "^8.11.2"
+    "@types/koa": "^2.15.0"
   },
   "optionalDependencies": {
     "foundationdb": "^2.0.1"
