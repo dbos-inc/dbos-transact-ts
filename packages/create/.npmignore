@@ -22,3 +22,6 @@ templates/hello-prisma/node_modules
 templates/hello-typeorm/.dbos
 templates/hello-typeorm/dist
 templates/hello-typeorm/node_modules
+templates/hello-drizzle/.dbos
+templates/hello-drizzle/dist
+templates/hello-drizzle/node_modules

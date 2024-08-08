@@ -277,7 +277,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug("Loaded Knex user database");
     } else if (userDbClient === UserDatabaseName.DRIZZLE) {
-      this.userDatabase = new DrizzleUserDatabase(userDBConfig);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
+      const DrizzleExports = require("drizzle-orm/node-postgres");
+      const drizzlePool = new Pool(userDBConfig);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+      const drizzle= DrizzleExports.drizzle(drizzlePool);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug("Loaded Drizzle user database");
     } else {
       this.userDatabase = new PGNodeUserDatabase(userDBConfig);
