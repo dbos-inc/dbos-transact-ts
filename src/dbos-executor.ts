@@ -675,8 +675,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
-          const e: Error = err as Error;
+          const e = err as Error & {dbos_already_logged?: boolean};
           this.logger.error(e);
+          e.dbos_already_logged = true
           if (wCtxt.isTempWorkflow) {
             internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
           }
