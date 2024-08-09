@@ -868,7 +868,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
-      if (execID == "local" && process.env.DBOS__VMID) {
+      if (execID === "local" && process.env.DBOS__VMID) {
         this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
         continue;
       }

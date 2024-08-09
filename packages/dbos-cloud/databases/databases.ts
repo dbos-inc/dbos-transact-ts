@@ -49,7 +49,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
 
     if (sync) {
       let status = "";
-      while (status != "available" && status != "backing-up") {
+      while (status !== "available" && status !== "backing-up") {
         if (status === "") {
           await sleepms(5000); // First time sleep 5 sec
         } else {
@@ -299,7 +299,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
 
     if (sync) {
       let status = "";
-      while (status != "available" && status != "backing-up") {
+      while (status !== "available" && status !== "backing-up") {
         if (status === "") {
           await sleepms(5000); // First time sleep 5 sec
         } else {

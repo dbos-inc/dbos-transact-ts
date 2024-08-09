@@ -32,10 +32,12 @@ module.exports = typescriptEslint.config(
     },
 
     rules: {
+      "eqeqeq": "error",
       "@typescript-eslint/indent": "off",
       "@typescript-eslint/unbound-method": ["error", { ignoreStatic: true }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
-      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }]
+      "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: false }],
+      "@typescript-eslint/no-floating-promises": "error"
     }
   }
 );
