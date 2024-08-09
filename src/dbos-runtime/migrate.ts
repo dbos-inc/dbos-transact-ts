@@ -87,7 +87,7 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
   logger.info("Starting Migration Rollback");
 
   let dbType = configFile.database.app_db_client;
-  if (dbType == undefined) {
+  if (dbType === undefined) {
     dbType = "knex";
   }
 

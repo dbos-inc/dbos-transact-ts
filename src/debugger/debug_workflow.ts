@@ -100,7 +100,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` + rows.toString());
     }
 
-    if (DBOSJSON.parse(rows[0].error) != null) {
+    if (DBOSJSON.parse(rows[0].error) !== null) {
       return deserializeError(DBOSJSON.parse(rows[0].error));
     }
 
