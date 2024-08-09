@@ -333,20 +333,23 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     type AnyConstructor = new (...args: unknown[]) => object;
     try {
+      let length; // Track the length of the array (or number of keys of the object)
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
         if (Array.isArray(reg.ormEntities) && reg.ormEntities.length > 0) {
-          this.entities = (this.entities as Function[]).concat(reg.ormEntities as Function[]);
+          this.entities = (this.entities as any[]).concat(reg.ormEntities as any[]);
+          length = reg.ormEntities.length;
         } else {
           /**
            * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
            */
           this.entities = { ...this.entities, ...reg.ormEntities };
-          this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
+          length = Object.keys(reg.ormEntities).length;
         }
+        this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
       this.configureDbClient();
