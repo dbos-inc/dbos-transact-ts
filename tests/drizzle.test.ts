@@ -5,6 +5,7 @@ import {
   GetApi,
   HandlerContext,
   MiddlewareContext,
+  OrmEntities,
   PostApi,
   RequiredRole,
   TestingRuntime, Transaction,
@@ -34,6 +35,7 @@ const testTable = pgTable(testTableName, {
 
 let insertCount = 0;
 
+@OrmEntities({ testTable })
 class TestClass {
   @Transaction()
   static async testInsert(txnCtxt: TransactionContext<NodePgDatabase>, value: string) {
@@ -45,6 +47,12 @@ class TestClass {
   @Transaction()
   static async testSelect(txnCtxt: TransactionContext<NodePgDatabase>, id: number) {
     const result = await txnCtxt.client.select().from(testTable).where(eq(testTable.id, id));
+    return result[0].value;
+  }
+
+  @Transaction()
+  static async testQuery(ctx: TransactionContext<NodePgDatabase<{ testTable: typeof testTable }>>) {
+    const result = await ctx.client.query.testTable.findMany();
     return result[0].value;
   }
 
@@ -88,6 +96,11 @@ describe("drizzle-tests", () => {
 
   test("simple-drizzle", async () => {
     await expect(testRuntime.invoke(TestClass).testInsert("test-one")).resolves.toBe(1);
+  });
+
+  test("drizzle-query", async () => {
+    await testRuntime.invoke(TestClass).testInsert("test-query");
+    await expect(testRuntime.invoke(TestClass).testQuery()).resolves.toBe("test-query");
   });
 
   test("drizzle-return-void", async () => {
