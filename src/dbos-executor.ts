@@ -156,7 +156,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
-  entities: Function[] = [];
+  entities: Function[] | { [key: string]: object } = [];
 
   eventReceivers: DBOSEventReceiver[] = [];
 
@@ -281,7 +281,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const DrizzleExports = require("drizzle-orm/node-postgres");
       const drizzlePool = new Pool(userDBConfig);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const drizzle= DrizzleExports.drizzle(drizzlePool);
+      const drizzle= DrizzleExports.drizzle(drizzlePool, {schema: this.entities});
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug("Loaded Drizzle user database");
@@ -335,8 +335,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
     try {
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
-        if (reg.ormEntities.length > 0) {
-          this.entities = this.entities.concat(reg.ormEntities);
+        /**
+         * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
+         */
+        if (Array.isArray(reg.ormEntities) && reg.ormEntities.length > 0) {
+          this.entities = (this.entities as Function[]).concat(reg.ormEntities as Function[]);
+        } else {
+          /**
+           * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
+           */
+          this.entities = { ...this.entities, ...reg.ormEntities };
           this.logger.debug(`Loaded ${reg.ormEntities.length} ORM entities`);
         }
       }

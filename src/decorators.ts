@@ -216,7 +216,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  ormEntities: Function[] = [];
+  ormEntities: Function[] | { [key: string]: object } = [];
 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
@@ -651,7 +651,7 @@ export function Communicator(config: CommunicatorConfig={}) {
 }
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function OrmEntities(entities: Function[]) {
+export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
 
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {
