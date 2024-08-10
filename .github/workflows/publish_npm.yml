@@ -33,12 +33,12 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: 20
+      - run: npm ci
       - name: Nerdbank.GitVersioning
         id: nbgv
         uses: dotnet/nbgv@v0.4.2
         with:
           stamp: ${{ matrix.package }}/package.json
-      - run: npm ci
       - run: cd ${{ matrix.package }}; npm run build
       - name: Publish release to npm
         uses: JS-DevTools/npm-publish@v3
