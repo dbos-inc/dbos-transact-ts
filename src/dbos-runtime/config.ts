@@ -1,14 +1,14 @@
-import Ajv, { ValidateFunction } from 'ajv';
-import { writeFileSync } from "fs";
-import path from "path";
+import { DBOSInitializationError } from "../error";
+import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
+import { DBOSConfig } from "../dbos-executor";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
-import { DBOSConfig } from "../dbos-executor";
-import { DBOSInitializationError } from "../error";
-import { TelemetryConfig } from "../telemetry";
-import { UserDatabaseName } from "../user_database";
-import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
 import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
+import { UserDatabaseName } from "../user_database";
+import { TelemetryConfig } from "../telemetry";
+import { writeFileSync } from "fs";
+import Ajv, { ValidateFunction } from 'ajv';
+import path from "path";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
