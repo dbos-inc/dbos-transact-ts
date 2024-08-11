@@ -76,7 +76,7 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
 }
 
 /**
- * Writes a ConfigFile or or YAML.Document object to configFilePath.
+ * Writes a ConfigFile or YAML.Document object to configFilePath.
  * @param {ConfigFile | Document} configFile - The config file to be written. 
  * @param {string} configFilePath - The path to the config file to be written to.
  * @param {boolean} document - Whether the config file is a YAML.Document object. Defaults to false.
