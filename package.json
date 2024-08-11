@@ -50,6 +50,7 @@
     "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
+    "@dbos-inc/dbos-sdk": "file:",
     "@inquirer/prompts": "^5.3.8",
     "@koa/bodyparser": "5.0.0",
     "@koa/cors": "5.0.0",

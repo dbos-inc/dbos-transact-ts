@@ -1,14 +1,14 @@
-import { DBOSInitializationError } from "../error";
-import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
-import { DBOSConfig } from "../dbos-executor";
+import Ajv, { ValidateFunction } from 'ajv';
+import { writeFileSync } from "fs";
+import path from "path";
 import { PoolConfig } from "pg";
 import YAML from "yaml";
-import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
-import { UserDatabaseName } from "../user_database";
+import { DBOSConfig } from "../dbos-executor";
+import { DBOSInitializationError } from "../error";
 import { TelemetryConfig } from "../telemetry";
-import { writeFileSync } from "fs";
-import Ajv, { ValidateFunction } from 'ajv';
-import path from "path";
+import { UserDatabaseName } from "../user_database";
+import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
+import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
@@ -55,6 +55,11 @@ export function substituteEnvVars(content: string): string {
   });
 }
 
+/**
+ * Loads config file as a ConfigFile.
+ * @param {string} configFilePath - The path to the config file to be loaded.
+ * @returns 
+ */
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
     const configFileContent = readFileSync(configFilePath);
@@ -70,9 +75,15 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
   }
 }
 
-export function writeConfigFile(configFile: ConfigFile, configFilePath: string) {
+/**
+ * Writes a ConfigFile or or YAML.Document object to configFilePath.
+ * @param {ConfigFile | Document} configFile - The config file to be written. 
+ * @param {string} configFilePath - The path to the config file to be written to.
+ * @param {boolean} document - Whether the config file is a YAML.Document object. Defaults to false.
+ */
+export function writeConfigFile(configFile: ConfigFile | YAML.Document, configFilePath: string, document: boolean=false) {
   try {
-    const configFileContent = YAML.stringify(configFile);
+    const configFileContent = document ? (configFile as YAML.Document).toString() : YAML.stringify(configFile as ConfigFile);
     writeFileSync(configFilePath, configFileContent);
   } catch (e) {
     if (e instanceof Error) {
