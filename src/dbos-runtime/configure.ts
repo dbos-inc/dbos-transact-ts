@@ -38,5 +38,5 @@ export async function configure(host: string | undefined, port: number | undefin
   config.setIn(['database', 'port'], port);
   config.setIn(['database', 'username'], username);
 
-  writeConfigFile(config, dbosConfigFilePath, true);
+  writeConfigFile(config, dbosConfigFilePath);
 }
