@@ -9,6 +9,7 @@ import { TelemetryConfig } from "../telemetry";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
+import validator from "validator";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
@@ -179,14 +180,18 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     }
   }
 
-  const validator = ajv.compile(dbosConfigSchema);
-  if (!validator(configFile)) {
-    const errorMessages = prettyPrintAjvErrors(validator);
+  const schemaValidator = ajv.compile(dbosConfigSchema);
+  if (!schemaValidator(configFile)) {
+    const errorMessages = prettyPrintAjvErrors(schemaValidator);
     throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
   }
 
   if (configFile.language && configFile.language !== "node") {
     throw new DBOSInitializationError(`dbos-config.yaml specifies invalid language ${configFile.language}`)
+  }
+
+  if (!isValidDBname(configFile.database.app_db_name)) {
+    throw new DBOSInitializationError(`dbos-config.yaml specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
   }
 
   /*******************************/
@@ -246,4 +251,15 @@ function getAppVersion(appVersion: string | boolean | undefined) {
   if (typeof appVersion === "string") { return appVersion; }
   if (appVersion === false) { return undefined; }
   return process.env.DBOS__APPVERSION;
+}
+
+function isValidDBname(dbName: string): boolean {
+  if (dbName.length < 3 || dbName.length > 31) {
+    return false;
+  }
+  if (dbName.match(/^\d/)) {
+    // Cannot start with a digit
+    return false
+  }
+  return validator.matches(dbName, "^[a-z0-9_]+$");
 }

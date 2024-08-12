@@ -201,11 +201,8 @@ if (!process.argv.slice(2).length) {
 //Finally, terminates the program with the exit code.
 export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
   let logger = new GlobalLogger();
-  const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-  if (!configFile) {
-    logger.error(`Failed to parse ${dbosConfigFilePath}`);
-    process.exit(1);
-  }
+  const _ = parseConfigFile(); // Validate config file
+  const configFile = loadConfigFile(dbosConfigFilePath);
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
     logger = new GlobalLogger(new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), configFile.telemetry?.logs);
