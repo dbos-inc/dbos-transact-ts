@@ -55,6 +55,11 @@ export function substituteEnvVars(content: string): string {
   });
 }
 
+/**
+ * Loads config file as a ConfigFile.
+ * @param {string} configFilePath - The path to the config file to be loaded.
+ * @returns 
+ */
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
     const configFileContent = readFileSync(configFilePath);
@@ -70,9 +75,14 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
   }
 }
 
-export function writeConfigFile(configFile: ConfigFile, configFilePath: string) {
+/**
+ * Writes a YAML.Document object to configFilePath.
+ * @param {YAML.Document} configFile - The config file to be written. 
+ * @param {string} configFilePath - The path to the config file to be written to.
+ */
+export function writeConfigFile(configFile: YAML.Document, configFilePath: string) {
   try {
-    const configFileContent = YAML.stringify(configFile);
+    const configFileContent = configFile.toString();
     writeFileSync(configFilePath, configFileContent);
   } catch (e) {
     if (e instanceof Error) {

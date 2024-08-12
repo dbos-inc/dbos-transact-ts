@@ -1,11 +1,11 @@
 import { input } from "@inquirer/prompts";
-import { readFileSync } from "../utils";
-import { ConfigFile, dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
+import { readFileSync } from "../utils";
+import { dbosConfigFilePath, writeConfigFile } from "./config";
 
 export async function configure(host: string | undefined, port: number | undefined, username: string | undefined) {
   const configFileContent = readFileSync(dbosConfigFilePath);
-  const config = YAML.parse(configFileContent) as ConfigFile;
+  const config = YAML.parseDocument(configFileContent);
 
   if (!host) {
     host = await input(
@@ -34,9 +34,9 @@ export async function configure(host: string | undefined, port: number | undefin
       });
   }
 
-  config.database.hostname = host;
-  config.database.port = port;
-  config.database.username = username;
+  config.setIn(['database', 'hostname'], host);
+  config.setIn(['database', 'port'], port);
+  config.setIn(['database', 'username'], username);
 
-  writeConfigFile(config, dbosConfigFilePath)
+  writeConfigFile(config, dbosConfigFilePath);
 }
