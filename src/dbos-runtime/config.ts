@@ -105,7 +105,7 @@ export function constructPoolConfig(configFile: ConfigFile) {
   };
 
   if (!poolConfig.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain application database name`);
+    throw new DBOSInitializationError(`DBOS configuration (${dbosConfigFilePath}) does not contain application database name`);
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
@@ -163,7 +163,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
 
   // Database field must exist
   if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
+    throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database config`);
   }
 
   // Check for the database password
@@ -175,7 +175,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
       if (pgPassword) {
         configFile.database.password = pgPassword;
       } else {
-        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+        throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database password`);
       }
     }
   }
@@ -183,15 +183,15 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   const schemaValidator = ajv.compile(dbosConfigSchema);
   if (!schemaValidator(configFile)) {
     const errorMessages = prettyPrintAjvErrors(schemaValidator);
-    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
+    throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
   }
 
   if (configFile.language && configFile.language !== "node") {
-    throw new DBOSInitializationError(`dbos-config.yaml specifies invalid language ${configFile.language}`)
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
   }
 
   if (!isValidDBname(configFile.database.app_db_name)) {
-    throw new DBOSInitializationError(`dbos-config.yaml specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
   }
 
   /*******************************/
