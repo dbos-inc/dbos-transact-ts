@@ -6,6 +6,7 @@ import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError } from "./error";
+import { CommunicatorContext, HandlerContext, MiddlewareContext, StoredProcedureContext, TransactionContext, WorkflowContext } from ".";
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {

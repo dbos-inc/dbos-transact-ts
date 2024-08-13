@@ -1,7 +1,7 @@
 import "reflect-metadata";
 
 import * as crypto from "crypto";
-import { TransactionConfig, TransactionContext } from "./transaction";
+import { TransactionConfig } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { CommunicatorConfig, CommunicatorContext } from "./communicator";
@@ -611,11 +611,11 @@ export function Workflow(config: WorkflowConfig={}) {
 }
 
 export function Transaction(config: TransactionConfig={}) {
-  function decorator<This, Args extends unknown[], Return>(
+  function decorator<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
