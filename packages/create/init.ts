@@ -10,13 +10,6 @@ interface CopyOption {
   rename?: (basename: string) => string;
 }
 
-// A stripped-down interface containing only the fields create needs to update
-interface ConfigFile {
-  database: {
-    app_db_name: string;
-  };
-}
-
 const identity = (x: string) => x;
 const dbosConfigFilePath = "dbos-config.yaml";
 
@@ -110,18 +103,15 @@ function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>):
 function updateAppConfig(configFilePath: string, appName: string): void {
   try {
     const content = fs.readFileSync(configFilePath, 'utf-8');
-    // Preserve the comments at the top
-    const commentsContent = content.split(/\r?\n/).filter(line => line.startsWith('#')).join('\n') + '\n\n';
-    const configFile = YAML.parse(content) as ConfigFile;
-    // Change the app_db_name field to the sanitized appName, replacing dashes with underscores
-    let appDbName = appName.replaceAll('-', '_');
-    if (appDbName.match(/^\d/)) {
-      appDbName = "_" + appDbName; // Append an underscore if the name starts with a digit
-    }
-    configFile.database.app_db_name = appDbName;
+    const configFile = YAML.parseDocument(content);
 
-    const newContent = commentsContent + YAML.stringify(configFile);
-    fs.writeFileSync(configFilePath, newContent);
+    // Change the app_db_name field to the sanitized appName, replacing dashes with underscores
+    let appDBName = appName.toLowerCase().replaceAll('-', '_');
+    if (appDBName.match(/^\d/)) {
+      appDBName = "_" + appDBName; // Append an underscore if the name starts with a digit
+    }
+    configFile.setIn(['database', 'app_db_name'], appDBName);
+    fs.writeFileSync(configFilePath, configFile.toString());
   } catch (e) {
     if (e instanceof Error) {
       throw new Error(`Failed to load config from ${configFilePath}: ${e.message}`);
