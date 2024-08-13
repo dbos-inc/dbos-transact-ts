@@ -31,13 +31,13 @@ program
       template = template || 'hello';
     }
     else {
-      appName = await input(
+      template = await input(
         {
           message: 'What is the template to use for the application?',
           // Providing a default value
           default: 'hello',
         });
-      template = await input(
+      appName = await input(
         {
           message: 'What is the application/directory name to create?',
           // Providing a default value
