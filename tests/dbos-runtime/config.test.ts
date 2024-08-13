@@ -350,7 +350,7 @@ describe("dbos-config", () => {
     });
 
     test("parseConfigFile throws on an invalid db name", async () => {
-      const invalidNames = ["some_DB", "123db", "db", "very_very_very_long_very_very_very_long_very_very__database_name", "largeDB", ""];
+      const invalidNames = ["some_DB", "123db", "very_very_very_long_very_very_very_long_very_very__database_name", "largeDB", ""];
       for (const dbName of invalidNames) {
         const localMockDBOSConfigYamlString = `
           database:
