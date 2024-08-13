@@ -35,6 +35,11 @@ const testTable = pgTable(testTableName, {
 
 let insertCount = 0;
 
+@OrmEntities()
+export class NoEntities {
+
+}
+
 @OrmEntities({ testTable })
 class TestClass {
   @Transaction()
