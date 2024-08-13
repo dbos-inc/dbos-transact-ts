@@ -156,7 +156,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly logger: Logger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/ban-types
-  entities: Function[] | { [key: string]: object } = [];
+  typeormEntities: Function[] = [];
+  drizzleEntities: { [key: string]: object } = {};
+
 
   eventReceivers: DBOSEventReceiver[] = [];
 
@@ -253,7 +255,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             username: userDBConfig.user,
             password: userDBConfig.password,
             database: userDBConfig.database,
-            entities: this.entities,
+            entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
           })
         );
@@ -281,7 +283,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const DrizzleExports = require("drizzle-orm/node-postgres");
       const drizzlePool = new Pool(userDBConfig);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const drizzle= DrizzleExports.drizzle(drizzlePool, {schema: this.entities});
+      const drizzle= DrizzleExports.drizzle(drizzlePool, {schema: this.drizzleEntities});
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug("Loaded Drizzle user database");
@@ -340,15 +342,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
         if (Array.isArray(reg.ormEntities)) {
-          if (reg.ormEntities.length > 0) {
-            this.entities = (this.entities as any[]).concat(reg.ormEntities as any[]);
-            length = reg.ormEntities.length;
-          }
+          this.typeormEntities = (this.typeormEntities).concat(reg.ormEntities as any[]);
+          length = reg.ormEntities.length;
         } else {
           /**
            * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
            */
-          this.entities = { ...this.entities, ...reg.ormEntities };
+          this.drizzleEntities = { ...this.drizzleEntities, ...reg.ormEntities };
           length = Object.keys(reg.ormEntities).length;
         }
         this.logger.debug(`Loaded ${length} ORM entities`);
