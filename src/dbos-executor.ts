@@ -339,9 +339,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
-        if (Array.isArray(reg.ormEntities) && reg.ormEntities.length > 0) {
-          this.entities = (this.entities as any[]).concat(reg.ormEntities as any[]);
-          length = reg.ormEntities.length;
+        if (Array.isArray(reg.ormEntities)) {
+          if (reg.ormEntities.length > 0) {
+            this.entities = (this.entities as any[]).concat(reg.ormEntities as any[]);
+            length = reg.ormEntities.length;
+          }
         } else {
           /**
            * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
