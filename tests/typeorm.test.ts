@@ -38,6 +38,11 @@ let globalCnt = 0;
 
 type TestTransactionContext = TransactionContext<EntityManager>;
 
+@OrmEntities()
+export class NoEntities {
+
+}
+
 @OrmEntities([KV])
 class KVController {
   @Transaction()
