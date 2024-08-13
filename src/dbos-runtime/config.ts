@@ -254,7 +254,7 @@ function getAppVersion(appVersion: string | boolean | undefined) {
 }
 
 function isValidDBname(dbName: string): boolean {
-  if (dbName.length < 3 || dbName.length > 31) {
+  if (dbName.length < 1 || dbName.length > 63) {
     return false;
   }
   if (dbName.match(/^\d/)) {

@@ -570,6 +570,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await Promise.race([messagePromise, timeoutPromise])
       } finally {
         clearTimeout(timer!);
+        delete this.notificationsMap[payload];
       }
     }
 
@@ -665,7 +666,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const valuePromise = new Promise<void>((resolve) => {
         resolveNotification = resolve;
       });
-      this.workflowEventsMap[`${workflowUUID}::${key}`] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+      const payload = `${workflowUUID}::${key}`;
+      this.workflowEventsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
       let timer: NodeJS.Timeout;
       const timeoutMillis = timeoutSeconds * 1000;
       const timeoutPromise = callerWorkflow
@@ -688,6 +690,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await Promise.race([valuePromise, timeoutPromise]);
       } finally {
         clearTimeout(timer!);
+        delete this.workflowEventsMap[payload];
       }
       const finalRecvRows = (await this.pool.query<workflow_events>(`
           SELECT value
