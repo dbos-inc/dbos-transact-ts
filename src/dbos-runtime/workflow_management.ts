@@ -37,8 +37,11 @@ async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: str
     const result = await systemDatabase.getWorkflowResult(workflowUUID);
     info.output = result;
   } else if (info.status === StatusString.ERROR) {
-    const result = await systemDatabase.getWorkflowResult(workflowUUID);
-    info.error = result;
+    try {
+      await systemDatabase.getWorkflowResult(workflowUUID);
+    } catch (e) {
+      info.error = e;
+    }
   }
   if (!getRequest) {
     delete info.request;

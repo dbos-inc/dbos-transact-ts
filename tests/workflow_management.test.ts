@@ -190,15 +190,18 @@ describe("workflow-management-tests", () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("alice");
 
+
+    const failResponse = await request(testRuntime.getHandlersCallback()).post("/fail/alice");
+    expect(failResponse.statusCode).toBe(500);
+
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     await dbosExec.flushWorkflowBuffers();
 
     const input: GetWorkflowsInput = {
-      workflowName: "testWorkflow"
     }
     const infos = await listWorkflows(config, input, false);
-    expect(infos.length).toBe(1);
-    const info = infos[0] as WorkflowInformation;
+    expect(infos.length).toBe(2);
+    let info = infos[0] as WorkflowInformation;
     expect(info.authenticatedUser).toBe("alice");
     expect(info.workflowName).toBe("testWorkflow");
     expect(info.status).toBe(StatusString.SUCCESS);
@@ -207,6 +210,18 @@ describe("workflow-management-tests", () => {
     expect(info.workflowConfigName).toBe("");
     expect(info.error).toBeUndefined();
     expect(info.output).toBe("alice");
+    expect(info.input).toEqual(["alice"])
+
+    info = infos[1] as WorkflowInformation;
+    expect(info.authenticatedUser).toBe("alice");
+    expect(info.workflowName).toBe("failWorkflow");
+    expect(info.status).toBe(StatusString.ERROR);
+    expect(info.workflowClassName).toBe("TestEndpoints");
+    expect(info.assumedRole).toBe("");
+    expect(info.workflowConfigName).toBe("");
+    const error = info.error as Error
+    expect(error.message).toBe("alice");
+    expect(info.output).toBeUndefined()
     expect(info.input).toEqual(["alice"])
 
     const getInfo = await getWorkflow(config, info.workflowUUID, false) as WorkflowInformation;
@@ -304,6 +319,13 @@ describe("workflow-management-tests", () => {
     @Workflow()
     static async testWorkflow(_ctxt: WorkflowContext, name: string) {
       return Promise.resolve(name);
+    }
+
+    @PostApi("/fail/:name")
+    @Workflow()
+    static async failWorkflow(_ctxt: WorkflowContext, name: string) {
+      await Promise.resolve(name);
+      throw new Error(name);
     }
 
     @PostApi("/getWorkflows")
