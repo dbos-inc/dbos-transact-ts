@@ -258,7 +258,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
 
               if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
-                if (foundArg) {
+                if (foundArg !== undefined) {
                   args.push(foundArg);
                 }
               } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
@@ -267,13 +267,13 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
                 }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 foundArg = koaCtxt.request.body[marg.name];
-                if (foundArg) {
+                if (foundArg !== undefined) {
                   args.push(foundArg);
                 }
               }
 
               // Try to parse the argument from the URL if nothing found.
-              if (!foundArg) {
+              if (foundArg === undefined) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 args.push(koaCtxt.params[marg.name]);
               }
