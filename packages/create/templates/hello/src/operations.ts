@@ -13,7 +13,7 @@ export class Hello {
   static async readme(_ctxt: HandlerContext) {
     const readme = `<html><body><p>
            Welcome to the DBOS Hello App!<br><br>
-           Visit the route /greeting/:name to be greeted!<br>' +
+           Visit the route /greeting/:name to be greeted!<br>
            For example, visit <a href="/greeting/dbos">/greeting/dbos</a>.<br>
            The counter increments with each page visit.<br>
            If you visit a new name like <a href="/greeting/alice">/greeting/alice</a>, the counter starts at 1.
