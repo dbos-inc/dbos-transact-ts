@@ -293,13 +293,13 @@ async function chooseAppDBServer(logger: Logger, host: string, userCredentials: 
   let userDBName = "";
   if (userDBs.length === 0) {
     // If not, prompt the user to provision one.
-    logger.info("No database found, provisioning a database server...");
+    logger.info("No database found, provisioning a database instance (server)...");
     userDBName = await input({
-      message: "Database server name?",
+      message: "Database instance name?",
       default: `${userCredentials.userName}-db-server`,
     });
     // Use a default user name and auto generated password.
-    const appDBUserName = "dbosapp_default";
+    const appDBUserName = "dbos_user";
     const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
     const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
     if (res !== 0) {
@@ -308,7 +308,7 @@ async function chooseAppDBServer(logger: Logger, host: string, userCredentials: 
   } else if (userDBs.length > 1) {
     // If there is more than one database instances, prompt the user to select one.
     userDBName = await select({
-      message: "Choose a database server for this app:",
+      message: "Choose a database instance for this app:",
       choices: userDBs.map((db) => ({
         name: db.PostgresInstanceName,
         value: db.PostgresInstanceName,
@@ -317,7 +317,7 @@ async function chooseAppDBServer(logger: Logger, host: string, userCredentials: 
   } else {
     // Use the only available database server.
     userDBName = userDBs[0].PostgresInstanceName;
-    logger.info(`Using database server: ${userDBName}`);
+    logger.info(`Using database instance: ${userDBName}`);
   }
   return userDBName;
 }
