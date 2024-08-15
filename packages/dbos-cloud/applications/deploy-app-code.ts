@@ -133,8 +133,9 @@ export async function deployAppCode(
       return 1;
     }
     // Register the app
-    // TODO: Prompt the user to choose whether to enable time travel for their app?
-    await registerApp(userDBName, host, false, appName);
+    // TODO: add a flag to enable time travel?
+    const enableTimeTravel = false
+    await registerApp(userDBName, host, enableTimeTravel, appName);
 
   }
 
