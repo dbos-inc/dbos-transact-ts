@@ -14,6 +14,7 @@ import {
   CLILogger,
   retrieveApplicationLanguage,
   AppLanguages,
+  DBOSCloudCredentials,
 } from "../cloudutils.js";
 import path from "path";
 import { Application } from "./types.js";
@@ -23,6 +24,7 @@ import chalk from "chalk";
 import { createUserDb, UserDBInstance } from "../databases/databases.js";
 import { registerApp } from "./register-app.js";
 import { input, select } from "@inquirer/prompts";
+import { Logger } from "winston";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -122,86 +124,14 @@ export async function deployAppCode(
   }
 
   // First, check if the application exists
-  let appRegistered = true;
-  try {
-    await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: bearerToken,
-      },
-    });
-  } catch (e) {
-    const errorLabel = `Failed to retrieve info for application ${appName}`;
-    const axiosError = e as AxiosError;
-    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-      const resp: CloudAPIErrorResponse = axiosError.response?.data;
-      if (resp.message.includes(`application ${appName} not found`)) {
-        appRegistered = false;
-      } else {
-        handleAPIErrors(errorLabel, axiosError);
-      }
-    } else {
-      logger.error(`${errorLabel}: ${(e as Error).message}`);
-    }
-  }
+  const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
   if (!appRegistered) {
-    // List existing database instances.
-    let userDBs: UserDBInstance[] = [];
-    try {
-      const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: bearerToken,
-        },
-      });
-      userDBs = res.data as UserDBInstance[];
-    } catch (e) {
-      const errorLabel = `Failed to list databases`;
-      const axiosError = e as AxiosError;
-      if (isCloudAPIErrorResponse(axiosError.response?.data)) {
-        handleAPIErrors(errorLabel, axiosError);
-      } else {
-        logger.error(`${errorLabel}: ${(e as Error).message}`);
-      }
+    const userDBName = await chooseAppDBServer(logger, host, userCredentials);
+    if (userDBName === "") {
       return 1;
     }
-
-    let userDBName = ""
-    if (userDBs.length === 0) {
-      // If not, prompt the user to provision one.
-      logger.info("No database found, provisioning a database server...");
-      userDBName = await input(
-        {
-          message: 'Database server name?',
-          default: `${userCredentials.userName}-db-server`,
-        }
-      );
-      // Use a default user name and auto generated password.
-      const appDBUserName = "dbosapp_default";
-      const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
-      const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
-      if (res !== 0) {
-        return res;
-      }
-    } else if (userDBs.length > 1) {
-      // If there is more than one database instances, prompt the user to select one.
-      userDBName = await select(
-        {
-          message: 'Choose a database server for this app:',
-          choices: userDBs.map((db) => ({
-            name: db.PostgresInstanceName,
-            value: db.PostgresInstanceName,
-          })),
-        }
-      );
-    } else {
-      // Use the only available database server.
-      userDBName = userDBs[0].PostgresInstanceName
-      logger.info(`Using the database server: ${userDBName}`)
-    }
-
     // Register the app
     // TODO: Prompt the user to choose whether to enable time travel for their app?
     await registerApp(userDBName, host, false, appName);
@@ -307,4 +237,86 @@ function readInterpolatedConfig(configFilePath: string, logger: CLILogger): stri
     }
     return "";
   });
+}
+
+async function isAppRegistered(logger: Logger, host: string, appName: string, userCredentials: DBOSCloudCredentials): Promise<boolean> {
+  let appRegistered = true;
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+  } catch (e) {
+    const errorLabel = `Failed to retrieve info for application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      const resp: CloudAPIErrorResponse = axiosError.response?.data;
+      if (resp.message.includes(`application ${appName} not found`)) {
+        appRegistered = false;
+      } else {
+        handleAPIErrors(errorLabel, axiosError);
+      }
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+  }
+  return appRegistered;
+}
+
+async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials): Promise<string> {
+  // List existing database instances.
+  let userDBs: UserDBInstance[] = [];
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    userDBs = res.data as UserDBInstance[];
+  } catch (e) {
+    const errorLabel = `Failed to list databases`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return "";
+  }
+
+  let userDBName = "";
+  if (userDBs.length === 0) {
+    // If not, prompt the user to provision one.
+    logger.info("No database found, provisioning a database server...");
+    userDBName = await input({
+      message: "Database server name?",
+      default: `${userCredentials.userName}-db-server`,
+    });
+    // Use a default user name and auto generated password.
+    const appDBUserName = "dbosapp_default";
+    const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
+    const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
+    if (res !== 0) {
+      return "";
+    }
+  } else if (userDBs.length > 1) {
+    // If there is more than one database instances, prompt the user to select one.
+    userDBName = await select({
+      message: "Choose a database server for this app:",
+      choices: userDBs.map((db) => ({
+        name: db.PostgresInstanceName,
+        value: db.PostgresInstanceName,
+      })),
+    });
+  } else {
+    // Use the only available database server.
+    userDBName = userDBs[0].PostgresInstanceName;
+    logger.info(`Using database server: ${userDBName}`);
+  }
+  return userDBName;
 }
