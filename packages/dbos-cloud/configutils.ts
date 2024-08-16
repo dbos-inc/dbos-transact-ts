@@ -10,6 +10,7 @@ export interface ConfigFile {
     port: number;
     username: string;
     password?: string;
+    app_db_name: string;
   };
 }
 

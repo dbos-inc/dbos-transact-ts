@@ -123,8 +123,8 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database migration commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .option("-p, --previous-version <string>", "Specify a previous version to restore")
-  .option("-d, --database <string>", "Specify a Postgres database instance for this application. Only effective if the application is not already deployed.")
-  .option("--enable-timetravel", "Enable time travel for the application. Only effective if the application is not already deployed.", false)
+  .option("-d, --database <string>", "Specify a Postgres database instance for this application. This cannot be changed after the application is first deployed.")
+  .option("--enable-timetravel", "Enable time travel for the application. This cannot be changed after the application is first deployed.", false)
   .option("--verbose", "Verbose log of deployment step")
   .action(async (appName: string | undefined, options: { verbose?: boolean, previousVersion?: string, database?: string, enableTimetravel: boolean }) => {
     const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName, options.database, options.enableTimetravel);

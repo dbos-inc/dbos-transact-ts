@@ -25,6 +25,7 @@ import { createUserDb, UserDBInstance } from "../databases/databases.js";
 import { registerApp } from "./register-app.js";
 import { input, select } from "@inquirer/prompts";
 import { Logger } from "winston";
+import { loadConfigFile } from "../configutils.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -81,9 +82,9 @@ export async function deployAppCode(
   rollback: boolean,
   previousVersion: string | null,
   verbose: boolean,
-  targetDatabaseName: string | null = null,
+  targetDatabaseName: string | null = null, // Used for changing database instance
   appName: string | undefined,
-  userDBName: string | undefined = undefined,
+  userDBName: string | undefined = undefined, // Used for registering the app
   enableTimeTravel: boolean = false
 ): Promise<number> {
   const logger = getLogger(verbose);
@@ -128,8 +129,11 @@ export async function deployAppCode(
   // First, check if the application exists
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
+  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+  logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
+
   // If the app is not registered, register it.
-  if (!appRegistered) {
+  if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
     if (userDBName === "") {
       return 1;
@@ -141,7 +145,19 @@ export async function deployAppCode(
       logger.info("Time travel is disabled for this application");
     }
     await registerApp(userDBName, host, enableTimeTravel, appName);
+  } else {
+    logger.info(`Application ${appName} exists, updating...`);
+    if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
+      logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
+    } else {
+      logger.info(`Application is deployed with database instance: ${appRegistered.PostgresInstanceName}.`);
+    }
 
+    // Make sure the app database is the same.
+    if (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName) {
+      logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
+      return 1;
+    }
   }
 
   try {
@@ -245,23 +261,23 @@ function readInterpolatedConfig(configFilePath: string, logger: CLILogger): stri
   });
 }
 
-async function isAppRegistered(logger: Logger, host: string, appName: string, userCredentials: DBOSCloudCredentials): Promise<boolean> {
-  let appRegistered = true;
+async function isAppRegistered(logger: Logger, host: string, appName: string, userCredentials: DBOSCloudCredentials): Promise<Application | undefined> {
   const bearerToken = "Bearer " + userCredentials.token;
+  let app: Application | undefined = undefined;
   try {
-    await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
       },
     });
+    app = res.data as Application;
   } catch (e) {
     const errorLabel = `Failed to retrieve info for application ${appName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`application ${appName} not found`)) {
-        appRegistered = false;
       } else {
         handleAPIErrors(errorLabel, axiosError);
       }
@@ -269,7 +285,7 @@ async function isAppRegistered(logger: Logger, host: string, appName: string, us
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
   }
-  return appRegistered;
+  return app;
 }
 
 async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
