@@ -82,7 +82,9 @@ export async function deployAppCode(
   previousVersion: string | null,
   verbose: boolean,
   targetDatabaseName: string | null = null,
-  appName: string | undefined
+  appName: string | undefined,
+  userDBName: string | undefined = undefined,
+  enableTimeTravel: boolean = false
 ): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
@@ -128,13 +130,16 @@ export async function deployAppCode(
 
   // If the app is not registered, register it.
   if (!appRegistered) {
-    const userDBName = await chooseAppDBServer(logger, host, userCredentials);
+    userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
     if (userDBName === "") {
       return 1;
     }
     // Register the app
-    // TODO: add a flag to enable time travel?
-    const enableTimeTravel = false
+    if (enableTimeTravel) {
+      logger.info("Enabling time travel for this application");
+    } else {
+      logger.info("Time travel is disabled for this application");
+    }
     await registerApp(userDBName, host, enableTimeTravel, appName);
 
   }
@@ -267,7 +272,7 @@ async function isAppRegistered(logger: Logger, host: string, appName: string, us
   return appRegistered;
 }
 
-async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials): Promise<string> {
+async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
   // List existing database instances.
   let userDBs: UserDBInstance[] = [];
   const bearerToken = "Bearer " + userCredentials.token;
@@ -290,14 +295,26 @@ async function chooseAppDBServer(logger: Logger, host: string, userCredentials: 
     return "";
   }
 
-  let userDBName = "";
-  if (userDBs.length === 0) {
+  if (userDBName) {
+    // Check if the database instance exists or not.
+    const dbExists = userDBs.some((db) => db.PostgresInstanceName === userDBName);
+    if (dbExists) {
+      return userDBName;
+    }
+  }
+
+  if (userDBName || userDBs.length === 0) {
     // If not, prompt the user to provision one.
-    logger.info("No database found, provisioning a database instance (server)...");
-    userDBName = await input({
-      message: "Database instance name?",
-      default: `${userCredentials.userName}-db-server`,
-    });
+    if (!userDBName) {
+      logger.info("No database found, provisioning a database instance (server)...");
+      userDBName = await input({
+        message: "Database instance name?",
+        default: `${userCredentials.userName}-db-server`,
+      });
+    } else {
+      logger.info(`Database instance ${userDBName} not found, provisioning a new one...`);
+    }
+
     // Use a default user name and auto generated password.
     const appDBUserName = "dbos_user";
     const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
