@@ -168,7 +168,7 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
         if (!validator.matches(value, "^[a-z0-9_]+$")) {
           return "Username must contain only lowercase letters, numbers, and underscores.";
         }
-        // TODO: Check if the username is already taken
+        // TODO: Check if the username is already taken. Need a cloud endpoint for this.
         return true;
       }
     })
@@ -212,7 +212,7 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
     credentials.userName = profile.Name;
     credentials.organization = profile.Organization;
     writeCredentials(credentials);
-    logger.info(`Successfully registered and logged in as ${credentials.userName}!`);
+    logger.info(` ... Successfully registered and logged in as ${credentials.userName}!`);
   } catch (e) {
     const errorLabel = `Failed to register user ${userName}`;
     const axiosError = e as AxiosError;

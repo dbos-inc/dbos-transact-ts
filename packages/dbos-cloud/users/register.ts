@@ -1,13 +1,8 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, credentialsExist, DBOSCloudCredentials, writeCredentials, deleteCredentials, UserProfile } from "../cloudutils.js";
-import readline from "readline";
 import validator from "validator";
 import { authenticate } from "./authentication.js";
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+import { input } from "@inquirer/prompts";
 
 function isValidUsername(username: string): boolean {
   if (username.length < 3 || username.length > 30) {
@@ -28,10 +23,18 @@ export async function registerUser(username: string, secret: string, host: strin
   if (!credentialsExist()) {
     logger.info("Welcome to DBOS Cloud!");
     logger.info("Before creating an account, please tell us a bit about yourself!");
-    const prompt = (query: string) => new Promise<string>((resolve) => rl.question(query, resolve));
-    givenName = await prompt("Enter First/Given Name: ");
-    familyName = await prompt("Enter Last/Family Name: ");
-    company = await prompt("Enter Company: ");
+    givenName = await input({
+      message: "Enter first/given name:",
+      required: true,
+    });
+    familyName = await input({
+      message: "Enter last/family name:",
+      required: true,
+    });
+    company = await input({
+      message: "Enter company name:",
+      required: true,
+    });
     const authResponse = await authenticate(logger);
     if (authResponse === null) {
       return 1;
