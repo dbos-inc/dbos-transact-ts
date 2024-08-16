@@ -87,7 +87,7 @@ const consoleFormat = format.combine(
   })
 );
 
-function isTokenExpired(token: string): boolean {
+export function isTokenExpired(token: string): boolean {
   try {
     const { exp } = jwt.decode(token) as jwt.JwtPayload;
     if (!exp) return false;

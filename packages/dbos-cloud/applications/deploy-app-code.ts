@@ -3,7 +3,6 @@ import { statSync, existsSync, readFileSync } from "fs";
 import {
   handleAPIErrors,
   dbosConfigFilePath,
-  getCloudCredentials,
   getLogger,
   checkReadFile,
   sleepms,
@@ -26,6 +25,7 @@ import { registerApp } from "./register-app.js";
 import { input, select } from "@inquirer/prompts";
 import { Logger } from "winston";
 import { loadConfigFile } from "../configutils.js";
+import { loginAndGetCredentials } from "../users/login.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -89,7 +89,7 @@ export async function deployAppCode(
 ): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginAndGetCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   logger.debug("  ... got cloud credentials");
 
