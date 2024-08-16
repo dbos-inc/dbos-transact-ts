@@ -59,7 +59,7 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
  * @param {string} host - The DBOS Cloud host to authenticate against.
  * @returns {DBOSCloudCredentials} - The user's DBOS Cloud credentials.
  */
-export async function loginAndGetCredentials(host: string, logger: Logger): Promise<DBOSCloudCredentials> {
+export async function loginGetCloudCredentials(host: string, logger: Logger): Promise<DBOSCloudCredentials> {
   const credentials: DBOSCloudCredentials = {
     token: "",
     refreshToken: "",
@@ -68,7 +68,7 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
   };
   
   // Check if credentials exist and are not expired
-  let needLogin = true;
+  let needLogin = false;
   if (credentialsExist()) {
     const userCredentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
     credentials.userName = userCredentials.userName;
@@ -79,22 +79,22 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
 
     if (isTokenExpired(credentials.token)) {
       if (credentials.refreshToken) {
-        logger.info("Refreshing access token with refresh token");
+        logger.debug("Refreshing access token with refresh token");
         const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
         if (authResponse === null) {
           logger.warn("Refreshing access token with refresh token failed. Logging in again...");
           deleteCredentials();
+          needLogin = true;
         } else {
+          // Update the token and save the credentials
           credentials.token = authResponse.token;
+          writeCredentials(credentials);
         }
-        writeCredentials(credentials);
-        needLogin = false;
       } else {
-        logger.warn("Login expired. Logging in again...");
+        logger.warn("Credentials expired. Logging in again...");
         deleteCredentials();
+        needLogin = true;
       }
-    } else {
-      needLogin = false; // Credentials exist and are not expired
     }
   }
 
@@ -149,30 +149,41 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
     }
   }
 
-  logger.info(`User not registered in DBOS Cloud. Registering...`);
-
   // Cache the user credentials, but it doesn't have the user name and organization yet.
   // This is designed to avoid extra logins when registering the user next time.
   writeCredentials(credentials);
 
-  // Register the user in DBOS Cloud. Prompt for user name, given name, family name, and company.
-  let userName = "";
-  // while (userName === "") {
-    userName = await input({
-      message: "Choose your username:",
-      required: true,
-      validate: (value: string) => {
-        if (value.length < 3 || value.length > 30) {
-          return "Username must be 3~30 characters long";
-        }
-        if (!validator.matches(value, "^[a-z0-9_]+$")) {
-          return "Username must contain only lowercase letters, numbers, and underscores.";
-        }
-        // TODO: Check if the username is already taken. Need a cloud endpoint for this.
-        return true;
+  // Register the user in DBOS Cloud
+  await registerUser(host, credentials, logger);
+
+  return credentials;
+}
+
+/**
+ * Register the user in DBOS Cloud and modify the credentials.
+ * Exit the process on errors.
+ * @param {string} host - The DBOS Cloud host to authenticate against.
+ * @param {DBOSCloudCredentials} credentials - The user's DBOS Cloud credentials (to be updated with userName and organization).
+ * @param {Logger} logger - The logger intance.
+ * @returns
+ */
+async function registerUser(host: string, credentials: DBOSCloudCredentials, logger: Logger): Promise<void> {
+  logger.info(`User not registered in DBOS Cloud. Registering...`);
+
+  const userName = await input({
+    message: "Choose your username:",
+    required: true,
+    validate: (value: string) => {
+      if (value.length < 3 || value.length > 30) {
+        return "Username must be 3~30 characters long";
       }
-    })
-  // }
+      if (!validator.matches(value, "^[a-z0-9_]+$")) {
+        return "Username must contain only lowercase letters, numbers, and underscores.";
+      }
+      // TODO: Check if the username is already taken. Need a cloud endpoint for this.
+      return true;
+    }
+  })
   const givenName = await input({
     message: "Enter first/given name:",
     required: true,
@@ -185,7 +196,8 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
     message: "Enter company name:",
     required: true,
   });
-  
+
+  const bearerToken = "Bearer " + credentials.token;
   try {
     await axios.put(
       `https://${host}/v1alpha1/user`,
@@ -223,5 +235,5 @@ export async function loginAndGetCredentials(host: string, logger: Logger): Prom
     }
     process.exit(1);
   }
-  return credentials;
+  return;
 }

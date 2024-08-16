@@ -25,7 +25,7 @@ import { registerApp } from "./register-app.js";
 import { input, select } from "@inquirer/prompts";
 import { Logger } from "winston";
 import { loadConfigFile } from "../configutils.js";
-import { loginAndGetCredentials } from "../users/login.js";
+import { loginGetCloudCredentials } from "../users/login.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -89,7 +89,7 @@ export async function deployAppCode(
 ): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
-  const userCredentials = await loginAndGetCredentials(host, logger);
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   logger.debug("  ... got cloud credentials");
 
