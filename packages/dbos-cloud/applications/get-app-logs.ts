@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { handleAPIErrors, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { loginGetCloudCredentials } from "../users/login.js";
 
 type LogResponse = {
   end: boolean;
@@ -23,7 +24,7 @@ export async function getAppLogs(host: string, last: number, pagesize: number, a
   }
 
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   appName = appName || retrieveApplicationName(logger);
   if (!appName) {

@@ -1,8 +1,9 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
+import { loginGetCloudCredentials } from "../users/login.js";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -26,7 +27,7 @@ function isValidPassword(logger: Logger, password: string): boolean {
 
 export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -76,7 +77,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
 
 export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, dbPassword)) {
@@ -112,7 +113,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
 
 export async function deleteUserDb(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -138,7 +139,7 @@ export async function deleteUserDb(host: string, dbName: string) {
 
 export async function unlinkUserDB(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -193,7 +194,7 @@ export async function listUserDB(host: string, json: boolean) {
   const logger = getLogger();
 
   try {
-    const userCredentials = await getCloudCredentials();
+    const userCredentials = await loginGetCloudCredentials(host, logger);
     const bearerToken = "Bearer " + userCredentials.token;
 
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
@@ -232,7 +233,8 @@ export async function listUserDB(host: string, json: boolean) {
 }
 
 export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
-  const userCredentials = await getCloudCredentials();
+  const logger = getLogger();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`, {
@@ -247,7 +249,7 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
 
 export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -281,7 +283,7 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
 
 export async function restoreUserDB(host: string, dbName: string, targetName: string, restoreTime: string, sync: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {

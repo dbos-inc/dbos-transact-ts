@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { handleAPIErrors, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import { loginGetCloudCredentials } from "../users/login.js";
 
 export interface ListWorkflowsInput {
   workflow_uuids?: string[] // Specific workflow UUIDs to retrieve.
@@ -15,7 +16,7 @@ export interface ListWorkflowsInput {
 
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await loginGetCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger, true);

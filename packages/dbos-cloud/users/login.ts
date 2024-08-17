@@ -135,7 +135,7 @@ async function checkCredentials(logger: Logger): Promise<DBOSCloudCredentials> {
         return emptyCredentials;
       } else {
         // Update the token and save the credentials
-        credentials.token = authResponse.token;
+        credentials.token = authResponse.token.replace(/\r|\n/g, "");
       }
     } else {
       logger.warn("Credentials expired. Logging in again...");
