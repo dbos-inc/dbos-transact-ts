@@ -130,11 +130,15 @@ export async function deployAppCode(
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
+  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
     if (userDBName === "") {
       return 1;
     }
+    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
+
     // Register the app
     if (enableTimeTravel) {
       logger.info("Enabling time travel for this application");
@@ -146,13 +150,9 @@ export async function deployAppCode(
     logger.info(`Application ${appName} exists, updating...`);
     if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
       logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
-    } else {
-      logger.info(`Application is deployed with database instance: ${appRegistered.PostgresInstanceName}.`);
     }
 
     // Make sure the app database is the same.
-    const dbosConfig = loadConfigFile(dbosConfigFilePath);
-    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
     if (appRegistered.ApplicationDatabaseName && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
       logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
       return 1;
