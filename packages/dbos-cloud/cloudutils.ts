@@ -191,7 +191,7 @@ export async function getCloudCredentials(host: string, logger: Logger, userName
   const userExists = await checkUserProfile(host, credentials, logger);
   if (userExists) {
     writeCredentials(credentials);
-    logger.info(`Successfully logged in as ${credentials.userName}!`);
+    logger.debug(`Successfully logged in as ${credentials.userName}!`);
     return credentials;
   }
 
@@ -305,7 +305,7 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
     });
   }
 
-  if (!isValidUsername(userName)) {
+  if (isValidUsername(userName) !== true) {
       logger.error(`Invalid username: ${userName}. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.`);
       process.exit(1);
   }

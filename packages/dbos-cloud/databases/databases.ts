@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
@@ -25,9 +25,11 @@ function isValidPassword(logger: Logger, password: string): boolean {
   return true;
 }
 
-export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
+export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean, userCredentials?: DBOSCloudCredentials) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials(host, logger);
+  if (!userCredentials) {
+    userCredentials = await getCloudCredentials(host, logger);
+  }
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -56,7 +58,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
         }
-        const userDBInfo = await getUserDBInfo(host, dbName);
+        const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
         logger.info(userDBInfo);
         status = userDBInfo.Status;
       }
@@ -232,9 +234,11 @@ export async function listUserDB(host: string, json: boolean) {
   }
 }
 
-export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
+async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBOSCloudCredentials): Promise<UserDBInstance> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials(host, logger);
+  if (!userCredentials) {
+    userCredentials = await getCloudCredentials(host, logger);
+  }
   const bearerToken = "Bearer " + userCredentials.token;
 
   const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`, {
@@ -307,7 +311,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
         }
-        const userDBInfo = await getUserDBInfo(host, targetName);
+        const userDBInfo = await getUserDBInfo(host, targetName, userCredentials);
         logger.info(userDBInfo);
         status = userDBInfo.Status;
       }
