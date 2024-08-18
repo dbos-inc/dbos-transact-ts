@@ -1,10 +1,12 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse, retrieveApplicationLanguage } from "../cloudutils.js";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse, retrieveApplicationLanguage, DBOSCloudCredentials } from "../cloudutils.js";
 import chalk from "chalk";
 
-export async function registerApp(dbname: string, host: string, enableTimetravel: boolean = false, appName?: string): Promise<number> {
+export async function registerApp(dbname: string, host: string, enableTimetravel: boolean = false, appName?: string, userCredentials?: DBOSCloudCredentials): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  if (!userCredentials) {
+    userCredentials = await getCloudCredentials(host, logger);
+  }
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName || retrieveApplicationName(logger);

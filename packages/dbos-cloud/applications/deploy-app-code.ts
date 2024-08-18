@@ -89,7 +89,7 @@ export async function deployAppCode(
 ): Promise<number> {
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   logger.debug("  ... got cloud credentials");
 
@@ -129,15 +129,16 @@ export async function deployAppCode(
   // First, check if the application exists
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
-  const dbosConfig = loadConfigFile(dbosConfigFilePath);
-  logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
-
   // If the app is not registered, register it.
+  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
     if (userDBName === "") {
       return 1;
     }
+    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
+
     // Register the app
     if (enableTimeTravel) {
       logger.info("Enabling time travel for this application");
@@ -149,8 +150,6 @@ export async function deployAppCode(
     logger.info(`Application ${appName} exists, updating...`);
     if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
       logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
-    } else {
-      logger.info(`Application is deployed with database instance: ${appRegistered.PostgresInstanceName}.`);
     }
 
     // Make sure the app database is the same.

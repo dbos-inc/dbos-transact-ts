@@ -3,7 +3,7 @@ import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogge
 
 export async function orgInvite(host: string, json: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/secret`, {
@@ -38,7 +38,7 @@ export interface OrgUsers {
 
 export async function orgListUsers(host: string, json: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/users`, {
@@ -72,7 +72,7 @@ export async function orgListUsers(host: string, json: boolean) {
 
 export async function renameOrganization(host: string, oldname: string, newname: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   const currentOrg = userCredentials.organization;
@@ -112,7 +112,7 @@ export async function renameOrganization(host: string, oldname: string, newname:
 
 export async function joinOrganization(host: string, orgname: string, secret: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {

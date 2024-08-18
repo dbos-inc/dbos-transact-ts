@@ -23,7 +23,7 @@ export async function getAppLogs(host: string, last: number, pagesize: number, a
   }
 
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   appName = appName || retrieveApplicationName(logger);
   if (!appName) {

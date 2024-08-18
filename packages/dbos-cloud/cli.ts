@@ -77,7 +77,7 @@ program
   .description("Register a user with DBOS cloud")
   .requiredOption("-u, --username <string>", "Username")
   .option("-s, --secret <string>", "Organization secret")
-  .action(async (options: { username: string; secret: string }) => {
+  .action(async (options: { username: string; secret: string | undefined }) => {
     const exitCode = await registerUser(options.username, options.secret, DBOSCloudHost);
     process.exit(exitCode);
   });

@@ -15,7 +15,7 @@ export interface ListWorkflowsInput {
 
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger, true);

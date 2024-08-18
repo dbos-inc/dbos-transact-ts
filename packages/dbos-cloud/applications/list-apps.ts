@@ -4,7 +4,7 @@ import { Application, prettyPrintApplication } from "./types.js";
 
 export async function listApps(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
