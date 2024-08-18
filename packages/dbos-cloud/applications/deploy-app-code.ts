@@ -129,9 +129,6 @@ export async function deployAppCode(
   // First, check if the application exists
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
-  const dbosConfig = loadConfigFile(dbosConfigFilePath);
-  logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
-
   // If the app is not registered, register it.
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
@@ -154,6 +151,8 @@ export async function deployAppCode(
     }
 
     // Make sure the app database is the same.
+    const dbosConfig = loadConfigFile(dbosConfigFilePath);
+    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
     if (appRegistered.ApplicationDatabaseName && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
       logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
       return 1;
