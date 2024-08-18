@@ -1,6 +1,5 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getLogger } from "../cloudutils.js";
-import { getCloudCredentials } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils.js";
 
 export async function orgInvite(host: string, json: boolean) {
   const logger = getLogger();

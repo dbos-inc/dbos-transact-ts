@@ -1,7 +1,6 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse, retrieveApplicationLanguage, DBOSCloudCredentials } from "../cloudutils.js";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse, retrieveApplicationLanguage, DBOSCloudCredentials } from "../cloudutils.js";
 import chalk from "chalk";
-import { getCloudCredentials } from "../cloudutils.js";
 
 export async function registerApp(dbname: string, host: string, enableTimetravel: boolean = false, appName?: string, userCredentials?: DBOSCloudCredentials): Promise<number> {
   const logger = getLogger();

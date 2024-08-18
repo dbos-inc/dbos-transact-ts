@@ -3,6 +3,7 @@ import { statSync, existsSync, readFileSync } from "fs";
 import {
   handleAPIErrors,
   dbosConfigFilePath,
+  getCloudCredentials,
   getLogger,
   checkReadFile,
   sleepms,
@@ -25,7 +26,6 @@ import { registerApp } from "./register-app.js";
 import { input, select } from "@inquirer/prompts";
 import { Logger } from "winston";
 import { loadConfigFile } from "../configutils.js";
-import { getCloudCredentials } from "../cloudutils.js";
 
 type DeployOutput = {
   ApplicationName: string;

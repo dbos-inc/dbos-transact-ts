@@ -1,9 +1,8 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
-import { getCloudCredentials } from "../cloudutils.js";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
