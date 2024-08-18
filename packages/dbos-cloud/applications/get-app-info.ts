@@ -1,11 +1,11 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
 import { Application, prettyPrintApplication } from "./types.js";
-import { loginGetCloudCredentials } from "../users/login.js";
+import { getCloudCredentials } from "../cloudutils.js";
 
 export async function getAppInfo(host: string, json: boolean, appName?: string): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await loginGetCloudCredentials(host, logger);
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger, json);

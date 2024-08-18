@@ -1,10 +1,10 @@
 import axios, { AxiosError } from "axios";
 import { handleAPIErrors, getLogger, isCloudAPIErrorResponse, UserProfile } from "../cloudutils.js";
-import { loginGetCloudCredentials } from "./login.js";
+import { getCloudCredentials } from "../cloudutils.js";
 
 export async function profile(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await loginGetCloudCredentials(host, logger);
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
