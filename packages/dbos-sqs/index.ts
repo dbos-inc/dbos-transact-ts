@@ -195,7 +195,7 @@ class SQSReceiver implements DBOSEventReceiver
                                 wfid = cro.config?.getWFKey ? cro.config.getWFKey(message) : undefined;
                             }
                             if (!wfid) wfid = message.MessageId;
-                            await executor.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, {workflowUUID: wfid}, [message]);
+                            await executor.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, {workflowUUID: wfid}, message);
             
                             // Delete the message from the queue after starting workflow (which will take over retries)
                             await client.send(new DeleteMessageCommand({
