@@ -203,7 +203,7 @@ export async function deployAppCode(
       count += 1;
       if (count % 50 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
-        if (count > 20) {
+        if (count > 200) {
           logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
         }
       }
@@ -226,12 +226,11 @@ export async function deployAppCode(
       }
       await sleepms(100);
     }
-    await sleepms(1000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`);
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
     const endTime = Date.now(); // Record the end time
     const executionTime = endTime - startTime; // Calculate execution time
-    logger.debug(`Execution time: ${executionTime} ms`); // Pri
+    logger.debug(`Total deployment time: ${executionTime} ms`); // Pri
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
