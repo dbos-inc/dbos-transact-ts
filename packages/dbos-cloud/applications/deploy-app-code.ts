@@ -87,7 +87,9 @@ export async function deployAppCode(
   userDBName: string | undefined = undefined, // Used for registering the app
   enableTimeTravel: boolean = false
 ): Promise<number> {
+  const startTime = Date.now(); 
   const logger = getLogger(verbose);
+  logger.info("Recording application code deploy time ...update 2");
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
@@ -200,13 +202,13 @@ export async function deployAppCode(
     let applicationAvailable = false;
     while (!applicationAvailable) {
       count += 1;
-      if (count % 5 === 0) {
+      if (count % 50 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
         if (count > 20) {
           logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
         }
       }
-      if (count > 180) {
+      if (count > 1800) {
         logger.error("Application taking too long to become available");
         return 1;
       }
@@ -223,11 +225,14 @@ export async function deployAppCode(
           applicationAvailable = true;
         }
       }
-      await sleepms(1000);
+      await sleepms(100);
     }
-    await sleepms(5000); // Leave time for route cache updates
+    await sleepms(1000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`);
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
+    const endTime = Date.now(); // Record the end time
+    const executionTime = endTime - startTime; // Calculate execution time
+    logger.info(`Execution time: ${executionTime} ms`); // Pri
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
