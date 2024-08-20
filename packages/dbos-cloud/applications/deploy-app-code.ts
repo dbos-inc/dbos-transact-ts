@@ -89,7 +89,6 @@ export async function deployAppCode(
 ): Promise<number> {
   const startTime = Date.now(); 
   const logger = getLogger(verbose);
-  logger.info("Recording application code deploy time ...update 2");
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
@@ -232,7 +231,7 @@ export async function deployAppCode(
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
     const endTime = Date.now(); // Record the end time
     const executionTime = endTime - startTime; // Calculate execution time
-    logger.info(`Execution time: ${executionTime} ms`); // Pri
+    logger.debug(`Execution time: ${executionTime} ms`); // Pri
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
