@@ -146,7 +146,10 @@ export async function deployAppCode(
     } else {
       logger.info("Time travel is disabled for this application");
     }
-    await registerApp(userDBName, host, enableTimeTravel, appName);
+    const ret = await registerApp(userDBName, host, enableTimeTravel, appName);
+    if (ret !== 0) {
+      return 1;
+    }
   } else {
     logger.info(`Application ${appName} exists, updating...`);
     if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
