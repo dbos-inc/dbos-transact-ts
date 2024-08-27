@@ -148,7 +148,6 @@ export async function deployAppCode(
     }
     const ret = await registerApp(userDBName, host, enableTimeTravel, appName);
     if (ret !== 0) {
-      logger.error(`Failed to deploy application ${appName}. Registration failed.`);
       return 1;
     }
   } else {
