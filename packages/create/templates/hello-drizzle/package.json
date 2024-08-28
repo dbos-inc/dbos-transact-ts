@@ -10,7 +10,7 @@
     "start": "npx dbos start"
   },
   "devDependencies": {
-    "@dbos-inc/eslint-plugin": "^3.3.3",
+    "@dbos-inc/eslint-plugin": "^3.3.4",
     "@types/jest": "^29.5.12",
     "@types/supertest": "^2.0.16",
     "drizzle-kit": "^0.23.2",
