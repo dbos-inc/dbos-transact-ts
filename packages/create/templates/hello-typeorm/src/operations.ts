@@ -2,6 +2,12 @@ import { HandlerContext, TransactionContext, Transaction, GetApi, OrmEntities } 
 import { EntityManager } from "typeorm";
 import { DBOSHello } from '../entities/DBOSHello';
 
+const app_notes = `
+To learn how to run this app on your computer, visit the
+<a href="https://docs.dbos.dev/getting-started/quickstart" >DBOS Quickstart</a>.<br>
+After that, to learn how to build apps, visit the
+<a href="https://docs.dbos.dev/getting-started/quickstart-programming" >DBOS Programming Guide</a>.`;
+
 @OrmEntities([DBOSHello])
 export class Hello {
 
@@ -11,7 +17,8 @@ export class Hello {
           Welcome to the DBOS Hello App!<br><br>
           Visit the route /greeting/:name to be greeted!<br>
           For example, visit <a href="/greeting/dbos">/greeting/dbos</a>.<br>
-          The counter increments with each page visit.<br>
+          The counter increments with each page visit.<br><br>
+          ${app_notes}
           </p></body></html>`;
     return Promise.resolve(readme);
   }
@@ -23,6 +30,8 @@ export class Hello {
     let entity = new DBOSHello();
     entity.greeting = greeting;
     entity = await txnCtxt.client.save(entity);
-    return `Greeting ${entity.greeting_id}: ${greeting}`;
+    const greeting_note =  `Greeting ${entity.greeting_id}: ${greeting}`;
+    const page = `<html><body><p>${greeting_note}<br><br>${app_notes}</p></body></html>`;
+    return page;
   }
 }
