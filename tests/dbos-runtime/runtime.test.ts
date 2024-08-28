@@ -132,6 +132,7 @@ describe("runtime-tests", () => {
 
   test("runtime-hello-jest", () => {
     execSync("npm run test", { env: process.env }); // Make sure the hello example passes its own tests.
+    execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
@@ -203,6 +204,7 @@ describe("runtime-tests-typeorm", () => {
 
   test("test hello-typeorm tests", () => {
     execSync("npm run test", { env: process.env }); // Make sure hello-typeorm passes its own tests.
+    execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
@@ -227,6 +229,7 @@ describe("runtime-tests-prisma", () => {
 
   test("test hello-prisma tests", () => {
     execSync("npm run test", { env: process.env }); // Make sure hello-prisma passes its own tests.
+    execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
@@ -251,6 +254,8 @@ describe("runtime-tests-drizzle", () => {
 
   test("test hello-drizzle tests", () => {
     execSync("npm run test", { env: process.env }); // Make sure hello-typeorm passes its own tests.
+    console.log("linting hello-drizzle");
+    execSync("npm run lint", { env: process.env, stdio: 'inherit'}); // Pass linter rules.
   });
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
