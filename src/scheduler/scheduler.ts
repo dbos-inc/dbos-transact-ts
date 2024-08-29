@@ -102,6 +102,7 @@ class DetachableLoop {
     private interruptResolve?: () => void;
     private lastExec: Date;
     private timeMatcher: TimeMatcher;
+    private scheduledMethodName: string;
 
     constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly schedMode:SchedulerMode,
                 readonly scheduledMethod: SchedulerRegistrationBase)
@@ -109,13 +110,14 @@ class DetachableLoop {
         this.lastExec = new Date();
         this.lastExec.setMilliseconds(0);
         this.timeMatcher = new TimeMatcher(crontab);
+        this.scheduledMethodName = `${scheduledMethod.className}.${scheduledMethod.name}`;
     }
 
     async startLoop(): Promise<void> {
         // See if the exec time is available in durable storage...
         if (this.schedMode === SchedulerMode.ExactlyOncePerInterval)
         {
-            const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethod.name);
+            const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethodName);
             if (lasttm) {
                 this.lastExec = new Date(lasttm);
             }
@@ -158,7 +160,7 @@ class DetachableLoop {
             }
 
             // Init workflow
-            const workflowUUID = `sched-${this.scheduledMethod.name}-${nextExecTime.toISOString()}`;
+            const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
             this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
             const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
             // All operations annotated with Scheduled decorators must take in these four
@@ -170,11 +172,11 @@ class DetachableLoop {
                 await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>, wfParams, ...args);
             }
             else {
-                this.dbosExec.logger.error(`Function ${this.scheduledMethod.name} is @scheduled but not a workflow`);
+                this.dbosExec.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
             }
 
             // Record the time of the wf kicked off
-            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.scheduledMethod.name, nextExecTime.getTime());
+            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.scheduledMethodName, nextExecTime.getTime());
             if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
             this.lastExec = nextExecTime;
         }
