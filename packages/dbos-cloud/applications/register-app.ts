@@ -43,7 +43,7 @@ export async function registerApp(dbname: string, host: string, enableTimetravel
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`database ${dbname} not found`)) {
-        console.log(chalk.red(`Did you provision this database? Hint: run \`npx dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`));
+        console.log(chalk.red(`Did you provision this database? Hint: run \`dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`));
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);

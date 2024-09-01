@@ -136,7 +136,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
-    console.warn(`npx dbos-cloud app rollback is deprecated. Please use 'npx dbos-cloud db connect' instead and run rollback commands locally`);
+    console.warn(`dbos-cloud app rollback is deprecated. Please use 'dbos-cloud db connect' instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
