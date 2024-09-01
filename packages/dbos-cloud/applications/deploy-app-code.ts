@@ -87,7 +87,7 @@ export async function deployAppCode(
   userDBName: string | undefined = undefined, // Used for registering the app
   enableTimeTravel: boolean = false
 ): Promise<number> {
-  const startTime = Date.now(); 
+  const startTime = Date.now();
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
   const userCredentials = await getCloudCredentials(host, logger);
@@ -207,7 +207,7 @@ export async function deployAppCode(
       if (count % 50 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
         if (count > 200) {
-          logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
+          logger.info(`If ${appName} takes too long to become available, check its logs with 'dbos-cloud applications logs'`);
         }
       }
       if (count > 1800) {
@@ -242,7 +242,7 @@ export async function deployAppCode(
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`application ${appName} not found`)) {
-        console.log(chalk.red("Did you register this application? Hint: run `npx dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
+        console.log(chalk.red("Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);

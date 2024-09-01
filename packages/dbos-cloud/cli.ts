@@ -37,7 +37,7 @@ try {
   DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
 
   To upgrade the DBOS Cloud CLI to the latest version, run the following command:
-  ${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
+  ${chalk.cyan("`npm i -g @dbos-inc/dbos-cloud@latest`")}
 
   ${chalk.yellow("-----------------------------------------------------------------------------------------")}`);
   }
@@ -136,7 +136,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
-    console.warn(`npx dbos-cloud app rollback is deprecated. Please use 'npx dbos-cloud db connect' instead and run rollback commands locally`);
+    console.warn(`dbos-cloud app rollback is deprecated. Please use 'dbos-cloud db connect' instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
