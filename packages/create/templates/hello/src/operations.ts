@@ -1,11 +1,10 @@
+// Welcome to DBOS!
+
+// This is a sample "Hello" app that greets visitors, counting the greetings for each unique name.
+// To run this app, visit our Quickstart: https://docs.dbos.dev/getting-started/quickstart
+
 import { HandlerContext, TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from '@dbos-inc/dbos-sdk';
 import { Knex } from 'knex';
-
-const app_notes = `
-To learn how to run this app on your computer, visit the
-<a href="https://docs.dbos.dev/getting-started/quickstart" >DBOS Quickstart</a>.<br>
-After that, to learn how to build apps, visit the
-<a href="https://docs.dbos.dev/getting-started/quickstart-programming" >DBOS Programming Guide</a>.`;
 
 // The schema of the database table used in this example.
 export interface dbos_hello {
@@ -15,20 +14,8 @@ export interface dbos_hello {
 
 export class Hello {
 
-  @GetApi('/') // Serve a quick readme for the app
-  static async readme(_ctxt: HandlerContext) {
-    const readme = `<html><body><p>
-           Welcome to the DBOS Hello App!<br><br>
-           Visit the route /greeting/:name to be greeted!<br>
-           For example, visit <a href="/greeting/dbos">/greeting/dbos</a>.<br>
-           The counter increments with each page visit.<br>
-           If you visit a new name like <a href="/greeting/alice">/greeting/alice</a>, the counter starts at 1.<br><br>
-           ${app_notes}
-           </p></body></html>`;
-    return Promise.resolve(readme);
-  }
-
-  @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
+  // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
+  @GetApi('/greeting/:user')
   @Transaction()  // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, @ArgSource(ArgSources.URL) user: string) {
     // Retrieve and increment the number of times this user has been greeted.
@@ -36,7 +23,41 @@ export class Hello {
     const { rows } = await ctxt.client.raw(query, [user]) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
-    const page = `<html><body><p>${greeting}<br><br>${app_notes}</p></body></html>`;
+    return Hello.makeHTML(greeting);
+  }
+
+  // Serve a quick readme for the app at the / endpoint
+  @GetApi('/')
+  static async readme(_ctxt: HandlerContext) {
+    const message = Hello.makeHTML(
+      `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
+      For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>
+      The counter increments with each page visit.`
+    );
+    return Promise.resolve(message);
+  }
+
+  // A helper function to create HTML pages with some styling
+  static makeHTML(message: string) {
+    const page = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <title>DBOS Template App</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+      </head>
+      <body class="font-sans text-gray-800 p-6 max-w-2xl mx-auto">
+          <h1 class="text-3xl font-semibold mb-4">Welcome to DBOS!</h1>
+          <p class="mt-8 mb-8">` + message + `</p>
+          <p class="mb-2">
+              To learn how to run this app on your computer, visit our
+              <a href="https://docs.dbos.dev/getting-started/quickstart" class="text-blue-600 hover:underline">Quickstart</a>.
+          </p><p class="mb-2">
+              Then, to learn how to build crashproof apps, continue to our
+              <a href="https://docs.dbos.dev/getting-started/quickstart-programming" class="text-blue-600 hover:underline">Programming Guide</a>.<br>
+          </p>
+      </body>
+      </html>`;
     return page;
   }
 }
