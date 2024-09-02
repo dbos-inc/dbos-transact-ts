@@ -50,7 +50,7 @@ export class Hello {
           <h1 class="text-3xl font-semibold mb-4">Welcome to DBOS!</h1>
           <p class="mt-8 mb-8">` + message + `</p>
           <p class="mb-2">
-              To learn how to run this app on your computer, visit our
+              To learn how to run this app yourself, visit our
               <a href="https://docs.dbos.dev/getting-started/quickstart" class="text-blue-600 hover:underline">Quickstart</a>.
           </p><p class="mb-2">
               Then, to learn how to build crashproof apps, continue to our
