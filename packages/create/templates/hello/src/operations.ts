@@ -1,6 +1,7 @@
 // Welcome to DBOS!
 
-// This is a sample "Hello" app that greets visitors, counting the greetings for each unique name.
+// This is a sample "Hello" app built with DBOS.
+// It greets visitors and keeps track of how many times each visitor has been greeted.
 // To run this app, visit our Quickstart: https://docs.dbos.dev/getting-started/quickstart
 
 import { HandlerContext, TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from '@dbos-inc/dbos-sdk';
