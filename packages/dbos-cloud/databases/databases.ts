@@ -85,6 +85,8 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
     return 1;
   }
 
+  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Supabase Reference: ${supabaseReference}`);
+
   logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
   try {
     await axios.post(

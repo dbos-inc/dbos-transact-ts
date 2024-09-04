@@ -284,12 +284,13 @@ databaseCommands
   .option("-p, --port <number>", "Specify your database port", "5432")
   .option("-W, --password <string>", "Specify password for the dbosadmin user")
   .option("--enable-timetravel", "Enable time travel on the linked database", false)
-  .option("--supabase_ref", "Link a Supabase database")
-  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseReference: string }) => {
+  .option("--supabaseref <string>", "Link a Supabase database")
+  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseref: string }) => {
     if (!options.password) {
       options.password = prompt("Password for the dbosadmin user: ", { echo: "*" });
     }
-    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel, options.supabaseReference);
+    console.log("Did we get supabaseref", options.supabaseref);
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel, options.supabaseref);
     process.exit(exitCode);
   });
 
