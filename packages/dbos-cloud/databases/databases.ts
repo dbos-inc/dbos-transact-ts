@@ -76,7 +76,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
-export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean) {
+export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean, supabaseReference: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
@@ -89,7 +89,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`,
-      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel },
+      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel, supabaseReference: supabaseReference },
       {
         headers: {
           "Content-Type": "application/json",
