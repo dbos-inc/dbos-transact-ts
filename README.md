@@ -23,7 +23,7 @@ Here are some of the core features of DBOS Transact:
 
 | Feature                                                                       | Description
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [Transactions](https://docs.dbos.dev/typescript/tutorials/transaction-tutorial)                              | Easily and safely query your application database using [Drizzle](https://docs.dbos.dev/tutorials/using-drizzle), [Knex](https://docs.dbos.dev/tutorials/using-knex), [TypeORM](https://docs.dbos.dev/tutorials/using-typeorm), [Prisma](https://docs.dbos.dev/tutorials/using-prisma), or raw SQL.
+| [Transactions](https://docs.dbos.dev/typescript/tutorials/transaction-tutorial)                              | Easily and safely query your application database using [Drizzle](https://docs.dbos.dev/typescript/tutorials/using-drizzle), [Knex](https://docs.dbos.dev/typescript/tutorials/using-knex), [TypeORM](https://docs.dbos.dev/typescript/tutorials/using-typeorm), [Prisma](https://docs.dbos.dev/typescript/tutorials/using-prisma), or raw SQL.
 | [Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial)                                    | Reliable workflow orchestration&#8212;resume your program after any failure.
 | [HTTP Serving](https://docs.dbos.dev/typescript/tutorials/http-serving-tutorial)                             | Set up endpoints to serve requests from your application.
 | [Idempotency](https://docs.dbos.dev/typescript/tutorials/idempotency-tutorial)                               | Automatically make any request idempotent, so your requests happen exactly once.
