@@ -285,7 +285,7 @@ databaseCommands
   .option("-W, --password <string>", "Specify password for the dbosadmin user")
   .option("--enable-timetravel", "Enable time travel on the linked database", false)
   .option("--supabase-ref <string>", "Link a Supabase database")
-  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseRef: string }) => {
+  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseRef: string | undefined}) => {
     if (!options.password) {
       options.password = prompt("Password for the dbosadmin user: ", { echo: "*" });
     }
