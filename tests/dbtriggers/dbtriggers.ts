@@ -1,6 +1,9 @@
 import { DBOSConfig, TestingRuntime, Workflow, WorkflowContext } from "../../src";
 import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
+import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
+
+const testTableName = "dbos_test_orders";
 
 class DBOSTriggerTestClass {
     static nCalls = 0;
@@ -15,14 +18,14 @@ class DBOSTriggerTestClass {
         DBOSTriggerTestClass.nUpdates = 0;
     }
 
-    @DBTrigger({tableName: 'test_kv'})
+    @DBTrigger({tableName: testTableName})
     static async triggerNonWF(op: TriggerOperation, _key: string[], _rec: unknown) {
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
     }
 
-    @DBTriggerWorkflow({tableName: 'test_kv'})
+    @DBTriggerWorkflow({tableName: testTableName})
     @Workflow()
     static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, _key: string[], _rec: unknown) {
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
@@ -39,12 +42,24 @@ describe("test-db-triggers", () => {
         config = generateDBOSTestConfig();
         await setUpDBOSTestDb(config);  
     });
-  
+
     beforeEach(async () => {
+        testRuntime = await createInternalTestRuntime(undefined, config);
+        await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+        await testRuntime.queryUserDB(`
+            CREATE TABLE IF NOT EXISTS ${testTableName}(
+              order_id SERIAL PRIMARY KEY,
+              order_date TIMESTAMP,
+              price: DECIMAL(10,2),
+              item TEXT,
+              status: VARCHAR(10)
+            );`
+        );
     });
-  
+    
     afterEach(async () => {
-    }, 10000);
+        await testRuntime.destroy();
+    });
   
     test("trigger-nonwf", async () => {
     }, 15000);
