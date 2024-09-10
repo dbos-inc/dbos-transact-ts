@@ -21,7 +21,7 @@ export class DBTriggerConfig {
     recordIDColumns?: string[] = undefined;
 }
 
-export class DBWorkflowTriggerConfig extends DBTriggerConfig {
+export class DBTriggerWorkflowConfig extends DBTriggerConfig {
     // This identify the record sequence number, for checkpointing the sys db
     sequenceNumColumn?: string = undefined;
     // In case sequence numbers aren't perfectly in order, how far off could they be?
@@ -39,7 +39,7 @@ export interface DBTriggerRegistration extends MethodRegistrationBase
 }
 
 export function DBTrigger(triggerConfig: DBTriggerConfig) {
-    function scheddec<This, Return>(
+    function trigdec<This, Return>(
         target: object,
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, operation: TriggerOperation, key: unknown[], record: unknown) => Promise<Return>>
@@ -50,11 +50,11 @@ export function DBTrigger(triggerConfig: DBTriggerConfig) {
 
         return descriptor;
     }
-    return scheddec;
+    return trigdec;
 }
 
-export function DBWorkflowTrigger(wfTriggerConfig: DBWorkflowTriggerConfig) {
-    function scheddec<This, Ctx extends WorkflowContext, Return>(
+export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerWorkflowConfig) {
+    function trigdec<This, Ctx extends WorkflowContext, Return>(
         target: object,
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, operation: TriggerOperation, key: unknown[], record: unknown) => Promise<Return>>
@@ -65,5 +65,5 @@ export function DBWorkflowTrigger(wfTriggerConfig: DBWorkflowTriggerConfig) {
 
         return descriptor;
     }
-    return scheddec;
+    return trigdec;
 }
