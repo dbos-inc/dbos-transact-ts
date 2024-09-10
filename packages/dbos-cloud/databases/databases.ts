@@ -85,7 +85,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
     return 1;
   }
 
-  var data: any
+  let data = {}
   if (supabaseReference === undefined) {
     data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel}
   } else {
