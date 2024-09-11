@@ -140,7 +140,6 @@ class SQSReceiver implements DBOSEventReceiver
                 ?? cro.config?.queueURL
                 ?? mro.config?.queueUrl
                 ?? mro.config?.queueURL;
-            console.log(`${process.env['SQS_QUEUE_URL']} / ${url}`);
 
             if (url) {
                 const method = registeredOperation.methodReg;
