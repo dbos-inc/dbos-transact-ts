@@ -26,7 +26,8 @@ type MessageWithOptionalQueueUrl = MessageWithoutQueueUrl & { QueueUrl?: string 
 interface SQSConfig {
     awscfgname?: string;
     awscfg?: AWSServiceConfig;
-    queueURL?: string;
+    queueUrl?: string;
+    queueURL?: string; // disfavored vs. queueUrl
     getWFKey?: (m: Message) => string;
 }
 
@@ -74,7 +75,7 @@ class SQSCommunicator extends ConfiguredInstance
     )
     {
         try {
-            const smsg = {...msg, QueueUrl: msg.QueueUrl || this.config.queueURL};
+            const smsg = {...msg, QueueUrl: msg.QueueUrl || this.config.queueUrl || this.config.queueURL};
             return await this.client!.send(new SendMessageCommand(smsg));
         }
         catch (e) {
@@ -88,6 +89,7 @@ class SQSCommunicator extends ConfiguredInstance
             region: cfg.region,
             credentials: cfg.credentials,
             maxAttempts: cfg.maxRetries,
+            endpoint: cfg.endpoint,
             //logger: console,
         });
     }
@@ -133,7 +135,13 @@ class SQSReceiver implements DBOSEventReceiver
         for (const registeredOperation of regops) {
             const cro = registeredOperation.classConfig as SQSReceiverClassDefaults;
             const mro = registeredOperation.methodConfig as SQSReceiverMethodSpecifics;
-            const url = cro.config?.queueURL ?? mro.config?.queueURL;
+            const url =
+                cro.config?.queueUrl
+                ?? cro.config?.queueURL
+                ?? mro.config?.queueUrl
+                ?? mro.config?.queueURL;
+            console.log(`${process.env['SQS_QUEUE_URL']} / ${url}`);
+
             if (url) {
                 const method = registeredOperation.methodReg;
                 const cname = method.className;
@@ -166,7 +174,7 @@ class SQSReceiver implements DBOSEventReceiver
                 catch (e) { 
                     const err = e as Error;
                     executor.logger.error(err);
-                    throw new DBOSError.DBOSError(`SQS Receiver for ${cname}.${mname} was unable to connect: ${err.message}`);
+                    throw new DBOSError.DBOSError(`SQS Receiver for ${cname}.${mname} was unable to connect to ${url}: ${err.message}`);
                 }
                 this.listeners.push((async (client: SQSClient, url: string) =>
                 {
@@ -220,7 +228,11 @@ class SQSReceiver implements DBOSEventReceiver
         regops.forEach((registeredOperation) => {
             const co = registeredOperation.classConfig as SQSReceiverClassDefaults;
             const mo = registeredOperation.methodConfig as SQSReceiverMethodSpecifics;
-            const url = co.config?.queueURL ?? mo.config?.queueURL;
+            const url =
+                co.config?.queueUrl
+                ?? co.config?.queueURL
+                ?? mo.config?.queueUrl
+                ?? mo.config?.queueURL;
             if (url) {
                 const cname = registeredOperation.methodReg.className;
                 const mname = registeredOperation.methodReg.name;

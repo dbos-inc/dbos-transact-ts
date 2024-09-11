@@ -81,6 +81,7 @@ export class S3Ops extends ConfiguredInstance {
 
     static createS3Client(cfg: AWSServiceConfig) {
         return new S3Client({
+            endpoint: cfg.endpoint,
             region: cfg.region,
             credentials: cfg.credentials,
             maxAttempts: cfg.maxRetries,

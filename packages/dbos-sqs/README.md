@@ -80,7 +80,7 @@ The `@SQSConfigure` decorator should be applied at the class level to identify t
 interface SQSConfig {
     awscfgname?: string;
     awscfg?: AWSServiceConfig;
-    queueURL?: string;
+    queueUrl?: string;
     getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
 }
 
@@ -94,7 +94,7 @@ Then, within the class, one or more methods should be decorated to handle SQS me
 ```typescript
 @SQSConfigure({awscfgname: 'sqs_receiver'})
 class SQSEventProcessor {
-  @SQSMessageConsumer({queueURL: process.env['SQS_QUEUE_URL']})
+  @SQSMessageConsumer({queueUrl: process.env['SQS_QUEUE_URL']})
   @Workflow()
   static async recvMessage(ctx: WorkflowContext, msg: Message) {
     // Workflow code goes here...

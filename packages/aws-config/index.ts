@@ -91,7 +91,7 @@ export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSSe
     return {
         name: cfgname,
         region: cfgstrs.aws_region.toString(),
-        endpoint: cfgstrs.aws_endpoint,
+        endpoint: cfgstrs.aws_endpoint ? cfgstrs.aws_endpoint : undefined,
         credentials: {
             accessKeyId: cfgstrs.aws_access_key_id.toString(),
             secretAccessKey: cfgstrs.aws_secret_access_key.toString()

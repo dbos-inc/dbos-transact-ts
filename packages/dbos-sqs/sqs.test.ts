@@ -13,7 +13,7 @@ class SQSReceiver
 {
   static msgRcvCount: number = 0;
   static msgValueSum: number = 0;
-  @SQSMessageConsumer({queueURL: process.env['SQS_QUEUE_URL']})
+  @SQSMessageConsumer({queueUrl: process.env['SQS_QUEUE_URL']})
   @Workflow()
   static async recvMessage(_ctx: WorkflowContext, msg: Message) {
     const ms = msg.Body!;
@@ -36,7 +36,7 @@ describe("sqs-tests", () => {
     }
     else {
       // This would normally be a global or static or something
-      sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config', queueURL: process.env['SQS_QUEUE_URL']});
+      sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config', queueUrl: process.env['SQS_QUEUE_URL']});
     }
   });
 
