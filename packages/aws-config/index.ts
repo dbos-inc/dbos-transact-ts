@@ -36,6 +36,7 @@ export interface AWSServiceConfig
 {
     name: string,
     region: string,
+    endpoint?: string,
     credentials: {
       accessKeyId: string,
       secretAccessKey: string,
@@ -50,6 +51,7 @@ export interface AWSServiceConfig
 export interface AWSCfgFileItem
 {
     aws_region?: string,
+    aws_endpoint?: string,
     aws_access_key_id?: string,
     aws_secret_access_key?: string,
 }
@@ -82,8 +84,14 @@ export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSSe
         throw new DBOSError.DBOSConfigKeyTypeError(`${cfgname}.aws_secret_access_key`, 'string', typeof(cfgstrs.aws_secret_access_key));
     }
 
+    if (cfgstrs.aws_endpoint && typeof(cfgstrs.aws_region) !== 'string') {
+        throw new DBOSError.DBOSConfigKeyTypeError(`${cfgname}.aws_endpoint`, 'string', typeof(cfgstrs.aws_endpoint));
+    }
+
     return {
-        name: cfgname, region: cfgstrs.aws_region.toString(),
+        name: cfgname,
+        region: cfgstrs.aws_region.toString(),
+        endpoint: cfgstrs.aws_endpoint,
         credentials: {
             accessKeyId: cfgstrs.aws_access_key_id.toString(),
             secretAccessKey: cfgstrs.aws_secret_access_key.toString()

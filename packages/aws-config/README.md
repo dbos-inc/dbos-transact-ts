@@ -45,6 +45,15 @@ then separate sections will be specified within the application code.
   aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY_SES1}
 ```
 
+Most AWS services support endpoints.  The endpoint may be included in the configuration as desired:
+```yaml
+ sqs_for_shipping:
+  aws_region: ${AWS_REGION}
+  aws_endpoint: ${AWS_ENDPOINT_URL_SQS}
+  aws_access_key_id: 'notneededintest'
+  aws_secret_access_key: 'notneededintest'
+```
+
 ## Interfaces
 
 The subsection of `application` in the configuration file should provide:
@@ -52,6 +61,7 @@ The subsection of `application` in the configuration file should provide:
 export interface AWSCfgFileItem
 {
     aws_region?: string,
+    aws_endpoint?: string,
     aws_access_key_id?: string,
     aws_secret_access_key?: string,
 }
@@ -63,6 +73,7 @@ export interface AWSServiceConfig
 {
     name: string,
     region: string,
+    endpoint?: string,
     credentials: {
       accessKeyId: string,
       secretAccessKey: string,
