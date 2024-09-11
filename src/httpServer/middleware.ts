@@ -115,7 +115,8 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
 }
 
 /**
- * Define Koa middleware that is applied in order to each endpoint in this class.
+ * Define Koa middleware that is applied to all requests, including this class, other classes,
+ *   or requests that do not end up in DBOS handlers at all.
  */
 export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
