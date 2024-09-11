@@ -1,4 +1,5 @@
-import { Message } from "@aws-sdk/client-sqs";
+import { Message, SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import { Logger } from "@aws-sdk/types";
 import { SQSCommunicator, SQSMessageConsumer } from "./index";
 export { SQSCommunicator };
 import { TestingRuntime, createTestingRuntime, configureInstance, WorkflowContext, Workflow } from "@dbos-inc/dbos-sdk";
@@ -64,12 +65,45 @@ describe("sqs-tests", () => {
     const sv: ValueObj = {
       val: 10,
     }
+
+    /*
     const ser = await testRuntime.invoke(sqsCfg).sendMessage(
         {
             MessageBody: JSON.stringify(sv),
         },
     );
     expect(ser.MessageId).toBeDefined();
+    */
+    const logger: Logger = {
+      // Output log message to the console
+      trace: (message: string) => {
+        console.log(message);
+      },
+      debug: (message: string) => {
+        console.log(message);
+      },
+      info: (message: string) => {
+        console.log(message);
+      },
+      warn: (message: string) => {
+        console.log(message);
+      },
+      error: (message: string) => {
+        console.log(message);
+      },
+    };
+
+    const sqs = new SQSClient({
+      endpoint: 'https://sqs.us-east-2.amazonaws.com/',
+      //: 'https://sqs.us-east-2.amazonaws.com/300133265267/dbos-sqs-test',
+      region: process.env.AWS_REGION!,
+      credentials:{
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
+      logger: logger,
+    });
+    await sqs.send(new SendMessageCommand({MessageBody: JSON.stringify(sv), QueueUrl: '/300133265267/dbos-sqs-test'}));
 
     // Wait for receipt
     for (let i = 0; i < 100; ++i) {
