@@ -43,6 +43,7 @@ export interface MiddlewareDefaults extends RegistrationDefaults {
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
+  koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
 export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements MiddlewareDefaults {
@@ -50,6 +51,7 @@ export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): o
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
+  koaGlobalMiddlewares?: Koa.Middleware[];
 
   constructor(ctor: CT) {
     super(ctor);
@@ -111,6 +113,23 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   }
   return clsdec;
 }
+
+/**
+ * Define Koa middleware that is applied in order to each endpoint in this class.
+ */
+export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
+  koaMiddleware.forEach((i) => {
+    if (i === undefined) {
+      throw new DBOSUndefinedDecoratorInputError("KoaGlobalMiddleware");
+    }
+  });
+  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    clsreg.koaGlobalMiddlewares = koaMiddleware;
+  }
+  return clsdec;
+}
+
 
 /////////////////////////////////
 /* OPEN API DECORATORS */
