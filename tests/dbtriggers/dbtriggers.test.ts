@@ -9,6 +9,9 @@ const testTableName = "dbos_test_orders";
 
 type KnexTransactionContext = TransactionContext<Knex>;
 
+class DBOSTestNoClass {
+
+}
 
 class DBOSTriggerTestClass {
     static nInserts = 0;
@@ -72,7 +75,8 @@ describe("test-db-triggers", () => {
     });
 
     beforeEach(async () => {
-        testRuntime = await createInternalTestRuntime(undefined, config);
+        testRuntime = await createInternalTestRuntime([DBOSTestNoClass], config);
+        console.log("Drop/create");
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.queryUserDB(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
@@ -83,6 +87,10 @@ describe("test-db-triggers", () => {
               status VARCHAR(10)
             );`
         );
+        console.log("Destroy");
+        await testRuntime.destroy();
+        console.log("Create again");
+        testRuntime = await createInternalTestRuntime(undefined, config);
         DBOSTriggerTestClass.reset()
     });
     

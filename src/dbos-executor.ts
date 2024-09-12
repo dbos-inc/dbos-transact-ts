@@ -869,6 +869,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
 
+  async runDDL(sql: string) {
+    return this.userDatabase.query(sql);
+  }
+
   /* INTERNAL HELPERS */
   #generateUUID(): string {
     return uuidv4();

@@ -42,6 +42,11 @@ interface DBTriggerRegistration extends MethodRegistrationBase
 // DB Trigger Management
 ///////////////////////////
 
+function quoteIdentifier(identifier: string): string {
+    // Escape double quotes within the identifier by doubling them
+    return `"${identifier.replace(/"/g, '""')}"`;
+}
+
 export class DBOSDBTrigger implements DBOSEventReceiver {
     executor?: DBOSExecutorContext;
 
@@ -49,6 +54,42 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
     async initialize(executor: DBOSExecutorContext) {
         this.executor = executor;
+
+        const regops = this.executor.getRegistrationsFor(this);
+        for (const registeredOperation of regops) {
+            const mo = registeredOperation.methodConfig as DBTriggerRegistration;
+            if (mo.triggerConfig) {
+                const cname = registeredOperation.methodReg.className;
+                const mname = registeredOperation.methodReg.name;
+                const tname = mo.triggerConfig.schemaName
+                    ? `${quoteIdentifier(mo.triggerConfig.schemaName)}.${quoteIdentifier(mo.triggerConfig.tableName)}`
+                    : quoteIdentifier(mo.triggerConfig.tableName);
+
+                const tfname = `tf_${cname}_${mname}`;
+                const trigname = `dbt_${cname}_${mname}`;
+                const nname = `table_update_${cname}_${mname}`;
+
+                await executor.runDDL(`
+                    CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
+                    BEGIN
+                    IF TG_OP = 'INSERT' THEN
+                        PERFORM pg_notify('${nname}', 'insert');
+                    ELSIF TG_OP = 'UPDATE' THEN
+                        PERFORM pg_notify('${nname}', 'update');
+                    ELSIF TG_OP = 'DELETE' THEN
+                        PERFORM pg_notify('${nname}', 'delete');
+                    END IF;
+                    RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+
+                    CREATE TRIGGER ${trigname}
+                    AFTER INSERT OR UPDATE OR DELETE ON ${tname}
+                    FOR EACH ROW EXECUTE FUNCTION ${tfname}();
+                `);
+            }
+        }
+
         return Promise.resolve();
     }
 
