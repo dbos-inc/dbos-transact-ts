@@ -1,18 +1,21 @@
-import { DBOSConfig, TestingRuntime, Workflow, WorkflowContext } from "../../src";
+import { Knex } from "knex";
+import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
 import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { UserDatabaseName } from "../../src/user_database";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 
 const testTableName = "dbos_test_orders";
 
+type KnexTransactionContext = TransactionContext<Knex>;
+
+
 class DBOSTriggerTestClass {
-    static nCalls = 0;
     static nInserts = 0;
     static nDeletes = 0;
     static nUpdates = 0;
 
     static reset() {
-        DBOSTriggerTestClass.nCalls = 0;
         DBOSTriggerTestClass.nInserts = 0;
         DBOSTriggerTestClass.nDeletes = 0;
         DBOSTriggerTestClass.nUpdates = 0;
@@ -32,6 +35,29 @@ class DBOSTriggerTestClass {
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
     }
+
+    @Transaction()
+    static async insertRecord(ctx: KnexTransactionContext, rec: TestTable) {
+        await ctx.client<TestTable>(testTableName).insert(rec);
+    }
+
+    @Transaction()
+    static async deleteRecord(ctx: KnexTransactionContext, order_id: number) {
+        await ctx.client<TestTable>(testTableName).where({order_id}).delete();
+    }
+
+    @Transaction()
+    static async updateRecordStatus(ctx: KnexTransactionContext, order_id: number, status: string) {
+        await ctx.client<TestTable>(testTableName).where({order_id}).update({status});
+    }
+}
+
+interface TestTable {
+    order_id: number,
+    order_date: Date,
+    price: number,
+    item: string,
+    status: string,
 }
 
 describe("test-db-triggers", () => {
@@ -39,7 +65,7 @@ describe("test-db-triggers", () => {
     let testRuntime: TestingRuntime;
   
     beforeAll(async () => {
-        config = generateDBOSTestConfig();
+        config = generateDBOSTestConfig(UserDatabaseName.KNEX);
         await setUpDBOSTestDb(config);  
     });
 
@@ -55,6 +81,7 @@ describe("test-db-triggers", () => {
               status: VARCHAR(10)
             );`
         );
+        DBOSTriggerTestClass.reset()
     });
     
     afterEach(async () => {
@@ -62,5 +89,12 @@ describe("test-db-triggers", () => {
     });
   
     test("trigger-nonwf", async () => {
+        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
+        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
+        await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
+    }, 15000);
+
+    test("trigger-wf", async () => {
     }, 15000);
 });
