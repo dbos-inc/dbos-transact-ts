@@ -26,6 +26,7 @@ class DBOSTriggerTestClass {
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
+        return Promise.resolve();
     }
 
     @DBTriggerWorkflow({tableName: testTableName})
@@ -34,6 +35,7 @@ class DBOSTriggerTestClass {
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
+        return Promise.resolve();
     }
 
     @Transaction()
@@ -76,15 +78,16 @@ describe("test-db-triggers", () => {
             CREATE TABLE IF NOT EXISTS ${testTableName}(
               order_id SERIAL PRIMARY KEY,
               order_date TIMESTAMP,
-              price: DECIMAL(10,2),
+              price DECIMAL(10,2),
               item TEXT,
-              status: VARCHAR(10)
+              status VARCHAR(10)
             );`
         );
         DBOSTriggerTestClass.reset()
     });
     
     afterEach(async () => {
+        await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.destroy();
     });
   
