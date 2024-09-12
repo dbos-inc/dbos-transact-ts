@@ -76,7 +76,7 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
-export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean) {
+export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean, supabaseReference: string | undefined) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
@@ -85,11 +85,18 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
     return 1;
   }
 
-  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
+  let data = {}
+  if (supabaseReference === undefined) {
+    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel}
+  } else {
+    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel, supabaseReference: supabaseReference }
+  }
+
+  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference}`);
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`,
-      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel },
+      data,
       {
         headers: {
           "Content-Type": "application/json",

@@ -56,7 +56,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
     this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
-    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter);
+    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
   }
 
@@ -173,7 +173,8 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   /**
    * Register decorated functions as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
+  static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router, app: Koa) {
+    const globalMiddlewares: Set<Koa.Middleware> = new Set();
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
@@ -215,6 +216,16 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
           defaults.koaMiddlewares.forEach((koaMiddleware) => {
             dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
             router.use(ro.apiURL, koaMiddleware);
+          });
+        }
+        if (defaults?.koaGlobalMiddlewares) {
+          defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
+            if (globalMiddlewares.has(koaMiddleware)) {
+              return;
+            }
+            dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} globally`);
+            globalMiddlewares.add(koaMiddleware)
+            app.use(koaMiddleware);
           });
         }
 
