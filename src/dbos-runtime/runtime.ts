@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
+import { DBOSDBTrigger } from '../dbtrigger/dbtrigger';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +25,7 @@ export class DBOSRuntime {
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private scheduler: DBOSScheduler | null = null;
+  private dbTriggers: DBOSDBTrigger | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -46,6 +48,11 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
+
+      this.dbTriggers = new DBOSDBTrigger(this.dbosExec);
+      await this.dbTriggers.initialize();
+      this.dbTriggers.logRegisteredEndpoints();
+
       for (const evtRcvr of this.dbosExec.eventReceivers) {
         await evtRcvr.initialize(this.dbosExec);
       }
@@ -105,6 +112,7 @@ export class DBOSRuntime {
    * Shut down the HTTP and other services and destroy workflow executor.
    */
   async destroy() {
+    await this.dbTriggers?.destroy();
     await this.scheduler?.destroyScheduler();
     for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();

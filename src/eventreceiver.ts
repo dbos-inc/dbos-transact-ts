@@ -35,8 +35,6 @@ export interface DBOSExecutorContext
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-
-  runDDL(sql: string): Promise<unknown[]>;
 }
 
 /*

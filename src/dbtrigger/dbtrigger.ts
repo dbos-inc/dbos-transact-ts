@@ -2,8 +2,9 @@
 // Configuration
 ////
 
-import { DBOSEventReceiver, DBOSExecutorContext, WorkflowContext } from "..";
-import { associateMethodWithEventReceiver, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
+import { WorkflowContext } from "..";
+import { DBOSExecutor } from "../dbos-executor";
+import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 
 export enum TriggerOperation {
     RecordInserted = 'RecordInserted',
@@ -47,14 +48,16 @@ function quoteIdentifier(identifier: string): string {
     return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-export class DBOSDBTrigger implements DBOSEventReceiver {
-    executor?: DBOSExecutorContext;
+export class DBOSDBTrigger {
+    executor: DBOSExecutor;
+
+    constructor(executor: DBOSExecutor) {
+        this.executor = executor;
+    }
 
     async destroy() {}
 
-    async initialize(executor: DBOSExecutorContext) {
-        this.executor = executor;
-
+    async initialize() {
         const regops = this.executor.getRegistrationsFor(this);
         for (const registeredOperation of regops) {
             const mo = registeredOperation.methodConfig as DBTriggerRegistration;
@@ -69,7 +72,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                 const trigname = `dbt_${cname}_${mname}`;
                 const nname = `table_update_${cname}_${mname}`;
 
-                await executor.runDDL(`
+                await this.executor.runDDL(`
                     CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
                     BEGIN
                     IF TG_OP = 'INSERT' THEN
@@ -258,19 +261,14 @@ class DetachableLoop {
 }
 */
 
-let triggerInst: DBOSDBTrigger | undefined = undefined;
-
 export function DBTrigger(triggerConfig: DBTriggerConfig) {
     function trigdec<This, Return, Key extends unknown[] >(
         target: object,
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>>
     ) {
-        if (triggerInst === undefined) {
-            triggerInst = new DBOSDBTrigger();
-        }
-        const { descriptor, receiverInfo } = associateMethodWithEventReceiver(triggerInst, target, propertyKey, inDescriptor);
-        const triggerRegistration = receiverInfo as unknown as DBTriggerRegistration;
+        const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+        const triggerRegistration = registration as unknown as DBTriggerRegistration;
         triggerRegistration.triggerConfig = triggerConfig;
 
         return descriptor;
