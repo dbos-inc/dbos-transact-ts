@@ -38,6 +38,7 @@ export class DBTriggerWorkflowConfig extends DBTriggerConfig {
 interface DBTriggerRegistration extends MethodRegistrationBase
 {
     triggerConfig?: DBTriggerConfig;
+    triggerIsWorkflow?: boolean;
 }
 
 ///////////////////////////
@@ -167,142 +168,7 @@ export class DBOSDBTrigger {
             }
         });
     }
-
-/*
-    schedLoops: DetachableLoop[] = [];
-    schedTasks: Promise<void> [] = [];
-
-    initScheduler() {
-        for (const registeredOperation of this.dbosExec.registeredOperations) {
-            const ro = registeredOperation as SchedulerRegistrationBase;
-            if (ro.schedulerConfig) {
-                const loop = new DetachableLoop(
-                    this.dbosExec,
-                    ro.schedulerConfig.crontab ?? '* * * * *',
-                    ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval,
-                    ro
-                );
-                this.schedLoops.push(loop);
-                this.schedTasks.push(loop.startLoop());
-            }
-        }
-    }
-
-    async destroyScheduler() {
-        for (const l of this.schedLoops) {
-            l.setStopLoopFlag();
-        }
-        this.schedLoops = [];
-        try {
-           await Promise.allSettled(this.schedTasks);
-        }
-        catch (e) {
-           //  What gets caught here is the loop stopping, which is what we wanted.
-        }
-        this.schedTasks = [];
-    }
-*/
 }
-
-/*
-class DetachableLoop {
-    private isRunning: boolean = false;
-    private interruptResolve?: () => void;
-    private lastExec: Date;
-    private timeMatcher: TimeMatcher;
-    private scheduledMethodName: string;
-
-    constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly schedMode:SchedulerMode,
-                readonly scheduledMethod: SchedulerRegistrationBase)
-    {
-        this.lastExec = new Date();
-        this.lastExec.setMilliseconds(0);
-        this.timeMatcher = new TimeMatcher(crontab);
-        this.scheduledMethodName = `${scheduledMethod.className}.${scheduledMethod.name}`;
-    }
-
-    async startLoop(): Promise<void> {
-        // See if the exec time is available in durable storage...
-        if (this.schedMode === SchedulerMode.ExactlyOncePerInterval)
-        {
-            const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethodName);
-            if (lasttm) {
-                this.lastExec = new Date(lasttm);
-            }
-        }
-
-        this.isRunning = true;
-        while (this.isRunning) {
-            const nextExecTime = this.timeMatcher.nextWakeupTime(this.lastExec);
-            const sleepTime = nextExecTime.getTime() - new Date().getTime();
-
-            if (sleepTime > 0) {
-                // Wait for either the timeout or an interruption
-                let timer: NodeJS.Timeout;
-                const timeoutPromise = new Promise<void>((resolve) => {
-                    timer = setTimeout(() => {
-                      resolve();
-                    }, sleepTime);
-                  });
-                await Promise.race([
-                    timeoutPromise,
-                    new Promise<void>((_, reject) => this.interruptResolve = reject)
-                ])
-                .catch(() => {this.dbosExec.logger.debug("Scheduler loop interrupted!")}); // Interrupt sleep throws
-                clearTimeout(timer!);
-            }
-
-            if (!this.isRunning) {
-                break;
-            }
-
-            // Check crontab
-            // If this "wake up" time is not on the schedule, we shouldn't execute.
-            //  (While ATOW this wake-up time is a scheduled run time, it is not
-            //   contractually obligated to be so.  If this is obligated to be a
-            //   scheduled execution time, then we could make this an assertion
-            //   instead of a check.)
-            if (!this.timeMatcher.match(nextExecTime)) {
-                this.lastExec = nextExecTime;
-                continue;
-            }
-
-            // Init workflow
-            const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
-            this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
-            // All operations annotated with Scheduled decorators must take in these four
-            const args: ScheduledArgs = [nextExecTime, new Date()];
-
-            // We currently only support scheduled workflows
-            if (this.scheduledMethod.workflowConfig) {
-                // Execute the workflow
-                await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>, wfParams, ...args);
-            }
-            else {
-                this.dbosExec.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
-            }
-
-            // Record the time of the wf kicked off
-            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.scheduledMethodName, nextExecTime.getTime());
-            if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
-            this.lastExec = nextExecTime;
-        }
-    }
-
-    setStopLoopFlag() {
-        if (!this.isRunning) return;
-        this.isRunning = false;
-        if (this.interruptResolve) {
-            this.interruptResolve(); // Trigger the interruption
-        }
-    }
-
-    private sleepms(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-}
-*/
 
 export function DBTrigger(triggerConfig: DBTriggerConfig) {
     function trigdec<This, Return, Key extends unknown[] >(
@@ -313,6 +179,7 @@ export function DBTrigger(triggerConfig: DBTriggerConfig) {
         const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
         const triggerRegistration = registration as unknown as DBTriggerRegistration;
         triggerRegistration.triggerConfig = triggerConfig;
+        triggerRegistration.triggerIsWorkflow = false;
 
         return descriptor;
     }
@@ -328,6 +195,7 @@ export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerWorkflowConfig) {
         const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
         const triggerRegistration = registration as unknown as DBTriggerRegistration;
         triggerRegistration.triggerConfig = wfTriggerConfig;
+        triggerRegistration.triggerIsWorkflow = true;
 
         return descriptor;
     }

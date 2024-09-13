@@ -18,29 +18,47 @@ class DBOSTriggerTestClass {
     static nInserts = 0;
     static nDeletes = 0;
     static nUpdates = 0;
+    static recordMap: Map<number, TestTable> = new Map();
 
     static reset() {
         DBOSTriggerTestClass.nInserts = 0;
         DBOSTriggerTestClass.nDeletes = 0;
         DBOSTriggerTestClass.nUpdates = 0;
+        DBOSTriggerTestClass.recordMap = new Map();
     }
 
-    @DBTrigger({tableName: testTableName})
-    static async triggerNonWF(op: TriggerOperation, key: string[], rec: unknown) {
-        console.log(`Triggered: ${op} / ${JSON.stringify(key)} / ${JSON.stringify(rec)}`)
-        if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
-        if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
-        if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
+    @DBTrigger({tableName: testTableName, recordIDColumns: ['']})
+    static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
+        if (op === TriggerOperation.RecordDeleted) {
+            ++DBOSTriggerTestClass.nDeletes;
+            DBOSTriggerTestClass.recordMap.delete(key[0]);
+        }
+        if (op === TriggerOperation.RecordInserted) {
+            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClass.nInserts;
+        }
+        if (op === TriggerOperation.RecordUpdated) {
+            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClass.nUpdates;
+        }
         return Promise.resolve();
     }
 
     @DBTriggerWorkflow({tableName: testTableName})
     @Workflow()
-    static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, key: string[], rec: unknown) {
-        console.log(`Triggered: ${op} / ${JSON.stringify(key)} / ${JSON.stringify(rec)}`)
-        if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
-        if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
-        if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
+    static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        if (op === TriggerOperation.RecordDeleted) {
+            DBOSTriggerTestClass.recordMap.delete(key[0]);
+            ++DBOSTriggerTestClass.nDeletes;
+        }
+        if (op === TriggerOperation.RecordInserted) {
+            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClass.nInserts;
+        }
+        if (op === TriggerOperation.RecordUpdated) {
+            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClass.nUpdates;
+        }
         return Promise.resolve();
     }
 
@@ -79,7 +97,6 @@ describe("test-db-triggers", () => {
 
     beforeEach(async () => {
         testRuntime = await createInternalTestRuntime([DBOSTestNoClass], config);
-        console.log("Drop/create");
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.queryUserDB(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
@@ -90,9 +107,7 @@ describe("test-db-triggers", () => {
               status VARCHAR(10)
             );`
         );
-        console.log("Destroy");
         await testRuntime.destroy();
-        console.log("Create again");
         testRuntime = await createInternalTestRuntime(undefined, config);
         DBOSTriggerTestClass.reset()
     });
@@ -100,9 +115,7 @@ describe("test-db-triggers", () => {
     afterEach(async () => {
         // Don't.  Listeners will block this.
         //await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-        console.log("Destroy starts");
         await testRuntime.destroy();
-        console.log("Destroy ends");
     });
   
     test("trigger-nonwf", async () => {
@@ -116,25 +129,30 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nInserts).toBe(1);
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
+        expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Ordered");
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
         while (DBOSTriggerTestClass.nInserts < 2) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
+        expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBe("Ordered");
         await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
         while (DBOSTriggerTestClass.nDeletes < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
+        expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBeUndefined();
         await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
         while (DBOSTriggerTestClass.nUpdates < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(1);
+        expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Shipped");
         console.log("Test done")
     }, 15000);
 
     test("trigger-wf", async () => {
-        console.log("Started WF test")
+        console.log("TODO: WF test")
+        return Promise.resolve();
     }, 15000);
 });
