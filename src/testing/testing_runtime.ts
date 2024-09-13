@@ -120,6 +120,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
+      await this.#dbTriggers?.destroy();
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
         await evtRcvr.destroy();

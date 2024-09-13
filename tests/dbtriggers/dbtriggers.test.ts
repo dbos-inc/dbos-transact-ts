@@ -98,13 +98,19 @@ describe("test-db-triggers", () => {
     });
     
     afterEach(async () => {
-        await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+        // Don't.  Listeners will block this.
+        //await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.destroy();
     });
   
     test("trigger-nonwf", async () => {
+        console.log("Started test")
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
+        console.log("After insert")
+        while (DBOSTriggerTestClass.nInserts < 1) {
+            await sleepms(10);
+        }
+        console.log("After wait")
         expect(DBOSTriggerTestClass.nInserts).toBe(1);
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
@@ -123,8 +129,10 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(1);
+        console.log("Test done")
     }, 15000);
 
     test("trigger-wf", async () => {
+        console.log("Started WF test")
     }, 15000);
 });

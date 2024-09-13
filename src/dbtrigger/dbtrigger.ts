@@ -4,8 +4,8 @@
 
 import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
-import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
-import { Notification } from "pg";
+import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
+import { Notification, PoolClient } from "pg";
 
 export enum TriggerOperation {
     RecordInserted = 'insert',
@@ -59,19 +59,19 @@ export type TriggerFunctionWF<Key extends unknown[]> = (ctx: WorkflowContext, op
 
 export class DBOSDBTrigger {
     executor: DBOSExecutor;
+    listeners: {client: PoolClient, nn: string}[] = [];
 
     constructor(executor: DBOSExecutor) {
         this.executor = executor;
     }
 
-    async destroy() {}
-
     async initialize() {
-        console.log("Initialize DB triggers");
         for (const registeredOperation of this.executor.registeredOperations) {
             const mo = registeredOperation as DBTriggerRegistration;
             if (mo.triggerConfig) {
-                const tfunc = mo.registeredFunction as TriggerFunction<unknown[]>;
+                const mr = registeredOperation as MethodRegistration<unknown, unknown[], unknown>;
+                const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
+                //const tfunc = mo.registeredFunction as TriggerFunction<unknown[]>;
                 const cname = mo.className;
                 const mname = mo.name;
                 const tname = mo.triggerConfig.schemaName
@@ -80,7 +80,7 @@ export class DBOSDBTrigger {
 
                 const tfname = `tf_${cname}_${mname}`;
                 const trigname = `dbt_${cname}_${mname}`;
-                const nname = `table_update_${cname}_${mname}`;
+                const nname = 'tableupdate'; //`table_update_${cname}_${mname}`;
 
                 await this.executor.runDDL(`
                     CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
@@ -114,19 +114,36 @@ export class DBOSDBTrigger {
                     FOR EACH ROW EXECUTE FUNCTION ${tfname}();
                 `);
 
-                console.log(`Executed trigger DDL for ${nname}`);
-
                 const notificationsClient = await this.executor.procedurePool.connect();
-                await notificationsClient.query(`LISTEN ${nname}`);
-                console.log(`Executed LISTEN for ${nname}`);
+                await notificationsClient.query(`LISTEN ${nname};`);
                 const handler = async (msg: Notification) => {
                     console.log("Main notify");
                     if (msg.channel === nname) {
                         const payload = JSON.parse(msg.payload!) as TriggerPayload;
-                        await tfunc(payload.operation, [], payload.record);
+                        console.log(`Execute tfunc ${payload.operation} / ${tfunc.name}`);
+                        try {
+                            await tfunc.call(undefined, payload.operation, [], payload.record);
+                        }
+                        catch(e) {
+                            this.executor.logger.warn(`Caught an exception in trigger handling for ${tfunc.name}`);
+                            this.executor.logger.warn(e);
+                        }
                     }
                 };
                 notificationsClient.on("notification", handler);
+                this.listeners.push({client: notificationsClient, nn: nname});
+                console.log(`Executed LISTEN for ${nname}`);
+            }
+        }
+    }
+
+    async destroy() {
+        for (const l of this.listeners) {
+            try {
+                await l.client.query(`UNLISTEN ${l.nn};`);
+            }
+            catch(e) {
+                this.executor.logger.warn(e);
             }
         }
     }
@@ -181,17 +198,6 @@ export class DBOSDBTrigger {
            //  What gets caught here is the loop stopping, which is what we wanted.
         }
         this.schedTasks = [];
-    }
-
-    logRegisteredSchedulerEndpoints() {
-        const logger = this.dbosExec.logger;
-        logger.info("Scheduled endpoints:");
-        this.dbosExec.registeredOperations.forEach((registeredOperation) => {
-            const ro = registeredOperation as SchedulerRegistrationBase;
-            if (ro.schedulerConfig) {
-                logger.info(`    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval}`);
-            }
-        });
     }
 */
 }
