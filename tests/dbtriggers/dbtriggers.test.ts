@@ -100,7 +100,9 @@ describe("test-db-triggers", () => {
     afterEach(async () => {
         // Don't.  Listeners will block this.
         //await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+        console.log("Destroy starts");
         await testRuntime.destroy();
+        console.log("Destroy ends");
     });
   
     test("trigger-nonwf", async () => {

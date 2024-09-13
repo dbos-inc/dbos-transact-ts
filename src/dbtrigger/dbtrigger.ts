@@ -145,7 +145,9 @@ export class DBOSDBTrigger {
             catch(e) {
                 this.executor.logger.warn(e);
             }
+            l.client.release();
         }
+        this.listeners = [];
     }
 
     logRegisteredEndpoints() {
