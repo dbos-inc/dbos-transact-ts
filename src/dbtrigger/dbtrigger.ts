@@ -118,7 +118,6 @@ export class DBOSDBTrigger {
                 const notificationsClient = await this.executor.procedurePool.connect();
                 await notificationsClient.query(`LISTEN ${nname};`);
                 const handler = async (msg: Notification) => {
-                    console.log("Main notify");
                     if (msg.channel === nname) {
                         const payload = JSON.parse(msg.payload!) as TriggerPayload;
                         const key: unknown[] = [];
@@ -126,7 +125,6 @@ export class DBOSDBTrigger {
                             key.push(Object.hasOwn(payload.record, kn)
                                 ? payload.record[kn] : undefined);
                         }
-                        console.log(`Execute tfunc ${payload.operation} / ${tfunc.name}`);
                         try {
                             await tfunc.call(undefined, payload.operation, key, payload.record);
                         }
@@ -138,7 +136,7 @@ export class DBOSDBTrigger {
                 };
                 notificationsClient.on("notification", handler);
                 this.listeners.push({client: notificationsClient, nn: nname});
-                console.log(`Executed LISTEN for ${nname}`);
+                this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
             }
         }
     }

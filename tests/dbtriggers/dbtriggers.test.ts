@@ -29,7 +29,6 @@ class DBOSTriggerTestClass {
 
     @DBTrigger({tableName: testTableName, recordIDColumns: ['order_id']})
     static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(` Trigger called: ${op}, ${JSON.stringify(key)}, ${JSON.stringify(rec)}`);
         if (op === TriggerOperation.RecordDeleted) {
             ++DBOSTriggerTestClass.nDeletes;
             DBOSTriggerTestClass.recordMap.delete(key[0]);
@@ -120,13 +119,10 @@ describe("test-db-triggers", () => {
     });
   
     test("trigger-nonwf", async () => {
-        console.log("Started test")
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        console.log("After insert")
         while (DBOSTriggerTestClass.nInserts < 1) {
             await sleepms(10);
         }
-        console.log("After wait")
         expect(DBOSTriggerTestClass.nInserts).toBe(1);
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
@@ -149,11 +145,9 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(1);
         expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Shipped");
-        console.log("Test done")
     }, 15000);
 
     test("trigger-wf", async () => {
-        console.log("TODO: WF test")
         return Promise.resolve();
     }, 15000);
 });
