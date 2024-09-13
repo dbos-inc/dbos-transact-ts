@@ -4,6 +4,7 @@ import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrig
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { UserDatabaseName } from "../../src/user_database";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
+import { sleepms } from "../../src/utils";
 
 const testTableName = "dbos_test_orders";
 
@@ -25,7 +26,8 @@ class DBOSTriggerTestClass {
     }
 
     @DBTrigger({tableName: testTableName})
-    static async triggerNonWF(op: TriggerOperation, _key: string[], _rec: unknown) {
+    static async triggerNonWF(op: TriggerOperation, key: string[], rec: unknown) {
+        console.log(`Triggered: ${op} / ${JSON.stringify(key)} / ${JSON.stringify(rec)}`)
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
@@ -34,7 +36,8 @@ class DBOSTriggerTestClass {
 
     @DBTriggerWorkflow({tableName: testTableName})
     @Workflow()
-    static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, _key: string[], _rec: unknown) {
+    static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, key: string[], rec: unknown) {
+        console.log(`Triggered: ${op} / ${JSON.stringify(key)} / ${JSON.stringify(rec)}`)
         if (op === TriggerOperation.RecordDeleted)  ++DBOSTriggerTestClass.nDeletes;
         if (op === TriggerOperation.RecordInserted) ++DBOSTriggerTestClass.nInserts;
         if (op === TriggerOperation.RecordUpdated)  ++DBOSTriggerTestClass.nUpdates;
@@ -101,9 +104,25 @@ describe("test-db-triggers", () => {
   
     test("trigger-nonwf", async () => {
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
+        while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
+        expect(DBOSTriggerTestClass.nInserts).toBe(1);
+        expect(DBOSTriggerTestClass.nDeletes).toBe(0);
+        expect(DBOSTriggerTestClass.nUpdates).toBe(0);
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        while (DBOSTriggerTestClass.nInserts < 2) await sleepms(10);
+        expect(DBOSTriggerTestClass.nInserts).toBe(2);
+        expect(DBOSTriggerTestClass.nDeletes).toBe(0);
+        expect(DBOSTriggerTestClass.nUpdates).toBe(0);
         await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
+        while (DBOSTriggerTestClass.nDeletes < 1) await sleepms(10);
+        expect(DBOSTriggerTestClass.nInserts).toBe(2);
+        expect(DBOSTriggerTestClass.nDeletes).toBe(1);
+        expect(DBOSTriggerTestClass.nUpdates).toBe(0);
         await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
+        while (DBOSTriggerTestClass.nUpdates < 1) await sleepms(10);
+        expect(DBOSTriggerTestClass.nInserts).toBe(2);
+        expect(DBOSTriggerTestClass.nDeletes).toBe(1);
+        expect(DBOSTriggerTestClass.nUpdates).toBe(1);
     }, 15000);
 
     test("trigger-wf", async () => {

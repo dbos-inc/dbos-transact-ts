@@ -17,6 +17,7 @@ import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
+import { DBOSDBTrigger } from "../dbtrigger/dbtrigger";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -89,6 +90,7 @@ export async function createInternalTestRuntime(userClasses: object[] | undefine
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #scheduler: DBOSScheduler | null = null;
+  #dbTriggers: DBOSDBTrigger | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
 
@@ -99,6 +101,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
+    this.#applicationConfig = dbosExec.config.application ?? {};
     await dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
     for (const evtRcvr of dbosExec.eventReceivers) {
@@ -106,7 +109,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
-    this.#applicationConfig = dbosExec.config.application ?? {};
+    this.#dbTriggers = new DBOSDBTrigger(dbosExec);
+    await this.#dbTriggers.initialize();
     this.#isInitialized = true;
   }
 

@@ -5,11 +5,12 @@
 import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
+import { Notification } from "pg";
 
 export enum TriggerOperation {
-    RecordInserted = 'RecordInserted',
-    RecordDeleted = 'RecordDeleted',
-    RecordUpdated = 'RecordUpdated',
+    RecordInserted = 'insert',
+    RecordDeleted = 'delete',
+    RecordUpdated = 'update',
 }
 
 export class DBTriggerConfig {
@@ -48,6 +49,14 @@ function quoteIdentifier(identifier: string): string {
     return `"${identifier.replace(/"/g, '""')}"`;
 }
 
+interface TriggerPayload {
+    operation: TriggerOperation,
+    record: unknown,
+}
+
+export type TriggerFunction<Key extends unknown[]> = (op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
+export type TriggerFunctionWF<Key extends unknown[]> = (ctx: WorkflowContext, op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
+
 export class DBOSDBTrigger {
     executor: DBOSExecutor;
 
@@ -58,12 +67,13 @@ export class DBOSDBTrigger {
     async destroy() {}
 
     async initialize() {
-        const regops = this.executor.getRegistrationsFor(this);
-        for (const registeredOperation of regops) {
-            const mo = registeredOperation.methodConfig as DBTriggerRegistration;
+        console.log("Initialize DB triggers");
+        for (const registeredOperation of this.executor.registeredOperations) {
+            const mo = registeredOperation as DBTriggerRegistration;
             if (mo.triggerConfig) {
-                const cname = registeredOperation.methodReg.className;
-                const mname = registeredOperation.methodReg.name;
+                const tfunc = mo.registeredFunction as TriggerFunction<unknown[]>;
+                const cname = mo.className;
+                const mname = mo.name;
                 const tname = mo.triggerConfig.schemaName
                     ? `${quoteIdentifier(mo.triggerConfig.schemaName)}.${quoteIdentifier(mo.triggerConfig.tableName)}`
                     : quoteIdentifier(mo.triggerConfig.tableName);
@@ -74,14 +84,27 @@ export class DBOSDBTrigger {
 
                 await this.executor.runDDL(`
                     CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
+                    DECLARE
+                        payload json;
                     BEGIN
                     IF TG_OP = 'INSERT' THEN
-                        PERFORM pg_notify('${nname}', 'insert');
+                        payload = json_build_object(
+                            'operation', 'insert',
+                            'record', row_to_json(NEW)
+                        );
                     ELSIF TG_OP = 'UPDATE' THEN
-                        PERFORM pg_notify('${nname}', 'update');
+                        payload = json_build_object(
+                            'operation', 'update',
+                            'record', row_to_json(NEW)
+                        );
                     ELSIF TG_OP = 'DELETE' THEN
-                        PERFORM pg_notify('${nname}', 'delete');
+                        payload = json_build_object(
+                            'operation', 'delete',
+                            'record', row_to_json(OLD)
+                        );
                     END IF;
+
+                    PERFORM pg_notify('${nname}', payload::text);
                     RETURN NEW;
                     END;
                     $$ LANGUAGE plpgsql;
@@ -90,10 +113,22 @@ export class DBOSDBTrigger {
                     AFTER INSERT OR UPDATE OR DELETE ON ${tname}
                     FOR EACH ROW EXECUTE FUNCTION ${tfname}();
                 `);
+
+                console.log(`Executed trigger DDL for ${nname}`);
+
+                const notificationsClient = await this.executor.procedurePool.connect();
+                await notificationsClient.query(`LISTEN ${nname}`);
+                console.log(`Executed LISTEN for ${nname}`);
+                const handler = async (msg: Notification) => {
+                    console.log("Main notify");
+                    if (msg.channel === nname) {
+                        const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                        await tfunc(payload.operation, [], payload.record);
+                    }
+                };
+                notificationsClient.on("notification", handler);
             }
         }
-
-        return Promise.resolve();
     }
 
     logRegisteredEndpoints() {
