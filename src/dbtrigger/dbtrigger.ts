@@ -6,6 +6,7 @@ import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { Notification, PoolClient } from "pg";
+import { Workflow } from "../workflow";
 
 export enum TriggerOperation {
     RecordInserted = 'insert',
@@ -121,12 +122,23 @@ export class DBOSDBTrigger {
                     if (msg.channel === nname) {
                         const payload = JSON.parse(msg.payload!) as TriggerPayload;
                         const key: unknown[] = [];
+                        const keystr: string[] = [];
                         for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
-                            key.push(Object.hasOwn(payload.record, kn)
-                                ? payload.record[kn] : undefined);
+                            const cv = Object.hasOwn(payload.record, kn) ? payload.record[kn] : undefined;
+                            key.push(cv);
+                            keystr.push(`${cv?.toString()}`);
                         }
                         try {
-                            await tfunc.call(undefined, payload.operation, key, payload.record);
+                            if (mo.triggerIsWorkflow) {
+                                const wfParams = {
+                                    workflowUUID: `dbt_${cname}_${mname}_${payload.operation}_${keystr.join('|')}`,
+                                    configuredInstance: null
+                                };
+                                await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
+                            }
+                            else {
+                                await tfunc.call(undefined, payload.operation, key, payload.record);
+                            }
                         }
                         catch(e) {
                             this.executor.logger.warn(`Caught an exception in trigger handling for ${tfunc.name}`);
