@@ -51,8 +51,14 @@ function quoteIdentifier(identifier: string): string {
     return `"${identifier.replace(/"/g, '""')}"`;
 }
 
+function quoteConstant(cval: string): string {
+    // Escape double quotes within the identifier by doubling them
+    return `${cval.replace(/'/g, "''")}`;
+}
+
 interface TriggerPayload {
     operation: TriggerOperation,
+    tname: string,
     record: {[key: string]: unknown},
 }
 
@@ -62,18 +68,20 @@ export type TriggerFunctionWF<Key extends unknown[]> = (ctx: WorkflowContext, op
 export class DBOSDBTrigger {
     executor: DBOSExecutor;
     listeners: {client: PoolClient, nn: string}[] = [];
+    tableToReg: Map<string, DBTriggerRegistration[]> = new Map();
 
     constructor(executor: DBOSExecutor) {
         this.executor = executor;
     }
 
     async initialize() {
+        const hasTrigger: Set<string> = new Set();
+        let hasAnyTrigger: boolean = false;
+        const nname = 'dbos_table_update';
+
         for (const registeredOperation of this.executor.registeredOperations) {
             const mo = registeredOperation as DBTriggerRegistration;
             if (mo.triggerConfig) {
-                const mr = registeredOperation as MethodRegistration<unknown, unknown[], unknown>;
-                const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
-                //const tfunc = mo.registeredFunction as TriggerFunction<unknown[]>;
                 const cname = mo.className;
                 const mname = mo.name;
                 const tname = mo.triggerConfig.schemaName
@@ -81,75 +89,98 @@ export class DBOSDBTrigger {
                     : quoteIdentifier(mo.triggerConfig.tableName);
 
                 const tfname = `tf_${cname}_${mname}`;
+                const tstr = mo.triggerConfig.schemaName
+                    ? `${mo.triggerConfig.schemaName}.${mo.triggerConfig.tableName}`
+                : mo.triggerConfig.tableName;
                 const trigname = `dbt_${cname}_${mname}`;
-                const nname = 'tableupdate'; //`table_update_${cname}_${mname}`;
 
-                await this.executor.runDDL(`
-                    CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
-                    DECLARE
-                        payload json;
-                    BEGIN
-                    IF TG_OP = 'INSERT' THEN
-                        payload = json_build_object(
-                            'operation', 'insert',
-                            'record', row_to_json(NEW)
-                        );
-                    ELSIF TG_OP = 'UPDATE' THEN
-                        payload = json_build_object(
-                            'operation', 'update',
-                            'record', row_to_json(NEW)
-                        );
-                    ELSIF TG_OP = 'DELETE' THEN
-                        payload = json_build_object(
-                            'operation', 'delete',
-                            'record', row_to_json(OLD)
-                        );
-                    END IF;
+                if (!this.tableToReg.has(tstr)) {
+                    this.tableToReg.set(tstr, []);
+                }
+                this.tableToReg.get(tstr)!.push(mo);
 
-                    PERFORM pg_notify('${nname}', payload::text);
-                    RETURN NEW;
-                    END;
-                    $$ LANGUAGE plpgsql;
+                if (!hasTrigger.has(tname)) {
+                    await this.executor.runDDL(`
+                        CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
+                        DECLARE
+                            payload json;
+                        BEGIN
+                        IF TG_OP = 'INSERT' THEN
+                            payload = json_build_object(
+                                'tname', '${quoteConstant(tstr)}',
+                                'operation', 'insert',
+                                'record', row_to_json(NEW)
+                            );
+                        ELSIF TG_OP = 'UPDATE' THEN
+                            payload = json_build_object(
+                                'tname', '${quoteConstant(tstr)}',
+                                'operation', 'update',
+                                'record', row_to_json(NEW)
+                            );
+                        ELSIF TG_OP = 'DELETE' THEN
+                            payload = json_build_object(
+                                'tname', '${quoteConstant(tstr)}',
+                                'operation', 'delete',
+                                'record', row_to_json(OLD)
+                            );
+                        END IF;
+    
+                        PERFORM pg_notify('${nname}', payload::text);
+                        RETURN NEW;
+                        END;
+                        $$ LANGUAGE plpgsql;
+    
+                        CREATE TRIGGER ${trigname}
+                        AFTER INSERT OR UPDATE OR DELETE ON ${tname}
+                        FOR EACH ROW EXECUTE FUNCTION ${tfname}();
+                    `);
+                    hasTrigger.add(tname);
+                }
 
-                    CREATE TRIGGER ${trigname}
-                    AFTER INSERT OR UPDATE OR DELETE ON ${tname}
-                    FOR EACH ROW EXECUTE FUNCTION ${tfname}();
-                `);
+                hasAnyTrigger = true;
+            }
+        }
 
-                const notificationsClient = await this.executor.procedurePool.connect();
-                await notificationsClient.query(`LISTEN ${nname};`);
-                const handler = async (msg: Notification) => {
-                    if (msg.channel === nname) {
-                        const payload = JSON.parse(msg.payload!) as TriggerPayload;
-                        const key: unknown[] = [];
-                        const keystr: string[] = [];
-                        for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
-                            const cv = Object.hasOwn(payload.record, kn) ? payload.record[kn] : undefined;
-                            key.push(cv);
-                            keystr.push(`${cv?.toString()}`);
+        if (hasAnyTrigger) {
+            const notificationsClient = await this.executor.procedurePool.connect();
+            await notificationsClient.query(`LISTEN ${nname};`);
+            const handler = async (msg: Notification) => {
+                if (msg.channel !== nname) return;
+                const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                const key: unknown[] = [];
+                const keystr: string[] = [];
+                for (const mo of this.tableToReg.get(payload.tname) ?? []) {
+                    for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
+                        const cv = Object.hasOwn(payload.record, kn) ? payload.record[kn] : undefined;
+                        key.push(cv);
+                        keystr.push(`${cv?.toString()}`);
+                    }
+                    try {
+                        const cname = mo.className;
+                        const mname = mo.name;
+                        if (mo.triggerIsWorkflow) {
+                            const wfParams = {
+                                workflowUUID: `dbt_${cname}_${mname}_${payload.operation}_${keystr.join('|')}`,
+                                configuredInstance: null
+                            };
+                            await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
                         }
-                        try {
-                            if (mo.triggerIsWorkflow) {
-                                const wfParams = {
-                                    workflowUUID: `dbt_${cname}_${mname}_${payload.operation}_${keystr.join('|')}`,
-                                    configuredInstance: null
-                                };
-                                await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
-                            }
-                            else {
-                                await tfunc.call(undefined, payload.operation, key, payload.record);
-                            }
-                        }
-                        catch(e) {
-                            this.executor.logger.warn(`Caught an exception in trigger handling for ${tfunc.name}`);
-                            this.executor.logger.warn(e);
+                        else {
+                            // Use original func, this may not be wrapped
+                            const mr = mo as MethodRegistration<unknown, unknown[], unknown>;
+                            const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
+                            await tfunc.call(undefined, payload.operation, key, payload.record);
                         }
                     }
-                };
-                notificationsClient.on("notification", handler);
-                this.listeners.push({client: notificationsClient, nn: nname});
-                this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
-            }
+                    catch(e) {
+                        this.executor.logger.warn(`Caught an exception in trigger handling for "${mo.className}.${mo.name}"`);
+                        this.executor.logger.warn(e);
+                    }
+                }
+            };
+            notificationsClient.on("notification", handler);
+            this.listeners.push({client: notificationsClient, nn: nname});
+            this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
         }
     }
 
