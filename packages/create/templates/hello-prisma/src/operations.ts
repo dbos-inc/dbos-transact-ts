@@ -47,7 +47,7 @@ export class Hello {
         <h1 class="text-3xl font-semibold mb-4">Welcome to DBOS!</h1>
         <p class="mt-8 mb-8">` + message + `</p>
         <p class="mb-2">
-            This is the Prisma quickstart template app. Read the documentation for it <a href="https://docs.dbos.dev/tutorials/using-prisma" class="text-blue-600 hover:underline">here</a>.
+            This is the Prisma quickstart template app. Read the documentation for it <a href="https://docs.dbos.dev/typescript/tutorials/using-prisma" class="text-blue-600 hover:underline">here</a>.
         </p>
     </body>
     </html>`;
