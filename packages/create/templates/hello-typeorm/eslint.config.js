@@ -20,7 +20,9 @@ module.exports = typescriptEslint.config({
     globals: { ...globals.node, ...globals.es6 }
   },
 
-  rules: {},
+  rules: {
+    "no-secrets/no-secrets": ["error", { "tolerance": 5 }]
+  },
 
   ignores: ["**/*.test.ts"]
 });
