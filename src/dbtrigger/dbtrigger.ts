@@ -52,7 +52,7 @@ function quoteIdentifier(identifier: string): string {
 
 interface TriggerPayload {
     operation: TriggerOperation,
-    record: unknown,
+    record: {[key: string]: unknown},
 }
 
 export type TriggerFunction<Key extends unknown[]> = (op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
@@ -121,9 +121,14 @@ export class DBOSDBTrigger {
                     console.log("Main notify");
                     if (msg.channel === nname) {
                         const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                        const key: unknown[] = [];
+                        for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
+                            key.push(Object.hasOwn(payload.record, kn)
+                                ? payload.record[kn] : undefined);
+                        }
                         console.log(`Execute tfunc ${payload.operation} / ${tfunc.name}`);
                         try {
-                            await tfunc.call(undefined, payload.operation, [], payload.record);
+                            await tfunc.call(undefined, payload.operation, key, payload.record);
                         }
                         catch(e) {
                             this.executor.logger.warn(`Caught an exception in trigger handling for ${tfunc.name}`);

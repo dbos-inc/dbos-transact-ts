@@ -27,8 +27,9 @@ class DBOSTriggerTestClass {
         DBOSTriggerTestClass.recordMap = new Map();
     }
 
-    @DBTrigger({tableName: testTableName, recordIDColumns: ['']})
+    @DBTrigger({tableName: testTableName, recordIDColumns: ['order_id']})
     static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(` Trigger called: ${op}, ${JSON.stringify(key)}, ${JSON.stringify(rec)}`);
         if (op === TriggerOperation.RecordDeleted) {
             ++DBOSTriggerTestClass.nDeletes;
             DBOSTriggerTestClass.recordMap.delete(key[0]);
