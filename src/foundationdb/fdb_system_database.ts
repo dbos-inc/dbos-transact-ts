@@ -411,6 +411,18 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return Promise.resolve(null);
   }
 
+  async getLastDBTriggerTimeSeq(_wfn: string):
+    Promise<{last_run_time: number | null, last_run_seq: number | null}>
+  {
+    return Promise.resolve({last_run_seq: null, last_run_time: null});
+  }
+
+  async setLastDBTriggerTimeSeq(_wfn: string, _run_time: number | null, _run_seq: number | null):
+    Promise<{last_run_time: number | null, last_run_seq: number | null}>
+  {
+    return Promise.resolve({last_run_seq: null, last_run_time: null});
+  }
+
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     throw new Error("Method not implemented.");
   }

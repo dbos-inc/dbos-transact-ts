@@ -42,3 +42,9 @@ export interface scheduler_state {
   workflow_fn_name: string;
   last_run_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
 }
+
+export interface dbtrigger_state {
+  workflow_fn_name: string;
+  last_run_time: number; // Timestamp of record that was kicked off (ms); others may have but OAOO will cover that
+  last_run_seq: number; // Sequence number of record that was kicked off (n); others may have but OAOO will cover that
+}

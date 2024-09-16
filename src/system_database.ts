@@ -5,7 +5,7 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
 import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
-import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
+import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state, dbtrigger_state } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
@@ -51,9 +51,15 @@ export interface SystemDatabase {
     }): Promise<T | null>;
 
   // Scheduler queries
-  //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
+  //  These make sure we kick off the workflow at least once, and wf unique ID does the rest of OAOO
   getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
   setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
+
+  // Database triggerqueries
+  //  These two make sure we kick off the workflow at least once, and wf unique ID does the rest of OAOO
+  getLastDBTriggerTimeSeq(wfn: string): Promise<{last_run_time: number | null, last_run_seq: number | null}>;
+  setLastDBTriggerTimeSeq(_wfn: string, _run_time: number | null, _run_seq: number | null):
+    Promise<{last_run_time: number | null, last_run_seq: number | null}>;
 
   // Workflow management
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>
@@ -810,6 +816,45 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [wfn, invtime]);
 
     return parseInt(`${res.rows[0].last_run_time}`);
+  }
+
+  /* DB Trigger tracking */
+  async getLastDBTriggerTimeSeq(wfn: string):
+    Promise<{last_run_time: number | null, last_run_seq: number | null}>
+  {
+    const res = await this.pool.query<dbtrigger_state>(`
+      SELECT last_run_time, last_run_seq
+      FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
+      WHERE workflow_fn_name = $1;
+    `, [wfn]);
+
+    let lrt = res.rows[0]?.last_run_time ?? null;
+    if (lrt !== null) lrt = parseInt(`${lrt}`);
+    let lrs = res.rows[0]?.last_run_seq ?? null;
+    if (lrs !== null) lrs = parseInt(`${lrs}`);
+
+    return { last_run_time: lrt,  last_run_seq: lrs };
+  }
+
+  async setLastDBTriggerTimeSeq(wfn: string, run_time: number | null, run_seq: number | null):
+    Promise<{last_run_time: number | null, last_run_seq: number | null}>
+  {
+    const res = await this.pool.query<dbtrigger_state>(`
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.dbtrigger_state (workflow_fn_name, last_run_time, last_run_seq)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (workflow_fn_name)
+      DO UPDATE SET
+        last_run_time = GREATEST(EXCLUDED.last_run_time, dbtrigger_state.last_run_time),
+        last_run_seq =  GREATEST(EXCLUDED.last_run_seq,  dbtrigger_state.last_run_seq)
+      RETURNING last_run_time, last_run_seq;
+    `, [wfn, run_time, run_seq]);
+
+    let lrt = res.rows[0]?.last_run_time ?? null;
+    if (lrt !== null) lrt = parseInt(`${lrt}`);
+    let lrs = res.rows[0]?.last_run_seq ?? null;
+    if (lrs !== null) lrs = parseInt(`${lrs}`);
+
+    return { last_run_time: lrt,  last_run_seq: lrs };
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
