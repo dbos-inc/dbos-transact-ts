@@ -7,6 +7,7 @@ import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { Notification, PoolClient } from "pg";
 import { Workflow } from "../workflow";
+import { number } from "@inquirer/prompts";
 
 export enum TriggerOperation {
     RecordInserted = 'insert',
@@ -150,6 +151,7 @@ export class DBOSDBTrigger {
                 const key: unknown[] = [];
                 const keystr: string[] = [];
                 for (const mo of this.tableToReg.get(payload.tname) ?? []) {
+                    if (!mo.triggerConfig) continue;
                     for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
                         const cv = Object.hasOwn(payload.record, kn) ? payload.record[kn] : undefined;
                         key.push(cv);
@@ -158,12 +160,48 @@ export class DBOSDBTrigger {
                     try {
                         const cname = mo.className;
                         const mname = mo.name;
+                        const fullname = `${cname}.${mname}`;
                         if (mo.triggerIsWorkflow) {
                             const wfParams = {
                                 workflowUUID: `dbt_${cname}_${mname}_${payload.operation}_${keystr.join('|')}`,
                                 configuredInstance: null
                             };
                             await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
+
+                            // Record the time of the wf kicked off (if given)
+                            const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
+                            let recseqnum: number | null = null;
+                            let rectmstmp: number | null = null;
+                            if (tc.sequenceNumColumn) {
+                                if (!Object.hasOwn(payload.record, tc.sequenceNumColumn)) {
+                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but is not in database record.'`);
+                                    continue;
+                                }
+                                const sn = payload.record[tc.sequenceNumColumn];
+                                if (!(sn instanceof number)) {
+                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
+                                    continue;
+                                }
+                                recseqnum = sn as number;
+                            }
+                            if (tc.timestampColumn) {
+                                if (!Object.hasOwn(payload.record, tc.timestampColumn)) {
+                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but is not in database record.'`);
+                                    continue;
+                                }
+                                const ts = payload.record[tc.timestampColumn];
+                                if (ts instanceof Date) {
+                                    rectmstmp = ts.getTime();
+                                }
+                                else if (ts instanceof number) {
+                                    rectmstmp = ts as number;
+                                }
+                                else {
+                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`);
+                                    continue;
+                                }
+                            }
+                            await this.executor.systemDatabase.setLastDBTriggerTimeSeq(fullname, rectmstmp, recseqnum);
                         }
                         else {
                             // Use original func, this may not be wrapped
