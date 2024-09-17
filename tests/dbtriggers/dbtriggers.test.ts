@@ -20,8 +20,6 @@ class DBOSTriggerTestClass {
     static nUpdates = 0;
     static recordMap: Map<number, TestTable> = new Map();
 
-    static nWFInserts = 0;
-    static nWFDeletes = 0;
     static nWFUpdates = 0;
     static wfRecordMap: Map<number, TestTable> = new Map();
 
@@ -31,8 +29,6 @@ class DBOSTriggerTestClass {
         DBOSTriggerTestClass.nUpdates = 0;
         DBOSTriggerTestClass.recordMap = new Map();
 
-        DBOSTriggerTestClass.nWFInserts = 0;
-        DBOSTriggerTestClass.nWFDeletes = 0;
         DBOSTriggerTestClass.nWFUpdates = 0;
         DBOSTriggerTestClass.wfRecordMap = new Map();
     }
@@ -57,15 +53,9 @@ class DBOSTriggerTestClass {
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id']})
     @Workflow()
     static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        if (op === TriggerOperation.RecordDeleted) {
-            DBOSTriggerTestClass.wfRecordMap.delete(key[0]);
-            ++DBOSTriggerTestClass.nWFDeletes;
-        }
-        if (op === TriggerOperation.RecordInserted) {
-            DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClass.nWFInserts;
-        }
-        if (op === TriggerOperation.RecordUpdated) {
+        //console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        expect(op).toBe(TriggerOperation.RecordUpserted);
+        if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);
             ++DBOSTriggerTestClass.nWFUpdates;
         }
@@ -88,25 +78,18 @@ class DBOSTriggerTestClass {
     }
 }
 
+/*
 class DBOSTriggerTestClassSN {
-    static nTSInserts = 0;
-    static nTSDeletes = 0;
     static nTSUpdates = 0;
     static tsRecordMap: Map<number, TestTable> = new Map();
 
-    static nSNInserts = 0;
-    static nSNDeletes = 0;
     static nSNUpdates = 0;
     static snRecordMap: Map<number, TestTable> = new Map();
 
     static reset() {
-        DBOSTriggerTestClassSN.nTSInserts = 0;
-        DBOSTriggerTestClassSN.nTSDeletes = 0;
         DBOSTriggerTestClassSN.nTSUpdates = 0;
         DBOSTriggerTestClassSN.tsRecordMap = new Map();
 
-        DBOSTriggerTestClassSN.nSNInserts = 0;
-        DBOSTriggerTestClassSN.nSNDeletes = 0;
         DBOSTriggerTestClassSN.nSNUpdates = 0;
         DBOSTriggerTestClassSN.snRecordMap = new Map();
     }
@@ -115,15 +98,7 @@ class DBOSTriggerTestClassSN {
     @Workflow()
     static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
-        if (op === TriggerOperation.RecordDeleted) {
-            DBOSTriggerTestClassSN.snRecordMap.delete(key[0]);
-            ++DBOSTriggerTestClassSN.nSNDeletes;
-        }
-        if (op === TriggerOperation.RecordInserted) {
-            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClassSN.nSNInserts;
-        }
-        if (op === TriggerOperation.RecordUpdated) {
+        if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
             ++DBOSTriggerTestClassSN.nSNUpdates;
         }
@@ -134,15 +109,7 @@ class DBOSTriggerTestClassSN {
     @Workflow()
     static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
-        if (op === TriggerOperation.RecordDeleted) {
-            DBOSTriggerTestClassSN.snRecordMap.delete(key[0]);
-            ++DBOSTriggerTestClassSN.nSNDeletes;
-        }
-        if (op === TriggerOperation.RecordInserted) {
-            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClassSN.nSNInserts;
-        }
-        if (op === TriggerOperation.RecordUpdated) {
+        if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
             ++DBOSTriggerTestClassSN.nSNUpdates;
         }
@@ -164,6 +131,7 @@ class DBOSTriggerTestClassSN {
         await ctx.client<TestTable>(testTableName).where({order_id}).update({status});
     }
 }
+*/
 
 interface TestTable {
     order_id: number,
@@ -207,10 +175,11 @@ describe("test-db-triggers", () => {
   
     test("trigger-nonwf", async () => {
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        while (DBOSTriggerTestClass.nWFInserts < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFInserts).toBe(1);
-        expect(DBOSTriggerTestClass.nWFDeletes).toBe(0);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(0);
+        while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
+        expect(DBOSTriggerTestClass.nInserts).toBe(1);
+        expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Ordered");
+        while (DBOSTriggerTestClass.nWFUpdates < 1) await sleepms(10);
+        expect(DBOSTriggerTestClass.nWFUpdates).toBe(1);
         expect(DBOSTriggerTestClass.wfRecordMap.get(1)?.status).toBe("Ordered");
 
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
@@ -219,10 +188,8 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
         expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBe("Ordered");
-        while (DBOSTriggerTestClass.nWFInserts < 2) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nWFDeletes).toBe(0);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(0);
+        while (DBOSTriggerTestClass.nWFUpdates < 2) await sleepms(10);
+        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
         expect(DBOSTriggerTestClass.wfRecordMap.get(2)?.status).toBe("Ordered");
 
         await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
@@ -231,11 +198,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(0);
         expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBeUndefined();
-        while (DBOSTriggerTestClass.nWFDeletes < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nWFDeletes).toBe(1);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(0);
-        expect(DBOSTriggerTestClass.wfRecordMap.get(2)?.status).toBeUndefined();
+        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2); // Workflow does not trigger on delete
 
         await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
         while (DBOSTriggerTestClass.nUpdates < 1) await sleepms(10);
@@ -243,11 +206,9 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
         expect(DBOSTriggerTestClass.nUpdates).toBe(1);
         expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Shipped");
-        while (DBOSTriggerTestClass.nWFUpdates < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nWFDeletes).toBe(1);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(1);
-        expect(DBOSTriggerTestClass.wfRecordMap.get(1)?.status).toBe("Shipped");
+        await sleepms(100);
+        // This update does not start a workflow as there is no update marker column.
+        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
     }, 15000);
 });
 

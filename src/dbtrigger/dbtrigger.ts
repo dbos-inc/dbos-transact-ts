@@ -7,12 +7,12 @@ import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { Notification, PoolClient } from "pg";
 import { Workflow } from "../workflow";
-import { number } from "@inquirer/prompts";
 
 export enum TriggerOperation {
     RecordInserted = 'insert',
     RecordDeleted = 'delete',
     RecordUpdated = 'update',
+    RecordUpserted = 'upsert', // Workflow recovery cannot tell you about delete, only update/insert and can't distinguish them
 }
 
 export class DBTriggerConfig {
@@ -145,13 +145,12 @@ export class DBOSDBTrigger {
         if (hasAnyTrigger) {
             const notificationsClient = await this.executor.procedurePool.connect();
             await notificationsClient.query(`LISTEN ${nname};`);
-            const handler = async (msg: Notification) => {
-                if (msg.channel !== nname) return;
-                const payload = JSON.parse(msg.payload!) as TriggerPayload;
-                const key: unknown[] = [];
-                const keystr: string[] = [];
+
+            const payloadFunc = async(payload: TriggerPayload) => {
                 for (const mo of this.tableToReg.get(payload.tname) ?? []) {
                     if (!mo.triggerConfig) continue;
+                    const key: unknown[] = [];
+                    const keystr: string[] = [];
                     for (const kn of mo.triggerConfig?.recordIDColumns ?? []) {
                         const cv = Object.hasOwn(payload.record, kn) ? payload.record[kn] : undefined;
                         key.push(cv);
@@ -162,12 +161,6 @@ export class DBOSDBTrigger {
                         const mname = mo.name;
                         const fullname = `${cname}.${mname}`;
                         if (mo.triggerIsWorkflow) {
-                            const wfParams = {
-                                workflowUUID: `dbt_${cname}_${mname}_${payload.operation}_${keystr.join('|')}`,
-                                configuredInstance: null
-                            };
-                            await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
-
                             // Record the time of the wf kicked off (if given)
                             const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
                             let recseqnum: number | null = null;
@@ -209,6 +202,24 @@ export class DBOSDBTrigger {
                                     continue;
                                 }
                             }
+
+                            const wfParams = {
+                                workflowUUID: `dbt_${cname}_${mname}_${keystr.join('|')}`,
+                                configuredInstance: null
+                            };
+                            if (payload.operation === TriggerOperation.RecordDeleted) {
+                                this.executor.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record deletion.   Record deletion workflow triggers are not supported.`);
+                                continue;
+                            }
+                            if (payload.operation === TriggerOperation.RecordUpdated && recseqnum === null && rectmstmp === null) {
+                                this.executor.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record update, but no sequence number / timestamp is defined.   Record update workflow triggers will not work in this case.`);
+                                continue;
+                            }
+                            if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
+                            if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
+                            payload.operation = TriggerOperation.RecordUpserted;
+                            await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
+
                             await this.executor.systemDatabase.setLastDBTriggerTimeSeq(fullname, rectmstmp, recseqnum);
                         }
                         else {
@@ -223,6 +234,12 @@ export class DBOSDBTrigger {
                         this.executor.logger.warn(e);
                     }
                 }
+            }
+
+            const handler = async (msg: Notification) => {
+                if (msg.channel !== nname) return;
+                const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                await payloadFunc(payload);
             };
             notificationsClient.on("notification", handler);
             this.listeners.push({client: notificationsClient, nn: nname});
