@@ -824,7 +824,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   {
     const res = await this.pool.query<dbtrigger_state>(`
       SELECT last_run_time, last_run_seq
-      FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
+      FROM ${DBOSExecutor.systemDBSchemaName}.dbtrigger_state
       WHERE workflow_fn_name = $1;
     `, [wfn]);
 
