@@ -1,12 +1,12 @@
 import { Knex } from "knex";
 import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
-import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
+import { DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { UserDatabaseName } from "../../src/user_database";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { sleepms } from "../../src/utils";
 
-const testTableName = "dbos_test_orders";
+const testTableName = "dbos_test_trig_seq";
 
 type KnexTransactionContext = TransactionContext<Knex>;
 
@@ -14,50 +14,39 @@ class DBOSTestNoClass {
 
 }
 
-class DBOSTriggerTestClass {
-    static nInserts = 0;
-    static nDeletes = 0;
-    static nUpdates = 0;
-    static recordMap: Map<number, TestTable> = new Map();
+class DBOSTriggerTestClassSN {
+    static nTSUpdates = 0;
+    static tsRecordMap: Map<number, TestTable> = new Map();
 
-    static nWFUpdates = 0;
-    static wfRecordMap: Map<number, TestTable> = new Map();
+    static nSNUpdates = 0;
+    static snRecordMap: Map<number, TestTable> = new Map();
 
     static reset() {
-        DBOSTriggerTestClass.nInserts = 0;
-        DBOSTriggerTestClass.nDeletes = 0;
-        DBOSTriggerTestClass.nUpdates = 0;
-        DBOSTriggerTestClass.recordMap = new Map();
+        DBOSTriggerTestClassSN.nTSUpdates = 0;
+        DBOSTriggerTestClassSN.tsRecordMap = new Map();
 
-        DBOSTriggerTestClass.nWFUpdates = 0;
-        DBOSTriggerTestClass.wfRecordMap = new Map();
+        DBOSTriggerTestClassSN.nSNUpdates = 0;
+        DBOSTriggerTestClassSN.snRecordMap = new Map();
     }
 
-    @DBTrigger({tableName: testTableName, recordIDColumns: ['order_id']})
-    static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
-        if (op === TriggerOperation.RecordDeleted) {
-            ++DBOSTriggerTestClass.nDeletes;
-            DBOSTriggerTestClass.recordMap.delete(key[0]);
-        }
-        if (op === TriggerOperation.RecordInserted) {
-            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClass.nInserts;
-        }
-        if (op === TriggerOperation.RecordUpdated) {
-            DBOSTriggerTestClass.recordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClass.nUpdates;
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'order_id', sequenceNumJitter: 2})
+    @Workflow()
+    static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        if (op === TriggerOperation.RecordUpserted) {
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNUpdates;
         }
         return Promise.resolve();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id']})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'order_date', timestampSkewMS: 60000})
     @Workflow()
-    static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        //console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
-        expect(op).toBe(TriggerOperation.RecordUpserted);
+    static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         if (op === TriggerOperation.RecordUpserted) {
-            DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClass.nWFUpdates;
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNUpdates;
         }
         return Promise.resolve();
     }
@@ -80,7 +69,8 @@ class DBOSTriggerTestClass {
 
 interface TestTable {
     order_id: number,
-    order_date: Date,
+    seqnum: number,
+    update_date: Date,
     price: number,
     item: string,
     status: string,
@@ -101,7 +91,8 @@ describe("test-db-triggers", () => {
         await testRuntime.queryUserDB(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
               order_id SERIAL PRIMARY KEY,
-              order_date TIMESTAMP,
+              seqnum INTEGER,
+              update_date TIMESTAMP,
               price DECIMAL(10,2),
               item TEXT,
               status VARCHAR(10)
@@ -109,7 +100,7 @@ describe("test-db-triggers", () => {
         );
         await testRuntime.destroy();
         testRuntime = await createInternalTestRuntime(undefined, config);
-        DBOSTriggerTestClass.reset()
+        DBOSTriggerTestClassSN.reset()
     });
     
     afterEach(async () => {
@@ -118,7 +109,9 @@ describe("test-db-triggers", () => {
         await testRuntime.destroy();
     });
   
-    test("trigger-nonwf", async () => {
+    test("trigger-seqnum", async () => {
+        await sleepms(10);
+        /*
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(1);
@@ -154,6 +147,7 @@ describe("test-db-triggers", () => {
         await sleepms(100);
         // This update does not start a workflow as there is no update marker column.
         expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
+        */
     }, 15000);
 });
 

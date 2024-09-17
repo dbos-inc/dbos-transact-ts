@@ -138,9 +138,31 @@ export class DBOSDBTrigger {
                         FOR EACH ROW EXECUTE FUNCTION ${tfname}();
                     `);
                     hasTrigger.add(tname);
+                    hasAnyTrigger = true;
                 }
 
-                hasAnyTrigger = true;
+                if (mo.triggerIsWorkflow) {
+                    const cname = mo.className;
+                    const mname = mo.name;
+                    const fullname = `${cname}.${mname}`;
+                    // Initiate catchup work
+                    const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
+                    let recseqnum: number | null = null;
+                    let rectmstmp: number | null = null;
+                    if (tc.sequenceNumColumn || tc.recordIDColumns) {
+                        const lasts = await this.executor.systemDatabase.getLastDBTriggerTimeSeq(fullname);
+                        recseqnum = lasts.last_run_seq;
+                        rectmstmp = lasts.last_run_time;
+                        if (recseqnum && tc.sequenceNumJitter) {
+                            recseqnum-=tc.sequenceNumJitter;
+                        }
+                        if (rectmstmp && tc.timestampSkewMS) {
+                            rectmstmp -= tc.timestampSkewMS;
+                        }
+                    }
+                    // Query string
+                    // Query action
+                }
             }
         }
 
