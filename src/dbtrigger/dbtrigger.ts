@@ -178,11 +178,16 @@ export class DBOSDBTrigger {
                                     continue;
                                 }
                                 const sn = payload.record[tc.sequenceNumColumn];
-                                if (!(sn instanceof number)) {
+                                if (typeof(sn) === 'number') {
+                                    recseqnum = sn;
+                                }
+                                else if (typeof(sn) === 'string') {
+                                    recseqnum = parseInt(sn)
+                                }
+                                else {
                                     this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
                                     continue;
                                 }
-                                recseqnum = sn as number;
                             }
                             if (tc.timestampColumn) {
                                 if (!Object.hasOwn(payload.record, tc.timestampColumn)) {
@@ -193,8 +198,11 @@ export class DBOSDBTrigger {
                                 if (ts instanceof Date) {
                                     rectmstmp = ts.getTime();
                                 }
-                                else if (ts instanceof number) {
-                                    rectmstmp = ts as number;
+                                else if (typeof(ts) === 'number') {
+                                    rectmstmp = ts;
+                                }
+                                else if (typeof(ts) === 'string') {
+                                    rectmstmp = new Date(ts).getTime();
                                 }
                                 else {
                                     this.executor.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`);

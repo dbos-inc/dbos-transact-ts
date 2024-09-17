@@ -57,7 +57,6 @@ class DBOSTriggerTestClass {
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id']})
     @Workflow()
     static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         if (op === TriggerOperation.RecordDeleted) {
             DBOSTriggerTestClass.wfRecordMap.delete(key[0]);
             ++DBOSTriggerTestClass.nWFDeletes;
@@ -69,6 +68,83 @@ class DBOSTriggerTestClass {
         if (op === TriggerOperation.RecordUpdated) {
             DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);
             ++DBOSTriggerTestClass.nWFUpdates;
+        }
+        return Promise.resolve();
+    }
+
+    @Transaction()
+    static async insertRecord(ctx: KnexTransactionContext, rec: TestTable) {
+        await ctx.client<TestTable>(testTableName).insert(rec);
+    }
+
+    @Transaction()
+    static async deleteRecord(ctx: KnexTransactionContext, order_id: number) {
+        await ctx.client<TestTable>(testTableName).where({order_id}).delete();
+    }
+
+    @Transaction()
+    static async updateRecordStatus(ctx: KnexTransactionContext, order_id: number, status: string) {
+        await ctx.client<TestTable>(testTableName).where({order_id}).update({status});
+    }
+}
+
+class DBOSTriggerTestClassSN {
+    static nTSInserts = 0;
+    static nTSDeletes = 0;
+    static nTSUpdates = 0;
+    static tsRecordMap: Map<number, TestTable> = new Map();
+
+    static nSNInserts = 0;
+    static nSNDeletes = 0;
+    static nSNUpdates = 0;
+    static snRecordMap: Map<number, TestTable> = new Map();
+
+    static reset() {
+        DBOSTriggerTestClassSN.nTSInserts = 0;
+        DBOSTriggerTestClassSN.nTSDeletes = 0;
+        DBOSTriggerTestClassSN.nTSUpdates = 0;
+        DBOSTriggerTestClassSN.tsRecordMap = new Map();
+
+        DBOSTriggerTestClassSN.nSNInserts = 0;
+        DBOSTriggerTestClassSN.nSNDeletes = 0;
+        DBOSTriggerTestClassSN.nSNUpdates = 0;
+        DBOSTriggerTestClassSN.snRecordMap = new Map();
+    }
+
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'order_id', sequenceNumJitter: 2})
+    @Workflow()
+    static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        if (op === TriggerOperation.RecordDeleted) {
+            DBOSTriggerTestClassSN.snRecordMap.delete(key[0]);
+            ++DBOSTriggerTestClassSN.nSNDeletes;
+        }
+        if (op === TriggerOperation.RecordInserted) {
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNInserts;
+        }
+        if (op === TriggerOperation.RecordUpdated) {
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNUpdates;
+        }
+        return Promise.resolve();
+    }
+
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'order_date', timestampSkewMS: 60000})
+    @Workflow()
+    static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        if (op === TriggerOperation.RecordDeleted) {
+            DBOSTriggerTestClassSN.snRecordMap.delete(key[0]);
+            ++DBOSTriggerTestClassSN.nSNDeletes;
+        }
+        if (op === TriggerOperation.RecordInserted) {
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNInserts;
+        }
+        if (op === TriggerOperation.RecordUpdated) {
+            DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
+            ++DBOSTriggerTestClassSN.nSNUpdates;
         }
         return Promise.resolve();
     }
@@ -174,3 +250,4 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.wfRecordMap.get(1)?.status).toBe("Shipped");
     }, 15000);
 });
+
