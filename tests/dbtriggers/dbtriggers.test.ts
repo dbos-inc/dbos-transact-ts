@@ -78,7 +78,6 @@ class DBOSTriggerTestClass {
     }
 }
 
-/*
 class DBOSTriggerTestClassSN {
     static nTSUpdates = 0;
     static tsRecordMap: Map<number, TestTable> = new Map();
@@ -131,7 +130,6 @@ class DBOSTriggerTestClassSN {
         await ctx.client<TestTable>(testTableName).where({order_id}).update({status});
     }
 }
-*/
 
 interface TestTable {
     order_id: number,
