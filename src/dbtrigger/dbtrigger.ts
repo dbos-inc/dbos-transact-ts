@@ -70,6 +70,8 @@ export class DBOSDBTrigger {
     executor: DBOSExecutor;
     listeners: {client: PoolClient, nn: string}[] = [];
     tableToReg: Map<string, DBTriggerRegistration[]> = new Map();
+    shutdown: boolean = false;
+    catchupLoops: Promise<void>[] = [];
 
     constructor(executor: DBOSExecutor) {
         this.executor = executor;
@@ -248,6 +250,7 @@ export class DBOSDBTrigger {
     }
 
     async destroy() {
+        this.shutdown = true;
         for (const l of this.listeners) {
             try {
                 await l.client.query(`UNLISTEN ${l.nn};`);
@@ -256,6 +259,15 @@ export class DBOSDBTrigger {
                 this.executor.logger.warn(e);
             }
             l.client.release();
+        }
+        this.listeners = [];
+        for (const p of this.catchupLoops) {
+            try {
+                await p;
+            }
+            catch (e) {
+                // Error in destroy, NBD
+            }
         }
         this.listeners = [];
     }
