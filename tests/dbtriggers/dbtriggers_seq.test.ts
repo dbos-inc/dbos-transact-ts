@@ -147,10 +147,10 @@ describe("test-db-triggers", () => {
         DBOSTriggerTestClassSN.reset();
 
         await (testRuntime as TestingRuntimeImpl).initTriggers();
+        // We had processed up to 5 before, 
         // The count of 7 is a bit confusing because we're sharing a table.  We expect all 4 orders to be sent based on time, and 3 based on SN
         while (DBOSTriggerTestClassSN.nSNUpdates < 7 || DBOSTriggerTestClassSN.nTSUpdates < 7) await sleepms(10);
         await sleepms(100);
-        // We had processed up to 5 before, 
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(7);
         // With 60 seconds, we will see all records again
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(7);
