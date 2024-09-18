@@ -165,15 +165,18 @@ export class DBOSDBTrigger {
 
                     // Query string
                     let sncpred = '';
+                    let oby = '';
                     const params = [];
                     if (tc.sequenceNumColumn && recseqnum !== null) {
                         params.push(recseqnum);
                         sncpred = ` ${quoteIdentifier(tc.sequenceNumColumn)} > $${params.length} AND `
+                        oby = `ORDER BY ${quoteIdentifier(tc.sequenceNumColumn)}`;
                     }
                     let tscpred = '';
                     if (tc.timestampColumn && rectmstmp !== null) {
                         params.push(new Date(rectmstmp));
                         tscpred = ` ${quoteIdentifier(tc.timestampColumn)} > $${params.length} AND `;
+                        oby = `ORDER BY ${quoteIdentifier(tc.timestampColumn)}`;
                     }
 
                     const catchup_query = `
@@ -186,6 +189,7 @@ export class DBOSDBTrigger {
                             SELECT *
                             FROM ${tname} 
                             WHERE ${sncpred} ${tscpred} 1=1
+                            ${oby}
                         ) t
                     `;
 
