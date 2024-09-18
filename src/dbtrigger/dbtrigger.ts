@@ -66,12 +66,79 @@ interface TriggerPayload {
 export type TriggerFunction<Key extends unknown[]> = (op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
 export type TriggerFunctionWF<Key extends unknown[]> = (ctx: WorkflowContext, op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
 
+class TriggerPayloadQueue
+{
+    notifyPayloads: TriggerPayload[] = [];
+    catchupPayloads: TriggerPayload[] = [];
+    catchupFinished: boolean = false;
+    shutdown: boolean = false;
+    waiting: ((value: TriggerPayload | null) => void)[] = [];
+
+    enqueueCatchup(tp: TriggerPayload) {
+        const resolve = this.waiting.shift();
+        if (resolve) {
+            resolve(tp);
+        }
+        else {
+            this.catchupPayloads.push(tp);
+        }
+    }
+
+    enqueueNotify(tp: TriggerPayload) {
+        if (!this.catchupFinished) {
+            this.notifyPayloads.push(tp);
+            return;
+        }
+
+        const resolve = this.waiting.shift();
+        if (resolve) {
+            resolve(tp);
+        }
+        else {
+            this.notifyPayloads.push(tp);
+        }
+    }
+
+    async dequeue() : Promise<TriggerPayload | null> {
+        if (this.shutdown) return null;
+        if (this.catchupPayloads.length > 0) {
+            return this.catchupPayloads.shift()!;
+        }
+        else if (this.catchupFinished && this.notifyPayloads.length > 0) {
+            return this.notifyPayloads.shift()!;
+        }
+        else {
+            return new Promise<TriggerPayload | null>((resolve) => {
+                this.waiting.push(resolve);
+            });
+        }
+    }
+
+    finishCatchup() {
+        this.catchupFinished = true;
+        while(true) {
+            if (!this.waiting[0] || !this.notifyPayloads[0]) break;
+            this.waiting.shift()!(this.notifyPayloads.shift()!);
+        }
+    }
+
+    stop() {
+        this.shutdown = true;
+        while(true) {
+            const resolve = this.waiting.shift();
+            if (!resolve) break;
+            resolve(null);
+        }
+    }
+}
+
 export class DBOSDBTrigger {
     executor: DBOSExecutor;
     listeners: {client: PoolClient, nn: string}[] = [];
     tableToReg: Map<string, DBTriggerRegistration[]> = new Map();
     shutdown: boolean = false;
-    catchupLoops: Promise<void>[] = [];
+    payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
+    dispatchLoops: Promise<void>[] = [];
 
     constructor(executor: DBOSExecutor) {
         this.executor = executor;
@@ -202,6 +269,38 @@ export class DBOSDBTrigger {
             const notificationsClient = await this.executor.procedurePool.connect();
             await notificationsClient.query(`LISTEN ${nname};`);
 
+            const handler = (msg: Notification) => {
+                if (msg.channel !== nname) return;
+                const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                this.payloadQ.enqueueNotify(payload);
+            };
+            notificationsClient.on("notification", handler);
+
+            this.listeners.push({client: notificationsClient, nn: nname});
+            this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
+
+            for (const q of catchups) {
+                const catchupFunc =  async () => {
+                    try {
+                        const catchupClient = await this.executor.procedurePool.connect();
+                        const rows = await catchupClient.query<{payload: string}>(q.query, q.params);
+                        catchupClient.release();
+                        for (const r of rows.rows) {
+                            const payload = JSON.parse(r.payload) as TriggerPayload;
+                            this.payloadQ.enqueueCatchup(payload);
+                        }
+                    }
+                    catch(e) {
+                        console.log(e);
+                        this.executor.logger.error(e);
+                    }
+                };
+  
+                await catchupFunc();
+            }
+
+            this.payloadQ.finishCatchup();
+
             const payloadFunc = async(payload: TriggerPayload) => {
                 for (const mo of this.tableToReg.get(payload.tname) ?? []) {
                     if (!mo.triggerConfig) continue;
@@ -292,43 +391,21 @@ export class DBOSDBTrigger {
                 }
             }
 
-            const handler = async (msg: Notification) => {
-                if (msg.channel !== nname) return;
-                const payload = JSON.parse(msg.payload!) as TriggerPayload;
-                await payloadFunc(payload);
-            };
-            notificationsClient.on("notification", handler);
-            this.listeners.push({client: notificationsClient, nn: nname});
-            this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
-
-            for (const q of catchups) {
-                const catchupFunc =  async () => {
-                    try {
-                        const catchupClient = await this.executor.procedurePool.connect();
-                        const rows = await catchupClient.query<{payload: string}>(q.query, q.params);
-                        catchupClient.release();
-                        for (const r of rows.rows) {
-                            const payload = JSON.parse(r.payload) as TriggerPayload;
-                            await payloadFunc(payload);
-                        }
-                    }
-                    catch(e) {
-                        console.log(e);
-                        this.executor.logger.error(e);
-                    }
-                };
-                /*
-                this.catchupLoops.push(
-                    catchupFunc()
-                );
-                */
-                await catchupFunc();
+            const processingFunc = async () => {
+                while (true) {
+                    const p = await this.payloadQ.dequeue();
+                    if (p === null) break;
+                    await payloadFunc(p);
+                }
             }
+
+            this.dispatchLoops.push(processingFunc())
         }
     }
 
     async destroy() {
         this.shutdown = true;
+        this.payloadQ.stop();
         for (const l of this.listeners) {
             try {
                 await l.client.query(`UNLISTEN ${l.nn};`);
@@ -339,7 +416,7 @@ export class DBOSDBTrigger {
             l.client.release();
         }
         this.listeners = [];
-        for (const p of this.catchupLoops) {
+        for (const p of this.dispatchLoops) {
             try {
                 await p;
             }
