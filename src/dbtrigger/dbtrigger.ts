@@ -313,9 +313,12 @@ export class DBOSDBTrigger {
                         this.executor.logger.error(e);
                     }
                 };
+                /*
                 this.catchupLoops.push(
                     catchupFunc()
                 );
+                */
+                await catchupFunc();
             }
         }
     }
