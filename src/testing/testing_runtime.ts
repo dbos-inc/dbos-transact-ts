@@ -109,9 +109,18 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
-    this.#dbTriggers = new DBOSDBTrigger(dbosExec);
-    await this.#dbTriggers.initialize();
+    await this.initTriggers();
     this.#isInitialized = true;
+  }
+
+  async initTriggers() {
+    this.#dbTriggers = new DBOSDBTrigger(this.#server!.dbosExec);
+    await this.#dbTriggers.initialize();
+  }
+
+  async destroyTriggers() {
+    await this.#dbTriggers?.destroy();
+    this.#dbTriggers = null;
   }
 
   /**
@@ -120,7 +129,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
-      await this.#dbTriggers?.destroy();
+      await this.destroyTriggers();
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
         await evtRcvr.destroy();

@@ -1,7 +1,7 @@
 import { Knex } from "knex";
 import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
 import { DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
-import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestRuntime, TestingRuntimeImpl } from "../../src/testing/testing_runtime";
 import { UserDatabaseName } from "../../src/user_database";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { sleepms } from "../../src/utils";
@@ -32,7 +32,7 @@ class DBOSTriggerTestClassSN {
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2})
     @Workflow()
     static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
@@ -44,7 +44,7 @@ class DBOSTriggerTestClassSN {
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000})
     @Workflow()
     static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.tsRecordMap.set(key[0], rec as TestTable);
@@ -122,7 +122,7 @@ describe("test-db-triggers", () => {
 
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
-        while (DBOSTriggerTestClassSN.nSNUpdates < 4 || DBOSTriggerTestClassSN.nSNUpdates < 4) await sleepms(10);
+        while (DBOSTriggerTestClassSN.nSNUpdates < 4 || DBOSTriggerTestClassSN.nTSUpdates < 4) await sleepms(10);
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(4);
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(4);
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Shipped");
@@ -131,51 +131,40 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
+        await (testRuntime as TestingRuntimeImpl).destroyTriggers();
 
         // Do more stuff
-        // Invalid record, won't show up
+        // Invalid record, won't show up because it is well out of sequence
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 999, seqnum: -999, update_date: new Date('1900-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
 
+        // A few more valid records, back in time a little
+        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 3, seqnum: 4, update_date: new Date('2024-01-01 11:11:14'), price: 10, item: "Griswold Gear", status:"Ordered"});
+        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 4, seqnum: 6, update_date: new Date('2024-01-01 11:11:16'), price: 10, item: "Wallace Wheel", status:"Ordered"});
+        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(4, "Shipped", 7, new Date('2024-01-01 11:11:17'));
+
         // Test restore
+        console.log("************************************************** Restart *****************************************************");
+        DBOSTriggerTestClassSN.reset();
 
-        await sleepms(10);
-        /*
-        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nInserts).toBe(1);
-        expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Ordered");
-        while (DBOSTriggerTestClass.nWFUpdates < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(1);
-        expect(DBOSTriggerTestClass.wfRecordMap.get(1)?.status).toBe("Ordered");
-
-        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
-        while (DBOSTriggerTestClass.nInserts < 2) await sleepms(10);
-        expect(DBOSTriggerTestClass.nInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nDeletes).toBe(0);
-        expect(DBOSTriggerTestClass.nUpdates).toBe(0);
-        expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBe("Ordered");
-        while (DBOSTriggerTestClass.nWFUpdates < 2) await sleepms(10);
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
-        expect(DBOSTriggerTestClass.wfRecordMap.get(2)?.status).toBe("Ordered");
-
-        await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
-        while (DBOSTriggerTestClass.nDeletes < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nDeletes).toBe(1);
-        expect(DBOSTriggerTestClass.nUpdates).toBe(0);
-        expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBeUndefined();
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2); // Workflow does not trigger on delete
-
-        await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
-        while (DBOSTriggerTestClass.nUpdates < 1) await sleepms(10);
-        expect(DBOSTriggerTestClass.nInserts).toBe(2);
-        expect(DBOSTriggerTestClass.nDeletes).toBe(1);
-        expect(DBOSTriggerTestClass.nUpdates).toBe(1);
-        expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Shipped");
+        await (testRuntime as TestingRuntimeImpl).initTriggers();
+        // The count of 7 is a bit confusing because we're sharing a table.  We expect all 4 orders to be sent based on time, and 3 based on SN
+        while (DBOSTriggerTestClassSN.nSNUpdates < 7 || DBOSTriggerTestClassSN.nTSUpdates < 7) await sleepms(10);
         await sleepms(100);
-        // This update does not start a workflow as there is no update marker column.
-        expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
-        */
+        // We had processed up to 5 before, 
+        expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(7);
+        // With 60 seconds, we will see all records again
+        expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(7);
+
+        expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Shipped");
+        expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Shipped");
+        expect(DBOSTriggerTestClassSN.snRecordMap.get(2)?.status).toBe("Ordered");
+        expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
+        expect(DBOSTriggerTestClassSN.snRecordMap.get(3)?.status).toBe("Ordered");
+        expect(DBOSTriggerTestClassSN.tsRecordMap.get(3)?.status).toBe("Ordered");
+        expect(DBOSTriggerTestClassSN.snRecordMap.get(4)?.status).toBe("Shipped");
+        expect(DBOSTriggerTestClassSN.tsRecordMap.get(4)?.status).toBe("Shipped");
+        expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
+        expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
     }, 15000);
 });
 

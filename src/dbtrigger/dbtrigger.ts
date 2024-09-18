@@ -202,7 +202,7 @@ export class DBOSDBTrigger {
                         END;
                         $$ LANGUAGE plpgsql;
     
-                        CREATE TRIGGER ${trigname}
+                        CREATE OR REPLACE TRIGGER ${trigname}
                         AFTER INSERT OR UPDATE OR DELETE ON ${tname}
                         FOR EACH ROW EXECUTE FUNCTION ${tfname}();
                     `);
