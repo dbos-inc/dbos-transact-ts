@@ -82,6 +82,8 @@ export class DBOSDBTrigger {
         let hasAnyTrigger: boolean = false;
         const nname = 'dbos_table_update';
 
+        const catchups: {query: string, params: unknown[]}[] = [];
+
         for (const registeredOperation of this.executor.registeredOperations) {
             const mo = registeredOperation as DBTriggerRegistration;
             if (mo.triggerConfig) {
@@ -149,7 +151,7 @@ export class DBOSDBTrigger {
                     const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
                     let recseqnum: number | null = null;
                     let rectmstmp: number | null = null;
-                    if (tc.sequenceNumColumn || tc.recordIDColumns) {
+                    if (tc.sequenceNumColumn || tc.timestampColumn) {
                         const lasts = await this.executor.systemDatabase.getLastDBTriggerTimeSeq(fullname);
                         recseqnum = lasts.last_run_seq;
                         rectmstmp = lasts.last_run_time;
@@ -160,8 +162,34 @@ export class DBOSDBTrigger {
                             rectmstmp -= tc.timestampSkewMS;
                         }
                     }
+
                     // Query string
-                    // Query action
+                    let sncpred = '';
+                    const params = [];
+                    if (tc.sequenceNumColumn && recseqnum !== null) {
+                        params.push(recseqnum);
+                        sncpred = ` ${quoteIdentifier(tc.sequenceNumColumn)} > $${params.length} AND `
+                    }
+                    let tscpred = '';
+                    if (tc.timestampColumn && rectmstmp !== null) {
+                        params.push(new Date(rectmstmp));
+                        tscpred = ` ${quoteIdentifier(tc.timestampColumn)} > $${params.length} AND `;
+                    }
+
+                    const catchup_query = `
+                        SELECT json_build_object(
+                            'tname', '${quoteConstant(tstr)}',
+                            'operation', 'upsert',
+                            'record', row_to_json(t)
+                        )::text as payload
+                        FROM (
+                            SELECT *
+                            FROM ${tname} 
+                            WHERE ${sncpred} ${tscpred} 1=1
+                        ) t
+                    `;
+
+                    catchups.push({query: catchup_query, params});
                 }
             }
         }
@@ -268,6 +296,27 @@ export class DBOSDBTrigger {
             notificationsClient.on("notification", handler);
             this.listeners.push({client: notificationsClient, nn: nname});
             this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
+
+            for (const q of catchups) {
+                const catchupFunc =  async () => {
+                    try {
+                        const catchupClient = await this.executor.procedurePool.connect();
+                        const rows = await catchupClient.query<{payload: string}>(q.query, q.params);
+                        catchupClient.release();
+                        for (const r of rows.rows) {
+                            const payload = JSON.parse(r.payload) as TriggerPayload;
+                            await payloadFunc(payload);
+                        }
+                    }
+                    catch(e) {
+                        console.log(e);
+                        this.executor.logger.error(e);
+                    }
+                };
+                this.catchupLoops.push(
+                    catchupFunc()
+                );
+            }
         }
     }
 

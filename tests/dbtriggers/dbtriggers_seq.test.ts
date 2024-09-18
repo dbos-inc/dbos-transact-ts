@@ -114,7 +114,7 @@ describe("test-db-triggers", () => {
     test("trigger-seqnum", async () => {
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
-        while (DBOSTriggerTestClassSN.nSNUpdates < 2 || DBOSTriggerTestClassSN.nSNUpdates < 2) await sleepms(10);
+        while (DBOSTriggerTestClassSN.nSNUpdates < 2 || DBOSTriggerTestClassSN.nTSUpdates < 2) await sleepms(10);
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(2);
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(2);
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Packed");
