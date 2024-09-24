@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Communicator } from "../communicator";
 import { APITypes, ArgSources } from "./handlerTypes";
 import { StoredProcedure } from "../procedure";
+import { WorkflowQueue } from "../wfqueue";
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +55,9 @@ export interface HandlerContext extends DBOSContext {
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
   startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
+  enqueueWorkflow<T extends ConfiguredInstance>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
+  enqueueWorkflow<T extends object>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
+  
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;

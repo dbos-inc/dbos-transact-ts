@@ -140,3 +140,6 @@ export {
   DBOSConfig,
 } from "./dbos-executor"
 
+export {
+  WorkflowQueue,
+} from "./wfqueue"

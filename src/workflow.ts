@@ -15,6 +15,7 @@ import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
 import { PoolClient } from "pg";
+import { WorkflowQueue } from "./wfqueue";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -136,6 +137,8 @@ export interface WorkflowContext extends DBOSContext {
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
   startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
+  enqueueWorkflow<T extends ConfiguredInstance>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
+  enqueueWorkflow<T extends object>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 

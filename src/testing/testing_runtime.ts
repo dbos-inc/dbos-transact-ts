@@ -17,6 +17,7 @@ import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
+import { WorkflowQueue } from "../wfqueue";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -55,6 +56,9 @@ export interface TestingRuntime {
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
   startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
+  enqueueWorkflow<T extends ConfiguredInstance>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
+  enqueueWorkflow<T extends object>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
+
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
