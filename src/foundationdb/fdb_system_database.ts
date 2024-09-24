@@ -414,4 +414,14 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     throw new Error("Method not implemented.");
   }
+
+  enqueueWorkflow(_workflowId: string, _queueName: string): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  dequeueWorkflow(_workflowId: string): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  findAndMarkStartableWorkflows(_queueName: string, _concurrency?: number): Promise<string[]> {
+    throw new Error("Method not implemented.");
+  }
 }

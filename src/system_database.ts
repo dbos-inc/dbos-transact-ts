@@ -5,7 +5,7 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
 import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
-import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state } from "../schemas/system_db_schema";
+import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state, workflow_queue } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
@@ -33,6 +33,10 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
   setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void>;
+
+  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
+  dequeueWorkflow(workflowId: string): Promise<void>;
+  findAndMarkStartableWorkflows(queueName: string, concurrency?: number): Promise<string[]>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
@@ -66,6 +70,7 @@ export interface WorkflowStatusInternal {
   name: string;
   className: string;
   configName: string;
+  queueName?: string;
   authenticatedUser: string;
   output: unknown;
   error: string; // Serialized error
@@ -184,6 +189,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         name,
         class_name,
         config_name,
+        queue_name,
         authenticated_user,
         assumed_role,
         authenticated_roles,
@@ -193,7 +199,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_version,
         application_id,
         created_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE WHEN $15 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
@@ -204,6 +210,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.name,
         initStatus.className,
         initStatus.configName,
+        initStatus.queueName,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
         DBOSJSON.stringify(initStatus.authenticatedRoles),
@@ -249,7 +256,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       let finishedCnt = 0;
       while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at, class_name, config_name) VALUES `;
+        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at, class_name, config_name, queue_name) VALUES `;
         let paramCnt = 1;
         const values: any[] = [];
         const batchUUIDs: string[] = [];
@@ -273,7 +280,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.createdAt,
             Date.now(),
             status.className,
-            status.configName
+            status.configName,
+            status.queueName,
           );
           batchUUIDs.push(workflowUUID);
           finishedCnt++;
@@ -314,6 +322,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         name,
         class_name,
         config_name,
+        queue_name,
         authenticated_user,
         assumed_role,
         authenticated_roles,
@@ -324,7 +333,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_version,
         created_at,
         updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     ON CONFLICT (workflow_uuid)
     DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
       [
@@ -333,6 +342,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         status.name,
         status.className,
         status.configName,
+        status.queueName,
         status.authenticatedUser,
         status.assumedRole,
         DBOSJSON.stringify(status.authenticatedRoles),
@@ -840,5 +850,57 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return {
       workflowUUIDs: workflowUUIDs
     };
+  }
+
+  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
+    const _res = await this.pool.query<scheduler_state>(`
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+      VALUES ($1, $2)
+      ON CONFLICT (workflow_uuid)
+      DO NOTHING;
+    `, [workflowId, queueName]);
+  }
+
+  async dequeueWorkflow(workflowId: string): Promise<void> {
+    const _res = await this.pool.query<workflow_queue>(`
+      DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+      WHERE workflow_uuid = $1;
+    `, [workflowId]);
+  }
+
+  /*        with self.engine.begin() as c:
+  +            for id in dequeued_ids:
+  +                result = c.execute(
+  +                    SystemSchema.workflow_status.update()
+  +                    .where(SystemSchema.workflow_status.c.workflow_uuid == id)
+  +                    .where(
+  +                        SystemSchema.workflow_status.c.status
+  +                        == WorkflowStatusString.ENQUEUED.value
+  +                    )
+  +                    .values(status=WorkflowStatusString.PENDING.value)
+  +                )
+  +                if result.rowcount > 0:
+  +                    ret_ids.append(id)
+  +            return ret_ids
+*/  
+  async findAndMarkStartableWorkflows(queueName: string, concurrency?: number): Promise<string[]> {
+    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queueName);
+    query = query.orderBy('created_at_epoch_ms', 'asc');
+    if (concurrency !== undefined) {
+      query = query.limit(concurrency);
+    }
+    const rows = await query.select('workflow_uuid');
+    const workflowIDs = rows.map(row => row.workflow_uuid);
+    const claimedIDs: string[] = [];
+    for (const id of workflowIDs) {
+      const res = await this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+        .where('workflow_uuid', id)
+        .andWhere('status', StatusString.ENQUEUED)
+        .update('status', StatusString.PENDING);
+      if (res > 0) {
+        claimedIDs.push(id);
+      }
+    }
+    return claimedIDs;
   }
 }
