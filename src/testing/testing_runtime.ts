@@ -54,10 +54,8 @@ export interface TestingRuntime {
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncInst<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
-  enqueueWorkflow<T extends ConfiguredInstance>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
-  enqueueWorkflow<T extends object>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
@@ -197,7 +195,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
   }
 
-  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams)
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue)
     : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T>
   {
     if (typeof object === 'function') {

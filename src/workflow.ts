@@ -135,10 +135,8 @@ export interface WorkflowContext extends DBOSContext {
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
   invokeWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
-  enqueueWorkflow<T extends ConfiguredInstance>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
-  enqueueWorkflow<T extends object>(targetClass: T, queue: WorkflowQueue, workflowUUID?: string): WfInvokeWfsAsync<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsInstAsync<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -413,7 +411,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
       return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
     }

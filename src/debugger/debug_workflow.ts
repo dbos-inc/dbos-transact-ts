@@ -16,6 +16,7 @@ import { DBOSJSON } from "../utils";
 import { StoredProcedure, StoredProcedureContextImpl } from "../procedure";
 import { PoolClient } from "pg";
 import assert from "node:assert";
+import { WorkflowQueue } from "../wfqueue";
 
 interface RecordedResult<R> {
   output: R;
@@ -328,7 +329,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
       return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
     }

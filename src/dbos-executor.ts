@@ -44,7 +44,8 @@ import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
-import { DBOSEventReceiver, DBOSExecutorContext } from ".";
+import { DBOSEventReceiver, DBOSExecutorContext} from ".";
+import { WorkflowQueue } from "./wfqueue";
 
 import { get } from "lodash";
 
@@ -139,6 +140,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
   readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
+  readonly registeredQueues: Map<string, WorkflowQueue> = new Map();
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
 
@@ -158,7 +160,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // eslint-disable-next-line @typescript-eslint/ban-types
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
-
 
   eventReceivers: DBOSEventReceiver[] = [];
 
