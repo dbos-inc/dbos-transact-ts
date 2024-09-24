@@ -3,18 +3,7 @@ exports.up = function(knex) {
         .table('workflow_status', function(table) {
             table.text('queue_name')
                 .defaultTo(null);
-        });
-};
-
-exports.down = function(knex) {
-    return knex.schema.withSchema('dbos')
-        .table('workflow_status', function(table) {
-            table.dropColumn('queue_name');
-        });
-};
-
-exports.up = function(knex) {
-    return knex.schema.withSchema('dbos')
+        })
         .createTable('workflow_queue', function(table) {
             table.text('queue_name').notNullable();
             table.text('workflow_uuid').notNullable();
@@ -26,6 +15,9 @@ exports.up = function(knex) {
   
 exports.down = function(knex) {
     return knex.schema.withSchema('dbos')
+        .table('workflow_status', function(table) {
+            table.dropColumn('queue_name');
+        })
         .dropTableIfExists('workflow_queue');
 };
   

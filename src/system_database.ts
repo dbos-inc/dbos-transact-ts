@@ -202,7 +202,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          recovery_attempts = CASE WHEN $15 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
+          recovery_attempts = CASE WHEN $16 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
         RETURNING recovery_attempts`,
       [
         initStatus.workflowUUID,
@@ -264,7 +264,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (paramCnt > 1) {
             sqlStmt += ", ";
           }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
+          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
           values.push(
             workflowUUID,
             status.status,
@@ -867,22 +867,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       WHERE workflow_uuid = $1;
     `, [workflowId]);
   }
-
-  /*        with self.engine.begin() as c:
-  +            for id in dequeued_ids:
-  +                result = c.execute(
-  +                    SystemSchema.workflow_status.update()
-  +                    .where(SystemSchema.workflow_status.c.workflow_uuid == id)
-  +                    .where(
-  +                        SystemSchema.workflow_status.c.status
-  +                        == WorkflowStatusString.ENQUEUED.value
-  +                    )
-  +                    .values(status=WorkflowStatusString.PENDING.value)
-  +                )
-  +                if result.rowcount > 0:
-  +                    ret_ids.append(id)
-  +            return ret_ids
-*/  
+  
   async findAndMarkStartableWorkflows(queueName: string, concurrency?: number): Promise<string[]> {
     let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queueName);
     query = query.orderBy('created_at_epoch_ms', 'asc');
