@@ -12,6 +12,7 @@ export interface workflow_status {
   request: string;  // Serialized HTTPRequest
   executor_id: string;  // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version: string;
+  queue_name?: string;
 }
 
 export interface notifications {
@@ -41,4 +42,10 @@ export interface workflow_inputs {
 export interface scheduler_state {
   workflow_fn_name: string;
   last_run_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
+}
+
+export interface workflow_queue {
+  workflow_uuid: string;
+  queue_name: string;
+  created_at_epoch_ms: number;
 }

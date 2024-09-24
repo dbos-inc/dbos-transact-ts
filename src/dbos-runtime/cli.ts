@@ -118,7 +118,7 @@ workflowCommands
   .option('-u, --user <string>', 'Retrieve workflows run by this user')
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
-  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
+  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
   .option('--request', 'Retrieve workflow request information')
   .option("-d, --appDir <string>", "Specify the application root directory")
