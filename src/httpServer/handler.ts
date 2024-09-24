@@ -145,10 +145,12 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue)
+    : InvokeFuncs<T>
+  {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
     for (const op of ops) {
       if (asyncWf) {
@@ -179,31 +181,31 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
   invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, true, null);
+      return this.mainInvoke(object, workflowUUID, true, null, undefined);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as InvokeFuncsInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst, undefined) as unknown as InvokeFuncsInst<T>;
     }
   }
 
   startWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, true, null);
+      return this.mainInvoke(object, workflowUUID, true, null, queue);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 
   invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, false, null) as unknown as SyncHandlerWfFuncs<T>;
+      return this.mainInvoke(object, workflowUUID, false, null, undefined) as unknown as SyncHandlerWfFuncs<T>;
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, false, targetInst) as unknown as SyncHandlerWfFuncsInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, false, targetInst, undefined) as unknown as SyncHandlerWfFuncsInst<T>;
     }
   }
 

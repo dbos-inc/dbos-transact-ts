@@ -1,21 +1,17 @@
+import { DBOSInitializationError } from "./error";
+
+export const wfQueuesByName: Map<string, WorkflowQueue> = new Map();
+
 export class WorkflowQueue {
     constructor(readonly name: string, readonly concurrency?: number) {
+        if (wfQueuesByName.has(name)) {
+            throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
+        }
+        wfQueuesByName.set(name, this);
     }
 }
 
 /*
-+        registry = _get_or_create_dbos_registry()
-+        registry.queue_info_map[self.name] = self
-+
-+    def enqueue(
-+        self, func: "Workflow[P, R]", *args: P.args, **kwargs: P.kwargs
-+    ) -> "WorkflowHandle[R]":
-+        from dbos.dbos import _get_dbos_instance
-+
-+        dbos = _get_dbos_instance()
-+        return _start_workflow(dbos, func, self.name, False, *args, **kwargs)
-+
-+
 +def queue_thread(stop_event: threading.Event, dbos: "DBOS") -> None:
 +    while not stop_event.is_set():
 +        time.sleep(1)

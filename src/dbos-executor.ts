@@ -45,7 +45,6 @@ import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
 import { DBOSEventReceiver, DBOSExecutorContext} from ".";
-import { WorkflowQueue } from "./wfqueue";
 
 import { get } from "lodash";
 
@@ -140,7 +139,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
   readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly registeredQueues: Map<string, WorkflowQueue> = new Map();
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
 
@@ -645,10 +643,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
-      status: StatusString.PENDING,
+      status: (params.queueName !== undefined) ? StatusString.ENQUEUED : StatusString.PENDING,
       name: wf.name,
       className: wCtxt.isTempWorkflow ? "" : getRegisteredMethodClassName(wf),
       configName: params.configuredInstance?.name || "",
+      queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
       error: "",
@@ -670,9 +669,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction
-      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure
+    if ((wCtxt.tempWfOperationType !== TempWorkflowType.transaction
+        && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
+      || params.queueName !== undefined
     ) {
+      // TODO: Make this transactional (and with the queue step below)
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     }
 
@@ -724,21 +725,28 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       return result;
     };
-    const workflowPromise: Promise<R> = runWorkflow();
 
-    // Need to await for the workflow and capture errors.
-    const awaitWorkflowPromise = workflowPromise
-      .catch((error) => {
-        this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
-      })
-      .finally(() => {
-        // Remove itself from pending workflow map.
-        this.pendingWorkflowMap.delete(workflowUUID);
-      });
-    this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+    if (params.queueName === undefined) {
+      const workflowPromise: Promise<R> = runWorkflow();
 
-    // Return the normal handle that doesn't capture errors.
-    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+      // Need to await for the workflow and capture errors.
+      const awaitWorkflowPromise = workflowPromise
+        .catch((error) => {
+          this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
+        })
+        .finally(() => {
+          // Remove itself from pending workflow map.
+          this.pendingWorkflowMap.delete(workflowUUID);
+        });
+      this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+
+      // Return the normal handle that doesn't capture errors.
+      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+    }
+    else {
+      await this.systemDatabase.enqueueWorkflow(workflowUUID, params.queueName);
+      return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
+    }
   }
 
   /**
