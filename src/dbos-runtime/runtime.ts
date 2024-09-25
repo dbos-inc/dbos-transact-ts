@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
+import { wfQueueRunner } from '../wfqueue';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +25,7 @@ export class DBOSRuntime {
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private scheduler: DBOSScheduler | null = null;
+  private wfQueueRunner: Promise<void> | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -46,6 +48,9 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
+      wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
+      this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
+
       for (const evtRcvr of this.dbosExec.eventReceivers) {
         await evtRcvr.initialize(this.dbosExec);
       }
@@ -106,6 +111,8 @@ export class DBOSRuntime {
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
+    wfQueueRunner.stop();
+    await this.wfQueueRunner;
     for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();
     }

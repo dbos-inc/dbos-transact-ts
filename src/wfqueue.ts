@@ -1,22 +1,70 @@
+import { DBOSExecutor } from "./dbos-executor";
 import { DBOSInitializationError } from "./error";
-
-export const wfQueuesByName: Map<string, WorkflowQueue> = new Map();
 
 export class WorkflowQueue {
     constructor(readonly name: string, readonly concurrency?: number) {
-        if (wfQueuesByName.has(name)) {
+        if (wfQueueRunner.wfQueuesByName.has(name)) {
             throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
         }
-        wfQueuesByName.set(name, this);
+        wfQueueRunner.wfQueuesByName.set(name, this);
     }
 }
 
-/*
-+def queue_thread(stop_event: threading.Event, dbos: "DBOS") -> None:
-+    while not stop_event.is_set():
-+        time.sleep(1)
-+        for queue_name, queue in dbos._registry.queue_info_map.items():
-+            wf_ids = dbos._sys_db.start_queued_workflows(queue_name, queue.concurrency)
-+            for id in wf_ids:
-+                _execute_workflow_id(dbos, id)
-*/
+class WFQueueRunner
+{
+    readonly wfQueuesByName: Map<string, WorkflowQueue> = new Map();
+
+    private isRunning: boolean = false;
+    private interruptResolve?: () => void;
+
+    stop() {
+        if (!this.isRunning) return;
+        this.isRunning = false;
+        if (this.interruptResolve) {
+            this.interruptResolve();
+        }
+    }
+
+    async dispatchLoop(exec: DBOSExecutor): Promise<void> {
+        this.isRunning = true;
+        while (this.isRunning) {
+            // Wait for either the timeout or an interruption
+            let timer: NodeJS.Timeout;
+            const timeoutPromise = new Promise<void>((resolve) => {
+                timer = setTimeout(() => {
+                    resolve();
+                }, 1000);
+            });
+
+            await Promise.race([
+                timeoutPromise,
+                new Promise<void>((_, reject) => this.interruptResolve = reject)
+            ])
+            .catch(() => {exec.logger.debug("Workflow queue loop interrupted!")}); // Interrupt sleep throws
+                clearTimeout(timer!);
+
+            if (!this.isRunning) {
+                break;
+            }
+
+            // Check queues
+            for (const [qn, q] of this.wfQueuesByName) {
+                const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(qn, q.concurrency);
+                for (const wfid of wfids) {
+                    const _wfh = await exec.executeWorkflowUUID(wfid);
+                }
+            }
+        }
+    }
+
+    logRegisteredEndpoints(exec: DBOSExecutor) {
+        const logger = exec.logger;
+        logger.info("Workflow queues:");
+        for (const [qn, q] of this.wfQueuesByName) {
+            const conc = q.concurrency !== undefined ? `${q.concurrency}` : 'No concurrency limit set';
+            logger.info(`    ${qn}: ${conc}`);
+        }
+    }
+}
+
+export const wfQueueRunner = new WFQueueRunner();

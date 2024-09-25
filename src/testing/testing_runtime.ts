@@ -17,7 +17,7 @@ import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
-import { WorkflowQueue } from "../wfqueue";
+import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -91,6 +91,7 @@ export async function createInternalTestRuntime(userClasses: object[] | undefine
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #scheduler: DBOSScheduler | null = null;
+  #wfQueueRunner: Promise<void> | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
 
@@ -108,6 +109,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
+    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(dbosExec);
     this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
@@ -118,6 +120,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
+      wfQueueRunner.stop();
+      await this.#wfQueueRunner;
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
         await evtRcvr.destroy();
