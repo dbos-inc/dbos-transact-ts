@@ -48,7 +48,8 @@ export interface WorkflowParams {
   parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
   recovery?: boolean;
-  readonly queueName?: string;
+  queueName?: string;
+  executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
 
 export interface WorkflowConfig {
@@ -60,6 +61,7 @@ export interface WorkflowStatus {
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
   readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
+  readonly queueName?: string; // The name of the queue, if workflow was queued
   readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
