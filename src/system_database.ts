@@ -735,7 +735,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
 
-    const { rows } = await this.pool.query<workflow_status>(`SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
+    const { rows } = await this.pool.query<workflow_status>(`SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`, [workflowUUID]);
     let value = null;
     if (rows.length > 0) {
       value = {
@@ -743,6 +743,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         workflowName: rows[0].name,
         workflowClassName: rows[0].class_name || "",
         workflowConfigName: rows[0].config_name || "",
+        queueName: rows[0].queue_name || undefined,
         authenticatedUser: rows[0].authenticated_user,
         assumedRole: rows[0].assumed_role,
         authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],

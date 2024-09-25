@@ -753,7 +753,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
     }
     else {
-      console.log(`Enqueue workflow ${params.queueName}`);
       await this.systemDatabase.enqueueWorkflow(workflowUUID, params.queueName);
       return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
     }
