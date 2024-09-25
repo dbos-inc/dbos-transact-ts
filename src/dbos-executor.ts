@@ -685,6 +685,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         result = await wf.call(params.configuredInstance, wCtxt, ...args);
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
+        if (internalStatus.queueName) {
+          // Now... the workflow isn't certainly done.
+          //  But waiting this long is for concurrency control anyway,
+          //   so it is probably done enough.
+          await this.systemDatabase.dequeueWorkflow(workflowUUID);
+        }
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -704,6 +710,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
           internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;
+          if (internalStatus.queueName) {
+            await this.systemDatabase.dequeueWorkflow(workflowUUID);
+          }
           await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
