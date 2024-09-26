@@ -20,4 +20,3 @@ exports.down = function(knex) {
         })
         .dropTableIfExists('workflow_queue');
 };
-  

@@ -1,4 +1,4 @@
-import { Communicator, CommunicatorContext, TestingRuntime, Workflow, WorkflowContext } from "../src";
+import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -9,6 +9,7 @@ import { sleepms } from "../src/utils";
 
 const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
+const childqueue = new WorkflowQueue("childQ", 3);
 
 describe("scheduled-wf-tests-simple", () => {
     let config: DBOSConfig;
@@ -60,6 +61,10 @@ describe("scheduled-wf-tests-simple", () => {
         await wfh2.getResult();
         expect(TestWFs2.flag).toBeTruthy();
         expect(TestWFs2.wfCounter).toBe(1);
+    }, 10000);
+
+    test("child-wfs-queue", async() => {
+        expect (await testRuntime.invokeWorkflow(TestChildWFs).testWorkflow('a','b')).toBe('adbdadbd');
     }, 10000);
 });
 
@@ -118,3 +123,30 @@ class TestWFs2
     }
 }
 
+class TestChildWFs
+{
+    @Workflow()
+    static async testWorkflow(ctx: WorkflowContext, var1: string, var2: string) {
+        const wfh1 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var1);
+        const wfh2 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var2);
+        const wfh3 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var1);
+        const wfh4 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var2);
+
+        await ctx.sleepms(1000);
+        expect((await wfh4.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+        await ctx.send(wfh1.getWorkflowUUID(), 'go', 'release');
+        await ctx.send(wfh2.getWorkflowUUID(), 'go', 'release');
+        await ctx.send(wfh3.getWorkflowUUID(), 'go', 'release');
+        await ctx.send(wfh4.getWorkflowUUID(), 'go', 'release');
+
+        return (await wfh1.getResult() + await wfh2.getResult() +
+           await wfh3.getResult() + await wfh4.getResult())
+    }
+
+    @Workflow()
+    static async testChildWF(ctx: WorkflowContext, str: string) {
+        await ctx.recv('release', 30);
+        return Promise.resolve(str + 'd');
+    }
+}
