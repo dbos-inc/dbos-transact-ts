@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
+import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
 import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state, workflow_queue } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
@@ -625,14 +625,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return;
     }
     ({ rows } = await client.query(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value) VALUES ($1, $2, $3) ON CONFLICT (workflow_uuid, key) DO NOTHING RETURNING workflow_uuid;`,
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (workflow_uuid, key)
+       DO UPDATE SET value = $3
+       RETURNING workflow_uuid;`,
       [workflowUUID, key, DBOSJSON.stringify(message)]
     ));
-    if (rows.length === 0) {
-      await client.query("ROLLBACK");
-      client.release();
-      throw new DuplicateWorkflowEventError(workflowUUID, key);
-    }
     await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
     await client.query("COMMIT");
     client.release();

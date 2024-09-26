@@ -5,7 +5,7 @@ import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
 import { WorkflowStatusInternal, SystemDatabase } from "../system_database";
 import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
+import { DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 import { DBOSJSON, sleepms } from "../utils";
 
@@ -353,12 +353,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
         return;
       }
 
-      const exists = await workflowEvents.get([workflowUUID, key]);
-      if (exists === undefined) {
-        workflowEvents.set([workflowUUID, key], value);
-      } else {
-        throw new DuplicateWorkflowEventError(workflowUUID, key);
-      }
+      workflowEvents.set([workflowUUID, key], value);
+
       // For OAOO, record the set.
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });

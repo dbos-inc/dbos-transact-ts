@@ -83,6 +83,15 @@ describe("dbos-tests", () => {
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
   });
 
+  test("simple-workflow-events-multiple", async () => {
+    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
+    const workflowUUID = handle.getWorkflowUUID();
+    await handle.getResult();
+    await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1b");
+    await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
+    await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+  });
+
   class ReadRecording {
     static cnt: number = 0;
     static wfCnt: number = 0;
@@ -321,6 +330,14 @@ class DBOSTestClass {
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
+    return 0;
+  }
+
+  @Workflow()
+  static async setEventMultipleWorkflow(ctxt: WorkflowContext) {
+    await ctxt.setEvent("key1", "value1");
+    await ctxt.setEvent("key2", "value2");
+    await ctxt.setEvent("key1", "value1b");
     return 0;
   }
 

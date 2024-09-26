@@ -118,13 +118,6 @@ export class DBOSDataValidationError extends DBOSError {
   }
 }
 
-const DuplicateWorkflowEvent = 10;
-export class DuplicateWorkflowEventError extends DBOSError {
-  constructor(workflowUUID: string, key: string) {
-    super(`Workflow ${workflowUUID} has already emitted an event with key ${key}`, DuplicateWorkflowEvent);
-  }
-}
-
 // This error is thrown by applications.
 const ResponseError = 11;
 export class DBOSResponseError extends DBOSError {
