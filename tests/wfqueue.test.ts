@@ -35,6 +35,8 @@ describe("scheduled-wf-tests-simple", () => {
         expect(await testRuntime.invokeWorkflow(TestWFs, wfid).testWorkflow('abc', '123')).toBe('abcd123');
         expect(TestWFs.wfCounter).toBe(2);
         expect(TestWFs.stepCounter).toBe(1);
+
+        expect((await wfh.getStatus())?.queueName).toBe('testQ');
     });
 });
 
@@ -66,21 +68,6 @@ class TestWFs
 }
 
 /*
-+def test_simple_queue(dbos: DBOS) -> None:
-+    wf_counter: int = 0
-+    step_counter: int = 0
-+
-+    wfid = str(uuid.uuid4())
-+
-+    with SetWorkflowID(wfid):
-+        handle = queue.enqueue(test_workflow, "abc", "123")
-+    assert handle.get_result() == "abcd123"
-+    with SetWorkflowID(wfid):
-+        assert test_workflow("abc", "123") == "abcd123"
-+    assert wf_counter == 2
-+    assert step_counter == 1
-+
-+
 +def test_one_at_a_time(dbos: DBOS) -> None:
 +    wf_counter = 0
 +    flag = False
