@@ -381,6 +381,19 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
   }
 
+  /**
+   * Queue another workflow as its child workflow and return a workflow handle.
+   * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
+   * We pass in itself as a parent context and assign the child workflow with a deterministic UUID "this.workflowUUID-functionID".
+   * We also pass in its own workflowUUID and function ID so the invoked handle is deterministic.
+   */
+  async queueChildWorkflow<T extends unknown[], R>(queue: WorkflowQueue, wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
+    // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
+    const funcId = this.functionIDGetIncrement();
+    const childUUID: string = this.workflowUUID + "-" + funcId;
+    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID, queueName: queue.name }, this.workflowUUID, funcId, ...args);
+  }
+
   async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
     return this.startChildWorkflow(wf, ...args).then((handle) => handle.getResult());
   }

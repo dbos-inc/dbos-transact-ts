@@ -32,6 +32,8 @@ describe("scheduled-wf-tests-simple", () => {
 
         const wfh = await testRuntime.startWorkflow(TestWFs, wfid, {}, queue).testWorkflow('abc', '123');
         expect(await wfh.getResult()).toBe('abcd123');
+        expect((await wfh.getStatus())?.queueName).toBe('testQ');
+
         expect(await testRuntime.invokeWorkflow(TestWFs, wfid).testWorkflow('abc', '123')).toBe('abcd123');
         expect(TestWFs.wfCounter).toBe(2);
         expect(TestWFs.stepCounter).toBe(1);

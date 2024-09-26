@@ -153,7 +153,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * to invoke workflows, transactions, and communicators;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
-    clsinst: ConfiguredInstance | null): InvokeFuncs<T>
+    clsinst: ConfiguredInstance | null, queue?: WorkflowQueue): InvokeFuncs<T>
   {
     const dbosExec = this.getDBOSExec();
 
@@ -168,7 +168,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst, queueName: queue?.name };
     for (const op of ops) {
       if (asyncWf) {
         proxy[op.name] = op.txnConfig
@@ -203,11 +203,11 @@ export class TestingRuntimeImpl implements TestingRuntime {
     : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T>
   {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, params, true, null);
+      return this.mainInvoke(object, workflowUUID, params, true, null, queue);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 
