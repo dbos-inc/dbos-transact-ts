@@ -854,19 +854,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
+    const time = new Date().getTime();
     const _res = await this.pool.query<scheduler_state>(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
-      VALUES ($1, $2)
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, created_at_epoch_ms)
+      VALUES ($1, $2, $3)
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
-    `, [workflowId, queue.name]);
+    `, [workflowId, queue.name, time]);
   }
 
-  async dequeueWorkflow(workflowId: string, _queue: WorkflowQueue): Promise<void> {
-    const _res = await this.pool.query<workflow_queue>(`
-      DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue
-      WHERE workflow_uuid = $1;
-    `, [workflowId]);
+  async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
+    if (queue.rateLimit) {
+      const time = new Date().getTime();
+      const _res = await this.pool.query<workflow_queue>(`
+        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+        SET completed_at_epoch_ms = $2
+        WHERE workflow_uuid = $1;
+      `, [workflowId, time]);
+
+    }
+    else {
+      const _res = await this.pool.query<workflow_queue>(`
+        DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+        WHERE workflow_uuid = $1;
+      `, [workflowId]);
+    }
   }
   
   async  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]> {
