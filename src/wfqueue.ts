@@ -59,8 +59,8 @@ class WFQueueRunner
             }
 
             // Check queues
-            for (const [qn, q] of this.wfQueuesByName) {
-                const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(qn, q.concurrency);
+            for (const [_qn, q] of this.wfQueuesByName) {
+                const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q);
                 for (const wfid of wfids) {
                     const _wfh = await exec.executeWorkflowUUID(wfid);
                 }

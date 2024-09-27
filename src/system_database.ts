@@ -11,6 +11,7 @@ import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex, { Knex } from "knex";
 import path from "path";
+import { WorkflowQueue } from "./wfqueue";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -36,7 +37,7 @@ export interface SystemDatabase {
 
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
   dequeueWorkflow(workflowId: string): Promise<void>;
-  findAndMarkStartableWorkflows(queueName: string, concurrency?: number): Promise<string[]>;
+  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
@@ -868,11 +869,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     `, [workflowId]);
   }
   
-  async findAndMarkStartableWorkflows(queueName: string, concurrency?: number): Promise<string[]> {
-    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queueName);
+  async  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]> {
+    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queue.name);
     query = query.orderBy('created_at_epoch_ms', 'asc');
-    if (concurrency !== undefined) {
-      query = query.limit(concurrency);
+    if (queue.concurrency !== undefined) {
+      query = query.limit(queue.concurrency);
     }
     const rows = await query.select('workflow_uuid');
     const workflowIDs = rows.map(row => row.workflow_uuid);
