@@ -177,7 +177,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedUser: parentCtx?.authenticatedUser ?? "",
         authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
         assumedRole: parentCtx?.assumedRole ?? "",
-        executorID: parentCtx?.executorID,
       },
       parentCtx?.span,
     );
@@ -589,7 +588,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         readOnly: procInfo.config.readOnly ?? false,
         isolationLevel: procInfo.config.isolationLevel,
         executeLocally,
-        executorID: this.executorID,
       },
       this.span,
     );
@@ -635,7 +633,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedRoles: this.authenticatedRoles,
         readOnly: readOnly,
         isolationLevel: txnInfo.config.isolationLevel,
-        executorID: this.executorID,
       },
       this.span,
     );
@@ -742,7 +739,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedUser: this.authenticatedUser,
         assumedRole: this.assumedRole,
         authenticatedRoles: this.authenticatedRoles,
-        executorID: this.executorID,
         retriesAllowed: commInfo.config.retriesAllowed,
         intervalSeconds: commInfo.config.intervalSeconds,
         maxAttempts: commInfo.config.maxAttempts,
