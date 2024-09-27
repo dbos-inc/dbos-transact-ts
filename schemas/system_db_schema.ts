@@ -48,4 +48,6 @@ export interface workflow_queue {
   workflow_uuid: string;
   queue_name: string;
   created_at_epoch_ms: number;
+  started_at_epoch_ms?: number;
+  completed_at_epoch_ms?: number;
 }

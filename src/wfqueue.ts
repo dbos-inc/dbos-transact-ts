@@ -1,8 +1,19 @@
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSInitializationError } from "./error";
 
+/**
+ Limit the maximum number of functions from this queue
+   that can be started in a given period.
+ If the limit is 5 and the period is 10, no more than 5 functions can be
+   started per 10 seconds.
+*/
+interface QueueRateLimit {
+    limitPerPeriod: number;
+    periodSec: number;
+}
+
 export class WorkflowQueue {
-    constructor(readonly name: string, readonly concurrency?: number) {
+    constructor(readonly name: string, readonly concurrency?: number, readonly rateLimit?: QueueRateLimit) {
         if (wfQueueRunner.wfQueuesByName.has(name)) {
             throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
         }
