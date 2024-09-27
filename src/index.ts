@@ -30,10 +30,13 @@ export {
 } from './workflow';
 
 export {
-  CommunicatorContext,
-  CommunicatorConfig,
-  CommunicatorFunction,
-} from './communicator';
+  StepContext as CommunicatorContext,
+  StepConfig as CommunicatorConfig,
+  StepFunction as CommunicatorFunction,
+  StepContext,
+  StepConfig,
+  StepFunction,
+} from './step';
 
 export * as Error from './error';
 

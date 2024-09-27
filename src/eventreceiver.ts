@@ -3,7 +3,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
-import { CommunicatorFunction } from './communicator';
+import { StepFunction } from './step';
 
 /*
  * Info provided to an event receiver at initialization,
@@ -30,7 +30,7 @@ export interface DBOSExecutorContext
 
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
-  external<T extends unknown[], R>(commFn: CommunicatorFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  external<T extends unknown[], R>(commFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
-import { CommunicatorFunction } from "../communicator";
+import { StepFunction } from "../step";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
@@ -170,7 +170,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
           : op.workflowConfig
             ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
             : op.commConfig
-              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as CommunicatorFunction<unknown[], unknown>, wfParams, ...args)
+              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig
                 ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown>, wfParams, ...args)
                 : undefined;

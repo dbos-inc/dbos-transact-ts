@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
-import { CommunicatorConfig, CommunicatorContext } from "./communicator";
+import { StepConfig, StepContext } from "./step";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
 import { StoredProcedureConfig, StoredProcedureContext } from "./procedure";
@@ -147,7 +147,7 @@ export interface MethodRegistrationBase {
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: CommunicatorConfig;
+  commConfig?: StepConfig;
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
@@ -182,7 +182,7 @@ implements MethodRegistrationBase
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: CommunicatorConfig;
+  commConfig?: StepConfig;
   procConfig?: TransactionConfig;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
@@ -637,11 +637,11 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
   return decorator;
 }
 
-export function Communicator(config: CommunicatorConfig={}) {
+export function Communicator(config: StepConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.commConfig = config;
