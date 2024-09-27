@@ -412,10 +412,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     throw new Error("Method not implemented.");
   }
 
-  enqueueWorkflow(_workflowId: string, _queueName: string): Promise<void> {
+  enqueueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
     throw new Error("Method not implemented.");
   }
-  dequeueWorkflow(_workflowId: string): Promise<void> {
+  dequeueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
     throw new Error("Method not implemented.");
   }
   findAndMarkStartableWorkflows(_queue: WorkflowQueue): Promise<string[]> {

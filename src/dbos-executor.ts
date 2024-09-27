@@ -47,6 +47,7 @@ import { NoticeMessage } from "pg-protocol/dist/messages";
 import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 
 import { get } from "lodash";
+import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -689,7 +690,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           // Now... the workflow isn't certainly done.
           //  But waiting this long is for concurrency control anyway,
           //   so it is probably done enough.
-          await this.systemDatabase.dequeueWorkflow(workflowUUID);
+          await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
         }
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
@@ -711,7 +712,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;
           if (internalStatus.queueName) {
-            await this.systemDatabase.dequeueWorkflow(workflowUUID);
+            await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
           }
           await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
@@ -753,9 +754,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
     }
     else {
-      await this.systemDatabase.enqueueWorkflow(workflowUUID, params.queueName);
+      await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
       return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
     }
+  }
+
+  #getQueueByName(name: string): WorkflowQueue {
+    const q = wfQueueRunner.wfQueuesByName.get(name);
+    if (!q) throw new DBOSNotRegisteredError(`Workflow queue '${name}' does is not defined.`);
+    return q;
   }
 
   /**

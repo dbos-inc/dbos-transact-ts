@@ -35,8 +35,8 @@ export interface SystemDatabase {
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
   setWorkflowStatus(workflowUUID: string, status: typeof StatusString[keyof typeof StatusString], resetRecoveryAttempts: boolean): Promise<void>;
 
-  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
-  dequeueWorkflow(workflowId: string): Promise<void>;
+  enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
@@ -853,16 +853,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
+  async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
     const _res = await this.pool.query<scheduler_state>(`
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
       VALUES ($1, $2)
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
-    `, [workflowId, queueName]);
+    `, [workflowId, queue.name]);
   }
 
-  async dequeueWorkflow(workflowId: string): Promise<void> {
+  async dequeueWorkflow(workflowId: string, _queue: WorkflowQueue): Promise<void> {
     const _res = await this.pool.query<workflow_queue>(`
       DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue
       WHERE workflow_uuid = $1;
