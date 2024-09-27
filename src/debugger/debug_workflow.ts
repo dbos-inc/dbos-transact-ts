@@ -2,7 +2,7 @@
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContextImpl } from "../transaction";
-import { Communicator } from "../communicator";
+import { CommunicatorFunction } from "../communicator";
 import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
@@ -67,7 +67,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as CommunicatorFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
@@ -83,7 +83,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ?          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
-            ?            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            ?            (...args: unknown[]) => this.external(op.registeredFunction as CommunicatorFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -269,8 +269,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
+  async external<T extends unknown[], R>(commFn: CommunicatorFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
+    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as CommunicatorFunction<unknown[], unknown>);
     if (commConfig === undefined) {
       throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
     }

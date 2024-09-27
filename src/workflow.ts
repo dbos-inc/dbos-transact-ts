@@ -2,7 +2,7 @@
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
+import { CommunicatorFunction, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { DBOSJSON, sleepms } from "./utils";
@@ -725,8 +725,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The communicator may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
+  async external<T extends unknown[], R>(commFn: CommunicatorFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
+    const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as CommunicatorFunction<unknown[], unknown>);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
     }
@@ -878,7 +878,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as CommunicatorFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
@@ -894,7 +894,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as CommunicatorFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;

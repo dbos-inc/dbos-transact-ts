@@ -15,7 +15,7 @@ import {
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
-import { CommunicatorConfig, Communicator } from './communicator';
+import { CommunicatorConfig, CommunicatorFunction } from './communicator';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
@@ -81,7 +81,7 @@ interface TransactionInfo {
 }
 
 interface CommunicatorInfo {
-  communicator: Communicator<unknown[], unknown>;
+  communicator: CommunicatorFunction<unknown[], unknown>;
   config: CommunicatorConfig;
 }
 
@@ -510,7 +510,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerCommunicator(ro: MethodRegistrationBase) {
-    const comm = ro.registeredFunction as Communicator<unknown[], unknown>;
+    const comm = ro.registeredFunction as CommunicatorFunction<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
     if (this.communicatorInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
@@ -587,7 +587,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return {txnInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
-  getCommunicatorInfo(cf: Communicator<unknown[], unknown>) {
+  getCommunicatorInfo(cf: CommunicatorFunction<unknown[], unknown>) {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.communicatorInfoMap.get(cfname);
   }
@@ -832,7 +832,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async external<T extends unknown[], R>(commFn: CommunicatorFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;

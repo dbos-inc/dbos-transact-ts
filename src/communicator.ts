@@ -4,8 +4,7 @@ import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
-export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
-export type CommunicatorFunction<T extends unknown[], R> = Communicator<T, R>;
+export type CommunicatorFunction<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
 
 export interface CommunicatorConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)
