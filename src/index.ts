@@ -105,6 +105,7 @@ export {
   Authentication,
   KoaBodyParser,
   KoaCors,
+  KoaGlobalMiddleware,
   KoaMiddleware,
 
   // OpenApi Decorators
