@@ -47,7 +47,7 @@ export interface scheduler_state {
 export interface workflow_queue {
   workflow_uuid: string;
   queue_name: string;
-  created_at_epoch_ms: number;
-  started_at_epoch_ms?: number;
-  completed_at_epoch_ms?: number;
+  created_at_epoch_ms: number; // This time is provided by the database
+  started_at_epoch_ms?: number; // This time is provided by the client
+  completed_at_epoch_ms?: number; // This time is provided by the client
 }

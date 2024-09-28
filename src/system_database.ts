@@ -854,13 +854,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
-    const time = new Date().getTime();
     const _res = await this.pool.query<scheduler_state>(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, created_at_epoch_ms)
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
       VALUES ($1, $2, $3)
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
-    `, [workflowId, queue.name, time]);
+    `, [workflowId, queue.name]);
   }
 
   async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
@@ -882,23 +881,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
   
   async  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]> {
-    let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queue.name);
-    query = query.orderBy('created_at_epoch_ms', 'asc');
-    if (queue.concurrency !== undefined) {
-      query = query.limit(queue.concurrency);
-    }
-    const rows = await query.select('workflow_uuid');
-    const workflowIDs = rows.map(row => row.workflow_uuid);
+    const startTimeMs = new Date().getTime();
+    const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
-    for (const id of workflowIDs) {
-      const res = await this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-        .where('workflow_uuid', id)
-        .andWhere('status', StatusString.ENQUEUED)
-        .update('status', StatusString.PENDING);
-      if (res > 0) {
-        claimedIDs.push(id);
+
+    await this.knexDB.transaction(async (trx: Knex.Transaction) => {
+      let query = trx<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queue.name);
+      query = query.orderBy('created_at_epoch_ms', 'asc');
+      if (queue.concurrency !== undefined) {
+        query = query.limit(queue.concurrency);
       }
-    }
+      const rows = await query.select('workflow_uuid');
+      const workflowIDs = rows.map(row => row.workflow_uuid);
+      for (const id of workflowIDs) {
+        const res = await this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+          .where('workflow_uuid', id)
+          .andWhere('status', StatusString.ENQUEUED)
+          .update('status', StatusString.PENDING);
+        if (res > 0) {
+          claimedIDs.push(id);
+        }
+      }  
+    }, {isolationLevel: "repeatable read"});
+
+    // Return the IDs of all functions we marked started
     return claimedIDs;
   }
 }
