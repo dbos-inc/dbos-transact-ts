@@ -856,7 +856,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
     const _res = await this.pool.query<scheduler_state>(`
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
-      VALUES ($1, $2, $3)
+      VALUES ($1, $2)
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
     `, [workflowId, queue.name]);
