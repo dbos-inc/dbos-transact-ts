@@ -159,7 +159,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
 
-
   eventReceivers: DBOSEventReceiver[] = [];
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
