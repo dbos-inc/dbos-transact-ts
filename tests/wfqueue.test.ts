@@ -1,4 +1,4 @@
-import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext } from "../src";
+import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
 import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
 import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -13,6 +13,10 @@ const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
 const serialqueueLimited = new WorkflowQueue("serialQL", 1, {limitPerPeriod: 10, periodSec: 1});
 const childqueue = new WorkflowQueue("childQ", 3);
+
+const qlimit = 5;
+const qperiod = 2
+const rlqueue = new WorkflowQueue("limited_queue", undefined, {limitPerPeriod: qlimit, periodSec: qperiod});
 
 async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
     let maxTries = 10;
@@ -77,84 +81,51 @@ describe("queued-wf-tests-simple", () => {
     test("test_one_at_a_time_with_limiter", async() => {
         await runOneAtATime(testRuntime, serialqueueLimited);
     }, 10000);
+
+    test("test-queue_rate_limit", async() => {
+        const handles: WorkflowHandle<number>[] = [];
+        const times: number[] = [];
+
+        // Launch a number of tasks equal to three times the limit.
+        // This should lead to three "waves" of the limit tasks being
+        //   executed simultaneously, followed by a wait of the period,
+        //   followed by the next wave.
+        const numWaves = 3;
+
+        for (let i = 0; i< qlimit * numWaves; ++i) {
+            const h = await testRuntime.startWorkflow(TestWFs, undefined, undefined, rlqueue).testWorkflowTime("abc", "123");
+            handles.push(h);
+        }
+        for (const h of handles) {
+            times.push(await h.getResult());
+        }
+
+        // Verify all queue entries eventually get cleaned up.
+        expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
+
+        // Verify all workflows get the SUCCESS status eventually
+        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+        await dbosExec.flushWorkflowBuffers();
+
+        // Verify that each "wave" of tasks started at the ~same time.
+        for (let wave = 0; wave < numWaves; ++wave) {
+            for (let i = wave * qlimit; i < (wave + 1) * qlimit -1; ++i) {
+                expect(times[i + 1] - times[i]).toBeLessThan(100);
+            }
+        }
+
+        // Verify that the gap between "waves" is ~equal to the period
+        for (let wave = 1; wave < numWaves; ++wave) {
+            expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod*1000 - 200);
+            expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod*1000 + 200);
+        }
+
+        for (const h of handles) {
+            expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
+        }
+    }, 10000);
 });
 
-/*
-def test_one_at_a_time_with_limiter(dbos: DBOS) -> None:
-    wf_counter = 0
-    flag = False
-    workflow_event = threading.Event()
-    main_thread_event = threading.Event()
-
-    @DBOS.workflow()
-    def workflow_one() -> None:
-        nonlocal wf_counter
-        wf_counter += 1
-        main_thread_event.set()
-        workflow_event.wait()
-
-    @DBOS.workflow()
-    def workflow_two() -> None:
-        nonlocal flag
-        flag = True
-
-    queue = Queue("test_queue", concurrency=1, limiter={"limit": 10, "period": 1})
-    handle1 = queue.enqueue(workflow_one)
-    handle2 = queue.enqueue(workflow_two)
-
-    main_thread_event.wait()
-    time.sleep(2)  # Verify the other task isn't scheduled on subsequent poller ticks.
-    assert not flag
-    workflow_event.set()
-    assert handle1.get_result() == None
-    assert handle2.get_result() == None
-    assert flag
-    assert wf_counter == 1
-*/
-
-/*
-def test_limiter(dbos: DBOS) -> None:
-
-    @DBOS.workflow()
-    def test_workflow(var1: str, var2: str) -> float:
-        assert var1 == "abc" and var2 == "123"
-        return time.time()
-
-    limit = 5
-    period = 2
-    queue = Queue("test_queue", limiter={"limit": limit, "period": period})
-
-    handles: list[WorkflowHandle[float]] = []
-    times: list[float] = []
-
-    # Launch a number of tasks equal to three times the limit.
-    # This should lead to three "waves" of the limit tasks being
-    # executed simultaneously, followed by a wait of the period,
-    # followed by the next wave.
-    num_waves = 3
-    for _ in range(limit * num_waves):
-        h = queue.enqueue(test_workflow, "abc", "123")
-        handles.append(h)
-    for h in handles:
-        times.append(h.get_result())
-
-    # Verify that each "wave" of tasks started at the ~same time.
-    for wave in range(num_waves):
-        for i in range(wave * limit, (wave + 1) * limit - 1):
-            assert times[i + 1] - times[i] < 0.1
-
-    # Verify that the gap between "waves" is ~equal to the period
-    for wave in range(num_waves - 1):
-        assert times[limit * wave] - times[limit * wave - 1] < period + 0.1
-
-    # Verify all workflows get the SUCCESS status eventually
-    dbos._sys_db.wait_for_buffer_flush()
-    for h in handles:
-        assert h.get_status().status == WorkflowStatusString.SUCCESS.value
-
-    # Verify all queue entries eventually get cleaned up.
-    assert queue_entries_are_cleaned_up(dbos)
-*/
 
 class TestWFs
 {
@@ -179,6 +150,13 @@ class TestWFs
     static async testStep(ctx: CommunicatorContext, str: string) {
         ++TestWFs.stepCounter;
         return Promise.resolve(str + 'd');
+    }
+
+    @Workflow()
+    static async testWorkflowTime(_ctx: WorkflowContext, var1: string, var2: string): Promise<number> {
+        expect (var1).toBe("abc");
+        expect (var2).toBe("123");
+        return Promise.resolve(new Date().getTime());
     }
 }
 
@@ -256,4 +234,3 @@ async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) 
     expect(TestWFs2.wfCounter).toBe(1);
     expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
 }
-
