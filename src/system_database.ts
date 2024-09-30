@@ -886,23 +886,71 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const claimedIDs: string[] = [];
 
     await this.knexDB.transaction(async (trx: Knex.Transaction) => {
-      let query = trx<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).where('queue_name', queue.name);
+      // If there is a rate limit, compute how many functions have started in its period.
+      let numRecentQueries = 0;
+      if (queue.rateLimit) {
+        const numRecentQueriesS = (await trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+          .count()
+          .where('queue_name', queue.name)
+          .andWhere('started_at_epoch_ms', '>', startTimeMs - limiterPeriodMS)
+          .first())!.count;
+        numRecentQueries = parseInt(`${numRecentQueriesS}`);
+        if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          return claimedIDs;
+        }
+      }
+
+      // Select not-yet-completed functions in the queue ordered by the
+      //   time at which they were enqueued.
+      // If there is a concurrency limit N, select only the N most recent
+      //   functions, else select all of them.
+      // Started functions count toward concurrency, will be filtered below
+      let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+        .whereNull('completed_at_epoch_ms')
+        .andWhere('queue_name', queue.name)
+        .select();
       query = query.orderBy('created_at_epoch_ms', 'asc');
       if (queue.concurrency !== undefined) {
         query = query.limit(queue.concurrency);
       }
-      const rows = await query.select('workflow_uuid');
-      const workflowIDs = rows.map(row => row.workflow_uuid);
+
+      // From the functions retrieved, get the workflow IDs of the functions
+      // that have not yet been started so we can start them.
+      const rows = await query.select(['workflow_uuid', 'started_at_epoch_ms']);
+      const workflowIDs = rows
+        .filter((row) => !row.started_at_epoch_ms)
+        .map(row => row.workflow_uuid);
       for (const id of workflowIDs) {
-        const res = await this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+        // If we have a rate limit, stop starting functions when the number
+        //   of functions started this period exceeds the limit.
+        if (queue.rateLimit && numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          break;
+        }
+        const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
           .where('workflow_uuid', id)
           .andWhere('status', StatusString.ENQUEUED)
           .update('status', StatusString.PENDING);
         if (res > 0) {
           claimedIDs.push(id);
+          await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+            .where('workflow_uuid', id)
+            .update('started_at_epoch_ms', startTimeMs);
         }
+        // If we did not update this record, probably someone else did.  Count in either case.
+        ++numRecentQueries;
       }  
     }, {isolationLevel: "repeatable read"});
+
+    // If we have a rate limit, garbage-collect all completed functions started
+    //   before the period. If there's no limiter, there's no need--they were
+    //   deleted on completion.
+    if (queue.rateLimit) {
+      await this.knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+        .whereNotNull('completed_at_epoch_ms')
+        .andWhere('queue_name', queue.name)
+        .andWhere('started_at_epoch_ms', '<', startTimeMs - limiterPeriodMS)
+        .delete();
+    }
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
