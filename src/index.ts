@@ -108,6 +108,7 @@ export {
   Authentication,
   KoaBodyParser,
   KoaCors,
+  KoaGlobalMiddleware,
   KoaMiddleware,
 
   // OpenApi Decorators
@@ -137,6 +138,7 @@ export {
 
 export {
   DBOSRuntimeConfig,
+  DBOS,
 } from "./dbos-runtime/runtime";
 
 export {
