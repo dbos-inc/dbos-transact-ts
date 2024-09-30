@@ -135,6 +135,7 @@ export {
 
 export {
   DBOSRuntimeConfig,
+  DBOS,
 } from "./dbos-runtime/runtime";
 
 export {
