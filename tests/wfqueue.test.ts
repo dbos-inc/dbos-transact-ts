@@ -1,15 +1,35 @@
 import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext } from "../src";
-import { DBOSConfig } from "../src/dbos-executor";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
+import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { WorkflowQueue } from "../src";
 import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
+import { PostgresSystemDatabase } from "../src/system_database";
+import { workflow_queue } from "../schemas/system_db_schema";
 
 
 const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
 const childqueue = new WorkflowQueue("childQ", 3);
+
+async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
+    let maxTries = 10;
+    let success = false;
+    while (maxTries > 0) {
+        const r = await (dbos.getDBOSExec().systemDatabase as PostgresSystemDatabase)
+           .knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+           .count()
+           .first();
+        if (`${r!.count}` === '0') {
+            success = true;
+            break;
+        }
+        await sleepms(1000);
+        --maxTries;
+    }
+    return success;
+}
 
 describe("scheduled-wf-tests-simple", () => {
     let config: DBOSConfig;
@@ -61,6 +81,7 @@ describe("scheduled-wf-tests-simple", () => {
         await wfh2.getResult();
         expect(TestWFs2.flag).toBeTruthy();
         expect(TestWFs2.wfCounter).toBe(1);
+        expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
     }, 10000);
 
     test("child-wfs-queue", async() => {
