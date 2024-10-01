@@ -1,6 +1,6 @@
 import {
-  Communicator,
-  CommunicatorContext,
+  Step,
+  StepContext,
   ConfiguredInstance,
   configureInstance,
   InitContext,
@@ -37,8 +37,8 @@ class DebuggerCCTest extends ConfiguredInstance {
     return `${name}${funcResult}`;
   }
 
-  @Communicator()
-  async testCommunicator(_ctxt: CommunicatorContext, inp: string) {
+  @Step()
+  async testStep(_ctxt: StepContext, inp: string) {
     expect(this.name).toBe('configA');
     return Promise.resolve(inp);
   }
@@ -49,7 +49,7 @@ class DebuggerCCTest extends ConfiguredInstance {
     expect(this.name).toBe('configA');
     await ctxt.sleep(1);
     const txResult = await ctxt.invoke(this).testReadOnlyFunction(num);
-    const cResult = await ctxt.invoke(this).testCommunicator("comm");
+    const cResult = await ctxt.invoke(this).testStep("comm");
     const wfResult = await ctxt.invokeWorkflow(this).testWorkflow('cwf');
     return `${this.name}${txResult}${cResult}${wfResult}-${num}`;
   }

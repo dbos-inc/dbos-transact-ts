@@ -1,8 +1,8 @@
-# DBOS Date/Time Communicator
+# DBOS Date/Time Step
 
-This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for getting the current date / time.
+This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for getting the current date / time.
 
-The reason that date retrieval should be wrapped in a communicator is so that replayed workflows get the recorded value and therefore have the same behavior as the original.
+The reason that date retrieval should be wrapped in a `@Step` is so that replayed workflows get the recorded value and therefore have the same behavior as the original.
 
 ## Available Functions
 

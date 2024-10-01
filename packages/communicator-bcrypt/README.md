@@ -1,8 +1,8 @@
-# DBOS `bcrypt` Communicator
+# DBOS `bcrypt` Step
 
-This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating bcrypt hashes.
+This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating bcrypt hashes.
 
-The reason that some `bcrypt` operations should be wrapped in a communicator is that they generate random numbers.  By using a communicator, replayed or restarted workflows will get the recorded value and therefore have the same behavior as the original.
+The reason that some `bcrypt` operations should be wrapped in a `@Step` is that they generate random numbers.  By using a step, replayed or restarted workflows will get the recorded value and therefore have the same behavior as the original.
 
 ## Available Functions
 

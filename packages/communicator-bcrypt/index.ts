@@ -25,5 +25,6 @@ class BcryptCommunicator
 
 export
 {
-    BcryptCommunicator
+    BcryptCommunicator,
+    BcryptCommunicator as BcryptStep,
 }

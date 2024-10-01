@@ -11,5 +11,6 @@ class RandomCommunicator
 
 export
 {
-    RandomCommunicator
+    RandomCommunicator,
+    RandomCommunicator as RandomStep,
 }
