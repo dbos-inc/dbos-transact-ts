@@ -124,8 +124,75 @@ describe("queued-wf-tests-simple", () => {
             expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
         }
     }, 10000);
-});
 
+    test("test_multiple_queues", async() => {
+        let wfRes: () => void = () => { };
+        TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => { wfRes = resolve; });
+        const mainPromise = new Promise<void>((resolve, _rj) => { TestWFs2.mainResolve = resolve; });
+
+        const wfh1 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, serialqueue).workflowOne();
+        expect((await wfh1.getStatus())?.queueName).toBe(serialqueue.name);
+        const wfh2 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, serialqueue).workflowTwo();
+        expect((await wfh2.getStatus())?.queueName).toBe(serialqueue.name);
+        // At this point Wf2 is stuck.
+
+        /*
+        const handles: WorkflowHandle<number>[] = [];
+        const times: number[] = [];
+
+        // Launch a number of tasks equal to three times the limit.
+        // This should lead to three "waves" of the limit tasks being
+        //   executed simultaneously, followed by a wait of the period,
+        //   followed by the next wave.
+        const numWaves = 3;
+
+        for (let i = 0; i< qlimit * numWaves; ++i) {
+            const h = await testRuntime.startWorkflow(TestWFs, undefined, undefined, rlqueue).testWorkflowTime("abc", "123");
+            handles.push(h);
+        }
+        for (const h of handles) {
+            times.push(await h.getResult());
+        }
+
+        // Verify all workflows get the SUCCESS status eventually
+        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+        await dbosExec.flushWorkflowBuffers();
+
+        // Verify that each "wave" of tasks started at the ~same time.
+        for (let wave = 0; wave < numWaves; ++wave) {
+            for (let i = wave * qlimit; i < (wave + 1) * qlimit -1; ++i) {
+                expect(times[i + 1] - times[i]).toBeLessThan(100);
+            }
+        }
+
+        // Verify that the gap between "waves" is ~equal to the period
+        for (let wave = 1; wave < numWaves; ++wave) {
+            expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod*1000 - 200);
+            expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod*1000 + 200);
+        }
+
+        for (const h of handles) {
+            expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
+        }
+        */
+
+        // Verify that during all this time, the second task
+        //   was not launched on the concurrency-limited queue.
+        // Then, finish the first task and verify the second
+        //   task runs on schedule.
+        await mainPromise;
+        await sleepms(2000);
+        expect(TestWFs2.flag).toBeFalsy();
+        wfRes?.();
+        await wfh1.getResult();
+        await wfh2.getResult();
+        expect(TestWFs2.flag).toBeTruthy();
+        expect(TestWFs2.wfCounter).toBe(1);
+
+        // Verify all queue entries eventually get cleaned up.
+        expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
+    }, 10000);
+});
 
 class TestWFs
 {
@@ -234,3 +301,4 @@ async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) 
     expect(TestWFs2.wfCounter).toBe(1);
     expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
 }
+
