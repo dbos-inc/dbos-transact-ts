@@ -70,7 +70,8 @@ export {
   // Method Decorators
   Transaction,
   Workflow,
-  Communicator,
+  Step,
+  Step as Communicator,
   StoredProcedure,
   RequiredRole,
   DBOSInitializer,

@@ -637,7 +637,7 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
   return decorator;
 }
 
-export function Communicator(config: StepConfig={}) {
+export function Step(config: StepConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
