@@ -269,10 +269,10 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends unknown[], R>(commFn: StepFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.getStepInfo(commFn as StepFunction<unknown[], unknown>);
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
+    const commConfig = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commConfig === undefined) {
-      throw new DBOSDebuggerError(`Step ${commFn.name} not registered!`);
+      throw new DBOSDebuggerError(`Step ${stepFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
 
@@ -281,7 +281,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
-      throw new DBOSDebuggerError(`Cannot find recorded step output for ${commFn.name}. Shouldn't happen in debug mode!`);
+      throw new DBOSDebuggerError(`Cannot find recorded step output for ${stepFn.name}. Shouldn't happen in debug mode!`);
     }
     this.logger.debug("Use recorded step output.");
     return check as R;

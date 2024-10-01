@@ -722,17 +722,17 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
    * The step may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends unknown[], R>(commFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.getStepInfo(commFn as StepFunction<unknown[], unknown>);
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
+    const commInfo = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commInfo === undefined) {
-      throw new DBOSNotRegisteredError(commFn.name);
+      throw new DBOSNotRegisteredError(stepFn.name);
     }
 
     const funcID = this.functionIDGetIncrement();
     const maxRetryIntervalSec = 3600 // Maximum retry interval: 1 hour
 
     const span: Span = this.#dbosExec.tracer.startSpan(
-      commFn.name,
+      stepFn.name,
       {
         operationUUID: this.workflowUUID,
         operationType: OperationType.COMMUNICATOR,
@@ -747,7 +747,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       this.span,
     );
 
-    const ctxt: StepContextImpl = new StepContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, stepFn.name);
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
@@ -775,7 +775,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
-          result = await commFn.call(clsInst, ctxt, ...args);
+          result = await stepFn.call(clsInst, ctxt, ...args);
         } catch (error) {
           const e = error as Error
           this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
@@ -791,7 +791,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
     } else {
       try {
-        result = await commFn.call(clsInst, ctxt, ...args);
+        result = await stepFn.call(clsInst, ctxt, ...args);
       } catch (error) {
         err = error as Error;
       }

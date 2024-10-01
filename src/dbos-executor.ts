@@ -831,17 +831,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async external<T extends unknown[], R>(commFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.external(commFn, params.configuredInstance ?? null, ...args);
+      return await ctxtImpl.external(stepFn, params.configuredInstance ?? null, ...args);
     };
     return (await this.workflow(temp_workflow, {
       ...params,
       tempWfType: TempWorkflowType.external,
-      tempWfName: getRegisteredMethodName(commFn),
-      tempWfClass: getRegisteredMethodClassName(commFn),
+      tempWfName: getRegisteredMethodName(stepFn),
+      tempWfClass: getRegisteredMethodClassName(stepFn),
     }, ...args)).getResult();
   }
 

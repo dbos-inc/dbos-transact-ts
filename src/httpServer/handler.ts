@@ -221,8 +221,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<T extends unknown[], R>(commFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    return this.#dbosExec.external(commFn, params, ...args);
+  async #external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#dbosExec.external(stepFn, params, ...args);
   }
 
   async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
