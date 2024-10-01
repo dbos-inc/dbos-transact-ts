@@ -107,7 +107,7 @@ describe("failures-tests", () => {
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
   });
 

@@ -57,8 +57,8 @@ describe("foundationdb-dbos", () => {
     await expect(testRuntime.invoke(FdbTestClass).testErrorCommunicator()).resolves.toBe("success");
 
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
   });
 
   test("fdb-workflow-status", async () => {

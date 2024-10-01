@@ -147,7 +147,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
   /**
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
-   * to invoke workflows, transactions, and communicators;
+   * to invoke workflows, transactions, and steps;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
     clsinst: ConfiguredInstance | null): InvokeFuncs<T>

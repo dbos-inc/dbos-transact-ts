@@ -270,20 +270,20 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
   }
 
   async external<T extends unknown[], R>(commFn: StepFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as StepFunction<unknown[], unknown>);
+    const commConfig = this.#dbosExec.getStepInfo(commFn as StepFunction<unknown[], unknown>);
     if (commConfig === undefined) {
-      throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
+      throw new DBOSDebuggerError(`Step ${commFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
 
-    // FIXME: we do not create a span for the replay communicator. Do we want to?
+    // FIXME: we do not create a span for the replay step. Do we want to?
 
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
-      throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
+      throw new DBOSDebuggerError(`Cannot find recorded step output for ${commFn.name}. Shouldn't happen in debug mode!`);
     }
-    this.logger.debug("Use recorded communicator output.");
+    this.logger.debug("Use recorded step output.");
     return check as R;
   }
 

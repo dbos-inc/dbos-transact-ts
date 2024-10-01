@@ -22,12 +22,12 @@ export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
-// local type declarations for transaction and communicator functions
+// local type declarations for transaction and step functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 type CommFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes transaction/communicator/proc functions + converts the method signature to exclude the context parameter
+// Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> =
   T extends ConfiguredInstance
   ? never
@@ -718,12 +718,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   /**
-   * Execute a communicator function.
+   * Execute a step function.
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
-   * The communicator may execute many times, but once it is complete, it will not re-execute.
+   * The step may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends unknown[], R>(commFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as StepFunction<unknown[], unknown>);
+    const commInfo = this.#dbosExec.getStepInfo(commFn as StepFunction<unknown[], unknown>);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(commFn.name);
     }
@@ -763,7 +763,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       return check as R;
     }
 
-    // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
+    // Execute the step function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an DBOSError.
     let result: R | DBOSNull = dbosNull;
     let err: Error | DBOSNull = dbosNull;
@@ -771,15 +771,15 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
       if (intervalSeconds > maxRetryIntervalSec) {
-        this.logger.warn(`Communicator config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
+        this.logger.warn(`Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           result = await commFn.call(clsInst, ctxt, ...args);
         } catch (error) {
           const e = error as Error
-          this.logger.warn(`Communicator error being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
-          span.addEvent(`Communicator attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
+          this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
+          span.addEvent(`Step attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             // Cap at the maximum allowed retry interval.
@@ -797,10 +797,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
     }
 
-    // `result` can only be dbosNull when the communicator timed out
+    // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSError("Communicator reached maximum retries.", 1) : err;
+      err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
       await this.#dbosExec.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.#dbosExec.tracer.endSpan(ctxt.span);

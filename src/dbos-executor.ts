@@ -80,8 +80,8 @@ interface TransactionInfo {
   config: TransactionConfig;
 }
 
-interface CommunicatorInfo {
-  communicator: StepFunction<unknown[], unknown>;
+interface StepInfo {
+  step: StepFunction<unknown[], unknown>;
   config: StepConfig;
 }
 
@@ -136,7 +136,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     ],
   ]);
   readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
-  readonly communicatorInfoMap: Map<string, CommunicatorInfo> = new Map();
+  readonly stepInfoMap: Map<string, StepInfo> = new Map();
   readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
@@ -301,7 +301,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       } else if (ro.txnConfig) {
         this.#registerTransaction(ro);
       } else if (ro.commConfig) {
-        this.#registerCommunicator(ro);
+        this.#registerStep(ro);
       } else if (ro.procConfig) {
         this.#registerProcedure(ro);
       }
@@ -508,18 +508,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.debug(`Registered transaction ${tfn}`);
   }
 
-  #registerCommunicator(ro: MethodRegistrationBase) {
+  #registerStep(ro: MethodRegistrationBase) {
     const comm = ro.registeredFunction as StepFunction<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
-    if (this.communicatorInfoMap.has(cfn)) {
+    if (this.stepInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
     }
-    const commInfo: CommunicatorInfo = {
-      communicator: comm,
+    const commInfo: StepInfo = {
+      step: comm,
       config: {...ro.commConfig},
     };
-    this.communicatorInfoMap.set(cfn, commInfo);
-    this.logger.debug(`Registered communicator ${cfn}`);
+    this.stepInfoMap.set(cfn, commInfo);
+    this.logger.debug(`Registered step ${cfn}`);
   }
 
   #registerProcedure(ro: MethodRegistrationBase) {
@@ -586,19 +586,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return {txnInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
-  getCommunicatorInfo(cf: StepFunction<unknown[], unknown>) {
+  getStepInfo(cf: StepFunction<unknown[], unknown>) {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
-    return this.communicatorInfoMap.get(cfname);
+    return this.stepInfoMap.get(cfname);
   }
-  getCommunicatorInfoByNames(className: string, functionName: string, cfgName: string) {
+  getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
-    let commInfo: CommunicatorInfo | undefined = this.communicatorInfoMap.get(cfname);
+    let commInfo: StepInfo | undefined = this.stepInfoMap.get(cfname);
 
     if (!commInfo && !className) {
-      for (const [_wfn, cfr] of this.communicatorInfoMap) {
-        if (functionName === cfr.communicator.name) {
+      for (const [_wfn, cfr] of this.stepInfoMap) {
+        if (functionName === cfr.step.name) {
           if (commInfo) {
-            throw new DBOSError(`Recovered communicator function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
+            throw new DBOSError(`Recovered step function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
           }
           else {
             commInfo = cfr;
@@ -947,17 +947,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.external) {
-      const {commInfo, clsInst} = this.getCommunicatorInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
+      const {commInfo, clsInst} = this.getStepInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!commInfo) {
-        this.logger.error(`Cannot find communicator info for UUID ${workflowUUID}, name ${nameArr[2]}`);
+        this.logger.error(`Cannot find step info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
       tempWfType = TempWorkflowType.external;
-      tempWfName = getRegisteredMethodName(commInfo.communicator);
-      tempWfClass = getRegisteredMethodClassName(commInfo.communicator);
+      tempWfName = getRegisteredMethodName(commInfo.step);
+      tempWfClass = getRegisteredMethodClassName(commInfo.step);
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         const ctxtImpl = ctxt as WorkflowContextImpl;
-        return await ctxtImpl.external(commInfo.communicator, clsInst, ...args);
+        return await ctxtImpl.external(commInfo.step, clsInst, ...args);
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.send) {
