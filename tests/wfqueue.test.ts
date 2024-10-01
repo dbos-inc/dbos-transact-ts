@@ -136,7 +136,6 @@ describe("queued-wf-tests-simple", () => {
         expect((await wfh2.getStatus())?.queueName).toBe(serialqueue.name);
         // At this point Wf2 is stuck.
 
-        /*
         const handles: WorkflowHandle<number>[] = [];
         const times: number[] = [];
 
@@ -174,7 +173,6 @@ describe("queued-wf-tests-simple", () => {
         for (const h of handles) {
             expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
         }
-        */
 
         // Verify that during all this time, the second task
         //   was not launched on the concurrency-limited queue.
