@@ -18,6 +18,7 @@ import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
 import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
+import { DBOS } from "../dbos-runtime/runtime";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -101,7 +102,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
+    DBOS.dbosConfig = dbosConfig[0];
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
+    DBOS.globalLogger = dbosExec.logger;
     await dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
     for (const evtRcvr of dbosExec.eventReceivers) {
