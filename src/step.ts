@@ -4,23 +4,22 @@ import { WorkflowContextImpl } from "./workflow";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
-export type Communicator<T extends unknown[], R> = (ctxt: CommunicatorContext, ...args: T) => Promise<R>;
-export type CommunicatorFunction<T extends unknown[], R> = Communicator<T, R>;
+export type StepFunction<T extends unknown[], R> = (ctxt: StepContext, ...args: T) => Promise<R>;
 
-export interface CommunicatorConfig {
+export interface StepConfig {
   retriesAllowed?: boolean; // Should failures be retried? (default true)
   intervalSeconds?: number; // Seconds to wait before the first retry attempt (default 1).
   maxAttempts?: number; // Maximum number of retry attempts (default 3). If errors occur more times than this, throw an exception.
   backoffRate?: number; // The multiplier by which the retry interval increases after every retry attempt (default 2).
 }
 
-export interface CommunicatorContext extends DBOSContext {
+export interface StepContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;
   readonly maxAttempts: number;
 }
 
-export class CommunicatorContextImpl extends DBOSContextImpl implements CommunicatorContext {
+export class StepContextImpl extends DBOSContextImpl implements StepContext {
   readonly functionID: number;
   readonly retriesAllowed: boolean;
   readonly intervalSeconds: number;
@@ -29,7 +28,7 @@ export class CommunicatorContextImpl extends DBOSContextImpl implements Communic
 
   // TODO: Validate the parameters.
   constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger,
-     params: CommunicatorConfig, commName: string)
+     params: StepConfig, commName: string)
   {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;

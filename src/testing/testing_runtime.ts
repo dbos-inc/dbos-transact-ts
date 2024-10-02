@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
@@ -153,7 +153,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
   /**
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
-   * to invoke workflows, transactions, and communicators;
+   * to invoke workflows, transactions, and steps;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
     clsinst: ConfiguredInstance | null, queue?: WorkflowQueue): InvokeFuncs<T>
@@ -179,7 +179,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
           : op.workflowConfig
             ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
             : op.commConfig
-              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
+              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig
                 ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown>, wfParams, ...args)
                 : undefined;

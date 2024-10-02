@@ -163,5 +163,6 @@ class SendEmailCommunicator extends ConfiguredInstance
 }
 
 export {
-    SendEmailCommunicator
+    SendEmailCommunicator,
+    SendEmailCommunicator as SendEmailStep,
 }

@@ -8,7 +8,7 @@ import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { APITypes, ArgSources } from "./handlerTypes";
 import { StoredProcedure } from "../procedure";
 import { WorkflowQueue } from "../wfqueue";
@@ -163,7 +163,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
 
-          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
           : op.procConfig
 
           ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
@@ -225,8 +225,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    return this.#dbosExec.external(commFn, params, ...args);
+  async #external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#dbosExec.external(stepFn, params, ...args);
   }
 
   async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {

@@ -275,6 +275,7 @@ function SQSMessageConsumer(config?: SQSConfig) {
 export {
     SQSConfig,
     SQSCommunicator,
+    SQSCommunicator as SQSStep,
     SQSConfigure,
     SQSMessageConsumer,
     SQSReceiver,

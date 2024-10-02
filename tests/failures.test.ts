@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, Communicator, Workflow, Transaction, ArgOptional, TestingRuntime } from "../src/";
+import { WorkflowContext, TransactionContext, StepContext, Step, Workflow, Transaction, ArgOptional, TestingRuntime } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
@@ -33,7 +33,7 @@ describe("failures-tests", () => {
 
   test("dbos-error", async () => {
     const wfUUID1 = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testCommunicator(11)).rejects.toThrow(new DBOSError("test dbos error with code.", 11));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testStep(11)).rejects.toThrow(new DBOSError("test dbos error with code.", 11));
 
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
@@ -44,7 +44,7 @@ describe("failures-tests", () => {
 
     // Test without code.
     const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testCommunicator()).rejects.toThrow(new DBOSError("test dbos error without code."));
+    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testStep()).rejects.toThrow(new DBOSError("test dbos error without code."));
   });
 
   test("readonly-error", async () => {
@@ -101,17 +101,17 @@ describe("failures-tests", () => {
     expect(FailureTestClass.cnt).toBe(10);
   });
 
-  test("failing-communicator", async () => {
+  test("failing-step", async () => {
     let startTime = Date.now();
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).resolves.toBe(2);
+    await expect(testRuntime.invoke(FailureTestClass).testFailStep()).resolves.toBe(2);
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
-    await expect(testRuntime.invoke(FailureTestClass).testFailCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FailureTestClass).testFailStep()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
   });
 
-  test("nonretry-communicator", async () => {
+  test("nonretry-step", async () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
@@ -132,7 +132,7 @@ describe("failures-tests", () => {
     // Invoke an unregistered transaction.
     expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrow();
 
-    // Invoke an unregistered communicator in a workflow.
+    // Invoke an unregistered step in a workflow.
     await expect(testRuntime.invokeWorkflow(FailureTestClass).testCommWorkflow()).rejects.toThrow();
   });
 });
@@ -141,8 +141,8 @@ class FailureTestClass {
   static cnt = 0;
   static success: string = "";
 
-  @Communicator({ retriesAllowed: false })
-  static async testCommunicator(_ctxt: CommunicatorContext, @ArgOptional code?: number) {
+  @Step({ retriesAllowed: false })
+  static async testStep(_ctxt: StepContext, @ArgOptional code?: number) {
     const err = code
       ? new DBOSError("test dbos error with code.", code)
       : new DBOSError("test dbos error without code.")
@@ -179,8 +179,8 @@ class FailureTestClass {
     return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
   }
 
-  @Communicator({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
-  static async testFailCommunicator(ctxt: CommunicatorContext) {
+  @Step({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
+  static async testFailStep(ctxt: StepContext) {
     FailureTestClass.cnt++;
     if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
@@ -188,14 +188,14 @@ class FailureTestClass {
     return Promise.resolve(FailureTestClass.cnt);
   }
 
-  @Communicator({ retriesAllowed: false })
-  static async testNoRetry(_ctxt: CommunicatorContext) {
+  @Step({ retriesAllowed: false })
+  static async testNoRetry(_ctxt: StepContext) {
     FailureTestClass.cnt++;
     return Promise.reject(new Error("failed no retry"));
   }
 
   // Test decorator registration works.
-  static async noRegComm(_ctxt: CommunicatorContext, code: number) {
+  static async noRegComm(_ctxt: StepContext, code: number) {
     return Promise.resolve(code + 1);
   }
 

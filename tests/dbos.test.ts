@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, Transaction, Workflow, Communicator, DBOSInitializer, InitContext } from "../src/";
+import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
@@ -58,10 +58,10 @@ describe("dbos-tests", () => {
     await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow("fail")).rejects.toThrow("fail");
   });
 
-  test("simple-communicator", async () => {
+  test("simple-step", async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
-    await expect(testRuntime.invoke(DBOSTestClass).testCommunicator()).resolves.toBe(1);
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testStep()).resolves.toBe(0);
+    await expect(testRuntime.invoke(DBOSTestClass).testStep()).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
@@ -304,8 +304,8 @@ class DBOSTestClass {
     return checkResult;
   }
 
-  @Communicator()
-  static async testCommunicator(ctxt: CommunicatorContext) {
+  @Step()
+  static async testStep(ctxt: StepContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
     return Promise.resolve(DBOSTestClass.cnt++);
   }

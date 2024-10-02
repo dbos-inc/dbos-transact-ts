@@ -9,8 +9,8 @@ import {
   TransactionContext,
   WorkflowContext,
   StatusString,
-  Communicator,
-  CommunicatorContext,
+  Step,
+  StepContext,
 } from "../../src";
 import { RequestIDHeader } from "../../src/httpServer/handler";
 import { DeleteApi, PatchApi, PutApi } from "../../src";
@@ -144,8 +144,8 @@ describe("httpserver-tests", () => {
     expect(response.text).toBe("hello 1");
   });
 
-  test("endpoint-communicator", async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get("/communicator/alice");
+  test("endpoint-step", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/step/alice");
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe("alice");
   });
@@ -390,9 +390,9 @@ describe("httpserver-tests", () => {
       return `hello ${rows[0].id}`;
     }
 
-    @GetApi("/communicator/:input")
-    @Communicator()
-    static async testCommunicator(_ctxt: CommunicatorContext, input: string) {
+    @GetApi("/step/:input")
+    @Step()
+    static async testStep(_ctxt: StepContext, input: string) {
       return Promise.resolve(input);
     }
 
@@ -400,7 +400,7 @@ describe("httpserver-tests", () => {
     @Workflow()
     static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
       const res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
-      return wfCtxt.invoke(TestEndpoints).testCommunicator(res);
+      return wfCtxt.invoke(TestEndpoints).testStep(res);
     }
 
     @PostApi("/error")

@@ -2,7 +2,7 @@
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContextImpl } from "../transaction";
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
@@ -68,7 +68,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
@@ -84,7 +84,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ?          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
-            ?            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            ?            (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -270,21 +270,21 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
+    const commConfig = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commConfig === undefined) {
-      throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
+      throw new DBOSDebuggerError(`Step ${stepFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
 
-    // FIXME: we do not create a span for the replay communicator. Do we want to?
+    // FIXME: we do not create a span for the replay step. Do we want to?
 
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
-      throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
+      throw new DBOSDebuggerError(`Cannot find recorded step output for ${stepFn.name}. Shouldn't happen in debug mode!`);
     }
-    this.logger.debug("Use recorded communicator output.");
+    this.logger.debug("Use recorded step output.");
     return check as R;
   }
 

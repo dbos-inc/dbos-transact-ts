@@ -20,7 +20,7 @@ import { DBOSExecutor } from "../dbos-executor";
 import { GlobalLogger as Logger } from "../telemetry/logs";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
-import { Communicator } from '../communicator';
+import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
@@ -309,7 +309,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             } else if (ro.workflowConfig) {
               koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await dbosExec.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.external(ro.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
