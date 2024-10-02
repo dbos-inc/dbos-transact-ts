@@ -17,6 +17,7 @@ import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
+import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
 import { DBOS } from "../dbos-runtime/runtime";
 
 /**
@@ -54,8 +55,9 @@ export interface TestingRuntime {
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncInst<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
+
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -90,6 +92,7 @@ export async function createInternalTestRuntime(userClasses: object[] | undefine
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #scheduler: DBOSScheduler | null = null;
+  #wfQueueRunner: Promise<void> | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
 
@@ -109,6 +112,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
+    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(dbosExec);
     this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
@@ -119,6 +123,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
+      wfQueueRunner.stop();
+      await this.#wfQueueRunner;
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
         await evtRcvr.destroy();
@@ -150,7 +156,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * to invoke workflows, transactions, and steps;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
-    clsinst: ConfiguredInstance | null): InvokeFuncs<T>
+    clsinst: ConfiguredInstance | null, queue?: WorkflowQueue): InvokeFuncs<T>
   {
     const dbosExec = this.getDBOSExec();
 
@@ -165,7 +171,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst, queueName: queue?.name };
     for (const op of ops) {
       if (asyncWf) {
         proxy[op.name] = op.txnConfig
@@ -196,15 +202,15 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
   }
 
-  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams)
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue)
     : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T>
   {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, params, true, null);
+      return this.mainInvoke(object, workflowUUID, params, true, null, queue);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 

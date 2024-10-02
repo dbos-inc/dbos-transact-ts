@@ -189,8 +189,4 @@ class DetachableLoop {
             this.interruptResolve(); // Trigger the interruption
         }
     }
-
-    private sleepms(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
 }

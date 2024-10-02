@@ -44,9 +44,10 @@ import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
-import { DBOSEventReceiver, DBOSExecutorContext } from ".";
+import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 
 import { get } from "lodash";
+import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -643,10 +644,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
-      status: StatusString.PENDING,
+      status: (params.queueName !== undefined) ? StatusString.ENQUEUED : StatusString.PENDING,
       name: wf.name,
       className: wCtxt.isTempWorkflow ? "" : getRegisteredMethodClassName(wf),
       configName: params.configuredInstance?.name || "",
+      queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
       error: "",
@@ -668,9 +670,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (wCtxt.tempWfOperationType !== TempWorkflowType.transaction
-      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure
+    if ((wCtxt.tempWfOperationType !== TempWorkflowType.transaction
+        && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
+      || params.queueName !== undefined
     ) {
+      // TODO: Make this transactional (and with the queue step below)
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     }
 
@@ -682,6 +686,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         result = await wf.call(params.configuredInstance, wCtxt, ...args);
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
+        if (internalStatus.queueName) {
+          // Now... the workflow isn't certainly done.
+          //  But waiting this long is for concurrency control anyway,
+          //   so it is probably done enough.
+          await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
+        }
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
@@ -701,6 +711,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
           internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;
+          if (internalStatus.queueName) {
+            await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
+          }
           await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -722,21 +735,34 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       return result;
     };
-    const workflowPromise: Promise<R> = runWorkflow();
 
-    // Need to await for the workflow and capture errors.
-    const awaitWorkflowPromise = workflowPromise
-      .catch((error) => {
-        this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
-      })
-      .finally(() => {
-        // Remove itself from pending workflow map.
-        this.pendingWorkflowMap.delete(workflowUUID);
-      });
-    this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+    if (params.queueName === undefined || params.executeWorkflow) {
+      const workflowPromise: Promise<R> = runWorkflow();
 
-    // Return the normal handle that doesn't capture errors.
-    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+      // Need to await for the workflow and capture errors.
+      const awaitWorkflowPromise = workflowPromise
+        .catch((error) => {
+          this.logger.debug("Captured error in awaitWorkflowPromise: " + error);
+        })
+        .finally(() => {
+          // Remove itself from pending workflow map.
+          this.pendingWorkflowMap.delete(workflowUUID);
+        });
+      this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
+
+      // Return the normal handle that doesn't capture errors.
+      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
+    }
+    else {
+      await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
+      return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
+    }
+  }
+
+  #getQueueByName(name: string): WorkflowQueue {
+    const q = wfQueueRunner.wfQueuesByName.get(name);
+    if (!q) throw new DBOSNotRegisteredError(`Workflow queue '${name}' does is not defined.`);
+    return q;
   }
 
   /**
@@ -915,8 +941,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const workflowStartUUID = startNewWorkflow ? undefined : workflowUUID;
 
     if (wfInfo) {
+      return this.workflow(wfInfo.workflow, {
+        workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
+        queueName: wfStatus.queueName, executeWorkflow: true
+      },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return this.workflow(wfInfo.workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true }, ...inputs);
+      ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
