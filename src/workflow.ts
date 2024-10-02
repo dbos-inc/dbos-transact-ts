@@ -15,6 +15,7 @@ import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
 import { PoolClient } from "pg";
+import { WorkflowQueue } from "./wfqueue";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -47,6 +48,8 @@ export interface WorkflowParams {
   parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
   recovery?: boolean;
+  queueName?: string;
+  executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
 
 export interface WorkflowConfig {
@@ -54,10 +57,11 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED.
+  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED.
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
   readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
+  readonly queueName?: string; // The name of the queue, if workflow was queued
   readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
@@ -69,7 +73,7 @@ export interface GetWorkflowsInput {
   authenticatedUser?: string; // The user who ran the workflow.
   startTime?: string; // Timestamp in ISO 8601 format
   endTime?: string; // Timestamp in ISO 8601 format
-  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED"; // The status of the workflow.
+  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED" | "ENQUEUED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
@@ -94,6 +98,7 @@ export const StatusString = {
   ERROR: "ERROR",
   RETRIES_EXCEEDED: "RETRIES_EXCEEDED",
   CANCELLED: "CANCELLED",
+  ENQUEUED: "ENQUEUED",
 } as const;
 
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
@@ -133,8 +138,8 @@ export interface WorkflowContext extends DBOSContext {
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
   invokeWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsInstAsync<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -383,7 +388,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue):
     WfInvokeWfsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
@@ -391,7 +396,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const funcId = this.functionIDGetIncrement();
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
-    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
     for (const op of ops) {
       if (asyncWf) {
@@ -408,12 +413,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
-      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, null, queue) as unknown as WfInvokeWfsAsync<T>;
     }
     else {
-      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance, queue) as unknown as WfInvokeWfsAsync<T>;
     }
   }
   invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {

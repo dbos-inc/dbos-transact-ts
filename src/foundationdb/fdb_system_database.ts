@@ -8,6 +8,7 @@ import * as fdb from "foundationdb";
 import { DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 import { DBOSJSON, sleepms } from "../utils";
+import { WorkflowQueue } from "../wfqueue";
 
 interface OperationOutput<R> {
   output: R;
@@ -408,6 +409,16 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    throw new Error("Method not implemented.");
+  }
+
+  enqueueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  dequeueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  findAndMarkStartableWorkflows(_queue: WorkflowQueue): Promise<string[]> {
     throw new Error("Method not implemented.");
   }
 }

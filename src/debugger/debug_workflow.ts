@@ -16,6 +16,7 @@ import { DBOSJSON } from "../utils";
 import { StoredProcedure, StoredProcedureContextImpl } from "../procedure";
 import { PoolClient } from "pg";
 import assert from "node:assert";
+import { WorkflowQueue } from "../wfqueue";
 
 interface RecordedResult<R> {
   output: R;
@@ -302,7 +303,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue):
     WfInvokeWfsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
@@ -310,7 +311,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const funcId = this.functionIDGetIncrement();
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
-    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
 
     for (const op of ops) {
@@ -328,12 +329,12 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
-      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, null, queue) as unknown as WfInvokeWfsAsync<T>;
     }
     else {
-      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance, queue) as unknown as WfInvokeWfsAsync<T>;
     }
   }
   invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
