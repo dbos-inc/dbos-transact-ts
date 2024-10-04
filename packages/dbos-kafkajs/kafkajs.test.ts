@@ -162,7 +162,7 @@ class DBOSTestClass {
   @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == txnTopic && message.value?.toString() === txnMessage) {
+    if (topic === txnTopic && message.value?.toString() === txnMessage) {
       console.log(`In TX`);
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve();
@@ -174,7 +174,7 @@ class DBOSTestClass {
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     console.log(`In WF`);
-    if (topic == wfTopic && message.value?.toString() === wfMessage) {
+    if (topic === wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
     }
@@ -185,8 +185,8 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     console.log(`In CTBP`);
-    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
+    const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
@@ -200,8 +200,8 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
     console.log(`In CTA`);
-    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
+    const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       arrayTopicsCounter = arrayTopicsCounter + 1;
       if (arrayTopicsCounter === 2) {
