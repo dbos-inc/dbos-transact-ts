@@ -8,8 +8,6 @@ import {
   createTestingRuntime,
 } from "@dbos-inc/dbos-sdk";
 
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "../../tests/helpers";
-
 import {
   KafkaConfig,
   Kafka,
@@ -21,7 +19,6 @@ import {
 } from "./index";
 
 import { Knex } from "knex";
-import { DBOSConfig } from "../../src";
 
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
@@ -76,14 +73,10 @@ let arrayTopicsCounter = 0;
 describe("kafka-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
-  let config : DBOSConfig;
   let wfKafkaCfg: KafkaProduceStep | undefined = undefined;
   let txKafkaCfg: KafkaProduceStep | undefined = undefined;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-
     // Check if Kafka is available, skip the test if it's not
     if (process.env['KAFKA_BROKER']) {
       kafkaIsAvailable = true;
