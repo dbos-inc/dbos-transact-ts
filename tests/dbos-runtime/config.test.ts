@@ -13,12 +13,14 @@ import { get } from "lodash";
 describe("dbos-config", () => {
   const mockCLIOptions = { port: NaN, loglevel: "info" };
   const mockDBOSConfigYamlString = `
+      name: 'some app'
+      language: 'node'
       database:
         hostname: 'some host'
         port: 1234
         username: 'some user'
         password: \${PGPASSWORD}
-        app_db_name: 'some DB'
+        app_db_name: 'some_db'
         ssl: false
       application:
         payments_url: 'http://somedomain.com/payment'
@@ -50,7 +52,7 @@ describe("dbos-config", () => {
       expect(poolConfig.user).toBe("some user");
       expect(poolConfig.password).toBe(process.env.PGPASSWORD);
       expect(poolConfig.connectionTimeoutMillis).toBe(3000);
-      expect(poolConfig.database).toBe("some DB");
+      expect(poolConfig.database).toBe("some_db");
       expect(poolConfig.ssl).toBe(false);
 
       expect(dbosConfig.userDbclient).toBe(UserDatabaseName.KNEX);
@@ -138,6 +140,22 @@ describe("dbos-config", () => {
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
+
+    test("config file specifies the wrong language", () => {
+      const localMockDBOSConfigYamlString = `
+      language: 'python'
+      database:
+        hostname: 'some host'
+        port: 1234
+        username: 'some user'
+        password: \${PGPASSWORD}
+        app_db_name: 'some_db'
+        ssl: false
+    `;
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
   });
 
   describe("context getConfig()", () => {
@@ -172,7 +190,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
@@ -193,15 +211,17 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
         env:
           FOOFOO: barbar
+          RANDENV: \${SOMERANDOMENV}
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const dbosExec = new DBOSExecutor(dbosConfig);
       expect(process.env.FOOFOO).toBe("barbar");
+      expect(process.env.RANDENV).toBe(""); // Empty string
       // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
@@ -215,7 +235,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
           ssl: true
         env:
           FOOFOO: barbar
@@ -234,7 +254,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
         env:
           FOOFOO: barbar
       `;
@@ -252,7 +272,7 @@ describe("dbos-config", () => {
           username: 'some user'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
         env:
           FOOFOO: barbar
       `;
@@ -280,7 +300,7 @@ describe("dbos-config", () => {
         userffname: 'some user'
         passffword: \${PGPASSWORD}
         connfectionTimeoutMillis: 3000
-        app_dfb_name: 'some DB'
+        app_dfb_name: 'some_db'
     `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
@@ -295,7 +315,7 @@ describe("dbos-config", () => {
           username: 'dbos'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
         env:
           FOOFOO: barbar
       `;
@@ -313,7 +333,7 @@ describe("dbos-config", () => {
           port: 1234
           username: 'some user'
           password: \${PGPASSWORD}
-          app_db_name: 'some DB'
+          app_db_name: 'some_db'
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
@@ -325,8 +345,25 @@ describe("dbos-config", () => {
       expect(poolConfig.port).toBe(1234);
       expect(poolConfig.user).toBe("some user");
       expect(poolConfig.password).toBe("PROXY-MODE"); // Should be set to "PROXY-MODE"
-      expect(poolConfig.database).toBe("some DB");
+      expect(poolConfig.database).toBe("some_db");
       process.env.PGPASSWORD = dbPassword;
+    });
+
+    test("parseConfigFile throws on an invalid db name", async () => {
+      const invalidNames = ["some_DB", "123db", "very_very_very_long_very_very_very_long_very_very__database_name", "largeDB", ""];
+      for (const dbName of invalidNames) {
+        const localMockDBOSConfigYamlString = `
+          database:
+              hostname: 'some host'
+              port: 1234
+              username: 'some user'
+              password: \${PGPASSWORD}
+              app_db_name: '${dbName}'
+        `;
+        jest.restoreAllMocks();
+        jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+        expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+      }
     });
   });
 });

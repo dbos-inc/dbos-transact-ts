@@ -1,4 +1,4 @@
-import { TransactionContext, CommunicatorContext, WorkflowContext, StatusString, WorkflowHandle, Transaction, Communicator, Workflow, TestingRuntime } from "../../src/";
+import { TransactionContext, StepContext, WorkflowContext, StatusString, WorkflowHandle, Transaction, Step, Workflow, TestingRuntime } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -43,22 +43,22 @@ describe("foundationdb-dbos", () => {
     expect(FdbTestClass.cnt).toBe(1);
   });
 
-  test("fdb-communicator", async () => {
+  test("fdb-step", async () => {
     const workflowUUID: string = uuidv1();
 
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testStep()).resolves.toBe(0);
 
     // Test OAOO. Should return the original result.
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testStep()).resolves.toBe(0);
     expect(FdbTestClass.cnt).toBe(1);
   });
 
-  test("fdb-communicator-error", async () => {
-    await expect(testRuntime.invoke(FdbTestClass).testErrorCommunicator()).resolves.toBe("success");
+  test("fdb-step-error", async () => {
+    await expect(testRuntime.invoke(FdbTestClass).testErrorStep()).resolves.toBe("success");
 
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
-    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorCommunicator()).rejects.toThrow(new DBOSError("Communicator reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorStep()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
+    await expect(testRuntime.invoke(FdbTestClass, workflowUUID).testErrorStep()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
   });
 
   test("fdb-workflow-status", async () => {
@@ -100,8 +100,8 @@ describe("foundationdb-dbos", () => {
     await expect(testRuntime.invokeWorkflow(FdbTestClass, workflowUUID).setEventWorkflow()).resolves.toBe(0);
   });
 
-  test("fdb-duplicate-communicator", async () => {
-    // Run two communicators concurrently with the same UUID; both should succeed.
+  test("fdb-duplicate-step", async () => {
+    // Run two steps concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
@@ -152,13 +152,13 @@ class FdbTestClass {
     }
   }
 
-  @Communicator()
-  static async testCommunicator(_commCtxt: CommunicatorContext) {
+  @Step()
+  static async testStep(_commCtxt: StepContext) {
     return Promise.resolve(FdbTestClass.cnt++);
   }
 
-  @Communicator({ intervalSeconds: 0, maxAttempts: 4 })
-  static async testErrorCommunicator(ctxt: CommunicatorContext) {
+  @Step({ intervalSeconds: 0, maxAttempts: 4 })
+  static async testErrorStep(ctxt: StepContext) {
     FdbTestClass.cnt++;
     if (FdbTestClass.cnt !== ctxt.maxAttempts) {
       throw new Error("bad number");
@@ -166,8 +166,8 @@ class FdbTestClass {
     return Promise.resolve("success");
   }
 
-  @Communicator({ retriesAllowed: false })
-  static async noRetryComm(_ctxt: CommunicatorContext, id: number) {
+  @Step({ retriesAllowed: false })
+  static async noRetryComm(_ctxt: StepContext, id: number) {
     FdbTestClass.cnt++;
     return Promise.resolve(id);
   }

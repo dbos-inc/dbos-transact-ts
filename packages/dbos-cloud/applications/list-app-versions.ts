@@ -4,7 +4,7 @@ import { ApplicationVersion, prettyPrintApplicationVersion } from "./types.js";
 
 export async function listAppVersions(host: string, json: boolean, appName?: string): Promise<number> {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger, json);

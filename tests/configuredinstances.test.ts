@@ -1,6 +1,6 @@
 import {
-  Communicator,
-  CommunicatorContext,
+  Step,
+  StepContext,
   ConfiguredInstance,
   GetApi,
   HandlerContext,
@@ -65,8 +65,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     return Promise.resolve();
   }
 
-  @Communicator()
-  testCommunicator(_ctxt: CommunicatorContext) {
+  @Step()
+  testStep(_ctxt: StepContext) {
     const arg = this.tracker;
     expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
     expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
@@ -84,8 +84,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nWF;
     ++arg.nByName;
 
-    // Invoke a transaction and a communicator
-    await ctxt.invoke(this).testCommunicator();
+    // Invoke a transaction and a step
+    await ctxt.invoke(this).testStep();
     await ctxt.invoke(this).testTransaction1();
   }
 
@@ -97,7 +97,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     ++arg.nWF;
     ++arg.nByName;
 
-    // Invoke a workflow that invokes a transaction and a communicator
+    // Invoke a workflow that invokes a transaction and a step
     await ctxt.invokeWorkflow(this).testBasicWorkflow('please');
     const wfh = await ctxt.startWorkflow(this).testBasicWorkflow('please');
     await wfh.getResult();
@@ -163,12 +163,12 @@ describe("dbos-configclass-tests", () => {
 
   test("simple-functions", async () => {
     try {
-      await testRuntime.invoke(config1).testCommunicator();
+      await testRuntime.invoke(config1).testStep();
     } catch (e) {
       console.log(e);
       throw e;
     }
-    await testRuntime.invoke(configA).testCommunicator();
+    await testRuntime.invoke(configA).testStep();
     const wfUUID1 = uuidv1();
     const wfUUID2 = uuidv1();
     await testRuntime.invoke(config1, wfUUID1).testTransaction1();

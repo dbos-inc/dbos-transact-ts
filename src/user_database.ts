@@ -34,13 +34,14 @@ export interface UserDatabase {
 type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex;
+export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | DrizzleClient;
 
 export const UserDatabaseName = {
   PGNODE: "pg-node",
   PRISMA: "prisma",
   TYPEORM: "typeorm",
   KNEX: "knex",
+  DRIZZLE: "drizzle",
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -409,7 +410,7 @@ export class KnexUserDatabase implements UserDatabase {
       if (!schemaExists.rows[0].exists) {
         await this.knex.raw(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
+      const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
         await this.knex.raw(userDBSchema);
       }
@@ -491,5 +492,113 @@ export class KnexUserDatabase implements UserDatabase {
 
   async dropSchema(): Promise<void> {
     return Promise.reject(new Error("dropSchema() is not supported in Knex user database."));
+  }
+}
+
+export interface DrizzleClient {
+  select(): unknown;
+  selectDistinct(): unknown;
+  update(table: unknown): unknown;
+  insert(table: unknown): unknown;
+  delete(table: unknown): unknown;
+  execute(query: unknown): unknown;
+  _: {
+    session: any;
+  }
+  transaction<R>(fn: (tx: any) => Promise<R>, options: { isolationLevel: any, accessMode: any }): Promise<R>;
+}
+
+/**
+ * Drizzle user data access interface
+ */
+export class DrizzleUserDatabase implements UserDatabase {
+
+  constructor(readonly pool: Pool, readonly db: DrizzleClient) {
+  }
+
+  async init(debugMode: boolean = false): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const poolClient = this.db._.session.client as PoolClient;
+    if (!debugMode) {
+      const schemaExists = await poolClient.query<ExistenceCheck>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await poolClient.query(createUserDBSchema);
+      }
+      const txnOutputTableExists = await poolClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await  poolClient.query(userDBSchema);
+      }
+      const txnIndexExists =  await poolClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists.rows[0].exists) {
+        await poolClient.query(userDBIndex);
+      }
+    }
+  }
+
+  async destroy(): Promise<void> {
+    await this.pool.end();
+  }
+
+  getName() {
+    return UserDatabaseName.DRIZZLE;
+  }
+
+  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+    let isolationLevel: 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
+    if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
+      isolationLevel = "read uncommitted";
+    } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
+      isolationLevel = "read committed";
+    } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
+      isolationLevel = "repeatable read";
+    } else {
+      isolationLevel = "serializable";
+    }
+    const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
+    const result = await this.db.transaction<R>(
+      async (tx: DrizzleClient) => {
+        return await transactionFunction(tx, ...args);
+      },
+      { isolationLevel, accessMode }
+    );
+    return result;
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+    return func(this.db as unknown as C, ...args);
+  }
+
+  async query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]> {
+    return this.queryWithClient(this.db, sql, ...params);
+  }
+
+  async queryWithClient<R, T extends unknown[]>(client: DrizzleClient, sqlString: string, ...params: T): Promise<R[]> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const sessionClient = client._.session.client as PoolClient;
+    return sessionClient.query<QueryResultRow>(sqlString, params).then((value) => {
+      return value.rows as R[];
+    });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
+    return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "40001";
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    const pge = this.getPostgresErrorCode(error);
+    return pge === "23505";
+  }
+
+  async createSchema(): Promise<void> {
+    return Promise.reject(new Error("createSchema() is not supported in Drizzle user database."));
+  }
+
+  async dropSchema(): Promise<void> {
+    return Promise.reject(new Error("dropSchema() is not supported in Drizzle user database."));
   }
 }

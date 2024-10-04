@@ -6,7 +6,6 @@ import { WorkflowStatus } from "../workflow";
 import { HTTPRequest } from "../context";
 import { DBOSExecutor } from "../dbos-executor";
 import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
-import { getAllRegisteredClasses } from "../decorators";
 
 export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
@@ -38,8 +37,11 @@ async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: str
     const result = await systemDatabase.getWorkflowResult(workflowUUID);
     info.output = result;
   } else if (info.status === StatusString.ERROR) {
-    const result = await systemDatabase.getWorkflowResult(workflowUUID);
-    info.error = result;
+    try {
+      await systemDatabase.getWorkflowResult(workflowUUID);
+    } catch (e) {
+      info.error = e;
+    }
   }
   if (!getRequest) {
     delete info.request;
@@ -63,11 +65,10 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
 
 export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSRuntimeConfig | null, workflowUUID: string, startNewWorkflow: boolean) {
   const dbosExec = new DBOSExecutor(config);
-  const classes = runtimeConfig !== null ? await DBOSRuntime.loadClasses(runtimeConfig.entrypoints) : [];
-  for (const cls of getAllRegisteredClasses()) {
-    if (!classes.includes(cls)) classes.push(cls);
+  if (runtimeConfig !== null) {
+    await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
   }
-  await dbosExec.init(classes);
+  await dbosExec.init();
   if (!startNewWorkflow) {
     await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
   }

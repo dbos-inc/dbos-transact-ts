@@ -37,7 +37,7 @@ try {
   DBOS Cloud CLI Update available ${chalk.gray(notifier.update.current)} →  ${chalk.green(notifier.update.latest)}
 
   To upgrade the DBOS Cloud CLI to the latest version, run the following command:
-  ${chalk.cyan("`npm i --save-dev @dbos-inc/dbos-cloud@latest`")}
+  ${chalk.cyan("`npm i -g @dbos-inc/dbos-cloud@latest`")}
 
   ${chalk.yellow("-----------------------------------------------------------------------------------------")}`);
   }
@@ -77,7 +77,7 @@ program
   .description("Register a user with DBOS cloud")
   .requiredOption("-u, --username <string>", "Username")
   .option("-s, --secret <string>", "Organization secret")
-  .action(async (options: { username: string; secret: string }) => {
+  .action(async (options: { username: string; secret: string | undefined }) => {
     const exitCode = await registerUser(options.username, options.secret, DBOSCloudHost);
     process.exit(exitCode);
   });
@@ -112,8 +112,9 @@ applicationCommands
   .description("Register this application")
   .argument("[string]", "application name (Default: name from package.json)")
   .requiredOption("-d, --database <string>", "Specify a Postgres database instance for this application")
-  .action(async (appName: string | undefined, options: { database: string }) => {
-    const exitCode = await registerApp(options.database, DBOSCloudHost, appName);
+  .option("--enable-timetravel", "Enable time travel for the application", false)
+  .action(async (appName: string | undefined, options: { database: string, enableTimetravel: boolean }) => {
+    const exitCode = await registerApp(options.database, DBOSCloudHost, options.enableTimetravel, appName);
     process.exit(exitCode);
   });
 
@@ -121,10 +122,12 @@ applicationCommands
   .command("deploy")
   .description("Deploy this application to the cloud and run associated database migration commands")
   .argument("[string]", "application name (Default: name from package.json)")
-  .option("--verbose", "Verbose log of deployment step")
   .option("-p, --previous-version <string>", "Specify a previous version to restore")
-  .action(async (appName: string | undefined, options: { verbose?: boolean; previousVersion?: string }) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName);
+  .option("-d, --database <string>", "Specify a Postgres database instance for this application. This cannot be changed after the application is first deployed.")
+  .option("--enable-timetravel", "Enable time travel for the application. This cannot be changed after the application is first deployed.", false)
+  .option("--verbose", "Verbose log of deployment step")
+  .action(async (appName: string | undefined, options: { verbose?: boolean, previousVersion?: string, database?: string, enableTimetravel: boolean }) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName, options.database, options.enableTimetravel);
     process.exit(exitCode);
   });
 
@@ -133,7 +136,7 @@ applicationCommands
   .description("Deploy this application to the cloud and run associated database rollback commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .action(async (appName: string | undefined) => {
-    console.warn(`npx dbos-cloud app rollback is deprecated. Please use 'npx dbos-cloud db connect' instead and run rollback commands locally`);
+    console.warn(`dbos-cloud app rollback is deprecated. Please use 'dbos-cloud db connect' instead and run rollback commands locally`);
     const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
     process.exit(exitCode);
   });
@@ -281,11 +284,12 @@ databaseCommands
   .option("-p, --port <number>", "Specify your database port", "5432")
   .option("-W, --password <string>", "Specify password for the dbosadmin user")
   .option("--enable-timetravel", "Enable time travel on the linked database", false)
-  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean }) => {
+  .option("--supabase-ref <string>", "Link a Supabase database")
+  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseRef: string | undefined}) => {
     if (!options.password) {
       options.password = prompt("Password for the dbosadmin user: ", { echo: "*" });
     }
-    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel);
+    const exitCode = await linkUserDB(DBOSCloudHost, dbname, options.hostname, Number(options.port), options.password, options.enableTimetravel, options.supabaseRef);
     process.exit(exitCode);
   });
 
@@ -395,19 +399,23 @@ workflowCommands
   .description('List workflows from your application')
   .argument("[string]", "application name (Default: name from package.json)")
   .option('-l, --limit <number>', 'Limit the results returned', "10")
-  .option('-u, --user <string>', 'Retrieve workflows run by this user')
+  .option('-o, --offset <number>', 'Skip workflows from the results returned.')
+  .option('-u, --workflowUUIDs <uuid...>', 'Retrieve specific UUIDs')
+  .option('-U, --user <string>', 'Retrieve workflows run by this user')
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
-  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
+  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string }) => {
+  .action(async (appName: string | undefined, options: { limit?: string, appDir?: string, user?: string, startTime?: string, endTime?: string, status?: string, applicationVersion?: string, workflowUUIDs?: string[], offset?: string }) => {
     const input: ListWorkflowsInput = {
       limit: Number(options.limit),
+      workflow_uuids: options.workflowUUIDs,
       authenticated_user: options.user,
       start_time: options.startTime,
       end_time: options.endTime,
       status: options.status,
       application_version: options.applicationVersion,
+      offset: Number(options.offset),
     }
     const exitCode = await listWorkflows(DBOSCloudHost, input, appName);
     process.exit(exitCode)

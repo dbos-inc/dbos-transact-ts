@@ -9,6 +9,7 @@ import { TelemetryConfig } from "../telemetry";
 import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
+import validator from "validator";
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
@@ -16,6 +17,8 @@ const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as o
 const ajv = new Ajv({allErrors: true, verbose: true});
 
 export interface ConfigFile {
+  name?: string;
+  language?: string;
   database: {
     hostname: string;
     port: number;
@@ -49,10 +52,15 @@ export interface ConfigFile {
 export function substituteEnvVars(content: string): string {
   const regex = /\${([^}]+)}/g; // Regex to match ${VAR_NAME} style placeholders
   return content.replace(regex, (_, g1: string) => {
-    return process.env[g1] || ""; // If the env variable is not set, return an empty string.
+    return process.env[g1] || '""'; // If the env variable is not set, return an empty string.
   });
 }
 
+/**
+ * Loads config file as a ConfigFile.
+ * @param {string} configFilePath - The path to the config file to be loaded.
+ * @returns 
+ */
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
     const configFileContent = readFileSync(configFilePath);
@@ -68,9 +76,14 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
   }
 }
 
-export function writeConfigFile(configFile: ConfigFile, configFilePath: string) {
+/**
+ * Writes a YAML.Document object to configFilePath.
+ * @param {YAML.Document} configFile - The config file to be written. 
+ * @param {string} configFilePath - The path to the config file to be written to.
+ */
+export function writeConfigFile(configFile: YAML.Document, configFilePath: string) {
   try {
-    const configFileContent = YAML.stringify(configFile);
+    const configFileContent = configFile.toString();
     writeFileSync(configFilePath, configFileContent);
   } catch (e) {
     if (e instanceof Error) {
@@ -92,7 +105,7 @@ export function constructPoolConfig(configFile: ConfigFile) {
   };
 
   if (!poolConfig.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain application database name`);
+    throw new DBOSInitializationError(`DBOS configuration (${dbosConfigFilePath}) does not contain application database name`);
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
@@ -150,7 +163,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
 
   // Database field must exist
   if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database config`);
+    throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database config`);
   }
 
   // Check for the database password
@@ -162,15 +175,23 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
       if (pgPassword) {
         configFile.database.password = pgPassword;
       } else {
-        throw new DBOSInitializationError(`DBOS configuration (dbos-config.yaml) does not contain database password`);
+        throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database password`);
       }
     }
   }
 
-  const validator = ajv.compile(dbosConfigSchema);
-  if (!validator(configFile)) {
-    const errorMessages = prettyPrintAjvErrors(validator);
-    throw new DBOSInitializationError(`dbos-config.yaml failed schema validation. ${errorMessages}`);
+  const schemaValidator = ajv.compile(dbosConfigSchema);
+  if (!schemaValidator(configFile)) {
+    const errorMessages = prettyPrintAjvErrors(schemaValidator);
+    throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
+  }
+
+  if (configFile.language && configFile.language !== "node") {
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
+  }
+
+  if (!isValidDBname(configFile.database.app_db_name)) {
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
   }
 
   /*******************************/
@@ -230,4 +251,15 @@ function getAppVersion(appVersion: string | boolean | undefined) {
   if (typeof appVersion === "string") { return appVersion; }
   if (appVersion === false) { return undefined; }
   return process.env.DBOS__APPVERSION;
+}
+
+function isValidDBname(dbName: string): boolean {
+  if (dbName.length < 1 || dbName.length > 63) {
+    return false;
+  }
+  if (dbName.match(/^\d/)) {
+    // Cannot start with a digit
+    return false
+  }
+  return validator.matches(dbName, "^[a-z0-9_]+$");
 }

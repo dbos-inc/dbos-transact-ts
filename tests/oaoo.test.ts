@@ -1,5 +1,5 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
+import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
@@ -32,44 +32,44 @@ describe("oaoo-tests", () => {
   });
 
   /**
-   * Communicator OAOO tests.
+   * Step OAOO tests.
    */
-  class CommunicatorOAOO {
+  class StepOAOO {
     static #counter = 0;
     static get counter() {
-      return CommunicatorOAOO.#counter;
+      return StepOAOO.#counter;
     }
-    @Communicator()
-    static async testCommunicator(_commCtxt: CommunicatorContext) {
-      return Promise.resolve(CommunicatorOAOO.#counter++);
+    @Step()
+    static async testStep(_commCtxt: StepContext) {
+      return Promise.resolve(StepOAOO.#counter++);
     }
 
     @Workflow()
     static async testCommWorkflow(workflowCtxt: WorkflowContext) {
-      const funcResult = await workflowCtxt.invoke(CommunicatorOAOO).testCommunicator();
+      const funcResult = await workflowCtxt.invoke(StepOAOO).testStep();
       return funcResult ?? -1;
     }
   }
 
-  test("communicator-oaoo", async () => {
+  test("step-oaoo", async () => {
     const workflowUUID: string = uuidv1();
 
     let result: number = await testRuntime
-      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .invokeWorkflow(StepOAOO, workflowUUID)
       .testCommWorkflow();
     expect(result).toBe(0);
-    expect(CommunicatorOAOO.counter).toBe(1);
+    expect(StepOAOO.counter).toBe(1);
 
     // Test OAOO. Should return the original result.
     result = await testRuntime
-      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .invokeWorkflow(StepOAOO, workflowUUID)
       .testCommWorkflow();
     expect(result).toBe(0);
-    expect(CommunicatorOAOO.counter).toBe(1);
+    expect(StepOAOO.counter).toBe(1);
 
     // Should be a new run.
-    await expect(testRuntime.invokeWorkflow(CommunicatorOAOO).testCommWorkflow()).resolves.toBe(1);
-    expect(CommunicatorOAOO.counter).toBe(2);
+    await expect(testRuntime.invokeWorkflow(StepOAOO).testCommWorkflow()).resolves.toBe(1);
+    expect(StepOAOO.counter).toBe(2);
   });
 
   /**
@@ -109,15 +109,15 @@ describe("oaoo-tests", () => {
 
     static numberOfChildInvocationsMax1 = 0;
 
-    @Communicator()
-    static async nestedWorkflowCommunicatorToRunOnce(_ctxt: CommunicatorContext) {
+    @Step()
+    static async nestedWorkflowStepToRunOnce(_ctxt: StepContext) {
       ++WorkflowOAOO.numberOfChildInvocationsMax1;
       return Promise.resolve();
     }
 
     @Workflow()
     static async nestedWorkflowChildToRunOnce(wfCtxt: WorkflowContext) {
-      return await wfCtxt.invoke(WorkflowOAOO).nestedWorkflowCommunicatorToRunOnce();
+      return await wfCtxt.invoke(WorkflowOAOO).nestedWorkflowStepToRunOnce();
     }
 
     @Workflow()
@@ -130,18 +130,55 @@ describe("oaoo-tests", () => {
       await wfCtxt.sleep(durationSec);
       return;
     }
+
+    @Workflow()
+    static async recvWorkflow(wfCtxt: WorkflowContext, timeoutSeconds: number) {
+      await wfCtxt.recv('a-topic', timeoutSeconds);
+      return;
+    }
+
+    @Workflow()
+    static async getEventWorkflow(wfCtxt: WorkflowContext, timeoutSeconds: number) {
+      await wfCtxt.getEvent(uuidv1(), 'a-key', timeoutSeconds);
+      return;
+    }
+
   }
 
   test("workflow-sleep-oaoo", async () => {
     const workflowUUID = uuidv1();
     const initTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1500);
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
 
     // Rerunning should skip the sleep
     const startTime = Date.now();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).sleepWorkflow(2)).resolves.toBeFalsy();
-    expect(Date.now() - startTime).toBeLessThanOrEqual(1000);
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+  });
+
+  test("workflow-recv-oaoo", async () => {
+    const workflowUUID = uuidv1();
+    const initTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // Rerunning should skip the sleep
+    const startTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).recvWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
+  });
+
+  test("workflow-getEvent-oaoo", async () => {
+    const workflowUUID = uuidv1();
+    const initTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).getEventWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - initTime).toBeGreaterThanOrEqual(1950);
+
+    // Rerunning should skip the sleep
+    const startTime = Date.now();
+    await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).getEventWorkflow(2)).resolves.toBeFalsy();
+    expect(Date.now() - startTime).toBeLessThanOrEqual(200);
   });
 
   test("workflow-oaoo", async () => {
@@ -265,8 +302,8 @@ describe("oaoo-tests", () => {
         res += "-" + status.status;
       }
 
-      // Note: the targetUUID must match the child workflow UUID.
-      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO).setEventWorkflow();
+      // Set the child workflow UUID to targetUUID.
+      const invokedHandle = await ctxt.startWorkflow(EventStatusOAOO, targetUUID).setEventWorkflow();
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
@@ -290,7 +327,7 @@ describe("oaoo-tests", () => {
     clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
 
     const getUUID = uuidv1();
-    const setUUID = getUUID + "-2";
+    const setUUID = uuidv1();
 
     await expect(testRuntime.invokeWorkflow(EventStatusOAOO, getUUID).getEventRetrieveWorkflow(setUUID)).resolves.toBe("valueNull-statusNull-PENDING");
     expect(EventStatusOAOO.wfCnt).toBe(2);

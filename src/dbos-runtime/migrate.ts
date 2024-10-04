@@ -7,10 +7,6 @@ import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery } from "../user_database";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  if (!configFile.database.password) {
-    logger.error(`DBOS configuration does not contain database password, please check your config file and retry!`);
-    return 1;
-  }
   const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
@@ -87,7 +83,7 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
   logger.info("Starting Migration Rollback");
 
   let dbType = configFile.database.app_db_client;
-  if (dbType == undefined) {
+  if (dbType === undefined) {
     dbType = "knex";
   }
 

@@ -5,13 +5,21 @@ import { TestingRuntime, createTestingRuntime, configureInstance, WorkflowContex
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+interface ValueObj {
+  val: number,
+}
+
 class SQSReceiver
 {
   static msgRcvCount: number = 0;
-  @SQSMessageConsumer({queueURL: process.env['SQS_QUEUE_URL']})
+  static msgValueSum: number = 0;
+  @SQSMessageConsumer({queueUrl: process.env['SQS_QUEUE_URL']})
   @Workflow()
-  static async recvMessage(_ctx: WorkflowContext, _msg: Message) {
-    ++SQSReceiver.msgRcvCount;
+  static async recvMessage(_ctx: WorkflowContext, msg: Message) {
+    const ms = msg.Body!;
+    const res = JSON.parse(ms) as ValueObj;
+    SQSReceiver.msgRcvCount++;
+    SQSReceiver.msgValueSum += res.val;
     return Promise.resolve();
   }
 }
@@ -28,7 +36,7 @@ describe("sqs-tests", () => {
     }
     else {
       // This would normally be a global or static or something
-      sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config', queueURL: process.env['SQS_QUEUE_URL']});
+      sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config', queueUrl: process.env['SQS_QUEUE_URL']});
     }
   });
 
@@ -53,9 +61,12 @@ describe("sqs-tests", () => {
       console.log("SQS unavailable, skipping SQS tests");
       return;
     }
+    const sv: ValueObj = {
+      val: 10,
+    }
     const ser = await testRuntime.invoke(sqsCfg).sendMessage(
         {
-            MessageBody: "{}",
+            MessageBody: JSON.stringify(sv),
         },
     );
     expect(ser.MessageId).toBeDefined();
@@ -66,5 +77,6 @@ describe("sqs-tests", () => {
       await sleepms(100);
     }
     expect(SQSReceiver.msgRcvCount).toBe(1);
+    expect(SQSReceiver.msgValueSum).toBe(10);
   });
 });

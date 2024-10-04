@@ -12,12 +12,20 @@ import {
   dbosEnvPath,
   CloudAPIErrorResponse,
   CLILogger,
+  retrieveApplicationLanguage,
+  AppLanguages,
+  DBOSCloudCredentials,
 } from "../cloudutils.js";
 import path from "path";
 import { Application } from "./types.js";
 import JSZip from "jszip";
 import fg from "fast-glob";
 import chalk from "chalk";
+import { createUserDb, UserDBInstance } from "../databases/databases.js";
+import { registerApp } from "./register-app.js";
+import { input, select } from "@inquirer/prompts";
+import { Logger } from "winston";
+import { loadConfigFile } from "../configutils.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -44,7 +52,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
   const files = await fg(globPattern, {
     dot: true,
     onlyFiles: true,
-    ignore: [`**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`],
+    ignore: [`**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"],
   });
 
   files.forEach((file) => {
@@ -74,12 +82,15 @@ export async function deployAppCode(
   rollback: boolean,
   previousVersion: string | null,
   verbose: boolean,
-  targetDatabaseName: string | null = null,
-  appName: string | undefined
+  targetDatabaseName: string | null = null, // Used for changing database instance
+  appName: string | undefined,
+  userDBName: string | undefined = undefined, // Used for registering the app
+  enableTimeTravel: boolean = false
 ): Promise<number> {
+  const startTime = Date.now();
   const logger = getLogger(verbose);
   logger.debug("Getting cloud credentials...");
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
   logger.debug("  ... got cloud credentials");
 
@@ -91,21 +102,65 @@ export async function deployAppCode(
   }
   logger.debug(`  ... app name is ${appName}.`);
 
-  // Verify lock file exists
-  logger.debug("Checking for package-lock.json...");
-  const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
-  const yarnLockJsonExists = existsSync(path.join(process.cwd(), "yarn.lock"));
-  logger.debug(`  ... package-log.json found: ${packageLockJsonExists}`);
-  logger.debug(`  ... yarn.lock found: ${yarnLockJsonExists}`);
+  const appLanguage = retrieveApplicationLanguage();
 
-  if (!packageLockJsonExists && !yarnLockJsonExists) {
-    logger.error("Neither yarn.lock or package-lock.json found. Please run 'yarn install' or 'npm install' before deploying.");
+  if (appLanguage === AppLanguages.Node as string) {
+    logger.debug("Checking for package-lock.json...");
+    const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
+    logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
+
+    if (!packageLockJsonExists) {
+      logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
+      return 1;
+    }
+  } else if (appLanguage === AppLanguages.Python as string) {
+    logger.debug("Checking for requirements.txt...");
+    const requirementsTxtExists = existsSync(path.join(process.cwd(), "requirements.txt"));
+    logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
+
+    if (!requirementsTxtExists) {
+      logger.error("No requirements.txt found. Please create one before deploying.");
+      return 1;
+    }
+  } else {
+    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
     return 1;
   }
 
-  if (packageLockJsonExists && yarnLockJsonExists) {
-    logger.error("Only one of yarn.lock or package-lock.json should be provided.");
-    return 1;
+  // First, check if the application exists
+  const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
+
+  // If the app is not registered, register it.
+  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+
+  if (appRegistered === undefined) {
+    userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
+    if (userDBName === "") {
+      return 1;
+    }
+    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
+
+    // Register the app
+    if (enableTimeTravel) {
+      logger.info("Enabling time travel for this application");
+    } else {
+      logger.info("Time travel is disabled for this application");
+    }
+    const ret = await registerApp(userDBName, host, enableTimeTravel, appName);
+    if (ret !== 0) {
+      return 1;
+    }
+  } else {
+    logger.info(`Application ${appName} exists, updating...`);
+    if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
+      logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
+    }
+
+    // Make sure the app database is the same.
+    if (appRegistered.ApplicationDatabaseName && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
+      logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
+      return 1;
+    }
   }
 
   try {
@@ -149,13 +204,13 @@ export async function deployAppCode(
     let applicationAvailable = false;
     while (!applicationAvailable) {
       count += 1;
-      if (count % 5 === 0) {
+      if (count % 50 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
-        if (count > 20) {
-          logger.info(`If ${appName} takes too long to become available, check its logs with 'npx dbos-cloud applications logs'`);
+        if (count > 200) {
+          logger.info(`If ${appName} takes too long to become available, check its logs with 'dbos-cloud applications logs'`);
         }
       }
-      if (count > 180) {
+      if (count > 1800) {
         logger.error("Application taking too long to become available");
         return 1;
       }
@@ -172,11 +227,13 @@ export async function deployAppCode(
           applicationAvailable = true;
         }
       }
-      await sleepms(1000);
+      await sleepms(100);
     }
-    await sleepms(5000); // Leave time for route cache updates
     logger.info(`Successfully deployed ${appName}!`);
     logger.info(`Access your application at https://${userCredentials.organization}-${appName}.${host}/`);
+    const endTime = Date.now(); // Record the end time
+    const executionTime = endTime - startTime; // Calculate execution time
+    logger.debug(`Total deployment time: ${executionTime} ms`); // Pri
     return 0;
   } catch (e) {
     const errorLabel = `Failed to deploy application ${appName}`;
@@ -185,7 +242,7 @@ export async function deployAppCode(
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`application ${appName} not found`)) {
-        console.log(chalk.red("Did you register this application? Hint: run `npx dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
+        console.log(chalk.red("Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
@@ -207,4 +264,98 @@ function readInterpolatedConfig(configFilePath: string, logger: CLILogger): stri
     }
     return "";
   });
+}
+
+async function isAppRegistered(logger: Logger, host: string, appName: string, userCredentials: DBOSCloudCredentials): Promise<Application | undefined> {
+  const bearerToken = "Bearer " + userCredentials.token;
+  let app: Application | undefined = undefined;
+  try {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    app = res.data as Application;
+  } catch (e) {
+    const errorLabel = `Failed to retrieve info for application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      const resp: CloudAPIErrorResponse = axiosError.response?.data;
+      if (resp.message.includes(`application ${appName} not found`)) {
+      } else {
+        handleAPIErrors(errorLabel, axiosError);
+      }
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+  }
+  return app;
+}
+
+async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
+  // List existing database instances.
+  let userDBs: UserDBInstance[] = [];
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    userDBs = res.data as UserDBInstance[];
+  } catch (e) {
+    const errorLabel = `Failed to list databases`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return "";
+  }
+
+  if (userDBName) {
+    // Check if the database instance exists or not.
+    const dbExists = userDBs.some((db) => db.PostgresInstanceName === userDBName);
+    if (dbExists) {
+      return userDBName;
+    }
+  }
+
+  if (userDBName || userDBs.length === 0) {
+    // If not, prompt the user to provision one.
+    if (!userDBName) {
+      logger.info("No database found, provisioning a database instance (server)...");
+      userDBName = await input({
+        message: "Database instance name?",
+        default: `${userCredentials.userName}-db-server`,
+      });
+    } else {
+      logger.info(`Database instance ${userDBName} not found, provisioning a new one...`);
+    }
+
+    // Use a default user name and auto generated password.
+    const appDBUserName = "dbos_user";
+    const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
+    const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
+    if (res !== 0) {
+      return "";
+    }
+  } else if (userDBs.length > 1) {
+    // If there is more than one database instances, prompt the user to select one.
+    userDBName = await select({
+      message: "Choose a database instance for this app:",
+      choices: userDBs.map((db) => ({
+        name: db.PostgresInstanceName,
+        value: db.PostgresInstanceName,
+      })),
+    });
+  } else {
+    // Use the only available database server.
+    userDBName = userDBs[0].PostgresInstanceName;
+    logger.info(`Using database instance: ${userDBName}`);
+  }
+  return userDBName;
 }

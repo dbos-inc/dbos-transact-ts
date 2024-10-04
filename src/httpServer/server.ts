@@ -20,7 +20,7 @@ import { DBOSExecutor } from "../dbos-executor";
 import { GlobalLogger as Logger } from "../telemetry/logs";
 import { MiddlewareDefaults } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
-import { Communicator } from '../communicator';
+import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
@@ -56,7 +56,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
     this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
-    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter);
+    DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
   }
 
@@ -128,7 +128,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
         await koaNext();
       };
       router.get(HealthUrl, healthHandler);
-      dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
+      dbosExec.logger.debug(`DBOS Server Registered Healthz GET ${HealthUrl}`);
     }
 
   /**
@@ -167,13 +167,14 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
       await koaNext();
     };
     router.get(PerfUrl, perfHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Healthz POST ${HealthUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Perf GET ${HealthUrl}`);
   }
 
   /**
    * Register decorated functions as HTTP endpoints.
    */
-  static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router) {
+  static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router, app: Koa) {
+    const globalMiddlewares: Set<Koa.Middleware> = new Set();
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
@@ -217,6 +218,16 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             router.use(ro.apiURL, koaMiddleware);
           });
         }
+        if (defaults?.koaGlobalMiddlewares) {
+          defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
+            if (globalMiddlewares.has(koaMiddleware)) {
+              return;
+            }
+            dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} globally`);
+            globalMiddlewares.add(koaMiddleware)
+            app.use(koaMiddleware);
+          });
+        }
 
         // Wrapper function that parses request and send response.
         const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
@@ -258,7 +269,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
 
               if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
-                if (foundArg) {
+                if (foundArg !== undefined) {
                   args.push(foundArg);
                 }
               } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
@@ -267,13 +278,13 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
                 }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 foundArg = koaCtxt.request.body[marg.name];
-                if (foundArg) {
+                if (foundArg !== undefined) {
                   args.push(foundArg);
                 }
               }
 
               // Try to parse the argument from the URL if nothing found.
-              if (!foundArg) {
+              if (foundArg === undefined) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 args.push(koaCtxt.params[marg.name]);
               }
@@ -298,7 +309,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             } else if (ro.workflowConfig) {
               koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await dbosExec.external(ro.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.external(ro.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const retValue = await ro.invoke(undefined, [oc, ...args]);
@@ -311,7 +322,10 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             if (e instanceof Error) {
-              oc.logger.error(e);
+              const annotated_e = e as Error & {dbos_already_logged?: boolean};
+              if (annotated_e.dbos_already_logged !== true) {
+                oc.logger.error(e);
+              }
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = (e as DBOSResponseError)?.status || 500;
               const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;

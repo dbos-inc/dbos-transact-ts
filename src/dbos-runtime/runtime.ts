@@ -7,7 +7,8 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
-import { getAllRegisteredClasses } from '../decorators';
+import { wfQueueRunner } from '../wfqueue';
+import { GlobalLogger } from '../telemetry/logs';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,15 +21,22 @@ export interface DBOSRuntimeConfig {
 }
 export const defaultEntryPoint = "dist/operations.js";
 
+export class DBOS {
+  static globalLogger?: GlobalLogger;
+  static dbosConfig?: DBOSConfig;
+}
+
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private scheduler: DBOSScheduler | null = null;
+  private wfQueueRunner: Promise<void> | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
     this.dbosConfig = dbosConfig;
+    DBOS.dbosConfig = dbosConfig;
   }
 
   /**
@@ -37,12 +45,10 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
+      DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
-      const classes = await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
-      for (const cls of getAllRegisteredClasses()) {
-        if (!classes.includes(cls)) classes.push(cls);
-      }
-      await this.dbosExec.init(classes);
+      await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
+      await this.dbosExec.init();
       const server = new DBOSHttpServer(this.dbosExec);
       this.servers = await server.listen(this.runtimeConfig.port);
       this.dbosExec.logRegisteredHTTPUrls();
@@ -50,6 +56,9 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
+      wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
+      this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
+
       for (const evtRcvr of this.dbosExec.eventReceivers) {
         await evtRcvr.initialize(this.dbosExec);
       }
@@ -110,6 +119,8 @@ export class DBOSRuntime {
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
+    wfQueueRunner.stop();
+    await this.wfQueueRunner;
     for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();
     }

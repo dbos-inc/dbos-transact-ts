@@ -2,7 +2,7 @@
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { Communicator, CommunicatorContext, CommunicatorContextImpl } from "./communicator";
+import { StepFunction, StepContext, StepContextImpl } from "./step";
 import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { DBOSJSON, sleepms } from "./utils";
@@ -15,6 +15,7 @@ import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
 import { PoolClient } from "pg";
+import { WorkflowQueue } from "./wfqueue";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -22,12 +23,12 @@ export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
-// local type declarations for transaction and communicator functions
+// local type declarations for transaction and step functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
-type CommFunc = (ctxt: CommunicatorContext, ...args: any[]) => Promise<any>;
+type CommFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
-// Utility type that only includes transaction/communicator/proc functions + converts the method signature to exclude the context parameter
+// Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
 export type WFInvokeFuncs<T> =
   T extends ConfiguredInstance
   ? never
@@ -47,6 +48,8 @@ export interface WorkflowParams {
   parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
   recovery?: boolean;
+  queueName?: string;
+  executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
 
 export interface WorkflowConfig {
@@ -54,10 +57,11 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
-  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED.
+  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED.
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
   readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
+  readonly queueName?: string; // The name of the queue, if workflow was queued
   readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
@@ -69,7 +73,7 @@ export interface GetWorkflowsInput {
   authenticatedUser?: string; // The user who ran the workflow.
   startTime?: string; // Timestamp in ISO 8601 format
   endTime?: string; // Timestamp in ISO 8601 format
-  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED"; // The status of the workflow.
+  status?: "PENDING" | "SUCCESS" | "ERROR" | "RETRIES_EXCEEDED" | "CANCELLED" | "ENQUEUED"; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
@@ -94,6 +98,7 @@ export const StatusString = {
   ERROR: "ERROR",
   RETRIES_EXCEEDED: "RETRIES_EXCEEDED",
   CANCELLED: "CANCELLED",
+  ENQUEUED: "ENQUEUED",
 } as const;
 
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
@@ -133,8 +138,8 @@ export interface WorkflowContext extends DBOSContext {
   // These aren't perfectly type checked (return some methods that should not be called) but the syntax is otherwise the neatest
   invokeWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): WfInvokeWfsAsync<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsInstAsync<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
 
   // These are subject to change...
 
@@ -177,7 +182,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedUser: parentCtx?.authenticatedUser ?? "",
         authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
         assumedRole: parentCtx?.assumedRole ?? "",
-        executorID: parentCtx?.executorID,
       },
       parentCtx?.span,
     );
@@ -312,7 +316,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown)=> boolean): Promise<string> {
     try {
       const serialOutput = DBOSJSON.stringify(output);
-      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;", 
+      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;",
         [this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()]);
       return rows[0].txn_id;
     } catch (error) {
@@ -341,7 +345,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
-      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;", 
+      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;",
         [this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now()]);
     } catch (error) {
       if (isKeyConflict(error)) {
@@ -384,7 +388,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue):
     WfInvokeWfsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
@@ -392,7 +396,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const funcId = this.functionIDGetIncrement();
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
-    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
     for (const op of ops) {
       if (asyncWf) {
@@ -409,12 +413,12 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
-      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, null, queue) as unknown as WfInvokeWfsAsync<T>;
     }
     else {
-      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance, queue) as unknown as WfInvokeWfsAsync<T>;
     }
   }
   invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
@@ -522,7 +526,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       assumedRole: this.assumedRole,
     };
 
-    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on 
+    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
     // args and bufferedResults before being passed to dbosExec.callProcedure
     const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
     if (!readOnly) {
@@ -546,8 +550,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       this.resultBuffer.clear();
     }
 
-    // if the stored proc returns an error, deserialize and throw it. 
-    // stored proc saves the error in tx_output before returning 
+    // if the stored proc returns an error, deserialize and throw it.
+    // stored proc saves the error in tx_output before returning
     if (error) {
       throw deserializeError(error);
     }
@@ -589,7 +593,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         readOnly: procInfo.config.readOnly ?? false,
         isolationLevel: procInfo.config.isolationLevel,
         executeLocally,
-        executorID: this.executorID,
       },
       this.span,
     );
@@ -635,7 +638,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedRoles: this.authenticatedRoles,
         readOnly: readOnly,
         isolationLevel: txnInfo.config.isolationLevel,
-        executorID: this.executorID,
       },
       this.span,
     );
@@ -721,28 +723,27 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   /**
-   * Execute a communicator function.
+   * Execute a step function.
    * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
-   * The communicator may execute many times, but once it is complete, it will not re-execute.
+   * The step may execute many times, but once it is complete, it will not re-execute.
    */
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
+    const commInfo = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commInfo === undefined) {
-      throw new DBOSNotRegisteredError(commFn.name);
+      throw new DBOSNotRegisteredError(stepFn.name);
     }
 
     const funcID = this.functionIDGetIncrement();
     const maxRetryIntervalSec = 3600 // Maximum retry interval: 1 hour
 
     const span: Span = this.#dbosExec.tracer.startSpan(
-      commFn.name,
+      stepFn.name,
       {
         operationUUID: this.workflowUUID,
         operationType: OperationType.COMMUNICATOR,
         authenticatedUser: this.authenticatedUser,
         assumedRole: this.assumedRole,
         authenticatedRoles: this.authenticatedRoles,
-        executorID: this.executorID,
         retriesAllowed: commInfo.config.retriesAllowed,
         intervalSeconds: commInfo.config.intervalSeconds,
         maxAttempts: commInfo.config.maxAttempts,
@@ -751,7 +752,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       this.span,
     );
 
-    const ctxt: CommunicatorContextImpl = new CommunicatorContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, commFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, stepFn.name);
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
@@ -767,7 +768,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       return check as R;
     }
 
-    // Execute the communicator function.  If it throws an exception, retry with exponential backoff.
+    // Execute the step function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an DBOSError.
     let result: R | DBOSNull = dbosNull;
     let err: Error | DBOSNull = dbosNull;
@@ -775,14 +776,15 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
       if (intervalSeconds > maxRetryIntervalSec) {
-        this.logger.warn(`Communicator config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
+        this.logger.warn(`Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
-          result = await commFn.call(clsInst, ctxt, ...args);
+          result = await stepFn.call(clsInst, ctxt, ...args);
         } catch (error) {
-          this.logger.error(error);
-          span.addEvent(`Communicator attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
+          const e = error as Error
+          this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
+          span.addEvent(`Step attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
           if (numAttempts < ctxt.maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             // Cap at the maximum allowed retry interval.
@@ -794,16 +796,16 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
     } else {
       try {
-        result = await commFn.call(clsInst, ctxt, ...args);
+        result = await stepFn.call(clsInst, ctxt, ...args);
       } catch (error) {
         err = error as Error;
       }
     }
 
-    // `result` can only be dbosNull when the communicator timed out
+    // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSError("Communicator reached maximum retries.", 1) : err;
+      err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
       await this.#dbosExec.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.#dbosExec.tracer.endSpan(ctxt.span);
@@ -839,13 +841,14 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async recv<T>(topic?: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
+    const timeoutFunctionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
       await this.flushResultBuffer(client);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
-    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, topic, timeoutSeconds);
+    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds);
   }
 
   /**
@@ -876,7 +879,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
@@ -892,7 +895,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -904,7 +907,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   getEvent<T>(targetUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, this.workflowUUID, functionID);
+    const timeoutFunctionID = this.functionIDGetIncrement();
+    const params = {
+      workflowUUID: this.workflowUUID,
+      functionID,
+      timeoutFunctionID
+    };
+    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, params);
   }
 
   /**

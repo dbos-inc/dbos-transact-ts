@@ -4,7 +4,7 @@ import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
-import { CommunicatorConfig, CommunicatorContext } from "./communicator";
+import { StepConfig, StepContext } from "./step";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
 import { StoredProcedureConfig, StoredProcedureContext } from "./procedure";
@@ -147,7 +147,7 @@ export interface MethodRegistrationBase {
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: CommunicatorConfig;
+  commConfig?: StepConfig;
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
@@ -182,7 +182,7 @@ implements MethodRegistrationBase
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: CommunicatorConfig;
+  commConfig?: StepConfig;
   procConfig?: TransactionConfig;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
@@ -216,7 +216,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  ormEntities: Function[] = [];
+  ormEntities: Function[] | { [key: string]: object } = [];
 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
@@ -637,11 +637,11 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
   return decorator;
 }
 
-export function Communicator(config: CommunicatorConfig={}) {
+export function Step(config: StepConfig={}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: CommunicatorContext, ...args: Args) => Promise<Return>>)
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>)
   {
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.commConfig = config;
@@ -651,7 +651,7 @@ export function Communicator(config: CommunicatorConfig={}) {
 }
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-export function OrmEntities(entities: Function[]) {
+export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
 
   function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
   {

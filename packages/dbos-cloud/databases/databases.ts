@@ -1,8 +1,8 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
-import { existsSync } from "fs";
+import { copyFileSync, existsSync } from "fs";
 
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
@@ -24,9 +24,11 @@ function isValidPassword(logger: Logger, password: string): boolean {
   return true;
 }
 
-export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean) {
+export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean, userCredentials?: DBOSCloudCredentials) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  if (!userCredentials) {
+    userCredentials = await getCloudCredentials(host, logger);
+  }
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -49,13 +51,13 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
 
     if (sync) {
       let status = "";
-      while (status != "available" && status != "backing-up") {
+      while (status !== "available" && status !== "backing-up") {
         if (status === "") {
           await sleepms(5000); // First time sleep 5 sec
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
         }
-        const userDBInfo = await getUserDBInfo(host, dbName);
+        const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
         logger.info(userDBInfo);
         status = userDBInfo.Status;
       }
@@ -74,20 +76,27 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
-export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean) {
+export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean, supabaseReference: string | undefined) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, dbPassword)) {
     return 1;
   }
 
-  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel}`);
+  let data = {}
+  if (supabaseReference === undefined) {
+    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel}
+  } else {
+    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel, supabaseReference: supabaseReference }
+  }
+
+  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference}`);
   try {
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`,
-      { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel },
+      data,
       {
         headers: {
           "Content-Type": "application/json",
@@ -112,7 +121,7 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
 
 export async function deleteUserDb(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -138,7 +147,7 @@ export async function deleteUserDb(host: string, dbName: string) {
 
 export async function unlinkUserDB(host: string, dbName: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -193,7 +202,7 @@ export async function listUserDB(host: string, json: boolean) {
   const logger = getLogger();
 
   try {
-    const userCredentials = await getCloudCredentials();
+    const userCredentials = await getCloudCredentials(host, logger);
     const bearerToken = "Bearer " + userCredentials.token;
 
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
@@ -231,8 +240,11 @@ export async function listUserDB(host: string, json: boolean) {
   }
 }
 
-export async function getUserDBInfo(host: string, dbName: string): Promise<UserDBInstance> {
-  const userCredentials = await getCloudCredentials();
+async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBOSCloudCredentials): Promise<UserDBInstance> {
+  const logger = getLogger();
+  if (!userCredentials) {
+    userCredentials = await getCloudCredentials(host, logger);
+  }
   const bearerToken = "Bearer " + userCredentials.token;
 
   const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`, {
@@ -247,7 +259,7 @@ export async function getUserDBInfo(host: string, dbName: string): Promise<UserD
 
 export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -281,7 +293,7 @@ export async function resetDBCredentials(host: string, dbName: string, appDBPass
 
 export async function restoreUserDB(host: string, dbName: string, targetName: string, restoreTime: string, sync: boolean) {
   const logger = getLogger();
-  const userCredentials = await getCloudCredentials();
+  const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = "Bearer " + userCredentials.token;
 
   try {
@@ -299,13 +311,13 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
 
     if (sync) {
       let status = "";
-      while (status != "available" && status != "backing-up") {
+      while (status !== "available" && status !== "backing-up") {
         if (status === "") {
           await sleepms(5000); // First time sleep 5 sec
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
         }
-        const userDBInfo = await getUserDBInfo(host, targetName);
+        const userDBInfo = await getUserDBInfo(host, targetName, userCredentials);
         logger.info(userDBInfo);
         status = userDBInfo.Status;
       }
@@ -332,6 +344,10 @@ export async function connect(host: string, dbName: string, password: string) {
       logger.error(`Error: ${dbosConfigFilePath} not found`);
       return 1;
     }
+
+    const backupConfigFilePath = `dbos-config.yaml.${Date.now()}.bak`;
+    logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
+    copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
     logger.info("Retrieving cloud database info...");
     const userDBInfo = await getUserDBInfo(host, dbName);

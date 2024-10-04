@@ -80,16 +80,16 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
         }
         if (argDescriptor.dataType.dataType === 'boolean') {
           if (typeof argValue !== 'boolean') {
-            if (typeof argValue == 'number') {
+            if (typeof argValue === 'number') {
               if (argValue === 0 || argValue === 1) {
-                argValue = (argValue != 0 ? true : false);
+                argValue = (argValue !== 0 ? true : false);
                 args[idx] = argValue;
               }
               else {
                 throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' and may be a number (0 or 1) convertible to boolean, but was ${argValue}.`);
               }
             }
-            else if (typeof argValue == 'string') {
+            else if (typeof argValue === 'string') {
               if (argValue.toLowerCase() === 't' || argValue.toLowerCase() === 'true' || argValue === '1') {
                 argValue = true;
                 args[idx] = argValue;
@@ -150,7 +150,7 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
         }
         if (argDescriptor.dataType.dataType === 'timestamp') {
           if (!(argValue instanceof Date)) {
-            if (typeof argValue == 'string') {
+            if (typeof argValue === 'string') {
               const d = Date.parse(argValue);
               if (isNaN(d)) {
                 throw validationError(`Argument ${argDescriptor.name} of ${methReg.name} is marked as type '${argDescriptor.dataType.dataType}' but is a string that will not parse as Date`);

@@ -20,9 +20,11 @@ describe("TypeParser", () => {
     const [$class] = classes!;
     expect($class.name).toBe("Hello");
     expect($class.decorators.length).toBe(0);
-    expect($class.methods.length).toBe(1);
+    expect($class.methods.length).toBe(3);
 
-    const [method] = $class.methods;
+    const method = $class.methods[0].name === "helloTransaction" ? $class.methods[0] :
+                   $class.methods[1].name === "helloTransaction" ? $class.methods[1] :
+                   $class.methods[2];
     expect(method.name).toBe("helloTransaction");
     expect(method.decorators.length).toBe(2);
 

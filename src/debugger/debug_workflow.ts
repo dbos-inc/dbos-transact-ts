@@ -2,7 +2,7 @@
 import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "../dbos-executor";
 import { transaction_outputs } from "../../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContextImpl } from "../transaction";
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { DBOSDebuggerError } from "../error";
 import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
@@ -16,6 +16,7 @@ import { DBOSJSON } from "../utils";
 import { StoredProcedure, StoredProcedureContextImpl } from "../procedure";
 import { PoolClient } from "pg";
 import assert from "node:assert";
+import { WorkflowQueue } from "../wfqueue";
 
 interface RecordedResult<R> {
   output: R;
@@ -67,7 +68,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
               ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
               : undefined;
@@ -83,7 +84,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
         proxy[op.name] = op.txnConfig
           ?          (...args: unknown[]) => this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
           : op.commConfig
-            ?            (...args: unknown[]) => this.external(op.registeredFunction as Communicator<unknown[], unknown>, targetInst, ...args)
+            ?            (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -100,7 +101,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       throw new DBOSDebuggerError(`This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` + rows.toString());
     }
 
-    if (DBOSJSON.parse(rows[0].error) != null) {
+    if (DBOSJSON.parse(rows[0].error) !== null) {
       return deserializeError(DBOSJSON.parse(rows[0].error));
     }
 
@@ -269,21 +270,21 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async external<T extends unknown[], R>(commFn: Communicator<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
-    const commConfig = this.#dbosExec.getCommunicatorInfo(commFn as Communicator<unknown[], unknown>);
+  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, _clsinst: ConfiguredInstance | null, ..._args: T): Promise<R> {
+    const commConfig = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commConfig === undefined) {
-      throw new DBOSDebuggerError(`Communicator ${commFn.name} not registered!`);
+      throw new DBOSDebuggerError(`Step ${stepFn.name} not registered!`);
     }
     const funcID = this.functionIDGetIncrement();
 
-    // FIXME: we do not create a span for the replay communicator. Do we want to?
+    // FIXME: we do not create a span for the replay step. Do we want to?
 
     // Original result must exist during replay.
     const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, funcID);
     if (check === dbosNull) {
-      throw new DBOSDebuggerError(`Cannot find recorded communicator output for ${commFn.name}. Shouldn't happen in debug mode!`);
+      throw new DBOSDebuggerError(`Cannot find recorded step output for ${stepFn.name}. Shouldn't happen in debug mode!`);
     }
-    this.logger.debug("Use recorded communicator output.");
+    this.logger.debug("Use recorded step output.");
     return check as R;
   }
 
@@ -302,7 +303,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null):
+  proxyInvokeWF<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue):
     WfInvokeWfsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
@@ -310,7 +311,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     const funcId = this.functionIDGetIncrement();
     const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
-    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
 
     for (const op of ops) {
@@ -328,12 +329,12 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return proxy as WfInvokeWfsAsync<T>;
   }
 
-  startWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfsAsync<T> {
+  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
     if (typeof target === 'function') {
-      return this.proxyInvokeWF(target, workflowUUID, true, null) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, null, queue) as unknown as WfInvokeWfsAsync<T>;
     }
     else {
-      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance) as unknown as WfInvokeWfsAsync<T>;
+      return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance, queue) as unknown as WfInvokeWfsAsync<T>;
     }
   }
   invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
@@ -363,6 +364,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   async recv<T>(_topic?: string | undefined, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
+    //Increment once more to account for the timeoutFunctionID created by workflow
+    this.functionIDGetIncrement();
 
     // Original result must exist during replay.
     const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
@@ -385,7 +388,8 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
   async getEvent<T>(_workflowUUID: string, _key: string, _timeoutSeconds?: number | undefined): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
-
+    //take into account the extra functionID increment from workflow
+    this.functionIDGetIncrement();
     // Original result must exist during replay.
     const check: T | null | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<T | null>(this.workflowUUID, functionID);
     if (check === dbosNull) {

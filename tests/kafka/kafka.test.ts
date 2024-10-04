@@ -40,6 +40,7 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 const kafka = new KafkaJS(kafkaConfig)
+const kafkaTimeout = 60000;
 
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
@@ -76,19 +77,19 @@ describe("kafka-tests", () => {
     } finally {
       await producer.disconnect();
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       testRuntime = await createInternalTestRuntime(undefined, config);
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
       await testRuntime.destroy();
     }
-  }, 30000);
+  }, kafkaTimeout);
 
   test("txn-kafka", async () => {
     if (!kafkaIsAvailable) {
@@ -123,7 +124,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 30000);
+  }, kafkaTimeout);
 });
 
 @Kafka(kafkaConfig)
@@ -152,7 +153,7 @@ class DBOSTestClass {
   @KafkaConsume(txnTopic)
   @Transaction()
   static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == txnTopic && message.value?.toString() === txnMessage) {
+    if (topic === txnTopic && message.value?.toString() === txnMessage) {
       txnCounter = txnCounter + 1;
       DBOSTestClass.txnResolve();
     }
@@ -162,7 +163,7 @@ class DBOSTestClass {
   @KafkaConsume(wfTopic)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic == wfTopic && message.value?.toString() === wfMessage) {
+    if (topic === wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
     }
@@ -172,8 +173,8 @@ class DBOSTestClass {
   @KafkaConsume(patternTopic)
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
-    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
+    const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
@@ -186,8 +187,8 @@ class DBOSTestClass {
   @KafkaConsume(arrayTopics)
   @Workflow()
   static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
-    const isWfMessage = topic == wfTopic && message.value?.toString() === wfMessage;
-    const isTxnMessage = topic == txnTopic && message.value?.toString() === txnMessage;
+    const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
+    const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
       arrayTopicsCounter = arrayTopicsCounter + 1;
       if (arrayTopicsCounter === 2) {

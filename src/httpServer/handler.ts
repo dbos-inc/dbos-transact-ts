@@ -8,9 +8,10 @@ import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { v4 as uuidv4 } from 'uuid';
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { APITypes, ArgSources } from "./handlerTypes";
 import { StoredProcedure } from "../procedure";
+import { WorkflowQueue } from "../wfqueue";
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,8 +53,9 @@ export interface HandlerContext extends DBOSContext {
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
   invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): AsyncHandlerWfFuncInst<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string): AsyncHandlerWfFuncs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
+  
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -143,10 +145,12 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null): InvokeFuncs<T> {
+  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue)
+    : InvokeFuncs<T>
+  {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
-    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance };
+    const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
     for (const op of ops) {
       if (asyncWf) {
@@ -159,7 +163,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
           : op.commConfig
 
-          ? (...args: unknown[]) => this.#external(op.registeredFunction as Communicator<unknown[], unknown>, params, ...args)
+          ? (...args: unknown[]) => this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
           : op.procConfig
 
           ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
@@ -177,31 +181,31 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
   invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, true, null);
+      return this.mainInvoke(object, workflowUUID, true, null, undefined);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as InvokeFuncsInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst, undefined) as unknown as InvokeFuncsInst<T>;
     }
   }
 
-  startWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T> {
+  startWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, true, null);
+      return this.mainInvoke(object, workflowUUID, true, null, queue);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 
   invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsInst<T> {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, false, null) as unknown as SyncHandlerWfFuncs<T>;
+      return this.mainInvoke(object, workflowUUID, false, null, undefined) as unknown as SyncHandlerWfFuncs<T>;
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, false, targetInst) as unknown as SyncHandlerWfFuncsInst<T>;
+      return this.mainInvoke(targetInst, workflowUUID, false, targetInst, undefined) as unknown as SyncHandlerWfFuncsInst<T>;
     }
   }
 
@@ -221,8 +225,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.transaction(txn, params, ...args);
   }
 
-  async #external<T extends unknown[], R>(commFn: Communicator<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    return this.#dbosExec.external(commFn, params, ...args);
+  async #external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return this.#dbosExec.external(stepFn, params, ...args);
   }
 
   async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {

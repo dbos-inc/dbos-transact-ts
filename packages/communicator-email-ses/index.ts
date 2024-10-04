@@ -99,6 +99,7 @@ class SendEmailCommunicator extends ConfiguredInstance
 
     static createSES(cfg: AWSServiceConfig) {
         return new SESv2({
+            endpoint: cfg.endpoint,
             region: cfg.region,
             credentials: cfg.credentials,
             maxAttempts: cfg.maxRetries,
@@ -162,5 +163,6 @@ class SendEmailCommunicator extends ConfiguredInstance
 }
 
 export {
-    SendEmailCommunicator
+    SendEmailCommunicator,
+    SendEmailCommunicator as SendEmailStep,
 }

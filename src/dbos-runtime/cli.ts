@@ -118,7 +118,7 @@ workflowCommands
   .option('-u, --user <string>', 'Retrieve workflows run by this user')
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
-  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, or CANCELLED)')
+  .option('-S, --status <string>', 'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)')
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
   .option('--request', 'Retrieve workflow request information')
   .option("-d, --appDir <string>", "Specify the application root directory")
@@ -201,11 +201,8 @@ if (!process.argv.slice(2).length) {
 //Finally, terminates the program with the exit code.
 export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
   let logger = new GlobalLogger();
-  const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-  if (!configFile) {
-    logger.error(`Failed to parse ${dbosConfigFilePath}`);
-    process.exit(1);
-  }
+  const _ = parseConfigFile(); // Validate config file
+  const configFile = loadConfigFile(dbosConfigFilePath);
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
     logger = new GlobalLogger(new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), configFile.telemetry?.logs);

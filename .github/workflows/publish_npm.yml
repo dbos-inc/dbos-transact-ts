@@ -12,17 +12,18 @@ jobs:
       matrix:
         package: [
           .,
-          packages/dbos-cloud,
-          packages/dbos-openapi,
-          packages/communicator-datetime,
-          packages/communicator-bcrypt,
-          packages/communicator-random,
-          packages/create,
           packages/aws-config,
+          packages/communicator-bcrypt,
+          packages/communicator-datetime,
+          packages/communicator-email-ses,
+          packages/communicator-random,
           packages/component-aws-s3,
+          packages/create,
+          packages/dbos-cloud,
+          packages/dbos-compiler,
+          packages/dbos-openapi,
           packages/dbos-sqs,
           packages/dbos-kafkajs,
-          packages/communicator-email-ses
         ]
     steps:
       - name: Checkout
@@ -33,12 +34,12 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: 20
+      - run: npm ci; npm run build
       - name: Nerdbank.GitVersioning
         id: nbgv
         uses: dotnet/nbgv@v0.4.2
         with:
           stamp: ${{ matrix.package }}/package.json
-      - run: npm ci
       - run: cd ${{ matrix.package }}; npm run build
       - name: Publish release to npm
         uses: JS-DevTools/npm-publish@v3

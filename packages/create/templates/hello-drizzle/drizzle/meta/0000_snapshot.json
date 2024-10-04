@@ -1,0 +1,38 @@
+{
+  "id": "78b956ed-8f92-4ee4-aa24-2afbd7e51647",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.dbos_hello": {
+      "name": "dbos_hello",
+      "schema": "",
+      "columns": {
+        "greet_count": {
+          "name": "greet_count",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "greeting": {
+          "name": "greeting",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -8,11 +8,12 @@ import {
   TransactionContext,
   WorkflowContext,
   TestingRuntime,
+  DBOS,
 } from "../../src";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { HandlerContext } from "../../src/httpServer/handler";
-import { Authentication, KoaMiddleware } from "../../src/httpServer/middleware";
+import { Authentication, KoaGlobalMiddleware, KoaMiddleware } from "../../src/httpServer/middleware";
 import { Middleware } from "koa";
 import { DBOSNotAuthorizedError } from "../../src/error";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -31,11 +32,12 @@ describe("httpserver-defsec-tests", () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([TestEndpointDefSec], config);
+    testRuntime = await createInternalTestRuntime([TestEndpointDefSec, SecondClass], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
+    middlewareCounterG = 0;
   });
 
   afterEach(async () => {
@@ -50,6 +52,11 @@ describe("httpserver-defsec-tests", () => {
     expect(response.body.message).toBe("hello!");
     expect(middlewareCounter).toBe(1);
     expect(middlewareCounter2).toBe(2); // Middleware runs from left to right.
+    expect(middlewareCounterG).toBe(1);
+    await request(testRuntime.getHandlersCallback()).get("/goodbye");
+    expect(middlewareCounterG).toBe(2);
+    await request(testRuntime.getHandlersCallback()).get("/nosuchendpoint");
+    expect(middlewareCounterG).toBe(3);
   });
 
   test("not-authenticated", async () => {
@@ -124,9 +131,17 @@ describe("httpserver-defsec-tests", () => {
     await next();
   };
 
+  let middlewareCounterG = 0;
+  const testMiddlewareG: Middleware = async (ctx, next) => {
+    middlewareCounterG = middlewareCounterG + 1;
+    expect(DBOS.globalLogger).toBeDefined();
+    await next();
+  };
+
   @DefaultRequiredRole(["user"])
   @Authentication(authTestMiddleware)
   @KoaMiddleware(testMiddleware, testMiddleware2)
+  @KoaGlobalMiddleware(testMiddlewareG)
   class TestEndpointDefSec {
     @RequiredRole([])
     @GetApi("/hello")
@@ -161,6 +176,14 @@ describe("httpserver-defsec-tests", () => {
     @GetApi("/transaction")
     static async testTxnEndpoint(ctxt: HandlerContext, name: string) {
       return ctxt.invoke(TestEndpointDefSec).testTranscation(name);
+    }
+  }
+
+  class SecondClass {
+    @RequiredRole([])
+    @GetApi("/goodbye")
+    static async bye(_ctx: HandlerContext) {
+      return Promise.resolve({ message: "bye!" });
     }
   }
 });
