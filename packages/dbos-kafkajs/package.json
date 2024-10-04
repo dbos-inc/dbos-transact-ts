@@ -13,7 +13,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo 'no tests'",
+    "test": "npm run build && jest --detectOpenHandles",
     "testkafka": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
