@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/dbos-kafkajs",
   "version": "0.0.0-placeholder",
-  "description": "Communicator/event receiver library - Kafka using KafkaJS",
+  "description": "DBOS send step and event receiver library - Kafka using KafkaJS",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -2,7 +2,7 @@
 
 Publish/subscribe message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in multiple client programming environments.  Due to its performance, flexibility, and simple, scalable design, [Kafka](https://www.confluent.io/cloud-kafka) is a popular choice for publish/subscribe.
 
-This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending Kafka messages, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
+This package includes a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending Kafka messages, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
 
 This package is based on [KafkaJS](https://kafka.js.org/).  We are working on other client libraries for Kafka, please reach out to [us](https://www.dbos.dev/) if you are interested in a different client library.
 
@@ -15,18 +15,18 @@ npm install --save @dbos-inc/dbos-kafkajs
 ## Sending Messages
 
 ### Imports
-First, ensure that the communicator and associated classes are imported:
+First, ensure that the package classes are imported:
 ```typescript
 import {
   KafkaConfig,
   logLevel,
-  KafkaProduceCommunicator,
+  KafkaProduceStep,
   Partitioners,
 } from "@dbos-inc/dbos-kafkajs";
 ```
 
 ### Selecting A Configuration
-`KafkaProduceCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`KafkaProduceStep` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
@@ -38,13 +38,13 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 
-kafkaCfg = configureInstance(KafkaProduceCommunicator, 'defKafka', kafkaConfig, defTopic, {
+kafkaCfg = configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
     createPartitioner: Partitioners.DefaultPartitioner
 });
 ```
 
 ### Sending
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `KafkaProduceCommunicator` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `KafkaProduceStep` function from the workflow context:
 ```typescript   
 const sendRes = await wfCtx.invoke(kafkaCfg).sendMessage({value: ourMessage});
 ```

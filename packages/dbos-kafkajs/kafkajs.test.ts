@@ -13,7 +13,7 @@ import {
   Kafka,
   KafkaConsume,
   logLevel,
-  KafkaProduceCommunicator,
+  KafkaProduceStep,
   KafkaMessage,
   Partitioners,
 } from "./index";
@@ -73,8 +73,8 @@ let arrayTopicsCounter = 0;
 describe("kafka-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
-  let wfKafkaCfg: KafkaProduceCommunicator | undefined = undefined;
-  let txKafkaCfg: KafkaProduceCommunicator | undefined = undefined;
+  let wfKafkaCfg: KafkaProduceStep | undefined = undefined;
+  let txKafkaCfg: KafkaProduceStep | undefined = undefined;
 
   beforeAll(async () => {
     // Check if Kafka is available, skip the test if it's not
@@ -90,10 +90,10 @@ describe("kafka-tests", () => {
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       // This would normally be a global or static or something
-      wfKafkaCfg = configureInstance(KafkaProduceCommunicator, 'wfKafka', kafkaConfig, wfTopic, {
+      wfKafkaCfg = configureInstance(KafkaProduceStep, 'wfKafka', kafkaConfig, wfTopic, {
         createPartitioner: Partitioners.DefaultPartitioner
       });
-      txKafkaCfg = configureInstance(KafkaProduceCommunicator, 'txKafka', kafkaConfig, txnTopic, {
+      txKafkaCfg = configureInstance(KafkaProduceStep, 'txKafka', kafkaConfig, txnTopic, {
         createPartitioner: Partitioners.DefaultPartitioner
       });
       testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');

@@ -11,7 +11,7 @@ import {
     logLevel,
     Partitioners,
 } from "kafkajs";
-import { Communicator, CommunicatorContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
+import { Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from "@dbos-inc/dbos-sdk";
 import { TransactionFunction } from "@dbos-inc/dbos-sdk";
 import { WorkflowFunction } from "@dbos-inc/dbos-sdk";
@@ -196,9 +196,9 @@ export function Kafka(kafkaConfig: KafkaConfig) {
 }
 
 //////////////////////////////
-/* Producer Communicator    */
+/* Producer Step    */
 //////////////////////////////
-export class KafkaProduceCommunicator extends ConfiguredInstance
+export class KafkaProduceStep extends ConfiguredInstance
 {
   producer: Producer | undefined = undefined;
   topic: string = "";
@@ -215,13 +215,13 @@ export class KafkaProduceCommunicator extends ConfiguredInstance
     return Promise.resolve();
   }
 
-  @Communicator()
-  async sendMessage(_ctx: CommunicatorContext, msg: Message) {
+  @Step()
+  async sendMessage(_ctx: StepContext, msg: Message) {
     return await this.producer?.send({topic: this.topic, messages:[msg]});
   }
 
-  @Communicator()
-  async sendMessages(_ctx: CommunicatorContext, msg: Message[]) {
+  @Step()
+  async sendMessages(_ctx: StepContext, msg: Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
   }
 }

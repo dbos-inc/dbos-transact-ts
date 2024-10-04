@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/dbos-sqs",
   "version": "0.0.0-placeholder",
-  "description": "Communicator/event receiver library - queues in AWS with SQS",
+  "description": "DBOS send step / event receiver library - queues in AWS with SQS",
   "license": "MIT",
   "repository": {
     "type": "git",
