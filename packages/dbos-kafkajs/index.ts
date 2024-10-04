@@ -38,6 +38,7 @@ const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class DBOSKafka implements DBOSEventReceiver {
   readonly consumers: Consumer[] = [];
+  kafka?: KafkaJS = undefined;
 
   executor?: DBOSExecutorContext = undefined;
 
@@ -66,9 +67,11 @@ export class DBOSKafka implements DBOSEventReceiver {
         if (ro.kafkaTopics) {
           topics.push(ro.kafkaTopics)
         }
-        const kafka = new KafkaJS(defaults.kafkaConfig);
+        if (!this.kafka) {
+          this.kafka = new KafkaJS(defaults.kafkaConfig);
+        }
         const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(topics)}` };
-        const consumer = kafka.consumer(consumerConfig);
+        const consumer = this.kafka.consumer(consumerConfig);
         await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
         // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
@@ -223,5 +226,9 @@ export class KafkaProduceStep extends ConfiguredInstance
   @Step()
   async sendMessages(_ctx: StepContext, msg: Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
+  }
+
+  async disconnect() {
+    await this.producer?.disconnect();
   }
 }
