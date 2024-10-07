@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
 import { PostgresSystemDatabase } from "../src/system_database";
 import { workflow_queue } from "../schemas/system_db_schema";
+import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, setDebugTrigger } from "../src/debugpoint";
 
 
 const queue = new WorkflowQueue("testQ");
@@ -190,6 +191,36 @@ describe("queued-wf-tests-simple", () => {
         // Verify all queue entries eventually get cleaned up.
         expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
     }, 10000);
+
+    test("test_one_at_a_time_with_crash", async() => {
+        let wfqRes: () => void = () => { };
+        const wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
+
+        setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_QUEUE_START, {
+            callback: () => {
+                wfqRes();
+                throw new Error("Interrupt scheduler here");
+            }
+        });
+
+        console.log("Starting WF inv 1");
+        const wfh1 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('a','b');
+        console.log("Waiting for WF1 to get executed");
+        await wfqPromise;
+        console.log("Waiting for Runtime to get blasted away");
+        await testRuntime.destroy();
+        console.log("Waiting for New runtime creation");
+        testRuntime = await createInternalTestRuntime(undefined, config);
+        console.log("Starting WF2");
+        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
+
+        console.log("Waiting for WF Results");
+        const wfh1b = testRuntime.retrieveWorkflow(wfh1.getWorkflowUUID());
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
+        await wfh1b.getResult();
+        await wfh2b.getResult();
+        console.log("Yay, it worked");
+    }, 10000);
 });
 
 class TestWFs
@@ -208,6 +239,12 @@ class TestWFs
         expect(ctx.workflowUUID).toBe(TestWFs.wfid);
         ++TestWFs.wfCounter;
         var1 = await ctx.invoke(TestWFs).testStep(var1);
+        return Promise.resolve(var1 + var2);
+    }
+
+    @Workflow()
+    static async testWorkflowSimple(ctx: WorkflowContext, var1: string, var2: string) {
+        ++TestWFs.wfCounter;
         return Promise.resolve(var1 + var2);
     }
 
@@ -299,4 +336,3 @@ async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) 
     expect(TestWFs2.wfCounter).toBe(1);
     expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
 }
-
