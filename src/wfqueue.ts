@@ -64,6 +64,7 @@ class WFQueueRunner
                 const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q);
 
                 if (wfids.length > 0) {
+                    console.log(`Workflow IDs to exec: ${JSON.stringify(wfids)}`)
                     await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
                 }
 

@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
 import { PostgresSystemDatabase } from "../src/system_database";
 import { workflow_queue } from "../schemas/system_db_schema";
-import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, setDebugTrigger } from "../src/debugpoint";
+import { clearDebugTriggers, DEBUG_TRIGGER_WORKFLOW_QUEUE_START, setDebugTrigger } from "../src/debugpoint";
 
 
 const queue = new WorkflowQueue("testQ");
@@ -209,6 +209,7 @@ describe("queued-wf-tests-simple", () => {
         await wfqPromise;
         console.log("Waiting for Runtime to get blasted away");
         await testRuntime.destroy();
+        clearDebugTriggers();
         console.log("Waiting for New runtime creation");
         testRuntime = await createInternalTestRuntime(undefined, config);
         console.log("Starting WF2");
@@ -217,8 +218,8 @@ describe("queued-wf-tests-simple", () => {
         console.log("Waiting for WF Results");
         const wfh1b = testRuntime.retrieveWorkflow(wfh1.getWorkflowUUID());
         const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
-        await wfh1b.getResult();
-        await wfh2b.getResult();
+        expect (await wfh1b.getResult()).toBe('ab');
+        expect (await wfh2b.getResult()).toBe('cd');
         console.log("Yay, it worked");
     }, 10000);
 });
@@ -243,7 +244,7 @@ class TestWFs
     }
 
     @Workflow()
-    static async testWorkflowSimple(ctx: WorkflowContext, var1: string, var2: string) {
+    static async testWorkflowSimple(_ctx: WorkflowContext, var1: string, var2: string) {
         ++TestWFs.wfCounter;
         return Promise.resolve(var1 + var2);
     }
