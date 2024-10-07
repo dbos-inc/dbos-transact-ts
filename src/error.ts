@@ -174,3 +174,10 @@ export class DBOSDeadLetterQueueError extends DBOSError {
     super(`Workflow ${workflowUUID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`, DeadLetterQueueError);
   }
 }
+
+const FailedSqlTransactionError = 19;
+export class DBOSFailedSqlTransactionError extends DBOSError {
+  constructor(workflowUUID: string, txnName: string) {
+    super(`Postgres aborted the transaction ${txnName} of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
+  }
+}

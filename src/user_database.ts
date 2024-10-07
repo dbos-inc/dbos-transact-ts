@@ -23,6 +23,8 @@ export interface UserDatabase {
   isRetriableTransactionError(error: unknown): boolean;
   // Is a database error caused by a key conflict (key constraint violation or serialization error)?
   isKeyConflictError(error: unknown): boolean;
+  // Is the database error caused by a failed or aported transaciton?
+  isFailedSqlTransactionError(error: unknown): boolean;
 
   // Not all databases support this, TypeORM can.
   // Drop the user database tables (for testing)
@@ -164,6 +166,13 @@ export class PGNodeUserDatabase implements UserDatabase {
     return pge === "23505";
   }
 
+  isFailedSqlTransactionError(error: unknown): boolean {
+    if (!(error instanceof PGDatabaseError)) {
+      return false;
+    }
+    return this.getPostgresErrorCode(error) === "25P02";
+  }
+
   async createSchema(): Promise<void> {
     return Promise.reject(new Error("createSchema() is not supported in PG user database."));
   }
@@ -268,8 +277,11 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 
   isKeyConflictError(error: unknown): boolean {
-    const pge = this.getPostgresErrorCode(error);
-    return pge === "23505";
+    return this.getPostgresErrorCode(error) === "23505";
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "25P02";
   }
 
   async createSchema(): Promise<void> {
@@ -385,8 +397,11 @@ export class TypeORMDatabase implements UserDatabase {
   }
 
   isKeyConflictError(error: unknown): boolean {
-    const pge = this.getPostgresErrorCode(error);
-    return pge === "23505";
+    return this.getPostgresErrorCode(error) === "23505";
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "25P02";
   }
 
   async createSchema(): Promise<void> {
@@ -482,8 +497,11 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   isKeyConflictError(error: unknown): boolean {
-    const pge = this.getPostgresErrorCode(error);
-    return pge === "23505";
+    return this.getPostgresErrorCode(error) === "23505";
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "25P02";
   }
 
   async createSchema(): Promise<void> {
@@ -590,8 +608,11 @@ export class DrizzleUserDatabase implements UserDatabase {
   }
 
   isKeyConflictError(error: unknown): boolean {
-    const pge = this.getPostgresErrorCode(error);
-    return pge === "23505";
+    return this.getPostgresErrorCode(error) === "23505";
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === "25P02";
   }
 
   async createSchema(): Promise<void> {

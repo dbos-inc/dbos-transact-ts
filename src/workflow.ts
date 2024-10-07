@@ -3,7 +3,7 @@ import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
 import { StepFunction, StepContext, StepContextImpl } from "./step";
-import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
+import { DBOSError, DBOSFailedSqlTransactionError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { DBOSJSON, sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
@@ -264,7 +264,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.
    */
-  async #flushResultBuffer(query: QueryFunction, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
+  async #flushResultBuffer(query: QueryFunction, isKeyConflict: (error: unknown) => boolean): Promise<void> {
     const funcIDs = Array.from(this.resultBuffer.keys());
     if (funcIDs.length === 0) {
       return;
@@ -313,7 +313,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Write a operation's output to the database.
    */
-  async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown)=> boolean): Promise<string> {
+  async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown) => boolean): Promise<string> {
     try {
       const serialOutput = DBOSJSON.stringify(output);
       const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;",
@@ -342,7 +342,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Record an error in an operation to the database.
    */
-  async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown)=> boolean): Promise<void> {
+  async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown) => boolean): Promise<void> {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
       await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;",
@@ -644,6 +644,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     while (true) {
       let txn_snapshot = "invalid";
+      const workflowUUID = this.workflowUUID;
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         const tCtxt = new TransactionContextImpl(
           this.#dbosExec.userDatabase.getName(), client, this,
@@ -683,10 +684,18 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           }
           this.resultBuffer.set(funcId, readOutput);
         } else {
-          // Synchronously record the output of write transactions and obtain the transaction ID.
-          const pg_txn_id = await this.recordOutputTx<R>(client, funcId, txn_snapshot, result);
-          tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
-          this.resultBuffer.clear();
+          try {
+            // Synchronously record the output of write transactions and obtain the transaction ID.
+            const pg_txn_id = await this.recordOutputTx<R>(client, funcId, txn_snapshot, result);
+            tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
+            this.resultBuffer.clear();
+          } catch (error) {
+            if (this.#dbosExec.userDatabase.isFailedSqlTransactionError(error)) {
+              throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name)
+            } else {
+              throw error;
+            }
+          }
         }
 
         return result;
