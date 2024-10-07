@@ -73,15 +73,20 @@ describe("operations-test", () => {
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+    expect(res.rowCount).toBeGreaterThan(0);
 
     const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
-    expect(txRows.length).toBe(2);
+    expect(txRows.length).toBe(3);
     expect(txRows[0].function_id).toBe(0);
     expect(txRows[0].output).toBe("0");
     expectNullResult(txRows[0].error);
 
     expect(txRows[1].function_id).toBe(1);
     expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+    expectNullResult(txRows[1].error);
+
+    expect(txRows[2].function_id).toBe(2);
+    expect(txRows[2].output).toEqual(`${res.rowCount}`);
     expectNullResult(txRows[1].error);
   });
 
@@ -91,6 +96,7 @@ describe("operations-test", () => {
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+    expect(res.rowCount).toBeGreaterThan(0);
 
     const debugConfig = { ...config, debugMode: true };
     const debugRuntime = await createInternalTestRuntime([StoredProcTest], debugConfig);
@@ -125,6 +131,29 @@ describe("operations-test", () => {
   test("test-procLocalGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
     const user = "procLocalWF";
+    const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procLocalGreetingWorkflow(user);
+    expect(res.count).toBe(0);
+    expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+    expect(res.rowCount).toBeGreaterThan(0);
+
+    const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
+    expect(txRows.length).toBe(3);
+    expect(txRows[0].function_id).toBe(0);
+    expect(txRows[0].output).toBe("0");
+    expectNullResult(txRows[0].error);
+
+    expect(txRows[1].function_id).toBe(1);
+    expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+    expectNullResult(txRows[1].error);
+
+    expect(txRows[2].function_id).toBe(2);
+    expect(txRows[2].output).toEqual(`${res.rowCount}`);
+    expectNullResult(txRows[1].error);
+  });
+
+  test("test-txAndProcGreetingWorkflow", async () => {
+    const wfUUID = uuidv1();
+    const user = "txAndProcWF";
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).txAndProcGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -138,6 +167,7 @@ describe("operations-test", () => {
     expect(txRows[1].function_id).toBe(1);
     expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
     expectNullResult(txRows[1].error);
+
   });
 
   test("test-procErrorWorkflow", async () => {
