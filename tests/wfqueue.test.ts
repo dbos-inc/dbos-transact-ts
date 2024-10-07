@@ -1,12 +1,10 @@
 import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
-import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
+import { DBOSConfig } from "../src/dbos-executor";
 import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { WorkflowQueue } from "../src";
 import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
-import { PostgresSystemDatabase } from "../src/system_database";
-import { workflow_queue } from "../schemas/system_db_schema";
 import { clearDebugTriggers, DEBUG_TRIGGER_WORKFLOW_QUEUE_START, setDebugTrigger } from "../src/debugpoint";
 
 
@@ -23,11 +21,8 @@ async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
     let maxTries = 10;
     let success = false;
     while (maxTries > 0) {
-        const r = await (dbos.getDBOSExec().systemDatabase as PostgresSystemDatabase)
-           .knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-           .count()
-           .first();
-        if (`${r!.count}` === '0') {
+        const r = await dbos.getDBOSExec().systemDatabase.getWorkflowQueue({});
+        if (r.workflows.length === 0) {
             success = true;
             break;
         }

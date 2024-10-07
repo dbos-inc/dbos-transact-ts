@@ -82,6 +82,23 @@ export interface GetWorkflowsOutput {
   workflowUUIDs: string[];
 }
 
+export interface GetWorkflowQueueInput {
+  queueName?: string; // The name of the workflow function
+  startTime?: string; // Timestamp in ISO 8601 format
+  endTime?: string; // Timestamp in ISO 8601 format
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+}
+
+export interface GetWorkflowQueueOutput {
+  workflows: {
+    workflowID: string;
+    queueName: string;
+    createdAt: number;
+    startedAt?: number;
+    completedAt?: number;
+  }[];
+}
+
 export interface PgTransactionId {
   txid: string;
 }
