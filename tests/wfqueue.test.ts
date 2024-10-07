@@ -203,24 +203,17 @@ describe("queued-wf-tests-simple", () => {
             }
         });
 
-        console.log("Starting WF inv 1");
         const wfh1 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('a','b');
-        console.log("Waiting for WF1 to get executed");
         await wfqPromise;
-        console.log("Waiting for Runtime to get blasted away");
         await testRuntime.destroy();
         clearDebugTriggers();
-        console.log("Waiting for New runtime creation");
         testRuntime = await createInternalTestRuntime(undefined, config);
-        console.log("Starting WF2");
         const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
 
-        console.log("Waiting for WF Results");
         const wfh1b = testRuntime.retrieveWorkflow(wfh1.getWorkflowUUID());
         const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
         expect (await wfh1b.getResult()).toBe('ab');
         expect (await wfh2b.getResult()).toBe('cd');
-        console.log("Yay, it worked");
     }, 10000);
 });
 
