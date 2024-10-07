@@ -691,6 +691,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
             this.resultBuffer.clear();
           } catch (error) {
             if (this.#dbosExec.userDatabase.isFailedSqlTransactionError(error)) {
+              this.logger.error(`Postgres aborted the ${txn.name} transaction of Workflow ${workflowUUID}. Something, such as a stored procedure, in the database caused the transaction to abort.`);
               throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name)
             } else {
               throw error;

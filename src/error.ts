@@ -178,6 +178,6 @@ export class DBOSDeadLetterQueueError extends DBOSError {
 const FailedSqlTransactionError = 19;
 export class DBOSFailedSqlTransactionError extends DBOSError {
   constructor(workflowUUID: string, txnName: string) {
-    super(`Postgres aborted the transaction ${txnName} of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
+    super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
   }
 }
