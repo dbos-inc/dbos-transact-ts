@@ -16,5 +16,6 @@ class CurrentTimeCommunicator
 
 export
 {
-    CurrentTimeCommunicator
+    CurrentTimeCommunicator,
+    CurrentTimeCommunicator as CurrentTimeStep,
 }

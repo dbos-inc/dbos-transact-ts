@@ -1,8 +1,8 @@
-# DBOS Random Communicator
+# DBOS Random Step
 
-This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating random numbers.
+This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating random numbers.
 
-The reason that random number generation should be wrapped in a communicator is so that replayed workflows get the recorded value and therefore have the same behavior as the original.
+The reason that random number generation should be wrapped in a `@Step` is so that replayed workflows get the recorded value and therefore have the same behavior as the original.
 
 ## Available Functions
 

@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, CommunicatorContext, Communicator } from "../../src/";
+import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, StepContext, Step } from "../../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers";
 import { v1 as uuidv1 } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
@@ -75,8 +75,8 @@ describe("debugger-test", () => {
       return funcResult;
     }
 
-    @Communicator()
-    static async testCommunicator(_ctxt: CommunicatorContext) {
+    @Step()
+    static async testStep(_ctxt: StepContext) {
       return Promise.resolve(++DebuggerTest.cnt);
     }
 
@@ -265,32 +265,32 @@ describe("debugger-test", () => {
     await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow("Workflow UUID not found!");
   });
 
-  test("debug-communicator", async () => {
+  test("debug-step", async () => {
     const wfUUID = uuidv1();
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, wfUUID).testCommunicator()).resolves.toBe(1);
+    await expect(testRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testCommunicator()).resolves.toBe(1);
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
 
     // Execute again with the provided UUID.
     await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testCommunicator()).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow("Workflow status or inputs not found!");
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testCommunicator()).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow("Workflow UUID not found!");
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
     const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
     expect(result.rows[0].class_name).toBe("DebuggerTest");
-    expect(result.rows[0].name).toContain("testCommunicator");
+    expect(result.rows[0].name).toContain("testStep");
     expect(result.rows[0].status).toBe("SUCCESS");
   });
 

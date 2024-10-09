@@ -1,4 +1,4 @@
-import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
+import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { v1 as uuidv1 } from "uuid";
 import { sleepms } from "../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -63,13 +63,13 @@ describe("concurrency-tests", () => {
     expect(ConcurrTestClass.wfCnt).toBe(2);
   });
 
-  test("duplicate-communicator", async () => {
-    // Run two communicators concurrently with the same UUID; both should succeed.
+  test("duplicate-step", async () => {
+    // Run two steps concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testCommunicator(11),
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testCommunicator(11),
+      testRuntime.invoke(ConcurrTestClass, workflowUUID).testStep(11),
+      testRuntime.invoke(ConcurrTestClass, workflowUUID).testStep(11),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -129,8 +129,8 @@ class ConcurrTestClass {
     await ctxt.invoke(ConcurrTestClass).testReadWriteFunction(1);
   }
 
-  @Communicator()
-  static async testCommunicator(_ctxt: CommunicatorContext, id: number) {
+  @Step()
+  static async testStep(_ctxt: StepContext, id: number) {
     ConcurrTestClass.cnt++;
     return Promise.resolve(id);
   }

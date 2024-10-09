@@ -12,6 +12,7 @@ export interface workflow_status {
   request: string;  // Serialized HTTPRequest
   executor_id: string;  // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version: string;
+  queue_name?: string;
 }
 
 export interface notifications {
@@ -47,4 +48,12 @@ export interface dbtrigger_state {
   workflow_fn_name: string;
   last_run_time: number; // Timestamp of record that was kicked off (ms); others may have but OAOO will cover that
   last_run_seq: number; // Sequence number of record that was kicked off (n); others may have but OAOO will cover that
+}
+
+export interface workflow_queue {
+  workflow_uuid: string;
+  queue_name: string;
+  created_at_epoch_ms: number; // This time is provided by the database
+  started_at_epoch_ms?: number; // This time is provided by the client
+  completed_at_epoch_ms?: number; // This time is provided by the client
 }

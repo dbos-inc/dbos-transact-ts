@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, CommunicatorContext, WorkflowHandle, Transaction, Workflow, Communicator, DBOSInitializer, InitContext } from "../src/";
+import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
@@ -58,10 +58,10 @@ describe("dbos-tests", () => {
     await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow("fail")).rejects.toThrow("fail");
   });
 
-  test("simple-communicator", async () => {
+  test("simple-step", async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testCommunicator()).resolves.toBe(0);
-    await expect(testRuntime.invoke(DBOSTestClass).testCommunicator()).resolves.toBe(1);
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testStep()).resolves.toBe(0);
+    await expect(testRuntime.invoke(DBOSTestClass).testStep()).resolves.toBe(1);
   });
 
   test("simple-workflow-notifications", async () => {
@@ -79,6 +79,15 @@ describe("dbos-tests", () => {
     const workflowUUID = handle.getWorkflowUUID();
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
+    await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
+    await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+  });
+
+  test("simple-workflow-events-multiple", async () => {
+    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
+    const workflowUUID = handle.getWorkflowUUID();
+    await handle.getResult();
+    await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1b");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
     await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
   });
@@ -295,8 +304,8 @@ class DBOSTestClass {
     return checkResult;
   }
 
-  @Communicator()
-  static async testCommunicator(ctxt: CommunicatorContext) {
+  @Step()
+  static async testStep(ctxt: StepContext) {
     expect(ctxt.getConfig<number>("counter")).toBe(3);
     return Promise.resolve(DBOSTestClass.cnt++);
   }
@@ -321,6 +330,14 @@ class DBOSTestClass {
   static async setEventWorkflow(ctxt: WorkflowContext) {
     await ctxt.setEvent("key1", "value1");
     await ctxt.setEvent("key2", "value2");
+    return 0;
+  }
+
+  @Workflow()
+  static async setEventMultipleWorkflow(ctxt: WorkflowContext) {
+    await ctxt.setEvent("key1", "value1");
+    await ctxt.setEvent("key2", "value2");
+    await ctxt.setEvent("key1", "value1b");
     return 0;
   }
 

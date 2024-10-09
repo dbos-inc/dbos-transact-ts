@@ -3,11 +3,12 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
 import { WorkflowStatusInternal, SystemDatabase } from "../system_database";
-import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
-import { DuplicateWorkflowEventError, DBOSWorkflowConflictUUIDError } from "../error";
+import { DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 import { DBOSJSON, sleepms } from "../utils";
+import { WorkflowQueue } from "../wfqueue";
 
 interface OperationOutput<R> {
   output: R;
@@ -353,12 +354,8 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
         return;
       }
 
-      const exists = await workflowEvents.get([workflowUUID, key]);
-      if (exists === undefined) {
-        workflowEvents.set([workflowUUID, key], value);
-      } else {
-        throw new DuplicateWorkflowEventError(workflowUUID, key);
-      }
+      workflowEvents.set([workflowUUID, key], value);
+
       // For OAOO, record the set.
       operationOutputs.set([workflowUUID, functionID], { error: null, output: undefined });
     });
@@ -424,6 +421,20 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    throw new Error("Method not implemented.");
+  }
+
+  getWorkflowQueue(_input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
+    throw new Error("Method not implemented.");
+  }
+
+  enqueueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  dequeueWorkflow(_workflowId: string, _queue: WorkflowQueue): Promise<void> {
+    throw new Error("Method not implemented.");
+  }
+  findAndMarkStartableWorkflows(_queue: WorkflowQueue): Promise<string[]> {
     throw new Error("Method not implemented.");
   }
 }

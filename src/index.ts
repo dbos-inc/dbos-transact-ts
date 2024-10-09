@@ -30,10 +30,13 @@ export {
 } from './workflow';
 
 export {
-  CommunicatorContext,
-  CommunicatorConfig,
-  CommunicatorFunction,
-} from './communicator';
+  StepContext as CommunicatorContext,
+  StepConfig as CommunicatorConfig,
+  StepFunction as CommunicatorFunction,
+  StepContext,
+  StepConfig,
+  StepFunction,
+} from './step';
 
 export * as Error from './error';
 
@@ -67,7 +70,8 @@ export {
   // Method Decorators
   Transaction,
   Workflow,
-  Communicator,
+  Step,
+  Step as Communicator,
   StoredProcedure,
   RequiredRole,
   DBOSInitializer,
@@ -105,6 +109,7 @@ export {
   Authentication,
   KoaBodyParser,
   KoaCors,
+  KoaGlobalMiddleware,
   KoaMiddleware,
 
   // OpenApi Decorators
@@ -134,9 +139,13 @@ export {
 
 export {
   DBOSRuntimeConfig,
+  DBOS,
 } from "./dbos-runtime/runtime";
 
 export {
   DBOSConfig,
 } from "./dbos-executor"
 
+export {
+  WorkflowQueue,
+} from "./wfqueue"

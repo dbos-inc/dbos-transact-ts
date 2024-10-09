@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
-import { Communicator } from "../communicator";
+import { StepFunction } from "../step";
 import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
@@ -18,6 +18,8 @@ import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
 import { DBOSDBTrigger } from "../dbtrigger/dbtrigger";
+import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
+import { DBOS } from "../dbos-runtime/runtime";
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -54,8 +56,9 @@ export interface TestingRuntime {
   invoke<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): InvokeFuncs<T>;
   invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncInst<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams): AsyncHandlerWfFuncs<T>;
+  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
+
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -91,6 +94,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #scheduler: DBOSScheduler | null = null;
   #dbTriggers: DBOSDBTrigger | null = null;
+  #wfQueueRunner: Promise<void> | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
 
@@ -100,8 +104,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
+    DBOS.dbosConfig = dbosConfig[0];
     const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
     this.#applicationConfig = dbosExec.config.application ?? {};
+    DBOS.globalLogger = dbosExec.logger;
     await dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(dbosExec);
     for (const evtRcvr of dbosExec.eventReceivers) {
@@ -110,6 +116,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     this.#scheduler = new DBOSScheduler(dbosExec);
     this.#scheduler.initScheduler();
     await this.initTriggers();
+    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(dbosExec);
+    this.#applicationConfig = dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
 
@@ -129,6 +137,14 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
+      try {
+        wfQueueRunner.stop();
+        await this.#wfQueueRunner;
+      }
+      catch (err) {
+        const e = err as Error;
+        this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
+      }    
       await this.destroyTriggers();
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
@@ -158,10 +174,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
   /**
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
-   * to invoke workflows, transactions, and communicators;
+   * to invoke workflows, transactions, and steps;
    */
   mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, params: WorkflowInvokeParams | undefined, asyncWf: boolean,
-    clsinst: ConfiguredInstance | null): InvokeFuncs<T>
+    clsinst: ConfiguredInstance | null, queue?: WorkflowQueue): InvokeFuncs<T>
   {
     const dbosExec = this.getDBOSExec();
 
@@ -176,7 +192,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];
 
-    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst };
+    const wfParams: WorkflowParams = { workflowUUID: workflowUUID, parentCtx: oc, configuredInstance: clsinst, queueName: queue?.name };
     for (const op of ops) {
       if (asyncWf) {
         proxy[op.name] = op.txnConfig
@@ -184,7 +200,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
           : op.workflowConfig
             ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
             : op.commConfig
-              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as Communicator<unknown[], unknown>, wfParams, ...args)
+              ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig
                 ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown>, wfParams, ...args)
                 : undefined;
@@ -207,15 +223,15 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
   }
 
-  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams)
+  startWorkflow<T extends object>(object: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue)
     : AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T>
   {
     if (typeof object === 'function') {
-      return this.mainInvoke(object, workflowUUID, params, true, null);
+      return this.mainInvoke(object, workflowUUID, params, true, null, queue);
     }
     else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst) as unknown as AsyncHandlerWfFuncInst<T>;
+      return this.mainInvoke(targetInst.constructor, workflowUUID, params, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 

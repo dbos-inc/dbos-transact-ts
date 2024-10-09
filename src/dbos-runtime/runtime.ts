@@ -8,6 +8,8 @@ import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { DBOSDBTrigger } from '../dbtrigger/dbtrigger';
+import { wfQueueRunner } from '../wfqueue';
+import { GlobalLogger } from '../telemetry/logs';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,16 +22,23 @@ export interface DBOSRuntimeConfig {
 }
 export const defaultEntryPoint = "dist/operations.js";
 
+export class DBOS {
+  static globalLogger?: GlobalLogger;
+  static dbosConfig?: DBOSConfig;
+}
+
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private scheduler: DBOSScheduler | null = null;
   private dbTriggers: DBOSDBTrigger | null = null;
+  private wfQueueRunner: Promise<void> | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
     this.dbosConfig = dbosConfig;
+    DBOS.dbosConfig = dbosConfig;
   }
 
   /**
@@ -38,6 +47,7 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
+      DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
       await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
       await this.dbosExec.init();
@@ -52,6 +62,9 @@ export class DBOSRuntime {
       this.dbTriggers = new DBOSDBTrigger(this.dbosExec);
       await this.dbTriggers.initialize();
       this.dbTriggers.logRegisteredEndpoints();
+
+      wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
+      this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
 
       for (const evtRcvr of this.dbosExec.eventReceivers) {
         await evtRcvr.initialize(this.dbosExec);
@@ -114,6 +127,14 @@ export class DBOSRuntime {
   async destroy() {
     await this.dbTriggers?.destroy();
     await this.scheduler?.destroyScheduler();
+    try {
+      wfQueueRunner.stop();
+      await this.wfQueueRunner;
+    }
+    catch (err) {
+      const e = err as Error;
+      this.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
+    }
     for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();
     }

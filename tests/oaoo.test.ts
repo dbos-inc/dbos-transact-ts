@@ -1,5 +1,5 @@
 import { PoolClient } from "pg";
-import { CommunicatorContext, Communicator, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
+import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
@@ -32,44 +32,44 @@ describe("oaoo-tests", () => {
   });
 
   /**
-   * Communicator OAOO tests.
+   * Step OAOO tests.
    */
-  class CommunicatorOAOO {
+  class StepOAOO {
     static #counter = 0;
     static get counter() {
-      return CommunicatorOAOO.#counter;
+      return StepOAOO.#counter;
     }
-    @Communicator()
-    static async testCommunicator(_commCtxt: CommunicatorContext) {
-      return Promise.resolve(CommunicatorOAOO.#counter++);
+    @Step()
+    static async testStep(_commCtxt: StepContext) {
+      return Promise.resolve(StepOAOO.#counter++);
     }
 
     @Workflow()
     static async testCommWorkflow(workflowCtxt: WorkflowContext) {
-      const funcResult = await workflowCtxt.invoke(CommunicatorOAOO).testCommunicator();
+      const funcResult = await workflowCtxt.invoke(StepOAOO).testStep();
       return funcResult ?? -1;
     }
   }
 
-  test("communicator-oaoo", async () => {
+  test("step-oaoo", async () => {
     const workflowUUID: string = uuidv1();
 
     let result: number = await testRuntime
-      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .invokeWorkflow(StepOAOO, workflowUUID)
       .testCommWorkflow();
     expect(result).toBe(0);
-    expect(CommunicatorOAOO.counter).toBe(1);
+    expect(StepOAOO.counter).toBe(1);
 
     // Test OAOO. Should return the original result.
     result = await testRuntime
-      .invokeWorkflow(CommunicatorOAOO, workflowUUID)
+      .invokeWorkflow(StepOAOO, workflowUUID)
       .testCommWorkflow();
     expect(result).toBe(0);
-    expect(CommunicatorOAOO.counter).toBe(1);
+    expect(StepOAOO.counter).toBe(1);
 
     // Should be a new run.
-    await expect(testRuntime.invokeWorkflow(CommunicatorOAOO).testCommWorkflow()).resolves.toBe(1);
-    expect(CommunicatorOAOO.counter).toBe(2);
+    await expect(testRuntime.invokeWorkflow(StepOAOO).testCommWorkflow()).resolves.toBe(1);
+    expect(StepOAOO.counter).toBe(2);
   });
 
   /**
@@ -109,15 +109,15 @@ describe("oaoo-tests", () => {
 
     static numberOfChildInvocationsMax1 = 0;
 
-    @Communicator()
-    static async nestedWorkflowCommunicatorToRunOnce(_ctxt: CommunicatorContext) {
+    @Step()
+    static async nestedWorkflowStepToRunOnce(_ctxt: StepContext) {
       ++WorkflowOAOO.numberOfChildInvocationsMax1;
       return Promise.resolve();
     }
 
     @Workflow()
     static async nestedWorkflowChildToRunOnce(wfCtxt: WorkflowContext) {
-      return await wfCtxt.invoke(WorkflowOAOO).nestedWorkflowCommunicatorToRunOnce();
+      return await wfCtxt.invoke(WorkflowOAOO).nestedWorkflowStepToRunOnce();
     }
 
     @Workflow()

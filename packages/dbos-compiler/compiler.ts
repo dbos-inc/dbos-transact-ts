@@ -298,7 +298,7 @@ function treeShake(project: tsm.Project) {
 
   removeUnusedFiles(project);
 
-  // delete all workflow/communicator/init/handler methods
+  // delete all workflow/step/init/handler methods
   for (const file of project.getSourceFiles()) {
     shakeFile(file);
   }
@@ -425,7 +425,7 @@ function getDbosDecoratorKind(node: tsm.Decorator | DecoratorInfo): DbosDecorato
 export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKind | undefined {
   // Note, other DBOS method decorators (Scheduled, KafkaConsume, RequiredRole) modify runtime behavior
   //       of DBOS methods, but are not their own unique kind.
-  //       Get/PostApi decorators are atypical in that they can be used on @Communicator/@Transaction/@Workflow
+  //       Get/PostApi decorators are atypical in that they can be used on @Step/@Transaction/@Workflow
   //       methods as well as on their own.
   let isHandler = false;
   for (const decorator of node.getDecorators()) {
