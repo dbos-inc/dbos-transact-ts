@@ -1,4 +1,4 @@
-# DBOS Random Communicator
+# DBOS Random Step
 
 This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating random numbers.
 

@@ -1,4 +1,4 @@
-import { Communicator, CommunicatorContext, StatusString, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
+import { Step, StepContext, StatusString, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
 import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
 import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
@@ -211,8 +211,8 @@ class TestWFs
         return Promise.resolve(var1 + var2);
     }
 
-    @Communicator()
-    static async testStep(ctx: CommunicatorContext, str: string) {
+    @Step()
+    static async testStep(_ctx: StepContext, str: string) {
         ++TestWFs.stepCounter;
         return Promise.resolve(str + 'd');
     }
