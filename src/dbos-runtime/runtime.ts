@@ -18,6 +18,7 @@ interface ModuleExports {
 export interface DBOSRuntimeConfig {
   entrypoints: string[];
   port: number;
+  admin_port: number;
 }
 export const defaultEntryPoint = "dist/operations.js";
 
@@ -50,7 +51,7 @@ export class DBOSRuntime {
       await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
       await this.dbosExec.init();
       const server = new DBOSHttpServer(this.dbosExec);
-      this.servers = await server.listen(this.runtimeConfig.port);
+      this.servers = await server.listen(this.runtimeConfig.port, this.runtimeConfig.admin_port);
       this.dbosExec.logRegisteredHTTPUrls();
 
       this.scheduler = new DBOSScheduler(this.dbosExec);

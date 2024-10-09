@@ -137,6 +137,10 @@
         },
         "port": {
           "type": "number"
+        },
+        "admin_port": {
+            "type": "number",
+            "description": "The port number of the admin server (Default: 3001)"
         }
       }
     },

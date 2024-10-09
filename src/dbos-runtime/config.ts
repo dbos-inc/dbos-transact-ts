@@ -239,9 +239,11 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     entrypoints.add(defaultEntryPoint);
   }
 
+  const appPort = Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000;
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints: [...entrypoints],
-    port: Number(cliOptions?.port) || Number(configFile.runtimeConfig?.port) || 3000,
+    port: appPort,
+    admin_port: Number(configFile.runtimeConfig?.admin_port) || appPort + 1,
   };
 
   return [dbosConfig, runtimeConfig];
