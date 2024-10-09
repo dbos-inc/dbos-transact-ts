@@ -25,7 +25,7 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "^1.15.9"
+    "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
     "kafkajs": "^2.2.4"
