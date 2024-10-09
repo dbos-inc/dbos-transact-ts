@@ -6,6 +6,7 @@ import { DBOSConfig } from "../src/dbos-executor";
 import { PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { transaction_outputs } from "../schemas/user_db_schema";
+import { DBOSFailedSqlTransactionError } from "../src/error";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = "dbos_test_kv";
@@ -231,6 +232,13 @@ describe("dbos-tests", () => {
       status: StatusString.SUCCESS,
     });
   });
+
+  test("aborted-transaction", async () => {
+    const workflowUUID: string = uuidv1();
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).attemptToCatchAbortingStoredProc())
+      .rejects
+      .toThrow(new DBOSFailedSqlTransactionError(workflowUUID, "attemptToCatchAbortingStoredProc"));
+  })
 });
 
 class DBOSTestClass {
@@ -244,6 +252,11 @@ class DBOSTestClass {
     expect(_ctx.getConfig("counter")).toBe(3);
     await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    await _ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
+    BEGIN
+      raise 'something bad happened';
+    END
+    $$ language plpgsql;`);
   }
 
   @Transaction()
@@ -296,6 +309,15 @@ class DBOSTestClass {
     }
   }
 
+  @Transaction()
+  static async attemptToCatchAbortingStoredProc(txnCtxt: TestTransactionContext) {
+    try {
+      return await txnCtxt.client.query("select xx()");
+    } catch (e) {
+      return "all good"
+    }
+  }
+
   @Workflow()
   static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
@@ -340,5 +362,6 @@ class DBOSTestClass {
     await ctxt.setEvent("key1", "value1b");
     return 0;
   }
+
 
 }
