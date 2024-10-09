@@ -1,4 +1,4 @@
-# DBOS AWS Simple Email Service (SES) Communicator
+# DBOS AWS Simple Email Service (SES) Library
 
 This is a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending email using the [Amazon Web Services Simple Email Service](https://aws.amazon.com/ses/).
 

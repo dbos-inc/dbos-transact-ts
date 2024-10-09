@@ -23,6 +23,7 @@ jobs:
           packages/dbos-compiler,
           packages/dbos-openapi,
           packages/dbos-sqs,
+          packages/dbos-kafkajs,
         ]
     steps:
       - name: Checkout

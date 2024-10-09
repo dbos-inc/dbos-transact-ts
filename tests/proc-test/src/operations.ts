@@ -21,6 +21,13 @@ export class StoredProcTest {
     return rows.length === 0 ? 0 : rows[0].greet_count;
   }
 
+  @StoredProcedure() // not marking this read only so the tx output table write is not buffered
+  static async getHelloRowCount(ctxt: StoredProcedureContext): Promise<number> {
+    const query = "SELECT COUNT(*) FROM dbos_hello;";
+    const { rows } = await ctxt.query<{count: string}>(query);
+    return parseInt(rows[0].count);
+  }
+
   @StoredProcedure()  // Run this function as a database transaction
   static async helloProcedure(ctxt: StoredProcedureContext, user: string): Promise<string> {
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
@@ -30,10 +37,11 @@ export class StoredProcTest {
   }
 
   @Workflow()
-  static async procGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
+  static async procGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; rowCount: number }> {
     const count = await ctxt.invoke(StoredProcTest).getGreetCount(user);
     const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
-    return { count, greeting };
+    const rowCount = await ctxt.invoke(StoredProcTest).getHelloRowCount();
+    return { count, greeting, rowCount };
   }
 
   @StoredProcedure()
@@ -68,16 +76,20 @@ export class StoredProcTest {
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 
+  @StoredProcedure({executeLocally: true}) // like getHelloRowCount, not marked as read only so the tx output does not get buffered
+  static async getHelloRowCountLocal(ctxt: StoredProcedureContext): Promise<number> {
+    const query = "SELECT COUNT(*) FROM dbos_hello;";
+    const { rows } = await ctxt.query<{count: string}>(query);
+    return parseInt(rows[0].count);
+  }
+
+
   @Workflow()
-  static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; }> {
-    // Retrieve the number of times this user has been greeted.
-    // const count 
-    // const greeting = await ctxt.invoke(StoredProcTest).helloProcedureLocal(user);
-
+  static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; rowCount: number }> {
     const count = await ctxt.invoke(StoredProcTest).getGreetCountLocal(user);
-    const greeting = "Plugh!";
-
-    return { count, greeting };
+    const greeting = await ctxt.invoke(StoredProcTest).helloProcedureLocal(user);
+    const rowCount = await ctxt.invoke(StoredProcTest).getHelloRowCountLocal();
+    return { count, greeting, rowCount };
   }
 
 
@@ -110,3 +122,5 @@ export class StoredProcTest {
     return { count, greeting };
   }
 }
+
+
