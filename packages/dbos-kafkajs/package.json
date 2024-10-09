@@ -1,20 +1,20 @@
 {
-  "name": "@dbos-inc/dbos-sqs",
+  "name": "@dbos-inc/dbos-kafkajs",
   "version": "0.0.0-placeholder",
-  "description": "DBOS send step / event receiver library - queues in AWS with SQS",
+  "description": "DBOS send step and event receiver library - Kafka using KafkaJS",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact",
-    "directory": "packages/dbos-sqs"
+    "directory": "packages/dbos-kafkajs"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo 'no tests'",
-    "testsqs": "npm run build && jest --detectOpenHandles"
+    "test": "npm run build && jest --detectOpenHandles",
+    "testkafka": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
@@ -25,10 +25,9 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "*",
-    "@dbos-inc/aws-config": "*"
+    "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.596.0"
+    "kafkajs": "^2.2.4"
   }
 }

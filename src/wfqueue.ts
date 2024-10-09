@@ -1,4 +1,5 @@
 import { DBOSExecutor } from "./dbos-executor";
+import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from "./debugpoint";
 import { DBOSInitializationError } from "./error";
 
 /**
@@ -61,6 +62,11 @@ class WFQueueRunner
             // Check queues
             for (const [_qn, q] of this.wfQueuesByName) {
                 const wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q);
+
+                if (wfids.length > 0) {
+                    await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
+                }
+
                 for (const wfid of wfids) {
                     const _wfh = await exec.executeWorkflowUUID(wfid);
                 }

@@ -4,7 +4,7 @@ import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
-import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state, workflow_queue } from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
@@ -61,7 +61,8 @@ export interface SystemDatabase {
   setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
 
   // Workflow management
-  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 }
 
 // For internal use, not serialized status.
@@ -851,6 +852,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return {
       workflowUUIDs: workflowUUIDs
     };
+  }
+
+  async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
+    let query = this.knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).orderBy('created_at_epoch_ms', 'desc');
+    if (input.queueName) {
+      query = query.where('queue_name', input.queueName);
+    }
+    if (input.startTime) {
+      query = query.where('created_at_epoch_ms', '>=', new Date(input.startTime).getTime());
+    }
+    if (input.endTime) {
+      query = query.where('created_at_at_epoch_ms', '<=', new Date(input.endTime).getTime());
+    }
+    if (input.limit) {
+      query = query.limit(input.limit);
+    }
+    const rows = await query.select();
+    const workflows = rows.map((row) => { return {
+      workflowID: row.workflow_uuid,
+      queueName: row.queue_name,
+      createdAt: row.created_at_epoch_ms,
+      startedAt: row.started_at_epoch_ms,
+      completedAt: row.completed_at_epoch_ms,
+    }});
+    return { workflows };
   }
 
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {

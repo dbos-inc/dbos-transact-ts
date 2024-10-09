@@ -72,5 +72,6 @@ jobs:
           PGPASSWORD: dbos
           DB_PASSWORD: dbos
           DB_USER: postgres
+          KAFKA_BROKER: localhost:9092
           NPM_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
           SILENCE_LOGS: true

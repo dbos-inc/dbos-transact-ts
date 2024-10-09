@@ -119,8 +119,14 @@ export class DBOSRuntime {
    */
   async destroy() {
     await this.scheduler?.destroyScheduler();
-    wfQueueRunner.stop();
-    await this.wfQueueRunner;
+    try {
+      wfQueueRunner.stop();
+      await this.wfQueueRunner;
+    }
+    catch (err) {
+      const e = err as Error;
+      this.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
+    }
     for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();
     }

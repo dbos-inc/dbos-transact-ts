@@ -55,8 +55,8 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
                 assumedRole: _context.assumedRole,
                 authenticatedRoles: _context.authenticatedRoles,
                 query: (queryText, values) => {
-                    const result = plv8.execute(queryText, values);
-                    plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result));
+                    const result = plv8.execute(queryText, values ?? []);
+                    plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result, (k, v) => typeof v === "bigint" ? v.toString() + "n" : v));
                     if (typeof result === 'number') {
                         return { rowCount: result };
                     } else if (Array.isArray(result)) {
