@@ -48,6 +48,7 @@ import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
+import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -676,6 +677,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     ) {
       // TODO: Make this transactional (and with the queue step below)
       args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
 
     const runWorkflow = async () => {

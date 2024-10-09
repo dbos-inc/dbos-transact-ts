@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, DBOSNull, dbosNull } from "../dbos-executor";
 import { WorkflowStatusInternal, SystemDatabase } from "../system_database";
-import { GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "../workflow";
 import * as fdb from "foundationdb";
 import { DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
@@ -409,6 +409,10 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
   }
 
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    throw new Error("Method not implemented.");
+  }
+
+  getWorkflowQueue(_input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     throw new Error("Method not implemented.");
   }
 

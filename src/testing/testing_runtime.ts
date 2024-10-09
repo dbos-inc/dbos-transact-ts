@@ -123,8 +123,14 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
-      wfQueueRunner.stop();
-      await this.#wfQueueRunner;
+      try {
+        wfQueueRunner.stop();
+        await this.#wfQueueRunner;
+      }
+      catch (err) {
+        const e = err as Error;
+        this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
+      }    
       await this.#scheduler?.destroyScheduler();
       for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
         await evtRcvr.destroy();

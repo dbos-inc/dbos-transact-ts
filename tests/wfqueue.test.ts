@@ -1,12 +1,17 @@
-import { Step, StepContext, StatusString, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
-import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
+import { StatusString, Step, StepContext, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
+import { DBOSConfig } from "../src/dbos-executor";
 import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { WorkflowQueue } from "../src";
 import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
-import { PostgresSystemDatabase } from "../src/system_database";
-import { workflow_queue } from "../schemas/system_db_schema";
+
+import {
+    clearDebugTriggers,
+    DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
+    // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
+    setDebugTrigger
+} from "../src/debugpoint";
 
 
 const queue = new WorkflowQueue("testQ");
@@ -22,11 +27,8 @@ async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
     let maxTries = 10;
     let success = false;
     while (maxTries > 0) {
-        const r = await (dbos.getDBOSExec().systemDatabase as PostgresSystemDatabase)
-           .knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-           .count()
-           .first();
-        if (`${r!.count}` === '0') {
+        const r = await dbos.getDBOSExec().systemDatabase.getWorkflowQueue({});
+        if (r.workflows.length === 0) {
             success = true;
             break;
         }
@@ -190,6 +192,73 @@ describe("queued-wf-tests-simple", () => {
         // Verify all queue entries eventually get cleaned up.
         expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
     }, 10000);
+
+    test("test_one_at_a_time_with_crash", async() => {
+        let wfqRes: () => void = () => { };
+        const wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
+
+        setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_QUEUE_START, {
+            callback: () => {
+                wfqRes();
+                throw new Error("Interrupt scheduler here");
+            }
+        });
+
+        const wfh1 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('a','b');
+        await wfqPromise;
+        await testRuntime.destroy();
+        clearDebugTriggers();
+        testRuntime = await createInternalTestRuntime(undefined, config);
+        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
+
+        const wfh1b = testRuntime.retrieveWorkflow(wfh1.getWorkflowUUID());
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
+        expect (await wfh1b.getResult()).toBe('ab');
+        expect (await wfh2b.getResult()).toBe('cd');
+    }, 10000);
+
+    /*
+    // Current result: WF1 does get created in system DB, but never starts running.
+    //  WF2 does run.
+    test("test_one_at_a_time_with_crash2", async() => {
+        let wfqRes: () => void = () => { };
+        const _wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
+
+        setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
+            callback: () => {
+                wfqRes();
+                throw new Error("Interrupt start workflow here");
+            }
+        });
+
+        const wfid1 = 'thisworkflowgetshit';
+        console.log("Start WF1");
+        try {
+            const _wfh1 = await testRuntime.startWorkflow(TestWFs, wfid1, undefined, serialqueue).testWorkflowSimple('a','b');
+        }
+        catch(e) {
+            // Expected
+            const err = e as Error;
+            expect(err.message.includes('Interrupt')).toBeTruthy();
+            console.log("Expected error caught");
+        }
+        console.log("Destroy runtime");
+        await testRuntime.destroy();
+        clearDebugTriggers();
+        console.log("New runtime");
+        testRuntime = await createInternalTestRuntime(undefined, config);
+        console.log("Start WF2");
+        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
+
+        const wfh1b = testRuntime.retrieveWorkflow(wfid1);
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
+        console.log("Wait");
+        expect (await wfh2b.getResult()).toBe('cd');
+        // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
+        expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
+        expect (await wfh1b.getResult()).toBe('ab'); 
+    }, 10000);
+    */
 });
 
 class TestWFs
@@ -208,6 +277,12 @@ class TestWFs
         expect(ctx.workflowUUID).toBe(TestWFs.wfid);
         ++TestWFs.wfCounter;
         var1 = await ctx.invoke(TestWFs).testStep(var1);
+        return Promise.resolve(var1 + var2);
+    }
+
+    @Workflow()
+    static async testWorkflowSimple(_ctx: WorkflowContext, var1: string, var2: string) {
+        ++TestWFs.wfCounter;
         return Promise.resolve(var1 + var2);
     }
 
@@ -299,4 +374,3 @@ async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) 
     expect(TestWFs2.wfCounter).toBe(1);
     expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
 }
-
