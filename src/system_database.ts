@@ -12,7 +12,6 @@ import {
   workflow_events,
   workflow_inputs,
   scheduler_state,
-  dbtrigger_state,
   workflow_queue,
   event_dispatch_kv,
 } from "../schemas/system_db_schema";
