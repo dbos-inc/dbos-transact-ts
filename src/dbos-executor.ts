@@ -49,6 +49,7 @@ import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
+import { DBOSEventReceiverState, DBOSEventReceiverQuery } from "./eventreceiver";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -1009,6 +1010,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true, tempWfType, tempWfClass, tempWfName}, ...inputs);
   }
+
+  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+    return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
+  }
+  async queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
+    return await this.systemDatabase.queryEventDispatchState(query);
+  }
+  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+    return await this.upsertEventDispatchState(state);
+  }
+
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {

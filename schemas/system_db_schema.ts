@@ -57,7 +57,7 @@ export interface event_dispatch_kv {
   key: string;
 
   // Payload fields
-  value: string;
+  value?: string;
   update_time?: number; // Timestamp of record (for upsert)
   update_seq?: bigint; // Sequence number of record (for upsert)
 }

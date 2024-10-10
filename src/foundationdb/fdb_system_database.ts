@@ -9,6 +9,7 @@ import { DBOSWorkflowConflictUUIDError } from "../error";
 import { NativeValue } from "foundationdb/dist/lib/native";
 import { DBOSJSON, sleepms } from "../utils";
 import { WorkflowQueue } from "../wfqueue";
+import { DBOSEventReceiverState, DBOSEventReceiverQuery } from "../eventreceiver";
 
 interface OperationOutput<R> {
   output: R;
@@ -420,6 +421,17 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return Promise.resolve({last_run_seq: null, last_run_time: null});
   }
 
+  // Event dispatcher queries / updates
+  async getEventDispatchState(_svc: string, _wfn: string, _key: string): Promise<DBOSEventReceiverState | undefined> {
+    return Promise.resolve(undefined);
+  }
+  async queryEventDispatchState(_query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
+    return Promise.resolve([]);
+  }
+  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+    return Promise.resolve(state);
+  }
+  
   getWorkflows(_input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     throw new Error("Method not implemented.");
   }

@@ -35,6 +35,9 @@ export interface DBOSExecutorContext
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+
+  getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined>;
+  upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 }
 
 /*
@@ -51,4 +54,25 @@ export interface DBOSEventReceiver
     destroy() : Promise<void>;
     initialize(executor: DBOSExecutorContext) : Promise<void>;
     logRegisteredEndpoints() : void;
+}
+
+export interface DBOSEventReceiverState
+{
+  service: string;
+  workflowFnName: string;
+  key: string;
+  value?: string;
+  updateTime?: number;
+  updateSeq?: bigint;
+}
+
+export interface DBOSEventReceiverQuery
+{
+  service?: string;
+  workflowFnName?: string;
+  key?: string;
+  startTime?: number;
+  endTime?: number;
+  startSeq?: bigint;
+  endSeq?: bigint;
 }
