@@ -76,12 +76,6 @@ export interface SystemDatabase {
   queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]>;
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
-  // Database triggerqueries
-  //  These two make sure we kick off the workflow at least once, and wf unique ID does the rest of OAOO
-  getLastDBTriggerTimeSeq(wfn: string): Promise<{last_run_time: number | null, last_run_seq: number | null}>;
-  setLastDBTriggerTimeSeq(_wfn: string, _run_time: number | null, _run_seq: number | null):
-    Promise<{last_run_time: number | null, last_run_seq: number | null}>;
-
   // Workflow management
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
@@ -846,46 +840,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return parseInt(`${res.rows[0].last_run_time}`);
   }
 
-  /* DB Trigger tracking */
-  async getLastDBTriggerTimeSeq(wfn: string):
-    Promise<{last_run_time: number | null, last_run_seq: number | null}>
-  {
-    const res = await this.pool.query<dbtrigger_state>(`
-      SELECT last_run_time, last_run_seq
-      FROM ${DBOSExecutor.systemDBSchemaName}.dbtrigger_state
-      WHERE workflow_fn_name = $1;
-    `, [wfn]);
-
-    let lrt = res.rows[0]?.last_run_time ?? null;
-    if (lrt !== null) lrt = parseInt(`${lrt}`);
-    let lrs = res.rows[0]?.last_run_seq ?? null;
-    if (lrs !== null) lrs = parseInt(`${lrs}`);
-
-    return { last_run_time: lrt,  last_run_seq: lrs };
-  }
-
-  async setLastDBTriggerTimeSeq(wfn: string, run_time: number | null, run_seq: number | null):
-    Promise<{last_run_time: number | null, last_run_seq: number | null}>
-  {
-    const res = await this.pool.query<dbtrigger_state>(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.dbtrigger_state (workflow_fn_name, last_run_time, last_run_seq)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (workflow_fn_name)
-      DO UPDATE SET
-        last_run_time = GREATEST(EXCLUDED.last_run_time, dbtrigger_state.last_run_time),
-        last_run_seq =  GREATEST(EXCLUDED.last_run_seq,  dbtrigger_state.last_run_seq)
-      RETURNING last_run_time, last_run_seq;
-    `, [wfn, run_time, run_seq]);
-
-    let lrt = res.rows[0]?.last_run_time ?? null;
-    if (lrt !== null) lrt = parseInt(`${lrt}`);
-    let lrs = res.rows[0]?.last_run_seq ?? null;
-    if (lrs !== null) lrs = parseInt(`${lrs}`);
-
-    return { last_run_time: lrt,  last_run_seq: lrs };
-  }
-
-    // Event dispatcher queries / updates
+  // Event dispatcher queries / updates
   async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
     const res = await this.pool.query<event_dispatch_kv>(`
       SELECT *

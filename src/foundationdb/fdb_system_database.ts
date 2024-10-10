@@ -409,18 +409,6 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     return Promise.resolve(null);
   }
 
-  async getLastDBTriggerTimeSeq(_wfn: string):
-    Promise<{last_run_time: number | null, last_run_seq: number | null}>
-  {
-    return Promise.resolve({last_run_seq: null, last_run_time: null});
-  }
-
-  async setLastDBTriggerTimeSeq(_wfn: string, _run_time: number | null, _run_seq: number | null):
-    Promise<{last_run_time: number | null, last_run_seq: number | null}>
-  {
-    return Promise.resolve({last_run_seq: null, last_run_time: null});
-  }
-
   // Event dispatcher queries / updates
   async getEventDispatchState(_svc: string, _wfn: string, _key: string): Promise<DBOSEventReceiverState | undefined> {
     return Promise.resolve(undefined);
