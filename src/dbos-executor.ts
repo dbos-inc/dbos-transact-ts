@@ -899,7 +899,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async queryUserDB(sql: string, params?: unknown[]) {
     if (params !== undefined) {
-      return await this.userDatabase.query(sql, params);
+      return await this.userDatabase.query(sql, ...params);
     }
     else {
       return await this.userDatabase.query(sql);
