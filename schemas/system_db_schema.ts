@@ -50,6 +50,18 @@ export interface dbtrigger_state {
   last_run_seq: number; // Sequence number of record that was kicked off (n); others may have but OAOO will cover that
 }
 
+export interface event_dispatch_kv {
+  // Key fields
+  service_name: string;
+  workflow_fn_name: string;
+  key: string;
+
+  // Payload fields
+  value: string;
+  update_time?: number; // Timestamp of record (for upsert)
+  update_seq?: bigint; // Sequence number of record (for upsert)
+}
+
 export interface workflow_queue {
   workflow_uuid: string;
   queue_name: string;
