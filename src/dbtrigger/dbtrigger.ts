@@ -216,14 +216,14 @@ export class DBOSDBTrigger {
                     const fullname = `${cname}.${mname}`;
                     // Initiate catchup work
                     const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
-                    let recseqnum: number | null = null;
+                    let recseqnum: bigint | null = null;
                     let rectmstmp: number | null = null;
                     if (tc.sequenceNumColumn || tc.timestampColumn) {
-                        const lasts = await this.executor.systemDatabase.getLastDBTriggerTimeSeq(fullname);
-                        recseqnum = lasts.last_run_seq;
-                        rectmstmp = lasts.last_run_time;
+                        const lasts = await this.executor.getEventDispatchState('trigger', fullname, 'last');
+                        recseqnum = (lasts?.updateSeq) ? BigInt(lasts.updateSeq) : null;
+                        rectmstmp = lasts?.updateTime ?? null;
                         if (recseqnum && tc.sequenceNumJitter) {
-                            recseqnum-=tc.sequenceNumJitter;
+                            recseqnum -= BigInt(tc.sequenceNumJitter);
                         }
                         if (rectmstmp && tc.timestampSkewMS) {
                             rectmstmp -= tc.timestampSkewMS;
@@ -318,7 +318,7 @@ export class DBOSDBTrigger {
                         if (mo.triggerIsWorkflow) {
                             // Record the time of the wf kicked off (if given)
                             const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
-                            let recseqnum: number | null = null;
+                            let recseqnum: bigint | null = null;
                             let rectmstmp: number | null = null;
                             if (tc.sequenceNumColumn) {
                                 if (!Object.hasOwn(payload.record, tc.sequenceNumColumn)) {
@@ -327,10 +327,13 @@ export class DBOSDBTrigger {
                                 }
                                 const sn = payload.record[tc.sequenceNumColumn];
                                 if (typeof(sn) === 'number') {
-                                    recseqnum = sn;
+                                    recseqnum = BigInt(sn);
                                 }
                                 else if (typeof(sn) === 'string') {
-                                    recseqnum = parseInt(sn)
+                                    recseqnum = BigInt(sn);
+                                }
+                                else if (typeof(sn) === 'bigint') {
+                                    recseqnum = sn;
                                 }
                                 else {
                                     this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
@@ -375,7 +378,14 @@ export class DBOSDBTrigger {
                             payload.operation = TriggerOperation.RecordUpserted;
                             await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
 
-                            await this.executor.systemDatabase.setLastDBTriggerTimeSeq(fullname, rectmstmp, recseqnum);
+                            await this.executor.upsertEventDispatchState({
+                                service: 'trigger',
+                                workflowFnName: fullname,
+                                key: 'last',
+                                value: '',
+                                updateSeq: recseqnum ? recseqnum : undefined,
+                                updateTime: rectmstmp ? rectmstmp : undefined,
+                            });
                         }
                         else {
                             // Use original func, this may not be wrapped

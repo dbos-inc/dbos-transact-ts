@@ -1018,7 +1018,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return await this.systemDatabase.queryEventDispatchState(query);
   }
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
-    return await this.upsertEventDispatchState(state);
+    return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
 
