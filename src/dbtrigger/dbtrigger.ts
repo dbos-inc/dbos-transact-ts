@@ -172,7 +172,7 @@ export class DBOSDBTrigger {
                 this.tableToReg.get(tstr)!.push(mo);
 
                 if (!hasTrigger.has(tname)) {
-                    await this.executor.runDDL(`
+                    await this.executor.queryUserDB(`
                         CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
                         DECLARE
                             payload json;

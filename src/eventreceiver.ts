@@ -38,6 +38,8 @@ export interface DBOSExecutorContext
 
   getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined>;
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
+
+  queryUserDB(sql: string): Promise<unknown[]>;
 }
 
 /*
