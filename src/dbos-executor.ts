@@ -897,8 +897,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
 
-  async queryUserDB(sql: string) {
-    return this.userDatabase.query(sql);
+  async queryUserDB(sql: string, params?: unknown[]) {
+    if (params !== undefined) {
+      return await this.userDatabase.query(sql, params);
+    }
+    else {
+      return await this.userDatabase.query(sql);
+    }
   }
 
   /* INTERNAL HELPERS */

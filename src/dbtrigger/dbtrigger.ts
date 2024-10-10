@@ -1,12 +1,12 @@
-////
-// Configuration
-////
-
 import { WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { Notification, PoolClient } from "pg";
 import { Workflow } from "../workflow";
+
+////
+// Configuration
+////
 
 export enum TriggerOperation {
     RecordInserted = 'insert',
@@ -43,9 +43,9 @@ interface DBTriggerRegistration extends MethodRegistrationBase
     triggerIsWorkflow?: boolean;
 }
 
-///////////////////////////
-// DB Trigger Management
-///////////////////////////
+///
+// SQL Gen
+///
 
 function quoteIdentifier(identifier: string): string {
     // Escape double quotes within the identifier by doubling them
@@ -56,6 +56,94 @@ function quoteConstant(cval: string): string {
     // Escape double quotes within the identifier by doubling them
     return `${cval.replace(/'/g, "''")}`;
 }
+
+function createTriggerSQL(
+    triggerFuncName: string, // Name of function for trigger to call
+    triggerName: string, // Trigger name
+    tableName: string, // As known to DB
+    tableNameString: string, // Passed as a value to notifier
+    notifierName: string, // Notifier name
+)
+{
+    return `
+        CREATE OR REPLACE FUNCTION ${triggerFuncName}() RETURNS trigger AS $$
+        DECLARE
+            payload json;
+        BEGIN
+        IF TG_OP = 'INSERT' THEN
+            payload = json_build_object(
+                'tname', '${quoteConstant(tableNameString)}',
+                'operation', 'insert',
+                'record', row_to_json(NEW)
+            );
+        ELSIF TG_OP = 'UPDATE' THEN
+            payload = json_build_object(
+                'tname', '${quoteConstant(tableNameString)}',
+                'operation', 'update',
+                'record', row_to_json(NEW)
+            );
+        ELSIF TG_OP = 'DELETE' THEN
+            payload = json_build_object(
+                'tname', '${quoteConstant(tableNameString)}',
+                'operation', 'delete',
+                'record', row_to_json(OLD)
+            );
+        END IF;
+
+        PERFORM pg_notify('${notifierName}', payload::text);
+        RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        CREATE OR REPLACE TRIGGER ${triggerName}
+        AFTER INSERT OR UPDATE OR DELETE ON ${tableName}
+        FOR EACH ROW EXECUTE FUNCTION ${triggerFuncName}();
+    `;
+}
+
+function createCatchupSql(
+    tc: DBTriggerWorkflowConfig,
+    tableName: string,
+    tableNameString: string,
+    startSeqNum?: bigint | null,
+    startTimeStamp?: number | null)
+{
+    // Query string
+    let sncpred = '';
+    let oby = '';
+    const params = [];
+    if (tc.sequenceNumColumn && startSeqNum) {
+        params.push(startSeqNum);
+        sncpred = ` ${quoteIdentifier(tc.sequenceNumColumn)} > $${params.length} AND `
+        oby = `ORDER BY ${quoteIdentifier(tc.sequenceNumColumn)}`;
+    }
+    let tscpred = '';
+    if (tc.timestampColumn && startTimeStamp) {
+        params.push(new Date(startTimeStamp));
+        tscpred = ` ${quoteIdentifier(tc.timestampColumn)} > $${params.length} AND `;
+        oby = `ORDER BY ${quoteIdentifier(tc.timestampColumn)}`;
+    }
+
+    const query = `
+        SELECT json_build_object(
+            'tname', '${quoteConstant(tableNameString)}',
+            'operation', 'upsert',
+            'record', row_to_json(t)
+        )::text as payload
+        FROM (
+            SELECT *
+            FROM ${tableName} 
+            WHERE ${sncpred} ${tscpred} 1=1
+            ${oby}
+        ) t
+    `;
+
+    return {query, params};
+}
+
+///////////////////////////
+// DB Trigger Management
+///////////////////////////
 
 interface TriggerPayload {
     operation: TriggerOperation,
@@ -172,40 +260,8 @@ export class DBOSDBTrigger {
                 this.tableToReg.get(tstr)!.push(mo);
 
                 if (!hasTrigger.has(tname)) {
-                    await this.executor.queryUserDB(`
-                        CREATE OR REPLACE FUNCTION ${tfname}() RETURNS trigger AS $$
-                        DECLARE
-                            payload json;
-                        BEGIN
-                        IF TG_OP = 'INSERT' THEN
-                            payload = json_build_object(
-                                'tname', '${quoteConstant(tstr)}',
-                                'operation', 'insert',
-                                'record', row_to_json(NEW)
-                            );
-                        ELSIF TG_OP = 'UPDATE' THEN
-                            payload = json_build_object(
-                                'tname', '${quoteConstant(tstr)}',
-                                'operation', 'update',
-                                'record', row_to_json(NEW)
-                            );
-                        ELSIF TG_OP = 'DELETE' THEN
-                            payload = json_build_object(
-                                'tname', '${quoteConstant(tstr)}',
-                                'operation', 'delete',
-                                'record', row_to_json(OLD)
-                            );
-                        END IF;
-    
-                        PERFORM pg_notify('${nname}', payload::text);
-                        RETURN NEW;
-                        END;
-                        $$ LANGUAGE plpgsql;
-    
-                        CREATE OR REPLACE TRIGGER ${trigname}
-                        AFTER INSERT OR UPDATE OR DELETE ON ${tname}
-                        FOR EACH ROW EXECUTE FUNCTION ${tfname}();
-                    `);
+                    const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
+                    await this.executor.queryUserDB(trigSQL);
                     hasTrigger.add(tname);
                     hasAnyTrigger = true;
                 }
@@ -230,37 +286,8 @@ export class DBOSDBTrigger {
                         }
                     }
 
-                    // Query string
-                    let sncpred = '';
-                    let oby = '';
-                    const params = [];
-                    if (tc.sequenceNumColumn && recseqnum !== null) {
-                        params.push(recseqnum);
-                        sncpred = ` ${quoteIdentifier(tc.sequenceNumColumn)} > $${params.length} AND `
-                        oby = `ORDER BY ${quoteIdentifier(tc.sequenceNumColumn)}`;
-                    }
-                    let tscpred = '';
-                    if (tc.timestampColumn && rectmstmp !== null) {
-                        params.push(new Date(rectmstmp));
-                        tscpred = ` ${quoteIdentifier(tc.timestampColumn)} > $${params.length} AND `;
-                        oby = `ORDER BY ${quoteIdentifier(tc.timestampColumn)}`;
-                    }
-
-                    const catchup_query = `
-                        SELECT json_build_object(
-                            'tname', '${quoteConstant(tstr)}',
-                            'operation', 'upsert',
-                            'record', row_to_json(t)
-                        )::text as payload
-                        FROM (
-                            SELECT *
-                            FROM ${tname} 
-                            WHERE ${sncpred} ${tscpred} 1=1
-                            ${oby}
-                        ) t
-                    `;
-
-                    catchups.push({query: catchup_query, params});
+                    // Catchup query
+                    catchups.push(createCatchupSql(tc, tname, tstr, recseqnum, rectmstmp));
                 }
             }
         }
