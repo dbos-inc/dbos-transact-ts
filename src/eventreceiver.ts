@@ -4,6 +4,13 @@ import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
+import { Notification } from "pg";
+
+export type DBNotification = Notification;
+export type DBNotificationCallback = (n: DBNotification) => void;
+export interface DBNotificationListener {
+  close(): Promise<void>;
+}
 
 /*
  * Info provided to an event receiver at initialization,
@@ -40,6 +47,8 @@ export interface DBOSExecutorContext
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]>;
+
+  userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener>;
 }
 
 /*

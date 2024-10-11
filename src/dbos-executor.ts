@@ -49,7 +49,7 @@ import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
-import { DBOSEventReceiverState, DBOSEventReceiverQuery } from "./eventreceiver";
+import { DBOSEventReceiverState, DBOSEventReceiverQuery, DBNotificationCallback, DBNotificationListener } from "./eventreceiver";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -903,6 +903,29 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     else {
       return await this.userDatabase.query(sql);
+    }
+  }
+
+  async userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener> {
+    const notificationsClient = await this.procedurePool.connect();
+    for (const nname of channels) {
+      await notificationsClient.query(`LISTEN ${nname};`);
+    }
+
+    notificationsClient.on("notification", callback);
+
+    return {
+      close: async () => {
+        for (const nname of channels) {
+          try {
+              await notificationsClient.query(`UNLISTEN ${nname};`);
+          }
+          catch(e) {
+              this.logger.warn(e);
+          }
+          notificationsClient.release();
+        }
+      }
     }
   }
 

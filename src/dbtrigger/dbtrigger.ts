@@ -1,8 +1,8 @@
-import { WorkflowContext } from "..";
+import { WorkflowContext, DBNotification } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
-import { Notification, PoolClient } from "pg";
 import { Workflow } from "../workflow";
+import { DBNotificationListener } from "../eventreceiver";
 
 ////
 // Configuration
@@ -222,7 +222,7 @@ class TriggerPayloadQueue
 
 export class DBOSDBTrigger {
     executor: DBOSExecutor;
-    listeners: {client: PoolClient, nn: string}[] = [];
+    listeners: DBNotificationListener[] = [];
     tableToReg: Map<string, DBTriggerRegistration[]> = new Map();
     shutdown: boolean = false;
     payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
@@ -293,17 +293,13 @@ export class DBOSDBTrigger {
         }
 
         if (hasAnyTrigger) {
-            const notificationsClient = await this.executor.procedurePool.connect();
-            await notificationsClient.query(`LISTEN ${nname};`);
-
-            const handler = (msg: Notification) => {
+            const handler = (msg: DBNotification) => {
                 if (msg.channel !== nname) return;
                 const payload = JSON.parse(msg.payload!) as TriggerPayload;
                 this.payloadQ.enqueueNotify(payload);
             };
-            notificationsClient.on("notification", handler);
 
-            this.listeners.push({client: notificationsClient, nn: nname});
+            this.listeners.push(await this.executor.userDBListen([nname], handler));
             this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
 
             for (const q of catchups) {
@@ -443,12 +439,11 @@ export class DBOSDBTrigger {
         this.payloadQ.stop();
         for (const l of this.listeners) {
             try {
-                await l.client.query(`UNLISTEN ${l.nn};`);
+                await l.close();
             }
             catch(e) {
                 this.executor.logger.warn(e);
             }
-            l.client.release();
         }
         this.listeners = [];
         for (const p of this.dispatchLoops) {

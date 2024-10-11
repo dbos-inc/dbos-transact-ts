@@ -130,6 +130,9 @@ export {
 export {
   DBOSEventReceiver,
   DBOSExecutorContext,
+  DBNotification,
+  DBOSEventReceiverQuery,
+  DBOSEventReceiverState,
 } from "./eventreceiver";
 
 export {
