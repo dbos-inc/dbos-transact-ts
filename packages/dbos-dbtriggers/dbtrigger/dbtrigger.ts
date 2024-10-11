@@ -7,7 +7,7 @@ import {
     WorkflowContext,
     WorkflowFunction,
     associateMethodWithEventReceiver,
-} from "..";
+} from "@dbos-inc/dbos-sdk";
 
 ////
 // Configuration
