@@ -12,19 +12,20 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   if (!(await checkDatabaseExists(configFile, logger))) {
     const postgresConfig: PoolConfig = constructPoolConfig(configFile)
+    const app_database = postgresConfig.database
     postgresConfig.database = "postgres"
     const postgresClient = new Client(postgresConfig);
     let connection_failed = true;
     try {
       await postgresClient.connect()
       connection_failed = false;
-      await postgresClient.query(`CREATE DATABASE ${configFile.database.app_db_name}`);
+      await postgresClient.query(`CREATE DATABASE ${app_database}`);
     } catch (e) {
       if (e instanceof Error) {
         if (connection_failed) {
           logger.error(`Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`);
         } else {
-          logger.error(`Error creating database ${configFile.database.app_db_name}: ${e.message}`);
+          logger.error(`Error creating database ${app_database}: ${e.message}`);
         }
       } else {
         logger.error(e);
@@ -71,10 +72,10 @@ export async function checkDatabaseExists(configFile: ConfigFile, logger: Global
   try {
     await pgUserClient.connect(); // Try to establish a connection
     await pgUserClient.end();
-    logger.info(`Database ${configFile.database.app_db_name} exists!`)
+    logger.info(`Database ${pgUserConfig.database} exists!`)
     return true; // If successful, return true
   } catch (error) {
-    logger.info(`Database ${configFile.database.app_db_name} does not exist, creating...`)
+    logger.info(`Database ${pgUserConfig.database} does not exist, creating...`)
     return false; // If connection fails, return false
   }
 }
