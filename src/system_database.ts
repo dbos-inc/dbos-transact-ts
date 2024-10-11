@@ -857,7 +857,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       key: res.rows[0].key,
       value: res.rows[0].value,
       updateTime: res.rows[0].update_time,
-      updateSeq: res.rows[0].update_seq,
+      updateSeq: (res.rows[0].update_seq !== null && res.rows[0].update_seq !== undefined ? BigInt(res.rows[0].update_seq) : undefined),
     };
   }
 
@@ -891,7 +891,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       key: row.key,
       value: row.value,
       updateTime: row.update_time,
-      updateSeq: row.update_seq,
+      updateSeq: (row.update_seq !== undefined && row.update_seq !== null ? BigInt(row.update_seq) : undefined),
     }});
     return ers;
   }
@@ -905,7 +905,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       DO UPDATE SET
         update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
         update_seq =  GREATEST(EXCLUDED.update_seq,  event_dispatch_kv.update_seq),
-        value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time OR EXCLUDED.update_seq > event_dispatch_kv.update_seq)
+        value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time OR EXCLUDED.update_seq > event_dispatch_kv.update_seq OR
+                            (event_dispatch_kv.update_time IS NULL and event_dispatch_kv.update_seq IS NULL))
           THEN EXCLUDED.value ELSE event_dispatch_kv.value END
       RETURNING value, update_time, update_seq;
     `, [
@@ -923,7 +924,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       key: state.key,
       value: res.rows[0].value,
       updateTime: res.rows[0].update_time,
-      updateSeq: res.rows[0].update_seq,
+      updateSeq: (res.rows[0].update_seq !== undefined && res.rows[0].update_seq !== null ? BigInt(res.rows[0].update_seq) : undefined),
     };
   }
   
