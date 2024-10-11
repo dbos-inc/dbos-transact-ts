@@ -331,7 +331,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string | undefined, password: string) {
+export async function connect(host: string, dbName: string | undefined, password: string, local_suffix: boolean) {
   const logger = getLogger();
 
   const userCredentials = await getCloudCredentials(host, logger);
@@ -365,6 +365,7 @@ export async function connect(host: string, dbName: string | undefined, password
     config.database.port = userDBInfo.Port;
     config.database.username = userDBInfo.DatabaseUsername;
     config.database.password = password;
+    config.database.local_suffix = local_suffix;
     writeConfigFile(config, dbosConfigFilePath);
     logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`)
     return 0;

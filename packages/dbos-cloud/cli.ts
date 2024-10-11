@@ -311,9 +311,23 @@ databaseCommands
     if (!options.password) {
       options.password = prompt("Database Password: ", { echo: "*" });
     }
-    const exitCode = await connect(DBOSCloudHost, dbname, options.password);
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
     process.exit(exitCode);
   });
+
+  databaseCommands
+  .command("local")
+  .description(`Configure ${dbosConfigFilePath} to use a DBOS Cloud database for local development`)
+  .argument("[name]", "database instance name")
+  .option("-W, --password <string>", "Specify the database user password")
+  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
+    if (!options.password) {
+      options.password = prompt("Database Password: ", { echo: "*" });
+    }
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
+    process.exit(exitCode);
+  });
+
 
 /////////////////////
 /* USER DASHBOARDS */
