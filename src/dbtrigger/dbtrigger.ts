@@ -1,8 +1,8 @@
 import { WorkflowContext, DBNotification } from "..";
-import { DBOSExecutor } from "../dbos-executor";
-import { MethodRegistration, MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
+import { associateMethodWithEventReceiver, MethodRegistration, MethodRegistrationBase } from "../decorators";
 import { Workflow } from "../workflow";
-import { DBNotificationListener } from "../eventreceiver";
+import { DBNotificationListener, DBOSEventReceiver, DBOSEventReceiverRegistration } from "../eventreceiver";
+import { DBOSExecutorContext } from "..";
 
 ////
 // Configuration
@@ -220,27 +220,30 @@ class TriggerPayloadQueue
     }
 }
 
-export class DBOSDBTrigger {
-    executor: DBOSExecutor;
+export class DBOSDBTrigger implements DBOSEventReceiver {
+    executor?: DBOSExecutorContext;
     listeners: DBNotificationListener[] = [];
-    tableToReg: Map<string, DBTriggerRegistration[]> = new Map();
+    tableToReg: Map<string, DBOSEventReceiverRegistration[]> = new Map();
     shutdown: boolean = false;
     payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
     dispatchLoops: Promise<void>[] = [];
 
-    constructor(executor: DBOSExecutor) {
-        this.executor = executor;
+    constructor() {        
     }
 
-    async initialize() {
+    async initialize(executor: DBOSExecutorContext) {
+        this.executor = executor;
+
         const hasTrigger: Set<string> = new Set();
         let hasAnyTrigger: boolean = false;
         const nname = 'dbos_table_update';
 
         const catchups: {query: string, params: unknown[]}[] = [];
 
-        for (const registeredOperation of this.executor.registeredOperations) {
-            const mo = registeredOperation as DBTriggerRegistration;
+        const regops = this.executor.getRegistrationsFor(this);
+        for (const registeredOperation of regops) {
+            const mo = registeredOperation.methodConfig as DBTriggerRegistration;
+
             if (mo.triggerConfig) {
                 const cname = mo.className;
                 const mname = mo.name;
@@ -257,7 +260,7 @@ export class DBOSDBTrigger {
                 if (!this.tableToReg.has(tstr)) {
                     this.tableToReg.set(tstr, []);
                 }
-                this.tableToReg.get(tstr)!.push(mo);
+                this.tableToReg.get(tstr)!.push(registeredOperation);
 
                 if (!hasTrigger.has(tname)) {
                     const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
@@ -305,7 +308,7 @@ export class DBOSDBTrigger {
             for (const q of catchups) {
                 const catchupFunc =  async () => {
                     try {
-                        const rows = await this.executor.queryUserDB(q.query, q.params) as {payload: string}[];
+                        const rows = await this.executor!.queryUserDB(q.query, q.params) as {payload: string}[];
                         for (const r of rows) {
                             const payload = JSON.parse(r.payload) as TriggerPayload;
                             this.payloadQ.enqueueCatchup(payload);
@@ -313,7 +316,7 @@ export class DBOSDBTrigger {
                     }
                     catch(e) {
                         console.log(e);
-                        this.executor.logger.error(e);
+                        this.executor?.logger.error(e);
                     }
                 };
   
@@ -323,7 +326,8 @@ export class DBOSDBTrigger {
             this.payloadQ.finishCatchup();
 
             const payloadFunc = async(payload: TriggerPayload) => {
-                for (const mo of this.tableToReg.get(payload.tname) ?? []) {
+                for (const regOp of this.tableToReg.get(payload.tname) ?? []) {
+                    const mo = regOp.methodConfig as DBTriggerRegistration;
                     if (!mo.triggerConfig) continue;
                     const key: unknown[] = [];
                     const keystr: string[] = [];
@@ -343,7 +347,7 @@ export class DBOSDBTrigger {
                             let rectmstmp: number | null = null;
                             if (tc.sequenceNumColumn) {
                                 if (!Object.hasOwn(payload.record, tc.sequenceNumColumn)) {
-                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but is not in database record.'`);
+                                    this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but is not in database record.'`);
                                     continue;
                                 }
                                 const sn = payload.record[tc.sequenceNumColumn];
@@ -357,13 +361,13 @@ export class DBOSDBTrigger {
                                     recseqnum = sn;
                                 }
                                 else {
-                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
+                                    this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
                                     continue;
                                 }
                             }
                             if (tc.timestampColumn) {
                                 if (!Object.hasOwn(payload.record, tc.timestampColumn)) {
-                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but is not in database record.'`);
+                                    this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but is not in database record.'`);
                                     continue;
                                 }
                                 const ts = payload.record[tc.timestampColumn];
@@ -377,7 +381,7 @@ export class DBOSDBTrigger {
                                     rectmstmp = new Date(ts).getTime();
                                 }
                                 else {
-                                    this.executor.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`);
+                                    this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`);
                                     continue;
                                 }
                             }
@@ -387,19 +391,19 @@ export class DBOSDBTrigger {
                                 configuredInstance: null
                             };
                             if (payload.operation === TriggerOperation.RecordDeleted) {
-                                this.executor.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record deletion.   Record deletion workflow triggers are not supported.`);
+                                this.executor?.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record deletion.   Record deletion workflow triggers are not supported.`);
                                 continue;
                             }
                             if (payload.operation === TriggerOperation.RecordUpdated && recseqnum === null && rectmstmp === null) {
-                                this.executor.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record update, but no sequence number / timestamp is defined.   Record update workflow triggers will not work in this case.`);
+                                this.executor?.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record update, but no sequence number / timestamp is defined.   Record update workflow triggers will not work in this case.`);
                                 continue;
                             }
                             if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
                             if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
                             payload.operation = TriggerOperation.RecordUpserted;
-                            await this.executor.workflow(mo.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
+                            await this.executor?.workflow(regOp.methodReg.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
 
-                            await this.executor.upsertEventDispatchState({
+                            await this.executor?.upsertEventDispatchState({
                                 service: 'trigger',
                                 workflowFnName: fullname,
                                 key: 'last',
@@ -410,14 +414,14 @@ export class DBOSDBTrigger {
                         }
                         else {
                             // Use original func, this may not be wrapped
-                            const mr = mo as MethodRegistration<unknown, unknown[], unknown>;
+                            const mr = regOp.methodReg as MethodRegistration<unknown, unknown[], unknown>;
                             const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
                             await tfunc.call(undefined, payload.operation, key, payload.record);
                         }
                     }
                     catch(e) {
-                        this.executor.logger.warn(`Caught an exception in trigger handling for "${mo.className}.${mo.name}"`);
-                        this.executor.logger.warn(e);
+                        this.executor?.logger.warn(`Caught an exception in trigger handling for "${mo.className}.${mo.name}"`);
+                        this.executor?.logger.warn(e);
                     }
                 }
             }
@@ -442,7 +446,7 @@ export class DBOSDBTrigger {
                 await l.close();
             }
             catch(e) {
-                this.executor.logger.warn(e);
+                this.executor?.logger.warn(e);
             }
         }
         this.listeners = [];
@@ -476,14 +480,18 @@ export class DBOSDBTrigger {
     }
 }
 
+let dbTrig: DBOSDBTrigger | undefined = undefined;
+
 export function DBTrigger(triggerConfig: DBTriggerConfig) {
     function trigdec<This, Return, Key extends unknown[] >(
         target: object,
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>>
     ) {
-        const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-        const triggerRegistration = registration as unknown as DBTriggerRegistration;
+        if (!dbTrig) dbTrig = new DBOSDBTrigger();
+        const {descriptor, receiverInfo} = associateMethodWithEventReceiver(dbTrig, target, propertyKey, inDescriptor);
+
+        const triggerRegistration = receiverInfo as unknown as DBTriggerRegistration;
         triggerRegistration.triggerConfig = triggerConfig;
         triggerRegistration.triggerIsWorkflow = false;
 
@@ -498,8 +506,10 @@ export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerWorkflowConfig) {
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>>
     ) {
-        const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
-        const triggerRegistration = registration as unknown as DBTriggerRegistration;
+        if (!dbTrig) dbTrig = new DBOSDBTrigger();
+        const {descriptor, receiverInfo} = associateMethodWithEventReceiver(dbTrig, target, propertyKey, inDescriptor);
+
+        const triggerRegistration = receiverInfo as unknown as DBTriggerRegistration;
         triggerRegistration.triggerConfig = wfTriggerConfig;
         triggerRegistration.triggerIsWorkflow = true;
 

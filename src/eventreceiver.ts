@@ -12,6 +12,12 @@ export interface DBNotificationListener {
   close(): Promise<void>;
 }
 
+export interface DBOSEventReceiverRegistration {
+  methodConfig: unknown,
+  classConfig: unknown,
+  methodReg: MethodRegistrationBase
+}
+
 /*
  * Info provided to an event receiver at initialization,
  *  which contains the things that it needs to do its work
@@ -33,7 +39,7 @@ export interface DBOSExecutorContext
    *  classConfig: the class info the receiver stored
    *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
    */
-  getRegistrationsFor(eri: DBOSEventReceiver) : {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[];
+  getRegistrationsFor(eri: DBOSEventReceiver) : DBOSEventReceiverRegistration[];
 
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;

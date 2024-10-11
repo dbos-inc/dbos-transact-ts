@@ -7,7 +7,6 @@ import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
-import { DBOSDBTrigger } from '../dbtrigger/dbtrigger';
 import { wfQueueRunner } from '../wfqueue';
 import { GlobalLogger } from '../telemetry/logs';
 
@@ -32,7 +31,6 @@ export class DBOSRuntime {
   private dbosExec: DBOSExecutor | null = null;
   private servers: { appServer: Server; adminServer: Server } | undefined;
   private scheduler: DBOSScheduler | null = null;
-  private dbTriggers: DBOSDBTrigger | null = null;
   private wfQueueRunner: Promise<void> | null = null;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
@@ -58,10 +56,6 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
-
-      this.dbTriggers = new DBOSDBTrigger(this.dbosExec);
-      await this.dbTriggers.initialize();
-      this.dbTriggers.logRegisteredEndpoints();
 
       wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
       this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
@@ -125,7 +119,6 @@ export class DBOSRuntime {
    * Shut down the HTTP and other services and destroy workflow executor.
    */
   async destroy() {
-    await this.dbTriggers?.destroy();
     await this.scheduler?.destroyScheduler();
     try {
       wfQueueRunner.stop();

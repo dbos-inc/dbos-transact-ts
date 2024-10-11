@@ -17,7 +17,6 @@ import { get, set } from "lodash";
 import { Client } from "pg";
 import { DBOSScheduler } from "../scheduler/scheduler";
 import { StoredProcedure } from "../procedure";
-import { DBOSDBTrigger } from "../dbtrigger/dbtrigger";
 import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
 import { DBOS } from "../dbos-runtime/runtime";
 
@@ -93,10 +92,10 @@ export async function createInternalTestRuntime(userClasses: object[] | undefine
 export class TestingRuntimeImpl implements TestingRuntime {
   #server: DBOSHttpServer | null = null;
   #scheduler: DBOSScheduler | null = null;
-  #dbTriggers: DBOSDBTrigger | null = null;
   #wfQueueRunner: Promise<void> | null = null;
   #applicationConfig: object = {};
   #isInitialized = false;
+  #dbosExec: DBOSExecutor | null = null;
 
   /**
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
@@ -105,30 +104,23 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.dbosConfig = dbosConfig[0];
-    const dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
-    this.#applicationConfig = dbosExec.config.application ?? {};
-    DBOS.globalLogger = dbosExec.logger;
-    await dbosExec.init(userClasses);
-    this.#server = new DBOSHttpServer(dbosExec);
-    for (const evtRcvr of dbosExec.eventReceivers) {
-      await evtRcvr.initialize(dbosExec);
-    }
-    this.#scheduler = new DBOSScheduler(dbosExec);
+    this.#dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
+    this.#applicationConfig = this.#dbosExec.config.application ?? {};
+    DBOS.globalLogger = this.#dbosExec.logger;
+    await this.#dbosExec.init(userClasses);
+    this.#server = new DBOSHttpServer(this.#dbosExec);
+    await this.initEventReceivers();
+    this.#scheduler = new DBOSScheduler(this.#dbosExec);
     this.#scheduler.initScheduler();
-    await this.initTriggers();
-    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(dbosExec);
-    this.#applicationConfig = dbosExec.config.application ?? {};
+    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(this.#dbosExec);
+    this.#applicationConfig = this.#dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
 
-  async initTriggers() {
-    this.#dbTriggers = new DBOSDBTrigger(this.#server!.dbosExec);
-    await this.#dbTriggers.initialize();
-  }
-
-  async destroyTriggers() {
-    await this.#dbTriggers?.destroy();
-    this.#dbTriggers = null;
+  async initEventReceivers() {
+    for (const evtRcvr of this.#dbosExec!.eventReceivers) {
+      await evtRcvr.initialize(this.#dbosExec!);
+    }
   }
 
   /**
@@ -145,13 +137,16 @@ export class TestingRuntimeImpl implements TestingRuntime {
         const e = err as Error;
         this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
       }    
-      await this.destroyTriggers();
       await this.#scheduler?.destroyScheduler();
-      for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
-        await evtRcvr.destroy();
-      }
+      await this.destroyEventReceivers();
       await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;
+    }
+  }
+
+  async destroyEventReceivers() {
+    for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
+      await evtRcvr.destroy();
     }
   }
 
