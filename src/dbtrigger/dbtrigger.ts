@@ -1,8 +1,13 @@
-import { WorkflowContext, DBNotification } from "..";
-import { associateMethodWithEventReceiver, MethodRegistration, MethodRegistrationBase } from "../decorators";
-import { Workflow } from "../workflow";
-import { DBNotificationListener, DBOSEventReceiver, DBOSEventReceiverRegistration } from "../eventreceiver";
-import { DBOSExecutorContext } from "..";
+import {
+    DBOSEventReceiver,
+    DBOSEventReceiverRegistration,
+    DBOSExecutorContext,
+    DBNotification,
+    DBNotificationListener,
+    WorkflowContext,
+    WorkflowFunction,
+    associateMethodWithEventReceiver,
+} from "..";
 
 ////
 // Configuration
@@ -37,7 +42,7 @@ export class DBTriggerWorkflowConfig extends DBTriggerConfig {
     timestampSkewMS?: number = undefined;
 }
 
-interface DBTriggerRegistration extends MethodRegistrationBase
+interface DBTriggerRegistration
 {
     triggerConfig?: DBTriggerConfig;
     triggerIsWorkflow?: boolean;
@@ -251,8 +256,9 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
             const mo = registeredOperation.methodConfig as DBTriggerRegistration;
 
             if (mo.triggerConfig) {
-                const cname = mo.className;
-                const mname = mo.name;
+                const mr = registeredOperation.methodReg;
+                const cname = mr.className;
+                const mname = mr.name;
                 const tname = mo.triggerConfig.schemaName
                     ? `${quoteIdentifier(mo.triggerConfig.schemaName)}.${quoteIdentifier(mo.triggerConfig.tableName)}`
                     : quoteIdentifier(mo.triggerConfig.tableName);
@@ -276,8 +282,6 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                 }
 
                 if (mo.triggerIsWorkflow) {
-                    const cname = mo.className;
-                    const mname = mo.name;
                     const fullname = `${cname}.${mname}`;
                     // Initiate catchup work
                     const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
@@ -333,6 +337,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
             const payloadFunc = async(payload: TriggerPayload) => {
                 for (const regOp of this.tableToReg.get(payload.tname) ?? []) {
+                    const mr = regOp.methodReg;
                     const mo = regOp.methodConfig as DBTriggerRegistration;
                     if (!mo.triggerConfig) continue;
                     const key: unknown[] = [];
@@ -343,8 +348,8 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                         keystr.push(`${cv?.toString()}`);
                     }
                     try {
-                        const cname = mo.className;
-                        const mname = mo.name;
+                        const cname = mr.className;
+                        const mname = mr.name;
                         const fullname = `${cname}.${mname}`;
                         if (mo.triggerIsWorkflow) {
                             // Record the time of the wf kicked off (if given)
@@ -407,7 +412,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                             if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
                             if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
                             payload.operation = TriggerOperation.RecordUpserted;
-                            await this.executor?.workflow(regOp.methodReg.registeredFunction as Workflow<unknown[], void>, wfParams, payload.operation, key, payload.record);
+                            await this.executor?.workflow(regOp.methodReg.registeredFunction as WorkflowFunction<unknown[], void>, wfParams, payload.operation, key, payload.record);
 
                             await this.executor?.upsertEventDispatchState({
                                 service: 'trigger',
@@ -420,13 +425,12 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                         }
                         else {
                             // Use original func, this may not be wrapped
-                            const mr = regOp.methodReg as MethodRegistration<unknown, unknown[], unknown>;
                             const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
                             await tfunc.call(undefined, payload.operation, key, payload.record);
                         }
                     }
                     catch(e) {
-                        this.executor?.logger.warn(`Caught an exception in trigger handling for "${mo.className}.${mo.name}"`);
+                        this.executor?.logger.warn(`Caught an exception in trigger handling for "${mr.className}.${mr.name}"`);
                         this.executor?.logger.warn(e);
                     }
                 }

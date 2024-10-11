@@ -132,6 +132,7 @@ export {
   DBOSEventReceiverRegistration,
   DBOSExecutorContext,
   DBNotification,
+  DBNotificationListener,
   DBOSEventReceiverQuery,
   DBOSEventReceiverState,
 } from "./eventreceiver";
