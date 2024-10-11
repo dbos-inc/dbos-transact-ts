@@ -252,9 +252,15 @@ async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBO
   return res.data as UserDBInstance;
 }
 
-export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
+export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
+
+  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName)
+  if (dbName === "") {
+    return 1
+  }
+
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
