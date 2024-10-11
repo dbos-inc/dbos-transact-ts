@@ -218,6 +218,10 @@ class TriggerPayloadQueue
             resolve(null);
         }
     }
+
+    restart() {
+        this.shutdown = false;
+    }
 }
 
 export class DBOSDBTrigger implements DBOSEventReceiver {
@@ -233,6 +237,8 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
     async initialize(executor: DBOSExecutorContext) {
         this.executor = executor;
+        this.shutdown = false;
+        this.payloadQ.restart();
 
         const hasTrigger: Set<string> = new Set();
         let hasAnyTrigger: boolean = false;
@@ -458,7 +464,8 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                 // Error in destroy, NBD
             }
         }
-        this.listeners = [];
+        this.dispatchLoops = [];
+        this.tableToReg = new Map();
     }
 
     logRegisteredEndpoints() {

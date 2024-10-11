@@ -130,7 +130,6 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.snRecordMap.get(2)?.status).toBe("Ordered");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
-    /*
         // Take down
         await (testRuntime as TestingRuntimeImpl).destroyEventReceivers();
 
@@ -148,10 +147,16 @@ describe("test-db-triggers", () => {
         DBOSTriggerTestClassSN.reset();
 
         await (testRuntime as TestingRuntimeImpl).initEventReceivers();
+
+        console.log("************************************************** Restarted *****************************************************");
+        DBOSTriggerTestClassSN.reset();
         // We had processed up to 5 before, 
         // The count of 7 is a bit confusing because we're sharing a table.  We expect all 4 orders to be sent based on time, and 3 based on SN
         while (DBOSTriggerTestClassSN.nSNUpdates < 7 || DBOSTriggerTestClassSN.nTSUpdates < 7) await sleepms(10);
         await sleepms(100);
+
+        console.log("************************************************** Catchup Complete *****************************************************");
+
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(7);
         // With 60 seconds, we will see all records again
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(7);
@@ -166,7 +171,6 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(4)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
-        */
     }, 15000);
 });
 
