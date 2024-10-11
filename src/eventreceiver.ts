@@ -4,6 +4,19 @@ import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
+import { Notification } from "pg";
+
+export type DBNotification = Notification;
+export type DBNotificationCallback = (n: DBNotification) => void;
+export interface DBNotificationListener {
+  close(): Promise<void>;
+}
+
+export interface DBOSEventReceiverRegistration {
+  methodConfig: unknown,
+  classConfig: unknown,
+  methodReg: MethodRegistrationBase
+}
 
 /*
  * Info provided to an event receiver at initialization,
@@ -26,7 +39,7 @@ export interface DBOSExecutorContext
    *  classConfig: the class info the receiver stored
    *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
    */
-  getRegistrationsFor(eri: DBOSEventReceiver) : {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[];
+  getRegistrationsFor(eri: DBOSEventReceiver) : DBOSEventReceiverRegistration[];
 
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
@@ -35,6 +48,13 @@ export interface DBOSExecutorContext
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+
+  getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined>;
+  upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
+
+  queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]>;
+
+  userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener>;
 }
 
 /*
@@ -51,4 +71,25 @@ export interface DBOSEventReceiver
     destroy() : Promise<void>;
     initialize(executor: DBOSExecutorContext) : Promise<void>;
     logRegisteredEndpoints() : void;
+}
+
+export interface DBOSEventReceiverState
+{
+  service: string;
+  workflowFnName: string;
+  key: string;
+  value?: string;
+  updateTime?: number;
+  updateSeq?: bigint;
+}
+
+export interface DBOSEventReceiverQuery
+{
+  service?: string;
+  workflowFnName?: string;
+  key?: string;
+  startTime?: number;
+  endTime?: number;
+  startSeq?: bigint;
+  endSeq?: bigint;
 }

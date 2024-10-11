@@ -57,6 +57,7 @@ export class DBOSRuntime {
       this.scheduler = new DBOSScheduler(this.dbosExec);
       this.scheduler.initScheduler();
       this.scheduler.logRegisteredSchedulerEndpoints();
+
       wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
       this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
 
