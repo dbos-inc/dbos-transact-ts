@@ -4,9 +4,10 @@ import axios, { AxiosError } from "axios";
 import jwt from "jsonwebtoken";
 import path from "node:path";
 import { loadConfigFile } from "./configutils.js";
-import { input } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import validator from "validator";
 import { authenticate, authenticateWithRefreshToken } from "./users/authentication.js";
+import { UserDBInstance } from "./applications/types.js";
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -366,4 +367,56 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
     process.exit(1);
   }
   return;
+}
+
+
+export async function chooseExistingCloudDatabase(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
+  // List existing database instances.
+  let userDBs: UserDBInstance[] = [];
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    userDBs = res.data as UserDBInstance[];
+  } catch (e) {
+    const errorLabel = `Failed to list databases`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return "";
+  }
+
+  if (userDBName) {
+    // Check if the database instance exists or not.
+    const dbExists = userDBs.some((db) => db.PostgresInstanceName === userDBName);
+    if (dbExists) {
+      return userDBName;
+    }
+  }
+
+  if (userDBName || userDBs.length === 0) {
+    logger.error("No databases found")
+    return "";
+  } else if (userDBs.length > 1) {
+    // If there is more than one database instance, prompt the user to select one.
+    userDBName = await select({
+      message: "Choose a database instance for this app:",
+      choices: userDBs.map((db) => ({
+        name: db.PostgresInstanceName,
+        value: db.PostgresInstanceName,
+      })),
+    });
+  } else {
+    // Use the only available database server.
+    userDBName = userDBs[0].PostgresInstanceName;
+    logger.info(`Using database instance: ${userDBName}`);
+  }
+  return userDBName;
 }

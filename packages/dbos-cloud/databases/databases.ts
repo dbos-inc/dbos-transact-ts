@@ -1,16 +1,10 @@
 import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials, chooseExistingCloudDatabase, } from "../cloudutils.js";
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
+import { UserDBInstance } from "../applications/types.js";
 
-export interface UserDBInstance {
-  readonly PostgresInstanceName: string;
-  readonly Status: string;
-  readonly HostName: string;
-  readonly Port: number;
-  readonly DatabaseUsername: string;
-}
 
 function isValidPassword(logger: Logger, password: string): boolean {
   if (password.length < 8 || password.length > 128) {
@@ -336,8 +330,15 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string, password: string) {
+export async function connect(host: string, dbName: string | undefined, password: string) {
   const logger = getLogger();
+
+  const userCredentials = await getCloudCredentials(host, logger);
+
+  dbName = await chooseExistingCloudDatabase(logger, host, userCredentials, dbName)
+  if (dbName === "") {
+    return 1
+  }
 
   try {
     if(!existsSync(dbosConfigFilePath)) {
@@ -350,7 +351,7 @@ export async function connect(host: string, dbName: string, password: string) {
     copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
     logger.info("Retrieving cloud database info...");
-    const userDBInfo = await getUserDBInfo(host, dbName);
+    const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
     console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
     console.log(`Host Name: ${userDBInfo.HostName}`);
     console.log(`Port: ${userDBInfo.Port}`);

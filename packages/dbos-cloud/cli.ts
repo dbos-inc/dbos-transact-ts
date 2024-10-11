@@ -305,9 +305,9 @@ databaseCommands
 databaseCommands
   .command("connect")
   .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
-  .argument("<name>", "database instance name")
+  .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbname: string, options: { password: string | undefined; }) => {
+  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
     if (!options.password) {
       options.password = prompt("Database Password: ", { echo: "*" });
     }
