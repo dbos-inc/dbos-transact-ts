@@ -4,17 +4,22 @@ import { Writable } from "stream";
 import { Client } from "pg";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import fs from "fs";
+import { HealthUrl } from "../../src/httpServer/server";
 
-async function waitForMessageTest(command: ChildProcess, port: string) {
+async function waitForMessageTest(command: ChildProcess, port: string, adminPort?: string) {
   const stdout = command.stdout as unknown as Writable;
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
+
+  if (!adminPort) {
+    adminPort = (Number(port) + 1).toString();
+  }
 
   const waitForMessage = new Promise<void>((resolve, reject) => {
     const onData = (data: Buffer) => {
       const message = data.toString();
       process.stdout.write(message);
-      if (message.includes("Server is running at")) {
+      if (message.includes("DBOS Admin Server is running at")) {
         stdout.off("data", onData); // remove listener
         resolve();
       }
@@ -34,6 +39,8 @@ async function waitForMessageTest(command: ChildProcess, port: string) {
     try {
       const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
       expect(response.status).toBe(200);
+      const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
+      expect(healthRes.status).toBe(200);
     } catch (error) {
       const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
       console.error(errMsg);
@@ -162,7 +169,7 @@ describe("runtime-tests", () => {
     }
   });
 
-  test("runtime hello with port provided in configuration file", async () => {
+  test("runtime hello with ports provided in configuration file", async () => {
     const mockDBOSConfigYamlString = `
 database:
   hostname: 'localhost'
@@ -174,6 +181,7 @@ database:
   app_db_client: 'knex'
 runtimeConfig:
   port: 6666
+  admin_port: 6789
 `;
     const filePath = "dbos-config.yaml";
     fs.copyFileSync(filePath, `${filePath}.bak`);
@@ -183,7 +191,7 @@ runtimeConfig:
       const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
         env: process.env,
       });
-      await waitForMessageTest(command, "6666");
+      await waitForMessageTest(command, "6666", "6789");
     } finally {
       fs.copyFileSync(`${filePath}.bak`, filePath);
       fs.unlinkSync(`${filePath}.bak`);

@@ -85,6 +85,7 @@ describe("dbos-config", () => {
           - a
           - b
           - b
+        admin_port: 2345
       `;
       jest.spyOn(utils, "readFileSync").mockReturnValue(mockDBOSConfigWithEntryPoints);
 
@@ -92,6 +93,7 @@ describe("dbos-config", () => {
 
       expect(runtimeConfig).toBeDefined();
       expect(runtimeConfig?.port).toBe(1234);
+      expect(runtimeConfig?.admin_port).toBe(2345);
       expect(runtimeConfig.entrypoints).toBeDefined();
       expect(runtimeConfig.entrypoints).toBeInstanceOf(Array);
       expect(runtimeConfig.entrypoints).toHaveLength(2);
