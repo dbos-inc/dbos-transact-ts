@@ -309,10 +309,8 @@ export class DBOSDBTrigger {
             for (const q of catchups) {
                 const catchupFunc =  async () => {
                     try {
-                        const catchupClient = await this.executor.procedurePool.connect();
-                        const rows = await catchupClient.query<{payload: string}>(q.query, q.params);
-                        catchupClient.release();
-                        for (const r of rows.rows) {
+                        const rows = await this.executor.queryUserDB(q.query, q.params) as {payload: string}[];
+                        for (const r of rows) {
                             const payload = JSON.parse(r.payload) as TriggerPayload;
                             this.payloadQ.enqueueCatchup(payload);
                         }
