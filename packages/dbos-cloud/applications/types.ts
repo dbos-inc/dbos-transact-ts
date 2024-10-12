@@ -29,3 +29,11 @@ export function prettyPrintApplicationVersion(version: ApplicationVersion) {
   console.log(`Version: ${version.Version}`);
   console.log(`Creation Timestamp: ${version.CreationTime}`);
 }
+
+export interface UserDBInstance {
+  readonly PostgresInstanceName: string;
+  readonly Status: string;
+  readonly HostName: string;
+  readonly Port: number;
+  readonly DatabaseUsername: string;
+}

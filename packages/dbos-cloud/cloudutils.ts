@@ -367,3 +367,4 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
   }
   return;
 }
+

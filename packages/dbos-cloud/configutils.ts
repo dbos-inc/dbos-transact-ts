@@ -11,6 +11,7 @@ export interface ConfigFile {
     username: string;
     password?: string;
     app_db_name: string;
+    local_suffix: boolean;
   };
 }
 

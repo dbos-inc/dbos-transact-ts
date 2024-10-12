@@ -246,11 +246,11 @@ databaseCommands
 databaseCommands
   .command("reset-password")
   .description("Reset password for a Postgres database instance")
-  .argument("<name>", "database instance name")
+  .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbName: string, options: { password: string }) => {
+  .action(async (dbName: string | undefined, options: { password: string }) => {
     if (!options.password) {
-      options.password = prompt("Database Password: ", { echo: "*" });
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
     const exitCode = await resetDBCredentials(DBOSCloudHost, dbName, options.password);
     process.exit(exitCode);
@@ -305,15 +305,29 @@ databaseCommands
 databaseCommands
   .command("connect")
   .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
-  .argument("<name>", "database instance name")
+  .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbname: string, options: { password: string | undefined; }) => {
+  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
     if (!options.password) {
-      options.password = prompt("Database Password: ", { echo: "*" });
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
-    const exitCode = await connect(DBOSCloudHost, dbname, options.password);
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
     process.exit(exitCode);
   });
+
+  databaseCommands
+  .command("local")
+  .description(`Configure ${dbosConfigFilePath} to use a DBOS Cloud database for local development`)
+  .argument("[name]", "database instance name")
+  .option("-W, --password <string>", "Specify the database user password")
+  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
+    if (!options.password) {
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
+    }
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
+    process.exit(exitCode);
+  });
+
 
 /////////////////////
 /* USER DASHBOARDS */
