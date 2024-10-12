@@ -250,7 +250,7 @@ databaseCommands
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbName: string | undefined, options: { password: string }) => {
     if (!options.password) {
-      options.password = prompt("Database Password: ", { echo: "*" });
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
     const exitCode = await resetDBCredentials(DBOSCloudHost, dbName, options.password);
     process.exit(exitCode);
@@ -309,7 +309,7 @@ databaseCommands
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
     if (!options.password) {
-      options.password = prompt("Database Password: ", { echo: "*" });
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
     process.exit(exitCode);
@@ -322,7 +322,7 @@ databaseCommands
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
     if (!options.password) {
-      options.password = prompt("Database Password: ", { echo: "*" });
+      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
     process.exit(exitCode);
