@@ -41,7 +41,7 @@ export async function registerApp(
 
   try {
     logger.info(`Registering application: ${appName}`);
-    let body: RegisterAppRequest = {
+    const body: RegisterAppRequest = {
       name: appName,
       database: dbname,
       language: appLanguage,
