@@ -21,12 +21,11 @@ import { Application, UserDBInstance } from "./types.js";
 import JSZip from "jszip";
 import fg from "fast-glob";
 import chalk from "chalk";
-import { createUserDb } from "../databases/databases.js";
 import { registerApp } from "./register-app.js";
 import { updateApp } from "./update-app.js";
-import { input, select } from "@inquirer/prompts";
 import { Logger } from "winston";
 import { loadConfigFile } from "../configutils.js";
+import { chooseAppDBServer } from "../databases/databases.js";
 
 type DeployOutput = {
   ApplicationName: string;
