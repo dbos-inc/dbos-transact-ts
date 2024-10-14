@@ -17,7 +17,7 @@ import {
   DBOSCloudCredentials,
 } from "../cloudutils.js";
 import path from "path";
-import { Application, UserDBInstance } from "./types.js";
+import { Application } from "./types.js";
 import JSZip from "jszip";
 import fg from "fast-glob";
 import chalk from "chalk";
