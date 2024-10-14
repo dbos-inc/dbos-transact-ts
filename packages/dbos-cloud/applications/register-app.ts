@@ -1,8 +1,32 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, CloudAPIErrorResponse, retrieveApplicationLanguage, DBOSCloudCredentials } from "../cloudutils.js";
+import {
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  isCloudAPIErrorResponse,
+  retrieveApplicationName,
+  CloudAPIErrorResponse,
+  retrieveApplicationLanguage,
+  DBOSCloudCredentials,
+} from "../cloudutils.js";
 import chalk from "chalk";
 
-export async function registerApp(dbname: string, host: string, enableTimetravel: boolean = false, appName?: string, userCredentials?: DBOSCloudCredentials): Promise<number> {
+type RegisterAppRequest = {
+  name: string;
+  database: string;
+  language: string;
+  provenancedb?: string;
+  executors_memory_mib?: number;
+};
+
+export async function registerApp(
+  dbname: string,
+  host: string,
+  enableTimetravel: boolean = false,
+  appName?: string,
+  executorsMemoryMib?: number,
+  userCredentials?: DBOSCloudCredentials
+): Promise<number> {
   const logger = getLogger();
   if (!userCredentials) {
     userCredentials = await getCloudCredentials(host, logger);
@@ -17,21 +41,22 @@ export async function registerApp(dbname: string, host: string, enableTimetravel
 
   try {
     logger.info(`Registering application: ${appName}`);
-    const register = await axios.put(
-      `https://${host}/v1alpha1/${userCredentials.organization}/applications`,
-      {
-        name: appName,
-        database: dbname,
-        language: appLanguage,
-        provenancedb: enableTimetravel ? dbname : "",
+    let body: RegisterAppRequest = {
+      name: appName,
+      database: dbname,
+      language: appLanguage,
+      provenancedb: enableTimetravel ? dbname : "",
+    };
+    if (executorsMemoryMib) {
+      body.executors_memory_mib = executorsMemoryMib;
+    }
+
+    const register = await axios.put(`https://${host}/v1alpha1/${userCredentials.organization}/applications`, body, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
       },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: bearerToken,
-        },
-      }
-    );
+    });
     const uuid = register.data as string;
     logger.info(`${appName} ID: ${uuid}`);
     logger.info(`Successfully registered ${appName}!`);

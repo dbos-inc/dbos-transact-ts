@@ -6,6 +6,7 @@ export type Application = {
   Status: string;
   Version: string;
   AppURL: string;
+  ExecutorsMemoryMib: number;
 };
 
 export function prettyPrintApplication(app: Application) {
@@ -30,6 +31,7 @@ export function prettyPrintApplicationVersion(version: ApplicationVersion) {
   console.log(`Creation Timestamp: ${version.CreationTime}`);
 }
 
+// Either types.ts should be in the parent folder, or UserDBInstance should be in databases/types.ts
 export interface UserDBInstance {
   readonly PostgresInstanceName: string;
   readonly Status: string;

@@ -113,8 +113,9 @@ applicationCommands
   .argument("[string]", "application name (Default: name from package.json)")
   .requiredOption("-d, --database <string>", "Specify a Postgres database instance for this application")
   .option("--enable-timetravel", "Enable time travel for the application", false)
-  .action(async (appName: string | undefined, options: { database: string, enableTimetravel: boolean }) => {
-    const exitCode = await registerApp(options.database, DBOSCloudHost, options.enableTimetravel, appName);
+  .option("--executors-memory-mib <number>", "Specify the memory in MiB for the executors of this application")
+  .action(async (appName: string | undefined, options: { database: string; enableTimetravel: boolean; executorsMemoryMib?: number }) => {
+    const exitCode = await registerApp(options.database, DBOSCloudHost, options.enableTimetravel, appName, options.executorsMemoryMib);
     process.exit(exitCode);
   });
 
@@ -125,9 +126,20 @@ applicationCommands
   .option("-p, --previous-version <string>", "Specify a previous version to restore")
   .option("-d, --database <string>", "Specify a Postgres database instance for this application. This cannot be changed after the application is first deployed.")
   .option("--enable-timetravel", "Enable time travel for the application. This cannot be changed after the application is first deployed.", false)
+  .option("--executors-memory-mib <number>", "Specify the memory in MiB for the executors of this application")
   .option("--verbose", "Verbose log of deployment step")
-  .action(async (appName: string | undefined, options: { verbose?: boolean, previousVersion?: string, database?: string, enableTimetravel: boolean }) => {
-    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName, options.database, options.enableTimetravel);
+  .action(async (appName: string | undefined, options: { verbose?: boolean; previousVersion?: string; database?: string; enableTimetravel: boolean; executorsMemoryMib?: number }) => {
+    const exitCode = await deployAppCode(
+      DBOSCloudHost,
+      false,
+      options.previousVersion ?? null,
+      options.verbose ?? false,
+      null,
+      appName,
+      options.database,
+      options.enableTimetravel,
+      options.executorsMemoryMib
+    );
     process.exit(exitCode);
   });
 
@@ -285,7 +297,7 @@ databaseCommands
   .option("-W, --password <string>", "Specify password for the dbosadmin user")
   .option("--enable-timetravel", "Enable time travel on the linked database", false)
   .option("--supabase-ref <string>", "Link a Supabase database")
-  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseRef: string | undefined}) => {
+  .action(async (dbname: string, options: { hostname: string; port: string; password: string | undefined; enableTimetravel: boolean; supabaseRef: string | undefined }) => {
     if (!options.password) {
       options.password = prompt("Password for the dbosadmin user: ", { echo: "*" });
     }
@@ -307,7 +319,7 @@ databaseCommands
   .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
+  .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
     if (!options.password) {
       options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
@@ -315,19 +327,18 @@ databaseCommands
     process.exit(exitCode);
   });
 
-  databaseCommands
+databaseCommands
   .command("local")
   .description(`Configure ${dbosConfigFilePath} to use a DBOS Cloud database for local development`)
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
-  .action(async (dbname: string | undefined, options: { password: string | undefined; }) => {
+  .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
     if (!options.password) {
       options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
     }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
     process.exit(exitCode);
   });
-
 
 /////////////////////
 /* USER DASHBOARDS */
