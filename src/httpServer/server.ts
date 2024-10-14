@@ -56,6 +56,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
+    DBOSHttpServer.registerDeactivateEndpoint(this.dbosExec, this.adminRouter);
     this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
@@ -175,14 +176,17 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
    * Deactivate consumers so that they don'nt start new workflows.
    */
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    console.log("Registering DeactivateUrl", DeactivateUrl);
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       dbosExec.logger.info("Deactivating consumers");
       dbosExec.deactivateConsumers();
+      dbosExec.logger.info("Deactivating Scheduler");
       dbosExec.scheduler?.destroyScheduler();
+      koaCtxt.body = "Deactivated";
       await koaNext();
     };
-    router.post(DeactivateUrl, deactivateHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Perf GET ${HealthUrl}`);
+    router.get(DeactivateUrl, deactivateHandler);
+    dbosExec.logger.info(`DBOS Server deactivate GET ${DeactivateUrl}`);
   }
 
   /**
