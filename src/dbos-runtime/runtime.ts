@@ -46,8 +46,6 @@ export class DBOSRuntime {
   async initAndStart() {
     try {
 
-      console.log(`Starting server with my private build on port ${this.runtimeConfig.port}`);
-
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
