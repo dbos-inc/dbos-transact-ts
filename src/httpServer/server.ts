@@ -179,9 +179,9 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
     console.log("Registering DeactivateUrl", DeactivateUrl);
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       dbosExec.logger.info("Deactivating consumers");
-      dbosExec.deactivateConsumers();
+      await dbosExec.deactivateConsumers();
       dbosExec.logger.info("Deactivating Scheduler");
-      dbosExec.scheduler?.destroyScheduler();
+      await dbosExec.scheduler?.destroyScheduler();
       koaCtxt.body = "Deactivated";
       await koaNext();
     };

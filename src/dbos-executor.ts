@@ -49,7 +49,6 @@ import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
-import { scheduler } from "node:timers/promises";
 import { DBOSScheduler } from './scheduler/scheduler';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
