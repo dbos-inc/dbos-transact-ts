@@ -15,7 +15,7 @@ export async function updateApp(host: string, appName?: string, executorsMemoryM
 
   try {
     logger.info(`Updating application: ${appName}`);
-    const register = await axios.patch(
+    await axios.patch(
       `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`,
       {
         executors_memory_mib: executorsMemoryMib,
