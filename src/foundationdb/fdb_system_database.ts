@@ -401,14 +401,6 @@ export class FoundationDBSystemDatabase implements SystemDatabase {
     await sleepms(durationMS); // TODO: Implement
   }
 
-  /* SCHEDULER */
-  getLastScheduledTime(_wfn: string): Promise<number | null> {
-    return Promise.resolve(null);
-  }
-  setLastScheduledTime(_wfn: string, _invtime: number): Promise<number | null> {
-    return Promise.resolve(null);
-  }
-
   // Event dispatcher queries / updates
   async getEventDispatchState(_svc: string, _wfn: string, _key: string): Promise<DBOSEventReceiverState | undefined> {
     return Promise.resolve(undefined);
