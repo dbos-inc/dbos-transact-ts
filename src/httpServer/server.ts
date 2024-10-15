@@ -24,6 +24,7 @@ import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
+import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -182,6 +183,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
       await dbosExec.deactivateConsumers();
       dbosExec.logger.info("Deactivating Scheduler");
       await dbosExec.scheduler?.destroyScheduler();
+      wfQueueRunner.stop();
       koaCtxt.body = "Deactivated";
       await koaNext();
     };
