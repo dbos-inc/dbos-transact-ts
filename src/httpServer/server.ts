@@ -24,7 +24,7 @@ import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
-import { wfQueueRunner, WorkflowQueue } from "../wfqueue";
+import { wfQueueRunner } from "../wfqueue";
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
