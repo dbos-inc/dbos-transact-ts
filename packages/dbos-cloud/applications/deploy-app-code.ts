@@ -22,7 +22,6 @@ import JSZip from "jszip";
 import fg from "fast-glob";
 import chalk from "chalk";
 import { registerApp } from "./register-app.js";
-import { updateApp } from "./update-app.js";
 import { Logger } from "winston";
 import { loadConfigFile } from "../configutils.js";
 import { chooseAppDBServer } from "../databases/databases.js";
@@ -61,7 +60,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     const fileData = readFileSync(file);
     const filePerms = getFilePermissions(file);
     logger.debug(`      File permissions: ${filePerms.toString(8)}`);
-    zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms });
+    zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms});
   });
 
   // Add the interpolated config file at package root
@@ -85,8 +84,7 @@ export async function deployAppCode(
   targetDatabaseName: string | null = null, // Used for changing database instance
   appName: string | undefined,
   userDBName: string | undefined = undefined, // Used for registering the app
-  enableTimeTravel: boolean = false,
-  executorsMemoryMib?: number
+  enableTimeTravel: boolean = false
 ): Promise<number> {
   const startTime = Date.now();
   const logger = getLogger(verbose);
@@ -105,7 +103,7 @@ export async function deployAppCode(
 
   const appLanguage = retrieveApplicationLanguage();
 
-  if (appLanguage === (AppLanguages.Node as string)) {
+  if (appLanguage === AppLanguages.Node as string) {
     logger.debug("Checking for package-lock.json...");
     const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
     logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
@@ -114,7 +112,7 @@ export async function deployAppCode(
       logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
       return 1;
     }
-  } else if (appLanguage === (AppLanguages.Python as string)) {
+  } else if (appLanguage === AppLanguages.Python as string) {
     logger.debug("Checking for requirements.txt...");
     const requirementsTxtExists = existsSync(path.join(process.cwd(), "requirements.txt"));
     logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
@@ -124,7 +122,7 @@ export async function deployAppCode(
       return 1;
     }
   } else {
-    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
+    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
     return 1;
   }
 
@@ -147,36 +145,20 @@ export async function deployAppCode(
     } else {
       logger.info("Time travel is disabled for this application");
     }
-    const ret = await registerApp(userDBName, host, enableTimeTravel, appName, executorsMemoryMib);
+    const ret = await registerApp(userDBName, host, enableTimeTravel, appName);
     if (ret !== 0) {
       return 1;
     }
   } else {
     logger.info(`Application ${appName} exists, updating...`);
     if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
-      logger.warn(
-        `Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(
-          userDBName
-        )}.`
-      );
+      logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
     }
 
     // Make sure the app database is the same.
-    if (appRegistered.ApplicationDatabaseName && dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName) {
-      logger.error(
-        `Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(
-          dbosConfig.database.app_db_name
-        )}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`
-      );
+    if (appRegistered.ApplicationDatabaseName && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
+      logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
       return 1;
-    }
-
-    // Check if the user wants to update the executors memory
-    if (executorsMemoryMib && appRegistered.ExecutorsMemoryMib !== executorsMemoryMib) {
-      const ret = await updateApp(host, appName, executorsMemoryMib, userCredentials);
-      if (ret !== 0) {
-        return 1;
-      }
     }
   }
 

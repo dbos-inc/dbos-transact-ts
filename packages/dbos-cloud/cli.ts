@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { registerApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
+import { registerApp, updateApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
 import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
@@ -120,26 +120,25 @@ applicationCommands
   });
 
 applicationCommands
+  .command("update")
+  .description("Update this application")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .option("--executors-memory-mib <number>", "Specify the memory in MiB for the executors of this application")
+  .action(async (appName: string | undefined, options: { executorsMemoryMib?: number }) => {
+    const exitCode = await updateApp(DBOSCloudHost, appName, options.executorsMemoryMib);
+    process.exit(exitCode);
+  });
+
+applicationCommands
   .command("deploy")
   .description("Deploy this application to the cloud and run associated database migration commands")
   .argument("[string]", "application name (Default: name from package.json)")
   .option("-p, --previous-version <string>", "Specify a previous version to restore")
   .option("-d, --database <string>", "Specify a Postgres database instance for this application. This cannot be changed after the application is first deployed.")
   .option("--enable-timetravel", "Enable time travel for the application. This cannot be changed after the application is first deployed.", false)
-  .option("--executors-memory-mib <number>", "Specify the memory in MiB for the executors of this application")
   .option("--verbose", "Verbose log of deployment step")
-  .action(async (appName: string | undefined, options: { verbose?: boolean; previousVersion?: string; database?: string; enableTimetravel: boolean; executorsMemoryMib?: number }) => {
-    const exitCode = await deployAppCode(
-      DBOSCloudHost,
-      false,
-      options.previousVersion ?? null,
-      options.verbose ?? false,
-      null,
-      appName,
-      options.database,
-      options.enableTimetravel,
-      options.executorsMemoryMib
-    );
+  .action(async (appName: string | undefined, options: { verbose?: boolean; previousVersion?: string; database?: string; enableTimetravel: boolean }) => {
+    const exitCode = await deployAppCode(DBOSCloudHost, false, options.previousVersion ?? null, options.verbose ?? false, null, appName, options.database, options.enableTimetravel);
     process.exit(exitCode);
   });
 
