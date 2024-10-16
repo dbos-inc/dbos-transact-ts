@@ -5,13 +5,22 @@ import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
 import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
 import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
-import { notifications, operation_outputs, workflow_status, workflow_events, workflow_inputs, scheduler_state, workflow_queue } from "../schemas/system_db_schema";
+import {
+  notifications,
+  operation_outputs,
+  workflow_status,
+  workflow_events,
+  workflow_inputs,
+  workflow_queue,
+  event_dispatch_kv,
+} from "../schemas/system_db_schema";
 import { sleepms, findPackageRoot, DBOSJSON } from "./utils";
 import { HTTPRequest } from "./context";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import knex, { Knex } from "knex";
 import path from "path";
 import { WorkflowQueue } from "./wfqueue";
+import { DBOSEventReceiverQuery, DBOSEventReceiverState } from "./eventreceiver";
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -55,10 +64,19 @@ export interface SystemDatabase {
       timeoutFunctionID: number
     }): Promise<T | null>;
 
-  // Scheduler queries
-  //  These two maintain exactly once - make sure we kick off the workflow at least once, and wf unique ID does the rest
-  getLastScheduledTime(wfn: string): Promise<number | null>; // Last workflow we are sure we invoked
-  setLastScheduledTime(wfn: string, invtime: number): Promise<number | null>; // We are now sure we invoked another
+  // Event receiver state queries / updates
+  // An event dispatcher may keep state in the system database
+  //   The 'service' should be unique to the event receiver keeping state, to separate from others
+  //   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched
+  //   The 'key' field allows multiple records per service / workflow function
+  //   The service+workflowFnName+key uniquely identifies the record, which is associated with:
+  //     'value' - a value set by the event receiver service; this string may be a JSON to keep complex details
+  //     A version, either as a sequence number (long integer), or as a time (high precision floating point).
+  //       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
+  //       The upsert returns the current record, which is useful if it is more recent.
+  getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSEventReceiverState | undefined>;
+  queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]>;
+  upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   // Workflow management
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
@@ -799,31 +817,95 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.notificationsClient.on("notification", handler);
   }
 
-  /* SCHEDULER */
-  async getLastScheduledTime(wfn: string): Promise<number | null> {
-    const res = await this.pool.query<scheduler_state>(`
-      SELECT last_run_time
-      FROM ${DBOSExecutor.systemDBSchemaName}.scheduler_state
-      WHERE workflow_fn_name = $1;
-    `, [wfn]);
+  // Event dispatcher queries / updates
+  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+    const res = await this.pool.query<event_dispatch_kv>(`
+      SELECT *
+      FROM ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv
+      WHERE workflow_fn_name = $1
+      AND service_name = $2
+      AND key = $3;
+    `, [wfn, svc, key]);
 
-    let v = res.rows[0]?.last_run_time ?? null;
-    if (v !== null) v = parseInt(`${v}`);
-    return v;
+    if (res.rows.length === 0) return undefined;
+
+    return {
+      service: res.rows[0].service_name,
+      workflowFnName: res.rows[0].workflow_fn_name,
+      key: res.rows[0].key,
+      value: res.rows[0].value,
+      updateTime: res.rows[0].update_time,
+      updateSeq: (res.rows[0].update_seq !== null && res.rows[0].update_seq !== undefined ? BigInt(res.rows[0].update_seq) : undefined),
+    };
   }
 
-  async setLastScheduledTime(wfn: string, invtime: number): Promise<number | null> {
-    const res = await this.pool.query<scheduler_state>(`
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.scheduler_state (workflow_fn_name, last_run_time)
-      VALUES ($1, $2)
-      ON CONFLICT (workflow_fn_name)
-      DO UPDATE SET last_run_time = GREATEST(EXCLUDED.last_run_time, scheduler_state.last_run_time)
-      RETURNING last_run_time;
-    `, [wfn, invtime]);
-
-    return parseInt(`${res.rows[0].last_run_time}`);
+  async queryEventDispatchState(input: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
+    let query = this.knexDB<event_dispatch_kv>(`${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv`);
+    if (input.service) {
+      query = query.where('service_name', input.service);
+    }
+    if (input.workflowFnName) {
+      query = query.where('workflow_fn_name', input.workflowFnName);
+    }
+    if (input.key) {
+      query = query.where('key', input.key);
+    }
+    if (input.startTime) {
+      query = query.where('update_time', '>=', new Date(input.startTime).getTime());
+    }
+    if (input.endTime) {
+      query = query.where('update_time', '<=', new Date(input.endTime).getTime());
+    }
+    if (input.startSeq) {
+      query = query.where('update_seq', '>=', input.startSeq);
+    }
+    if (input.endSeq) {
+      query = query.where('update_seq', '<=', input.endSeq);
+    }
+    const rows = await query.select();
+    const ers = rows.map((row) => { return {
+      service: row.service_name,
+      workflowFnName: row.workflow_fn_name,
+      key: row.key,
+      value: row.value,
+      updateTime: row.update_time,
+      updateSeq: (row.update_seq !== undefined && row.update_seq !== null ? BigInt(row.update_seq) : undefined),
+    }});
+    return ers;
   }
 
+  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+    const res = await this.pool.query<event_dispatch_kv>(`
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
+        service_name, workflow_fn_name, key, value, update_time, update_seq)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (service_name, workflow_fn_name, key)
+      DO UPDATE SET
+        update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
+        update_seq =  GREATEST(EXCLUDED.update_seq,  event_dispatch_kv.update_seq),
+        value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time OR EXCLUDED.update_seq > event_dispatch_kv.update_seq OR
+                            (event_dispatch_kv.update_time IS NULL and event_dispatch_kv.update_seq IS NULL))
+          THEN EXCLUDED.value ELSE event_dispatch_kv.value END
+      RETURNING value, update_time, update_seq;
+    `, [
+      state.service,
+      state.workflowFnName,
+      state.key,
+      state.value,
+      state.updateTime,
+      state.updateSeq,
+    ]);
+
+    return {
+      service: state.service,
+      workflowFnName: state.workflowFnName,
+      key: state.key,
+      value: res.rows[0].value,
+      updateTime: res.rows[0].update_time,
+      updateSeq: (res.rows[0].update_seq !== undefined && res.rows[0].update_seq !== null ? BigInt(res.rows[0].update_seq) : undefined),
+    };
+  }
+  
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`).orderBy('created_at', 'desc');
     if (input.workflowName) {
@@ -880,7 +962,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
-    const _res = await this.pool.query<scheduler_state>(`
+    const _res = await this.pool.query<workflow_queue>(`
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
       VALUES ($1, $2)
       ON CONFLICT (workflow_uuid)

@@ -151,10 +151,12 @@ export interface MethodRegistrationBase {
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
-eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
+  eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
   registeredFunction: Function | undefined;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  origFunction: Function;
 
   invoke(pthis: unknown, args: unknown[]): unknown;
 }

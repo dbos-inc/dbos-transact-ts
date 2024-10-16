@@ -39,9 +39,16 @@ export interface workflow_inputs {
   inputs: string;
 }
 
-export interface scheduler_state {
+export interface event_dispatch_kv {
+  // Key fields
+  service_name: string;
   workflow_fn_name: string;
-  last_run_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
+  key: string;
+
+  // Payload fields
+  value?: string;
+  update_time?: number; // Timestamp of record (for upsert)
+  update_seq?: bigint; // Sequence number of record (for upsert)
 }
 
 export interface workflow_queue {
