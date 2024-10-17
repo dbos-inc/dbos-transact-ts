@@ -82,6 +82,7 @@ interface SQSConfig {
     awscfg?: AWSServiceConfig;
     queueUrl?: string;
     getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
+    workflowQueueName?: string;
 }
 
 @SQSConfigure({awscfgname: 'sqs_receiver'})
@@ -101,6 +102,9 @@ class SQSEventProcessor {
   }
 }
 ```
+
+### Concurrency and Rate Limiting
+By default, `@SQSMessageConsumer` workflows are started immediately after message receipt.  If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/workflow-queues).
 
 ### Once-And-Only-Once (OAOO) Semantics
 Typical application processing for standard SQS queues implements "at least once" processing of the message:
