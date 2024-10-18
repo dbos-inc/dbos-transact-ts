@@ -9,7 +9,7 @@ import { DBOSHttpServer } from "../httpServer/server";
 import { DBOSExecutor, DBOSConfig } from "../dbos-executor";
 import { dbosConfigFilePath, parseConfigFile } from "../dbos-runtime/config";
 import { Transaction } from "../transaction";
-import { Workflow, WorkflowHandle, WorkflowParams } from "../workflow";
+import { GetWorkflowsInput, GetWorkflowsOutput, Workflow, WorkflowHandle, WorkflowParams } from "../workflow";
 import { Http2ServerRequest, Http2ServerResponse } from "http2";
 import { ServerResponse } from "http";
 import { SystemDatabase } from "../system_database";
@@ -59,6 +59,8 @@ export interface TestingRuntime {
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, params?: WorkflowInvokeParams, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
@@ -270,6 +272,11 @@ export class TestingRuntimeImpl implements TestingRuntime {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
     return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
+
+  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    return await this.getDBOSExec().systemDatabase.getWorkflows(input);
+  }
+
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument

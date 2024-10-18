@@ -1,5 +1,5 @@
 import { PoolClient } from "pg";
-import { Scheduled, SchedulerMode, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
+import { Scheduled, SchedulerMode, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext, WorkflowQueue } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
 import { sleepms } from "../../src/utils";
@@ -36,14 +36,18 @@ describe("scheduled-wf-tests-simple", () => {
     });
 });
 
+const q = new WorkflowQueue("schedQ", 1);
+
 class DBOSSchedTestClass {
     static nCalls = 0;
+    static nQCalls = 0;
     static nTooEarly = 0;
     static nTooLate = 0;
     static doSleep = true;
 
     static reset(doSleep: boolean) {
         DBOSSchedTestClass.nCalls = 0;
+        DBOSSchedTestClass.nQCalls = 0;
         DBOSSchedTestClass.nTooEarly = 0;
         DBOSSchedTestClass.nTooLate = 0;
         DBOSSchedTestClass.doSleep = doSleep;
@@ -65,6 +69,13 @@ class DBOSSchedTestClass {
         if (DBOSSchedTestClass.doSleep) {
             await ctxt.sleepms(2000);
         }
+    }
+
+    @Scheduled({crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive, queueName: q.name})
+    @Workflow()
+    static async scheduledDefaultQ(_ctxt: WorkflowContext, _schedTime: Date, _startTime: Date) {
+        ++DBOSSchedTestClass.nQCalls;
+        return Promise.resolve();
     }
 
     // This should run every 30 minutes. Making sure the testing runtime can correctly exit within a reasonable time.
@@ -173,6 +184,18 @@ describe("scheduled-wf-tests-when-active", () => {
             await sleepms(3000);
             expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
             expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
+            expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
+
+            const wfs = await testRuntime.getWorkflows({
+                workflowName: "scheduledDefaultQ",
+            });
+
+            let foundQ = false;
+            for (const wfid of wfs.workflowUUIDs) {
+                const stat = await testRuntime.retrieveWorkflow(wfid).getStatus();
+                if (stat?.queueName === q.name) foundQ = true;
+            }
+            expect (foundQ).toBeTruthy();
         }
         finally {
             await testRuntime.destroy();
