@@ -179,8 +179,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     console.log("Registering DeactivateUrl", DeactivateUrl);
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      dbosExec.logger.info("Deactivating consumers");
-      await dbosExec.deactivateConsumers();
+      await dbosExec.deactivateEventReceivers();
       dbosExec.logger.info("Deactivating Scheduler");
       await dbosExec.scheduler?.destroyScheduler();
       wfQueueRunner.stop();

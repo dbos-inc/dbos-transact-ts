@@ -966,7 +966,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return handlerArray;
   }
 
-  async deactivateConsumers() {
+  async deactivateEventReceivers() {
     this.logger.info("Deactivating event receivers");
     for (const evtRcvr of this.eventReceivers || []) {
       await evtRcvr.destroy();
