@@ -240,6 +240,9 @@ export async function deployAppCode(
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
+      if (resp.DetailedError) {
+        logger.error(resp.DetailedError)
+      }
       if (resp.message.includes(`application ${appName} not found`)) {
         console.log(chalk.red("Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
       }

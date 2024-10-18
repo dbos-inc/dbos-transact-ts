@@ -138,6 +138,7 @@ export interface CloudAPIErrorResponse {
   message: string;
   statusCode: number;
   requestID: string;
+  DetailedError?: string;
 }
 
 export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
