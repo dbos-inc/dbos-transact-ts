@@ -50,6 +50,8 @@ import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
 import { DBOSScheduler } from './scheduler/scheduler';
+import { DBOSEventReceiverState, DBOSEventReceiverQuery, DBNotificationCallback, DBNotificationListener } from "./eventreceiver";
+
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -900,6 +902,38 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return new RetrievedHandle(this.systemDatabase, workflowUUID);
   }
 
+  async queryUserDB(sql: string, params?: unknown[]) {
+    if (params !== undefined) {
+      return await this.userDatabase.query(sql, ...params);
+    }
+    else {
+      return await this.userDatabase.query(sql);
+    }
+  }
+
+  async userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener> {
+    const notificationsClient = await this.procedurePool.connect();
+    for (const nname of channels) {
+      await notificationsClient.query(`LISTEN ${nname};`);
+    }
+
+    notificationsClient.on("notification", callback);
+
+    return {
+      close: async () => {
+        for (const nname of channels) {
+          try {
+              await notificationsClient.query(`UNLISTEN ${nname};`);
+          }
+          catch(e) {
+              this.logger.warn(e);
+          }
+          notificationsClient.release();
+        }
+      }
+    }
+  }
+
   /* INTERNAL HELPERS */
   #generateUUID(): string {
     return uuidv4();
@@ -1016,6 +1050,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true, tempWfType, tempWfClass, tempWfName}, ...inputs);
   }
+
+  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+    return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
+  }
+  async queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
+    return await this.systemDatabase.queryEventDispatchState(query);
+  }
+  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+    return await this.systemDatabase.upsertEventDispatchState(state);
+  }
+
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {

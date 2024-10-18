@@ -1,4 +1,4 @@
-import { WorkflowContext } from "..";
+import { DBOSEventReceiverState, WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
 import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
 import { TimeMatcher } from "./crontab";
@@ -99,6 +99,8 @@ export class DBOSScheduler{
     }
 }
 
+const SCHEDULER_EVENT_SERVICE_NAME = 'dbos.scheduler';
+
 class DetachableLoop {
     private isRunning: boolean = false;
     private interruptResolve?: () => void;
@@ -119,9 +121,10 @@ class DetachableLoop {
         // See if the exec time is available in durable storage...
         if (this.schedMode === SchedulerMode.ExactlyOncePerInterval)
         {
-            const lasttm = await this.dbosExec.systemDatabase.getLastScheduledTime(this.scheduledMethodName);
+            const lastState = await this.dbosExec.systemDatabase.getEventDispatchState(SCHEDULER_EVENT_SERVICE_NAME, this.scheduledMethodName, 'lastState');
+            const lasttm = lastState?.value;
             if (lasttm) {
-                this.lastExec = new Date(lasttm);
+                this.lastExec = new Date(parseFloat(lasttm));
             }
         }
 
@@ -178,7 +181,15 @@ class DetachableLoop {
             }
 
             // Record the time of the wf kicked off
-            const dbTime = await this.dbosExec.systemDatabase.setLastScheduledTime(this.scheduledMethodName, nextExecTime.getTime());
+            const ers: DBOSEventReceiverState = {
+                service: SCHEDULER_EVENT_SERVICE_NAME,
+                workflowFnName: this.scheduledMethodName,
+                key: 'lastState',
+                value: `${nextExecTime.getTime()}`,
+                updateTime: nextExecTime.getTime(),
+            }
+            const updRec = await this.dbosExec.systemDatabase.upsertEventDispatchState(ers);
+            const dbTime = parseFloat(updRec.value!);
             if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
             this.lastExec = nextExecTime;
         }

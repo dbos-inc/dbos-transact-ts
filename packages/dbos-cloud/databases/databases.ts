@@ -3,14 +3,9 @@ import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogge
 import { Logger } from "winston";
 import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
+import { UserDBInstance } from "../applications/types.js";
+import { input, select } from "@inquirer/prompts";
 
-export interface UserDBInstance {
-  readonly PostgresInstanceName: string;
-  readonly Status: string;
-  readonly HostName: string;
-  readonly Port: number;
-  readonly DatabaseUsername: string;
-}
 
 function isValidPassword(logger: Logger, password: string): boolean {
   if (password.length < 8 || password.length > 128) {
@@ -257,9 +252,15 @@ async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBO
   return res.data as UserDBInstance;
 }
 
-export async function resetDBCredentials(host: string, dbName: string, appDBPassword: string) {
+export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
+
+  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName)
+  if (dbName === "") {
+    return 1
+  }
+
   const bearerToken = "Bearer " + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
@@ -336,8 +337,15 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string, password: string) {
+export async function connect(host: string, dbName: string | undefined, password: string, local_suffix: boolean) {
   const logger = getLogger();
+
+  const userCredentials = await getCloudCredentials(host, logger);
+
+  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName)
+  if (dbName === "") {
+    return 1
+  }
 
   try {
     if(!existsSync(dbosConfigFilePath)) {
@@ -350,7 +358,7 @@ export async function connect(host: string, dbName: string, password: string) {
     copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
     logger.info("Retrieving cloud database info...");
-    const userDBInfo = await getUserDBInfo(host, dbName);
+    const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
     console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
     console.log(`Host Name: ${userDBInfo.HostName}`);
     console.log(`Port: ${userDBInfo.Port}`);
@@ -363,6 +371,7 @@ export async function connect(host: string, dbName: string, password: string) {
     config.database.port = userDBInfo.Port;
     config.database.username = userDBInfo.DatabaseUsername;
     config.database.password = password;
+    config.database.local_suffix = local_suffix;
     writeConfigFile(config, dbosConfigFilePath);
     logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`)
     return 0;
@@ -376,4 +385,71 @@ export async function connect(host: string, dbName: string, password: string) {
     }
     return 1;
   }
+}
+
+export async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
+  // List existing database instances.
+  let userDBs: UserDBInstance[] = [];
+  const bearerToken = "Bearer " + userCredentials.token;
+  try {
+    const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: bearerToken,
+      },
+    });
+    userDBs = res.data as UserDBInstance[];
+  } catch (e) {
+    const errorLabel = `Failed to list databases`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return "";
+  }
+
+  if (userDBName) {
+    // Check if the database instance exists or not.
+    const dbExists = userDBs.some((db) => db.PostgresInstanceName === userDBName);
+    if (dbExists) {
+      return userDBName;
+    }
+  }
+
+  if (userDBName || userDBs.length === 0) {
+    // If not, prompt the user to provision one.
+    if (!userDBName) {
+      logger.info("No database found, provisioning a database instance (server)...");
+      userDBName = await input({
+        message: "Database instance name?",
+        default: `${userCredentials.userName}-db-server`,
+      });
+    } else {
+      logger.info(`Database instance ${userDBName} not found, provisioning a new one...`);
+    }
+
+    // Use a default user name and auto generated password.
+    const appDBUserName = "dbos_user";
+    const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
+    const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
+    if (res !== 0) {
+      return "";
+    }
+  } else if (userDBs.length > 1) {
+    // If there is more than one database instances, prompt the user to select one.
+    userDBName = await select({
+      message: "Choose a database instance for this app:",
+      choices: userDBs.map((db) => ({
+        name: db.PostgresInstanceName,
+        value: db.PostgresInstanceName,
+      })),
+    });
+  } else {
+    // Use the only available database server.
+    userDBName = userDBs[0].PostgresInstanceName;
+    logger.info(`Using database instance: ${userDBName}`);
+  }
+  return userDBName;
 }

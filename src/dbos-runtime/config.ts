@@ -32,6 +32,7 @@ export interface ConfigFile {
     app_db_client?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];
+    local_suffix: boolean;
   };
   http?: {
     cors_middleware?: boolean;
@@ -59,7 +60,7 @@ export function substituteEnvVars(content: string): string {
 /**
  * Loads config file as a ConfigFile.
  * @param {string} configFilePath - The path to the config file to be loaded.
- * @returns 
+ * @returns
  */
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
@@ -78,7 +79,7 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
 
 /**
  * Writes a YAML.Document object to configFilePath.
- * @param {YAML.Document} configFile - The config file to be written. 
+ * @param {YAML.Document} configFile - The config file to be written.
  * @param {string} configFilePath - The path to the config file to be written to.
  */
 export function writeConfigFile(configFile: YAML.Document, configFilePath: string) {
@@ -95,13 +96,14 @@ export function writeConfigFile(configFile: YAML.Document, configFilePath: strin
 }
 
 export function constructPoolConfig(configFile: ConfigFile) {
+  const databaseName = configFile.database.local_suffix === true ? `${configFile.database.app_db_name}_local` : configFile.database.app_db_name
    const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: configFile.database.app_db_name,
+    database: databaseName
   };
 
   if (!poolConfig.database) {
