@@ -23,8 +23,9 @@ import fg from "fast-glob";
 import chalk from "chalk";
 import { registerApp } from "./register-app.js";
 import { Logger } from "winston";
-import { loadConfigFile } from "../configutils.js";
 import { chooseAppDBServer } from "../databases/databases.js";
+import YAML from "yaml";
+import { ConfigFile } from "../configutils.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -130,7 +131,8 @@ export async function deployAppCode(
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
-  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath, logger);
+  const dbosConfig = YAML.parse(interpolatedConfig) as ConfigFile;
 
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
