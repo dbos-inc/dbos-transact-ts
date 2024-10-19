@@ -25,6 +25,7 @@ import { registerApp } from "./register-app.js";
 import { Logger } from "winston";
 import { chooseAppDBServer } from "../databases/databases.js";
 import YAML from "yaml";
+import { ConfigFile } from "../configutils.js";
 
 type DeployOutput = {
   ApplicationName: string;
