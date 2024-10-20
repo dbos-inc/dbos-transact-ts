@@ -129,10 +129,9 @@ describe("dbos-config", () => {
       process.env.PGPASSWORD = dbPassword;
     });
 
-    test("config file is missing app database name", () => {
+    test("config file is missing hostname", () => {
       const localMockDBOSConfigYamlString = `
         database:
-          hostname: 'some host'
           port: 1234
           username: 'some user'
           password: \${PGPASSWORD}
