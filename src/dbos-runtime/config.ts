@@ -216,15 +216,15 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
   }
 
-  if (!isValidDBname(configFile.database.app_db_name)) {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
-  }
-
   /*******************************/
   /* Handle user database config */
   /*******************************/
 
   const poolConfig = constructPoolConfig(configFile);
+
+  if (!isValidDBname(poolConfig.database!)) {
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
+  }
 
   /***************************/
   /* Handle telemetry config */

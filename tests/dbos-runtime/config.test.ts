@@ -247,6 +247,22 @@ describe("dbos-config", () => {
       expect(dbosConfig.poolConfig.ssl).toEqual({ rejectUnauthorized: false });
     });
 
+    test("config works without app_db_name", async () => {
+      const localMockDBOSConfigYamlString = `
+        name: some-app
+        database:
+          hostname: 'localhost'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const poolConfig = dbosConfig.poolConfig;
+      expect(poolConfig.database).toBe("some_app");
+    });
+
 
     test("local_suffix works", async () => {
       const localMockDBOSConfigYamlString = `
@@ -272,6 +288,22 @@ describe("dbos-config", () => {
       expect(dbosConfig.poolConfig.ssl).toBe(false);
     });
 
+    test("local_suffix works without app_db_name", async () => {
+      const localMockDBOSConfigYamlString = `
+        name: some-app
+        database:
+          hostname: 'localhost'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          local_suffix: true
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const poolConfig = dbosConfig.poolConfig;
+      expect(poolConfig.database).toBe("some_app_local");
+    });
 
     test("ssl defaults off for localhost", async () => {
       const localMockDBOSConfigYamlString = `
