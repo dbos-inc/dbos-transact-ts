@@ -23,8 +23,9 @@ import fg from "fast-glob";
 import chalk from "chalk";
 import { registerApp } from "./register-app.js";
 import { Logger } from "winston";
-import { loadConfigFile } from "../configutils.js";
 import { chooseAppDBServer } from "../databases/databases.js";
+import YAML from "yaml";
+import { ConfigFile } from "../configutils.js";
 
 type DeployOutput = {
   ApplicationName: string;
@@ -130,7 +131,8 @@ export async function deployAppCode(
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
-  const dbosConfig = loadConfigFile(dbosConfigFilePath);
+  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath, logger);
+  const dbosConfig = YAML.parse(interpolatedConfig) as ConfigFile;
 
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
@@ -240,6 +242,9 @@ export async function deployAppCode(
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
+      if (resp.DetailedError) {
+        logger.error(resp.DetailedError)
+      }
       if (resp.message.includes(`application ${appName} not found`)) {
         console.log(chalk.red("Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
       }
