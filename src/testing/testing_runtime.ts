@@ -75,6 +75,7 @@ export interface TestingRuntime {
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
   destroy(): Promise<void>; // Release resources after tests.
+  stopScheduler(): Promise<void>; // Stop the scheduler.
 }
 
 /**
@@ -121,6 +122,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
     for (const evtRcvr of this.#dbosExec!.eventReceivers) {
       await evtRcvr.initialize(this.#dbosExec!);
     }
+  }
+
+  async stopScheduler() {
+    await this.#scheduler?.destroyScheduler();
   }
 
   /**
