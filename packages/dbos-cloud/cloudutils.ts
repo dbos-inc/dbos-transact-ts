@@ -138,6 +138,7 @@ export interface CloudAPIErrorResponse {
   message: string;
   statusCode: number;
   requestID: string;
+  DetailedError?: string;
 }
 
 export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
@@ -367,3 +368,4 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
   }
   return;
 }
+

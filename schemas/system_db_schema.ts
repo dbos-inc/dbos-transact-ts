@@ -39,11 +39,6 @@ export interface workflow_inputs {
   inputs: string;
 }
 
-export interface scheduler_state {
-  workflow_fn_name: string;
-  last_run_time: number; // Time that has certainly been kicked off; others may have but OAOO will cover that
-}
-
 export interface event_dispatch_kv {
   // Key fields
   service_name: string;
