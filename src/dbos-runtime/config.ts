@@ -10,6 +10,9 @@ import { writeFileSync } from "fs";
 import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 import validator from "validator";
+import fs from "fs";
+
+
 
 export const dbosConfigFilePath = "dbos-config.yaml";
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
@@ -95,9 +98,30 @@ export function writeConfigFile(configFile: YAML.Document, configFilePath: strin
   }
 }
 
+export function retrieveApplicationName(configFile: ConfigFile): string {
+  let appName = configFile.name;
+  if (appName !== undefined) {
+    return appName
+  }
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
+  appName = packageJson.name;
+  if (appName === undefined) {
+    throw new DBOSInitializationError("Error: cannot find a valid package.json file. Please run this command in an application root directory.");
+  }
+  return appName;
+}
+
 export function constructPoolConfig(configFile: ConfigFile) {
-  const databaseName = configFile.database.local_suffix === true ? `${configFile.database.app_db_name}_local` : configFile.database.app_db_name
-   const poolConfig: PoolConfig = {
+  let databaseName: string | undefined = configFile.database.app_db_name;
+  if (databaseName === undefined) {
+    const appName = retrieveApplicationName(configFile)
+    databaseName = appName.toLowerCase().replaceAll('-', '_');
+    if (databaseName.match(/^\d/)) {
+      databaseName = "_" + databaseName; // Append an underscore if the name starts with a digit
+    }
+  }
+  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName
+  const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
@@ -192,15 +216,15 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
   }
 
-  if (!isValidDBname(configFile.database.app_db_name)) {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
-  }
-
   /*******************************/
   /* Handle user database config */
   /*******************************/
 
   const poolConfig = constructPoolConfig(configFile);
+
+  if (!isValidDBname(poolConfig.database!)) {
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
+  }
 
   /***************************/
   /* Handle telemetry config */

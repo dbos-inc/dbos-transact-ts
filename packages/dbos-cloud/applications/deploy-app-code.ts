@@ -139,7 +139,6 @@ export async function deployAppCode(
     if (userDBName === "") {
       return 1;
     }
-    logger.info(`Loaded application database name from ${dbosConfigFilePath}: ${dbosConfig.database.app_db_name}`);
 
     // Register the app
     if (enableTimeTravel) {
@@ -158,7 +157,7 @@ export async function deployAppCode(
     }
 
     // Make sure the app database is the same.
-    if (appRegistered.ApplicationDatabaseName && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
+    if (appRegistered.ApplicationDatabaseName && dbosConfig.database.app_db_name && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
       logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
       return 1;
     }
