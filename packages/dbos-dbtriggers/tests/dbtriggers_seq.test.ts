@@ -1,14 +1,26 @@
 import { Knex } from "knex";
-import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "@dbos-inc/dbos-sdk";
+
+import {
+    createTestingRuntime,
+    TestingRuntime,
+    Transaction,
+    TransactionContext,
+    Workflow,
+    WorkflowContext
+} from "@dbos-inc/dbos-sdk";
+
 import { DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
-import { createInternalTestRuntime, TestingRuntimeImpl } from "../../../src/testing/testing_runtime";
-import { UserDatabaseName } from "../../../src/user_database";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "../../../tests/helpers";
-import { sleepms } from "../../../src/utils";
+
+function sleepms(ms: number) {return new Promise((r) => setTimeout(r, ms)); }
 
 const testTableName = "dbos_test_trig_seq";
 
 type KnexTransactionContext = TransactionContext<Knex>;
+
+interface TestingRuntimeImpl {
+    destroyEventReceivers() : Promise<void>;
+    initEventReceivers(): Promise<void>;
+}
 
 class DBOSTestNoClass {
 
@@ -79,16 +91,13 @@ interface TestTable {
 }
 
 describe("test-db-triggers", () => {
-    let config: DBOSConfig;
     let testRuntime: TestingRuntime;
   
     beforeAll(async () => {
-        config = generateDBOSTestConfig(UserDatabaseName.KNEX);
-        await setUpDBOSTestDb(config);  
     });
 
     beforeEach(async () => {
-        testRuntime = await createInternalTestRuntime([DBOSTestNoClass], config);
+        testRuntime = await createTestingRuntime([DBOSTestNoClass], 'dbtriggers-test-dbos-config.yaml');
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.queryUserDB(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
@@ -101,7 +110,7 @@ describe("test-db-triggers", () => {
             );`
         );
         await testRuntime.destroy();
-        testRuntime = await createInternalTestRuntime(undefined, config);
+        testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
         DBOSTriggerTestClassSN.reset()
     });
     
@@ -131,7 +140,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
-        await (testRuntime as TestingRuntimeImpl).destroyEventReceivers();
+        await (testRuntime as unknown as TestingRuntimeImpl).destroyEventReceivers();
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
@@ -146,7 +155,7 @@ describe("test-db-triggers", () => {
         console.log("************************************************** Restart *****************************************************");
         DBOSTriggerTestClassSN.reset();
 
-        await (testRuntime as TestingRuntimeImpl).initEventReceivers();
+        await (testRuntime as unknown as TestingRuntimeImpl).initEventReceivers();
 
         console.log("************************************************** Restarted *****************************************************");
         DBOSTriggerTestClassSN.reset();

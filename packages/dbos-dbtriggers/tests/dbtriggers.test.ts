@@ -1,12 +1,17 @@
 import { Knex } from "knex";
-import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "@dbos-inc/dbos-sdk";
+import {
+    createTestingRuntime,
+    TestingRuntime,
+    Transaction,
+    TransactionContext,
+    Workflow,
+    WorkflowContext
+} from "@dbos-inc/dbos-sdk";
 import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
-import { createInternalTestRuntime } from "../../../src/testing/testing_runtime";
-import { UserDatabaseName } from "../../../src/user_database";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "../../../tests/helpers";
-import { sleepms } from "../../../src/utils";
 
 const testTableName = "dbos_test_orders";
+
+function sleepms(ms: number) {return new Promise((r) => setTimeout(r, ms)); }
 
 type KnexTransactionContext = TransactionContext<Knex>;
 
@@ -87,16 +92,13 @@ interface TestTable {
 }
 
 describe("test-db-triggers", () => {
-    let config: DBOSConfig;
     let testRuntime: TestingRuntime;
   
     beforeAll(async () => {
-        config = generateDBOSTestConfig(UserDatabaseName.KNEX);
-        await setUpDBOSTestDb(config);  
     });
 
     beforeEach(async () => {
-        testRuntime = await createInternalTestRuntime([DBOSTestNoClass], config);
+        testRuntime = await createTestingRuntime([DBOSTestNoClass], 'dbtriggers-test-dbos-config.yaml');
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.queryUserDB(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
@@ -108,7 +110,7 @@ describe("test-db-triggers", () => {
             );`
         );
         await testRuntime.destroy();
-        testRuntime = await createInternalTestRuntime(undefined, config);
+        testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
         DBOSTriggerTestClass.reset()
     });
     
