@@ -1,10 +1,10 @@
 import { Knex } from "knex";
-import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
-import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../../src/dbtrigger/dbtrigger";
-import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
-import { UserDatabaseName } from "../../src/user_database";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import { sleepms } from "../../src/utils";
+import { DBOSConfig, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "@dbos-inc/dbos-sdk";
+import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
+import { createInternalTestRuntime } from "../../../src/testing/testing_runtime";
+import { UserDatabaseName } from "../../../src/user_database";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from "../../../tests/helpers";
+import { sleepms } from "../../../src/utils";
 
 const testTableName = "dbos_test_orders";
 
