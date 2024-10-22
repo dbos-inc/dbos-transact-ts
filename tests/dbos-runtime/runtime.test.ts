@@ -102,7 +102,6 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  app_db_name: 'hello'
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
 runtimeConfig:
@@ -176,7 +175,6 @@ database:
   port: 5432
   username: 'postgres'
   password: \${PGPASSWORD}
-  app_db_name: 'hello'
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
 runtimeConfig:
