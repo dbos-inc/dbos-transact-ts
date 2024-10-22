@@ -1,60 +1,37 @@
-# DBOS Kafka Library (KafkaJS Version)
+# Responding To Database Updates: DBOS Database Trigger Library
 
-Publish/subscribe message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in multiple client programming environments.  Due to its performance, flexibility, and simple, scalable design, [Kafka](https://www.confluent.io/cloud-kafka) is a popular choice for publish/subscribe.
+## Scenarios
 
-This package includes a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending Kafka messages, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
+In some cases, DBOS Transact workflows should be triggered in response to database inserts or updates.
 
-This package is based on [KafkaJS](https://kafka.js.org/).  We are working on other client libraries for Kafka, please reach out to [us](https://www.dbos.dev/) if you are interested in a different client library.
+For example:
+*  Insertion of new orders into the orders table should cause a fulfillment workflow to start
+*  Update of an order from "ordered" to "shipped" should schedule a review workflow later
+*  Exception events logged to an event table should be transformed and inserted into a reporting table
 
-## Configuring a DBOS Application with Kafka
-Ensure that the DBOS SQS package is installed into the application:
-```
-npm install --save @dbos-inc/dbos-kafkajs
-```
+Of course, if the process that is performing the database insert / update is running within DBOS Transact, the best solution would be to have that workflow start additional workflows directly.  However, in some cases, the broader system is not written with DBOS Transact, and there are no notifications to receive, leaving "database snooping as" the best option.
 
-## Sending Messages
+## Is This a Library?
 
-### Imports
-First, ensure that the package classes are imported:
-```typescript
-import {
-  KafkaConfig,
-  logLevel,
-  KafkaProduceStep,
-  Partitioners,
-} from "@dbos-inc/dbos-kafkajs";
-```
+Yes, in many circumstances this package can be used directly as a library to listen for database record updates, and initiate workflows.  However, situations vary widely, so it is just as likely that the code in this package would be used as a reference for a custom database listener implementation.
 
-### Selecting A Configuration
-`KafkaProduceStep` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
-```typescript
-const kafkaConfig: KafkaConfig = {
-  clientId: 'dbos-kafka-test',
-  brokers: [`${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`],
-  requestTimeout: 100, // FOR TESTING
-  retry: { // FOR TESTING
-    retries: 5
-  },
-  logLevel: logLevel.NOTHING, // FOR TESTING
-}
+There are many considerations that factor in to the design of database triggers, including:
+*  Which database holds the table to be watched?  This library is specifically designed to read from tables in the application user database.  If the table is elsewhere, it would be necessary to extend the code.
+*  What database product is in use?  This library uses drivers and SQL code specific to Postgres.  Some adjustments may be necessary to support other databases.
+*  Are database triggers and notifications possible?  While some databases will run a trigger function upon record insert/update, and provide a mechanism to notify database clients, some databases do not support this.   In some environments, the database administrator or policies may not permit the installation of triggers or the use of the notifications feature.
+*  How is new data identified?  This library supports sequence number and timestamp fields within the records as a mechanism for identifying recent records.  If these techniques are not sufficient, customization will be required.
 
-kafkaCfg = configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
-    createPartitioner: Partitioners.DefaultPartitioner
-});
-```
+## General Techniques For Detecting Database Updates
+There are three broad strategies for detecting or identifying new and updated database records.
+1. Many databases have a [log](https://en.wikipedia.org/wiki/Write-ahead_logging) that can be used to find record updates.  This package does not use the database log.  If you would like to use a strategy based on the database log, it may be best to use a third-party [CDC](https://en.wikipedia.org/wiki/Change_data_capture) tool such as [Debezium](https://debezium.io/) that streams the log as events.  DBOS apps can then subscribe to the events.
+2. Some databases support stored procedures and triggers, such that when a table is updated, execution of a stored procedure is triggered.  The stored procedure can then notify clients of the database changes.  Note that this mechanism, while useful for detecting changes quickly, is generally not sufficiently reliable, as any changes that occur when no client is connected may go unnoticed.
+3. Queries are a generic strategy for finding new records, as long as a suitable query predicate can be formulated.  When the query is run in a polling loop, the results are likely new records.  After the batch of new records found in a loop iteration is processed, the query predicate is adjusted forward to reflect that records were already processed.  While use of polling loops can involve longer processing delays and does not "scale to zero" like triggers, queries require only read access to the database table and are therefore usable in a wider range of scenarios.
 
-### Sending
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `KafkaProduceStep` function from the workflow context:
-```typescript   
-const sendRes = await wfCtx.invoke(kafkaCfg).sendMessage({value: ourMessage});
-```
+This library supports polling via queries, and also supports triggers and notifications.  Use of triggers and notifications also requires queries, as the queries are used on startup to identify any "backfill" / "make-up work" due to records that were updated when the client was not listening for notifications.
 
-## Receiving Messages
-A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/kafka-integration).
+## Using This Package Directly
 
-## Simple Testing
-The `kafkajs.test.ts` file included in the source repository demonstrates sending and processing Kafka messages.  Before running, set the following environment variables:
-- `KAFKA_BROKER`: Broker URL
+## Using This Code As A Starting Point
 
 ## Next Steps
 - For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
