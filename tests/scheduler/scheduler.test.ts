@@ -33,7 +33,6 @@ describe("scheduled-wf-tests-simple", () => {
         expect(DBOSSchedTestClass.nTooEarly).toBe(0);
         expect(DBOSSchedTestClass.nTooLate).toBe(0);
 
-        // await testRuntime.stopScheduler();
         await testRuntime.deactivateEventReceivers();
 
         await sleepms(1000);

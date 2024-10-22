@@ -124,10 +124,6 @@ export class TestingRuntimeImpl implements TestingRuntime {
     }
   }
 
-  /* async stopScheduler() {
-    await this.#scheduler?.destroyScheduler();
-  } */
-
   /**
    * Release resources after tests.
    */
