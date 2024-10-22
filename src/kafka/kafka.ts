@@ -72,7 +72,7 @@ export class DBOSKafka implements DBOSEventReceiver {
           eachMessage: async ({ topic, partition, message }) => {
             // This combination uniquely identifies a message for a given Kafka cluster
             const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
+            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: ro.queueName};
             // All operations annotated with Kafka decorators must take in these three arguments
             const args: KafkaArgs = [topic, partition, message];
             // We can only guarantee exactly-once-per-message execution of transactions and workflows.
@@ -135,9 +135,10 @@ let kafkaInst: DBOSKafka | undefined = undefined;
 export interface KafkaRegistrationInfo {
   kafkaTopics?: string | RegExp | Array<string | RegExp>;
   consumerConfig?: ConsumerConfig;
+  queueName?: string;
 }
 
-export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig) {
+export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig, queueName ?: string) {
   function kafkadec<This, Ctx extends DBOSContext, Return>(
     target: object,
     propertyKey: string,
@@ -149,6 +150,7 @@ export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, c
     const kafkaRegistration = receiverInfo as KafkaRegistrationInfo;
     kafkaRegistration.kafkaTopics = topics;
     kafkaRegistration.consumerConfig = consumerConfig;
+    kafkaRegistration.queueName = queueName;
 
     return descriptor;
   }
@@ -171,4 +173,3 @@ export function Kafka(kafkaConfig: KafkaConfig) {
   }
   return clsdec;
 }
-

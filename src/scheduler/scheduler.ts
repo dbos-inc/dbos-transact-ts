@@ -16,6 +16,7 @@ export enum SchedulerMode {
 export class SchedulerConfig {
     crontab: string = '* * * * *'; // Every minute
     mode ?: SchedulerMode = SchedulerMode.ExactlyOncePerIntervalWhenActive;
+    queueName ?: string;
 }
 
 ////
@@ -63,7 +64,8 @@ export class DBOSScheduler{
                     this.dbosExec,
                     ro.schedulerConfig.crontab ?? '* * * * *',
                     ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval,
-                    ro
+                    ro,
+                    ro.schedulerConfig?.queueName
                 );
                 this.schedLoops.push(loop);
                 this.schedTasks.push(loop.startLoop());
@@ -107,7 +109,7 @@ class DetachableLoop {
     private scheduledMethodName: string;
 
     constructor(readonly dbosExec: DBOSExecutor, readonly crontab: string, readonly schedMode:SchedulerMode,
-                readonly scheduledMethod: SchedulerRegistrationBase)
+                readonly scheduledMethod: SchedulerRegistrationBase, readonly queueName?: string)
     {
         this.lastExec = new Date();
         this.lastExec.setMilliseconds(0);
@@ -165,7 +167,7 @@ class DetachableLoop {
             // Init workflow
             const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
             this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
+            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: this.queueName };
             // All operations annotated with Scheduled decorators must take in these four
             const args: ScheduledArgs = [nextExecTime, new Date()];
 
