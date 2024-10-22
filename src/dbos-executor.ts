@@ -971,6 +971,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     for (const evtRcvr of this.eventReceivers || []) {
       await evtRcvr.destroy();
     }
+    await this.scheduler?.destroyScheduler();
+    wfQueueRunner.stop();
   }
 
   async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
