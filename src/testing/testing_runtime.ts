@@ -78,6 +78,7 @@ export interface TestingRuntime {
 
   destroy(): Promise<void>; // Release resources after tests.
   deactivateEventReceivers(): Promise<void>; // Deactivate event receivers.
+  initEventReceivers(): Promise<void>; // Init / reactivate event receivers.
 }
 
 /**
@@ -113,9 +114,6 @@ export class TestingRuntimeImpl implements TestingRuntime {
     await this.#dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(this.#dbosExec);
     await this.initEventReceivers();
-    this.#scheduler = new DBOSScheduler(this.#dbosExec);
-    this.#scheduler.initScheduler();
-    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(this.#dbosExec);
     this.#applicationConfig = this.#dbosExec.config.application ?? {};
     this.#isInitialized = true;
   }
@@ -124,6 +122,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
     for (const evtRcvr of this.#dbosExec!.eventReceivers) {
       await evtRcvr.initialize(this.#dbosExec!);
     }
+    this.#scheduler = new DBOSScheduler(this.#dbosExec!);
+    this.#scheduler.initScheduler();
+    this.#wfQueueRunner = wfQueueRunner.dispatchLoop(this.#dbosExec!);
   }
 
   /**

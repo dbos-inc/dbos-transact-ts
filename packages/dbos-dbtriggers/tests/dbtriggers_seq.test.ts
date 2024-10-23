@@ -17,11 +17,6 @@ const testTableName = "dbos_test_trig_seq";
 
 type KnexTransactionContext = TransactionContext<Knex>;
 
-interface TestingRuntimeImpl {
-    destroyEventReceivers() : Promise<void>;
-    initEventReceivers(): Promise<void>;
-}
-
 class DBOSTestNoClass {
 
 }
@@ -140,7 +135,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
-        await (testRuntime as unknown as TestingRuntimeImpl).destroyEventReceivers();
+        //await testRuntime.deactivateEventReceivers();
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
@@ -155,7 +150,7 @@ describe("test-db-triggers", () => {
         console.log("************************************************** Restart *****************************************************");
         DBOSTriggerTestClassSN.reset();
 
-        await (testRuntime as unknown as TestingRuntimeImpl).initEventReceivers();
+        //await testRuntime.initEventReceivers();
 
         console.log("************************************************** Restarted *****************************************************");
         DBOSTriggerTestClassSN.reset();
