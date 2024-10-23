@@ -49,7 +49,9 @@ import { DBOSEventReceiver, DBOSExecutorContext} from ".";
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
+import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBOSEventReceiverQuery, DBNotificationCallback, DBNotificationListener } from "./eventreceiver";
+
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull { }
@@ -164,6 +166,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   eventReceivers: DBOSEventReceiver[] = [];
 
+  scheduler: DBOSScheduler | null = null;
+
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugMode ?? false;
@@ -226,6 +230,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.initialized = false;
   }
 
+ 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
@@ -959,6 +964,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
     return handlerArray;
+  }
+
+  async deactivateEventReceivers() {
+    this.logger.info("Deactivating event receivers");
+    for (const evtRcvr of this.eventReceivers || []) {
+      await evtRcvr.destroy();
+    }
+    await this.scheduler?.destroyScheduler();
+    wfQueueRunner.stop();
   }
 
   async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {

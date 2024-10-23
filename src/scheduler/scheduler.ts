@@ -51,7 +51,9 @@ export function Scheduled(schedulerConfig: SchedulerConfig) {
 ///////////////////////////
 
 export class DBOSScheduler{
-    constructor(readonly dbosExec: DBOSExecutor) {}
+    constructor(readonly dbosExec: DBOSExecutor) {
+        dbosExec.scheduler = this;
+    }
 
     schedLoops: DetachableLoop[] = [];
     schedTasks: Promise<void> [] = [];
