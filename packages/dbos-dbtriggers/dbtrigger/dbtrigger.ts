@@ -28,6 +28,15 @@ export class DBTriggerConfig {
 
     // These identify the record, for elevation to function parameters
     recordIDColumns?: string[] = undefined;
+
+    // Should DB trigger / notification be used?
+    useDBNotifications?: boolean = false;
+
+    // Should DB trigger be auto-installed?
+    installDBTrigger?: boolean = false;
+
+    // If not using triggers, frequency of polling, ms
+    dbPollingInterval?: number = 5000;
 }
 
 export class DBTriggerWorkflowConfig extends DBTriggerConfig {
@@ -276,7 +285,12 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
                 if (!hasTrigger.has(tname)) {
                     const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
-                    await this.executor.queryUserDB(trigSQL);
+                    if (mo.triggerConfig.installDBTrigger) {
+                        await this.executor.queryUserDB(trigSQL);
+                    }
+                    else {
+                        this.executor.logger.info(` DBOS DB Trigger: For DB notifications, install the following SQL: \n${trigSQL}`);
+                    }
                     hasTrigger.add(tname);
                     hasAnyTrigger = true;
                 }

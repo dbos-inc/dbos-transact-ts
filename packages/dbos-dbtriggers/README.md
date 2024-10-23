@@ -29,7 +29,40 @@ There are three broad strategies for detecting or identifying new and updated da
 
 This library supports polling via queries, and also supports triggers and notifications.  Use of triggers and notifications also requires queries, as the queries are used on startup to identify any "backfill" / "make-up work" due to records that were updated when the client was not listening for notifications.
 
-## Using This Package Directly
+## Using This Package
+This package provides method decorators that, when applied to DBOS functions, will listen for database changes and invoke the decorated function as changes occur.
+
+### Decorating Functions
+
+#### Decorating Workflow Methods
+Workflow methods can be run in response to database records.  Workflows are guaranteed to run exactly once per record in the source database, provided that new records can be identified by querying the source table using simple predicates.  The workflow method must:
+* Be `async`, `static`, and decorated with `@Workflow`
+* Have the arguments `ctxt: WorkflowContext, op: TriggerOperation, key: unknown[], rec: unknown`
+
+The parameters provided to each method invocation are:
+* `ctxt`: The [workflow context](https://docs.dbos.dev/typescript/reference/contexts#workflowcontext).
+* `op`: The operation (insert/update/delete) that occurred.
+* `key`: An array of record fields that have been extracted as the record key.  The list of fields extracted is controlled by the `DBTriggerConfig`.
+* `rec`: The new contents of the database record.
+
+#### Decorating Plain Methods
+Non-workflow methods can also be run in response to database events.  Note that, in contrast to workflows, this approach does not provide the guarantee of exactly-once execution of the method.  The class method decorated must:
+* Be `async` and `static`
+* Have the arguments `op: TriggerOperation, key: unknown[], rec: unknown`, which will be provided when the trigger invokes the method.
+
+The parameters provided to each method invocation are:
+* `op`: The operation (insert/update/delete) that occurred.  See [Decorating Workflow Methods](#decorating-workflow-methods) above for more details.
+* `key`: An array of record fields that have been extracted as the record key.  The list of fields extracted is controlled by the `DBTriggerConfig`.
+* `rec`: The new contents of the database record.
+
+
+### Using Polling
+
+### Using Database Triggers
+
+#### Automatic Database Trigger Installation
+
+#### Generating Database Trigger Migrations
 
 ## Using This Code As A Starting Point
 
