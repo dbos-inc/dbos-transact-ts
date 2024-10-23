@@ -29,6 +29,7 @@ export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
 export const HealthUrl = "/dbos-healthz"
 export const PerfUrl = "/dbos-perf"
+export const DeactivateUrl = "/deactivate"
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -55,6 +56,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
     DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
+    DBOSHttpServer.registerDeactivateEndpoint(this.dbosExec, this.adminRouter);
     this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
@@ -167,6 +169,22 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
     };
     router.get(PerfUrl, perfHandler);
     dbosExec.logger.debug(`DBOS Server Registered Perf GET ${HealthUrl}`);
+  }
+
+  /**
+   * Register Deactiviate endpoint.
+   * Deactivate consumers so that they don'nt start new workflows.
+   * 
+   */
+  static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      await dbosExec.deactivateEventReceivers();
+      dbosExec.logger.info("Deactivating Event Recievers");
+      koaCtxt.body = "Deactivated";
+      await koaNext();
+    };
+    router.get(DeactivateUrl, deactivateHandler);
+    dbosExec.logger.info(`DBOS Server deactivate GET ${DeactivateUrl}`);
   }
 
   /**

@@ -45,6 +45,7 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
+
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);

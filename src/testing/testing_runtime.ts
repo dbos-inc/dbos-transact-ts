@@ -77,6 +77,7 @@ export interface TestingRuntime {
   dropUserSchema(): Promise<void>; // Only valid if using TypeORM. Drop all tables created by createUserSchema().
 
   destroy(): Promise<void>; // Release resources after tests.
+  deactivateEventReceivers(): Promise<void>; // Deactivate event receivers.
 }
 
 /**
@@ -131,25 +132,26 @@ export class TestingRuntimeImpl implements TestingRuntime {
   async destroy() {
     // Only release once.
     if (this.#isInitialized) {
-      try {
-        wfQueueRunner.stop();
-        await this.#wfQueueRunner;
-      }
-      catch (err) {
-        const e = err as Error;
-        this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
-      }    
-      await this.#scheduler?.destroyScheduler();
-      await this.destroyEventReceivers();
+      await this.deactivateEventReceivers();
       await this.#server?.dbosExec.destroy();
       this.#isInitialized = false;
     }
   }
 
-  async destroyEventReceivers() {
+  async deactivateEventReceivers() {
     for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
       await evtRcvr.destroy();
     }
+    await this.#scheduler?.destroyScheduler();
+    try {
+      wfQueueRunner.stop();
+      await this.#wfQueueRunner;
+    }
+    catch (err) {
+      const e = err as Error;
+      this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
+    }  
+
   }
 
   /**
