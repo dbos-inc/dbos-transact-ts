@@ -38,7 +38,7 @@ class DBOSTriggerTestClass {
         DBOSTriggerTestClass.wfRecordMap = new Map();
     }
 
-    @DBTrigger({tableName: testTableName, recordIDColumns: ['order_id']})
+    @DBTrigger({tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true})
     static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
         if (op === TriggerOperation.RecordDeleted) {
             ++DBOSTriggerTestClass.nDeletes;
@@ -55,7 +55,7 @@ class DBOSTriggerTestClass {
         return Promise.resolve();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id']})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true})
     @Workflow()
     static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         //console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);

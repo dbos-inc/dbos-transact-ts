@@ -36,7 +36,7 @@ class DBOSTriggerTestClassSN {
         DBOSTriggerTestClassSN.snRecordMap = new Map();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2, installDBTrigger: true})
     @Workflow()
     static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
@@ -48,7 +48,7 @@ class DBOSTriggerTestClassSN {
         return Promise.resolve();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000, installDBTrigger: true})
     @Workflow()
     static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
@@ -135,7 +135,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
-        //await testRuntime.deactivateEventReceivers();
+        await testRuntime.deactivateEventReceivers();
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
@@ -150,7 +150,7 @@ describe("test-db-triggers", () => {
         console.log("************************************************** Restart *****************************************************");
         DBOSTriggerTestClassSN.reset();
 
-        //await testRuntime.initEventReceivers();
+        await testRuntime.initEventReceivers();
 
         console.log("************************************************** Restarted *****************************************************");
         DBOSTriggerTestClassSN.reset();
