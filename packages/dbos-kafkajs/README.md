@@ -50,7 +50,7 @@ const sendRes = await wfCtx.invoke(kafkaCfg).sendMessage({value: ourMessage});
 ```
 
 ## Receiving Messages
-A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/kafka-integration).
+A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/kafka-integration).  This library provides an alternate implementation of the Kafka consumer that can be updated independently of the DBOS Transact core packages.
 
 ## Simple Testing
 The `kafkajs.test.ts` file included in the source repository demonstrates sending and processing Kafka messages.  Before running, set the following environment variables:
