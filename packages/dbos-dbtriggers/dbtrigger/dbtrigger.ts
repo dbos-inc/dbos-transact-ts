@@ -284,6 +284,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
         const hasTrigger: Set<string> = new Set();
         let hasAnyTrigger: boolean = false;
+        let hasAnyPoller: boolean = false;
         const nname = 'dbos_table_update';
 
         const catchups: {query: string, params: unknown[]}[] = [];
@@ -305,65 +306,84 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                     ? `${mo.triggerConfig.schemaName}.${mo.triggerConfig.tableName}`
                 : mo.triggerConfig.tableName;
                 const trigname = `dbt_${cname}_${mname}`;
+                const fullname = `${cname}.${mname}`;
 
                 if (!this.tableToReg.has(tstr)) {
                     this.tableToReg.set(tstr, []);
                 }
                 this.tableToReg.get(tstr)!.push(registeredOperation);
 
-                if (!hasTrigger.has(tname)) {
-                    const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
-                    if (mo.triggerConfig.installDBTrigger) {
-                        await this.executor.queryUserDB(trigSQL);
+                let registeredThis = false;
+                if ((mo.triggerConfig.useDBNotifications || mo.triggerConfig.installDBTrigger)) {
+                    if (!hasTrigger.has(tname)) {
+                        const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
+                        if (mo.triggerConfig.installDBTrigger) {
+                            await this.executor.queryUserDB(trigSQL);
+                        }
+                        else {
+                            this.executor.logger.info(` DBOS DB Trigger: For DB notifications, install the following SQL: \n${trigSQL}`);
+                        }
+                        hasTrigger.add(tname);
+                        hasAnyTrigger = true;
                     }
-                    else {
-                        this.executor.logger.info(` DBOS DB Trigger: For DB notifications, install the following SQL: \n${trigSQL}`);
-                    }
-                    hasTrigger.add(tname);
-                    hasAnyTrigger = true;
+                    registeredThis = true;
                 }
 
                 if (mo.triggerIsWorkflow) {
-                    const fullname = `${cname}.${mname}`;
                     // Initiate catchup work
                     const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
                     const catchup = await this.createPoll(tc, fullname, tname, tstr);
 
                     // Catchup query
                     catchups.push(catchup);
+
+                    // Launch poller if needed
+                    if (!(mo.triggerConfig.useDBNotifications || mo.triggerConfig.installDBTrigger) && tc.dbPollingInterval) {
+                        const poller = new DBTPollingLoop(this, tc, mr, tname, tstr);
+                        this.pollers.push(poller);
+                        this.pollLoops.push(poller.startLoop());
+                        hasAnyPoller = true;
+                        registeredThis = true;
+                    }
+                }
+
+                if (!registeredThis) {
+                    this.executor.logger.warn(`The DB trigger configuration for ${fullname} does not specify to use DB notifications, nor does it provide a polling interval, and will therefore never run.`)
                 }
             }
         }
 
-        if (hasAnyTrigger) {
-            const handler = (msg: DBNotification) => {
-                if (msg.channel !== nname) return;
-                const payload = JSON.parse(msg.payload!) as TriggerPayload;
-                this.payloadQ.enqueueNotify(payload);
-            };
-
-            this.listeners.push(await this.executor.userDBListen([nname], handler));
-            this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
-
-            for (const q of catchups) {
-                const catchupFunc =  async () => {
-                    try {
-                        const rows = await this.executor!.queryUserDB(q.query, q.params) as {payload: string}[];
-                        for (const r of rows) {
-                            const payload = JSON.parse(r.payload) as TriggerPayload;
-                            this.payloadQ.enqueueCatchup(payload);
-                        }
-                    }
-                    catch(e) {
-                        console.log(e);
-                        this.executor?.logger.error(e);
-                    }
+        if (hasAnyTrigger || hasAnyPoller) {
+            if (hasAnyTrigger) {
+                const handler = (msg: DBNotification) => {
+                    if (msg.channel !== nname) return;
+                    const payload = JSON.parse(msg.payload!) as TriggerPayload;
+                    this.payloadQ.enqueueNotify(payload);
                 };
-  
-                await catchupFunc();
-            }
 
-            this.payloadQ.finishCatchup();
+                this.listeners.push(await this.executor.userDBListen([nname], handler));
+                this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
+
+                for (const q of catchups) {
+                    const catchupFunc =  async () => {
+                        try {
+                            const rows = await this.executor!.queryUserDB(q.query, q.params) as {payload: string}[];
+                            for (const r of rows) {
+                                const payload = JSON.parse(r.payload) as TriggerPayload;
+                                this.payloadQ.enqueueCatchup(payload);
+                            }
+                        }
+                        catch(e) {
+                            console.log(e);
+                            this.executor?.logger.error(e);
+                        }
+                    };
+    
+                    await catchupFunc();
+                }
+
+                this.payloadQ.finishCatchup();
+            }
 
             const payloadFunc = async(payload: TriggerPayload) => {
                 for (const regOp of this.tableToReg.get(payload.tname) ?? []) {
