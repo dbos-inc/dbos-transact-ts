@@ -2,6 +2,8 @@ import { Knex } from "knex";
 
 import {
     createTestingRuntime,
+    Step,
+    StepContext,
     TestingRuntime,
     Transaction,
     TransactionContext,
@@ -48,12 +50,12 @@ class DBOSTriggerTestClassSN {
         dbPollingInterval: 1000
     })
     @Workflow()
-    static async pollWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    static async pollWFBySeq(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WFSN Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClassSN.nSNUpdates;
+            await ctxt.invoke(DBOSTriggerTestClassSN).snUpdate();
         }
         return Promise.resolve();
     }
@@ -63,17 +65,28 @@ class DBOSTriggerTestClassSN {
         recordIDColumns: ['order_id'],
         timestampColumn: 'update_date',
         timestampSkewMS: 60000,
-        queueName: q.name,
         dbPollingInterval: 1000
     })
     @Workflow()
-    static async pollWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    static async pollWFByTS(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        console.log(`WFTS Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.tsRecordMap.set(key[0], rec as TestTable);
-            ++DBOSTriggerTestClassSN.nTSUpdates;
+            await ctxt.invoke(DBOSTriggerTestClassSN).tsUpdate();
         }
+        return Promise.resolve();
+    }
+
+    @Step()
+    static async snUpdate(_ctx: StepContext) {
+        ++DBOSTriggerTestClassSN.nSNUpdates;
+        return Promise.resolve();
+    }
+
+    @Step()
+    static async tsUpdate(_ctx: StepContext) {
+        ++DBOSTriggerTestClassSN.nTSUpdates;
         return Promise.resolve();
     }
 
@@ -133,26 +146,38 @@ describe("test-db-triggers", () => {
     });
   
     test("trigger-seqnum", async () => {
+        console.log("Test start");
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
-        while (DBOSTriggerTestClassSN.nSNUpdates < 2 || DBOSTriggerTestClassSN.nTSUpdates < 2) await sleepms(10);
-        expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(2);
-        expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(2);
+        console.log("Done inserts");
+        while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Packed") await sleepms(10);
+        while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Packed") await sleepms(10);
+        while (DBOSTriggerTestClassSN.nSNUpdates < 1 || DBOSTriggerTestClassSN.nTSUpdates < 1) await sleepms(10);
+        console.log("Done wait");
+
+        // If these occurred close together, we would not see the insert+update separately...
+        expect(DBOSTriggerTestClassSN.nSNUpdates).toBeGreaterThanOrEqual(1);
+        expect(DBOSTriggerTestClassSN.nSNUpdates).toBeLessThanOrEqual(2);
+        expect(DBOSTriggerTestClassSN.nTSUpdates).toBeGreaterThanOrEqual(1);
+        expect(DBOSTriggerTestClassSN.nTSUpdates).toBeLessThanOrEqual(2);
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Packed");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Packed");
 
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
-        while (DBOSTriggerTestClassSN.nSNUpdates < 4 || DBOSTriggerTestClassSN.nTSUpdates < 4) await sleepms(10);
-        expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(4);
-        expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(4);
+        while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
+        while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
+        while (DBOSTriggerTestClassSN.snRecordMap.get(2)?.status !== "Ordered") await sleepms(10);
+        while (DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status !== "Ordered") await sleepms(10);
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.snRecordMap.get(2)?.status).toBe("Ordered");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
+        console.log("Disable event recvr");
         await testRuntime.deactivateEventReceivers();
+        console.log("Disable event recvr done");
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
@@ -167,20 +192,19 @@ describe("test-db-triggers", () => {
         console.log("************************************************** Restart *****************************************************");
         DBOSTriggerTestClassSN.reset();
 
+        console.log("Init event recvr");
         await testRuntime.initEventReceivers();
+        console.log("Init event recvr done");
 
         console.log("************************************************** Restarted *****************************************************");
         DBOSTriggerTestClassSN.reset();
-        // We had processed up to 5 before, 
-        // The count of 7 is a bit confusing because we're sharing a table.  We expect all 4 orders to be sent based on time, and 3 based on SN
-        while (DBOSTriggerTestClassSN.nSNUpdates < 7 || DBOSTriggerTestClassSN.nTSUpdates < 7) await sleepms(10);
+
+        // Catchup should be sequential, wait for the last update to get processed...
+        while (DBOSTriggerTestClassSN.snRecordMap.get(4)?.status !== "Shipped") await sleepms(10);
+        while (DBOSTriggerTestClassSN.tsRecordMap.get(4)?.status !== "Shipped") await sleepms(10);
         await sleepms(100);
 
         console.log("************************************************** Catchup Complete *****************************************************");
-
-        expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(7);
-        // With 60 seconds, we will see all records again
-        expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(7);
 
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Shipped");

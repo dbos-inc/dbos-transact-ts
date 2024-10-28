@@ -281,6 +281,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
         this.executor = executor;
         this.shutdown = false;
         this.payloadQ.restart();
+        this.tableToReg.clear();
 
         const hasTrigger: Set<string> = new Set();
         let hasAnyTrigger: boolean = false;

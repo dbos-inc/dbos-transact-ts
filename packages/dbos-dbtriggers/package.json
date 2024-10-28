@@ -13,7 +13,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "npm run build && jest --detectOpenHandles"
+    "test": "npm run build && NODE_OPTIONS='--trace-warnings' jest --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
