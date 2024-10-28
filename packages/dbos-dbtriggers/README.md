@@ -55,10 +55,11 @@ The parameters provided to each method invocation are:
 * `key`: An array of record fields that have been extracted as the record key.  The list of fields extracted is controlled by the `DBTriggerConfig`.
 * `rec`: The new contents of the database record.
 
-
 ### Using Polling
 
 ### Using Database Triggers
+
+### Using Workflow Queues
 
 #### Automatic Database Trigger Installation
 

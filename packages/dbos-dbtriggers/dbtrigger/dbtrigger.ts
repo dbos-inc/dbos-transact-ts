@@ -248,6 +248,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
     shutdown: boolean = false;
     payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
     dispatchLoops: Promise<void>[] = [];
+    pollLoops: Promise<void>[] = [];
 
     constructor() {        
     }
@@ -487,6 +488,15 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
             }
         }
         this.dispatchLoops = [];
+        for (const p of this.pollLoops) {
+            try {
+                await p;
+            }
+            catch (e) {
+                // Error in destroy, NBD
+            }
+        }
+        this.pollLoops = [];
         this.tableToReg = new Map();
     }
 

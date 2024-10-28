@@ -6,7 +6,8 @@ import {
     Transaction,
     TransactionContext,
     Workflow,
-    WorkflowContext
+    WorkflowContext,
+    WorkflowQueue
 } from "@dbos-inc/dbos-sdk";
 
 import { DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
@@ -20,6 +21,8 @@ type KnexTransactionContext = TransactionContext<Knex>;
 class DBOSTestNoClass {
 
 }
+
+const q = new WorkflowQueue("schedQ", 1);
 
 class DBOSTriggerTestClassSN {
     static nTSUpdates = 0;
@@ -36,9 +39,9 @@ class DBOSTriggerTestClassSN {
         DBOSTriggerTestClassSN.snRecordMap = new Map();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2, queueName: q.name})
     @Workflow()
-    static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+    static async pollWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
@@ -48,9 +51,9 @@ class DBOSTriggerTestClassSN {
         return Promise.resolve();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000})
+    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000, queueName: q.name})
     @Workflow()
-    static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+    static async pollWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
@@ -175,6 +178,18 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(4)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
+
+        const wfs = await testRuntime.getWorkflows({
+            workflowName: "pollWFBySeq",
+        });
+
+        let foundQ = false;
+        for (const wfid of wfs.workflowUUIDs) {
+            const stat = await testRuntime.retrieveWorkflow(wfid).getStatus();
+            if (stat?.queueName === q.name) foundQ = true;
+        }
+        expect (foundQ).toBeTruthy();
+
     }, 15000);
 });
 
