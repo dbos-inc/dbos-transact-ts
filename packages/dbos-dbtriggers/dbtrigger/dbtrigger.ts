@@ -49,6 +49,9 @@ export class DBTriggerWorkflowConfig extends DBTriggerConfig {
     timestampColumn?: string = undefined;
     // In case sequence numbers aren't perfectly in order, how far off could they be?
     timestampSkewMS?: number = undefined;
+
+    // Use a workflow queue if set
+    queueName?: string = undefined;
 }
 
 interface DBTriggerRegistration
@@ -413,7 +416,8 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
                             const wfParams = {
                                 workflowUUID: `dbt_${cname}_${mname}_${keystr.join('|')}`,
-                                configuredInstance: null
+                                configuredInstance: null,
+                                queueName: tc.queueName,
                             };
                             if (payload.operation === TriggerOperation.RecordDeleted) {
                                 this.executor?.logger.warn(`DB Trigger ${fullname} on '${payload.tname}' witnessed a record deletion.   Record deletion workflow triggers are not supported.`);
