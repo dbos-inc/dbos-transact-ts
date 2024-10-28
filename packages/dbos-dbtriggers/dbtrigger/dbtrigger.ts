@@ -35,9 +35,6 @@ export class DBTriggerConfig {
 
     // Should DB trigger be auto-installed?
     installDBTrigger?: boolean = false;
-
-    // If not using triggers, frequency of polling, ms
-    dbPollingInterval?: number = 5000;
 }
 
 export class DBTriggerWorkflowConfig extends DBTriggerConfig {
@@ -53,6 +50,9 @@ export class DBTriggerWorkflowConfig extends DBTriggerConfig {
 
     // Use a workflow queue if set
     queueName?: string = undefined;
+
+    // If not using triggers, frequency of polling, ms
+    dbPollingInterval?: number = 5000;
 }
 
 interface DBTriggerRegistration
@@ -249,9 +249,32 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
     shutdown: boolean = false;
     payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
     dispatchLoops: Promise<void>[] = [];
+    pollers: DBTPollingLoop[] = [];
     pollLoops: Promise<void>[] = [];
 
     constructor() {        
+    }
+
+    async createPoll(tc: DBTriggerWorkflowConfig, fullname: string, tname: string, tstr: string) {
+        if (!this.executor) throw new Error("No executor to run");
+
+        // Initiate catchup work
+        let recseqnum: bigint | null = null;
+        let rectmstmp: number | null = null;
+        if (tc.sequenceNumColumn || tc.timestampColumn) {
+            const lasts = await this.executor.getEventDispatchState('trigger', fullname, 'last');
+            recseqnum = (lasts?.updateSeq) ? BigInt(lasts.updateSeq) : null;
+            rectmstmp = lasts?.updateTime ?? null;
+            if (recseqnum && tc.sequenceNumJitter) {
+                recseqnum -= BigInt(tc.sequenceNumJitter);
+            }
+            if (rectmstmp && tc.timestampSkewMS) {
+                rectmstmp -= tc.timestampSkewMS;
+            }
+        }
+
+        // Catchup query
+        return createCatchupSql(tc, tname, tstr, recseqnum, rectmstmp);
     }
 
     async initialize(executor: DBOSExecutorContext) {
@@ -304,22 +327,10 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                     const fullname = `${cname}.${mname}`;
                     // Initiate catchup work
                     const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
-                    let recseqnum: bigint | null = null;
-                    let rectmstmp: number | null = null;
-                    if (tc.sequenceNumColumn || tc.timestampColumn) {
-                        const lasts = await this.executor.getEventDispatchState('trigger', fullname, 'last');
-                        recseqnum = (lasts?.updateSeq) ? BigInt(lasts.updateSeq) : null;
-                        rectmstmp = lasts?.updateTime ?? null;
-                        if (recseqnum && tc.sequenceNumJitter) {
-                            recseqnum -= BigInt(tc.sequenceNumJitter);
-                        }
-                        if (rectmstmp && tc.timestampSkewMS) {
-                            rectmstmp -= tc.timestampSkewMS;
-                        }
-                    }
+                    const catchup = await this.createPoll(tc, fullname, tname, tstr);
 
                     // Catchup query
-                    catchups.push(createCatchupSql(tc, tname, tstr, recseqnum, rectmstmp));
+                    catchups.push(catchup);
                 }
             }
         }
@@ -489,6 +500,10 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
             }
         }
         this.dispatchLoops = [];
+        for (const p of this.pollers) {
+            p.setStopLoopFlag();
+        }
+        this.pollers = [];
         for (const p of this.pollLoops) {
             try {
                 await p;
@@ -525,7 +540,10 @@ class DBTPollingLoop {
     private interruptResolve?: () => void;
     private trigMethodName: string;
 
-    constructor(readonly trigER: DBOSDBTrigger, readonly trigReg: DBTriggerConfig, readonly methodReg: MethodRegistrationBase)
+    constructor(
+        readonly trigER: DBOSDBTrigger, readonly trigReg: DBTriggerWorkflowConfig, readonly methodReg: MethodRegistrationBase,
+        readonly tname: string, readonly tstr: string
+    )
     {
         this.trigMethodName = `${methodReg.className}.${methodReg.name}`;
     }
@@ -561,8 +579,19 @@ class DBTPollingLoop {
             }
 
             // To catch-up poll
-
-            // Post workflows back to dispatch loop; this will do the updates
+            const catchup = await this.trigER.createPoll(this.trigReg, this.trigMethodName, this.tname, this.tstr);
+            try {
+                const rows = await this.trigER.executor!.queryUserDB(catchup.query, catchup.params) as {payload: string}[];
+                for (const r of rows) {
+                    const payload = JSON.parse(r.payload) as TriggerPayload;
+                    // Post workflows back to dispatch loop; queue processor will do the updates
+                    this.trigER.payloadQ.enqueueCatchup(payload);
+                }
+            }
+            catch(e) {
+                console.log(e);
+                this.trigER.executor?.logger.error(e);
+            }
         }
     }
 
