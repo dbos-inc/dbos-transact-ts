@@ -8,6 +8,7 @@ import {
     WorkflowFunction,
     associateMethodWithEventReceiver,
 } from "@dbos-inc/dbos-sdk";
+import { MethodRegistrationBase } from "@dbos-inc/dbos-sdk/dist/src/decorators";
 
 ////
 // Configuration
@@ -518,6 +519,62 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
         });
     }
 }
+
+class DBTPollingLoop {
+    private isRunning: boolean = false;
+    private interruptResolve?: () => void;
+    private trigMethodName: string;
+
+    constructor(readonly trigER: DBOSDBTrigger, readonly trigReg: DBTriggerConfig, readonly methodReg: MethodRegistrationBase)
+    {
+        this.trigMethodName = `${methodReg.className}.${methodReg.name}`;
+    }
+
+    async startLoop(): Promise<void> {
+        // See if the exec time is available in durable storage...
+        let execTime = new Date().getTime();
+
+        this.isRunning = true;
+        while (this.isRunning) {
+            const nextExecTime = execTime + (this.trigReg.dbPollingInterval ?? 5000);
+            const sleepTime = nextExecTime - new Date().getTime();
+            execTime = nextExecTime;
+
+            if (sleepTime > 0) {
+                // Wait for either the timeout or an interruption
+                let timer: NodeJS.Timeout;
+                const timeoutPromise = new Promise<void>((resolve) => {
+                    timer = setTimeout(() => {
+                      resolve();
+                    }, sleepTime);
+                  });
+                await Promise.race([
+                    timeoutPromise,
+                    new Promise<void>((_, reject) => this.interruptResolve = reject)
+                ])
+                .catch(() => {this.trigER.executor?.logger.debug("Trigger polling loop interrupted!")}); // Interrupt sleep throws
+                clearTimeout(timer!);
+            }
+
+            if (!this.isRunning) {
+                break;
+            }
+
+            // To catch-up poll
+
+            // Post workflows back to dispatch loop; this will do the updates
+        }
+    }
+
+    setStopLoopFlag() {
+        if (!this.isRunning) return;
+        this.isRunning = false;
+        if (this.interruptResolve) {
+            this.interruptResolve(); // Trigger the interruption
+        }
+    }
+}
+
 
 let dbTrig: DBOSDBTrigger | undefined = undefined;
 

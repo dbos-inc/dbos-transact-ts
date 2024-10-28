@@ -39,7 +39,14 @@ class DBOSTriggerTestClassSN {
         DBOSTriggerTestClassSN.snRecordMap = new Map();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2, queueName: q.name})
+    @DBTriggerWorkflow({
+        tableName: testTableName,
+        recordIDColumns: ['order_id'],
+        sequenceNumColumn: 'seqnum',
+        sequenceNumJitter: 2,
+        queueName: q.name,
+        dbPollingInterval: 1000
+    })
     @Workflow()
     static async pollWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
@@ -51,7 +58,14 @@ class DBOSTriggerTestClassSN {
         return Promise.resolve();
     }
 
-    @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000, queueName: q.name})
+    @DBTriggerWorkflow({
+        tableName: testTableName,
+        recordIDColumns: ['order_id'],
+        timestampColumn: 'update_date',
+        timestampSkewMS: 60000,
+        queueName: q.name,
+        dbPollingInterval: 1000
+    })
     @Workflow()
     static async pollWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
         console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
