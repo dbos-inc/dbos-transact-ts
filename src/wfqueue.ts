@@ -68,7 +68,8 @@ class WFQueueRunner
                 catch (e) {
                     const err = e as Error;
                     exec.logger.warn(`Error getting startable workflows: ${err.message}`);
-                    throw e;
+                    // On the premise that this was a transaction conflict error, just try again later.
+                    wfids = [];
                 }
 
                 if (wfids.length > 0) {

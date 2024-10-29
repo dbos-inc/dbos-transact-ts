@@ -1034,11 +1034,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (queue.rateLimit && numRecentQueries >= queue.rateLimit.limitPerPeriod) {
           break;
         }
+
         const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
           .where('workflow_uuid', id)
           .andWhere('status', StatusString.ENQUEUED)
-          .update('status', StatusString.PENDING)
-          .onConflict().ignore();
+          .update('status', StatusString.PENDING);
+
         if (res > 0) {
           claimedIDs.push(id);
           await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
