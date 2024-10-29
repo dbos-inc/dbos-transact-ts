@@ -426,6 +426,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                                     this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`);
                                     continue;
                                 }
+                                keystr.push(`${recseqnum.toString()}`);
                             }
                             if (tc.timestampColumn) {
                                 if (!Object.hasOwn(payload.record, tc.timestampColumn)) {
@@ -446,6 +447,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                                     this.executor?.logger.warn(`DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`);
                                     continue;
                                 }
+                                keystr.push(`${rectmstmp}`);
                             }
 
                             const wfParams = {
@@ -464,6 +466,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                             if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
                             if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
                             payload.operation = TriggerOperation.RecordUpserted;
+                            console.log(`Executing ${fullname} on ID ${wfParams.workflowUUID} queue ${wfParams.queueName}`);
                             await this.executor?.workflow(regOp.methodReg.registeredFunction as WorkflowFunction<unknown[], void>, wfParams, payload.operation, key, payload.record);
 
                             await this.executor?.upsertEventDispatchState({

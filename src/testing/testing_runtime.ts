@@ -141,7 +141,13 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
   async deactivateEventReceivers() {
     for (const evtRcvr of this.#server?.dbosExec?.eventReceivers || []) {
-      await evtRcvr.destroy();
+      try {
+        await evtRcvr.destroy();
+      }
+      catch (err) {
+        const e = err as Error;
+        this.#server?.dbosExec?.logger.warn(`Error destroying event receiver: ${e.message}`);
+      }      
     }
     await this.#scheduler?.destroyScheduler();
     try {
@@ -151,8 +157,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
     catch (err) {
       const e = err as Error;
       this.#server?.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
-    }  
-
+    }
   }
 
   /**

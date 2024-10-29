@@ -1004,6 +1004,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .first())!.count;
         numRecentQueries = parseInt(`${numRecentQueriesS}`);
         if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          console.log(`Queue rate limit hit`);
           return claimedIDs;
         }
       }
@@ -1025,6 +1026,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // From the functions retrieved, get the workflow IDs of the functions
       // that have not yet been started so we can start them.
       const rows = await query.select(['workflow_uuid', 'started_at_epoch_ms']);
+      console.log(`Query returned ${rows.length} rows`);
       const workflowIDs = rows
         .filter((row) => !row.started_at_epoch_ms)
         .map(row => row.workflow_uuid);
@@ -1037,7 +1039,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
           .where('workflow_uuid', id)
           .andWhere('status', StatusString.ENQUEUED)
-          .update('status', StatusString.PENDING);
+          .update('status', StatusString.PENDING)
+          .onConflict().ignore();
         if (res > 0) {
           claimedIDs.push(id);
           await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
