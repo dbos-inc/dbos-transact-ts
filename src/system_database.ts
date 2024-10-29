@@ -1037,7 +1037,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
           .where('workflow_uuid', id)
           .andWhere('status', StatusString.ENQUEUED)
-          .update('status', StatusString.PENDING);
+          .update('status', StatusString.PENDING)
+          .onConflict().ignore();
         if (res > 0) {
           claimedIDs.push(id);
           await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
