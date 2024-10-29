@@ -68,7 +68,7 @@ class WFQueueRunner
                 catch (e) {
                     const err = e as Error;
                     exec.logger.warn(`Error getting startable workflows: ${err.message}`);
-                    // An error here is probably a transaction serialization conflict.  Try again in the next iteration.
+                    // On the premise that this was a transaction conflict error, just try again later.
                     wfids = [];
                 }
 

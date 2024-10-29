@@ -147,7 +147,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
       catch (err) {
         const e = err as Error;
         this.#server?.dbosExec?.logger.warn(`Error destroying event receiver: ${e.message}`);
-      }      
+      }
     }
     await this.#scheduler?.destroyScheduler();
     try {
