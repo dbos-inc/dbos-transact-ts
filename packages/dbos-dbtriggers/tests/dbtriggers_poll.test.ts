@@ -148,8 +148,8 @@ describe("test-db-trigger-polling", () => {
     });
     
     afterEach(async () => {
-        // Don't.  Listeners will block this.
-        //await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+        await testRuntime.deactivateEventReceivers();
+        await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.destroy();
     });
   
