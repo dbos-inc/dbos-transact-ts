@@ -35,9 +35,7 @@ export class DBTriggerConfig {
 
     // Should DB trigger be auto-installed?
     installDBTrigger?: boolean = false;
-}
 
-export class DBTriggerWorkflowConfig extends DBTriggerConfig {
     // This identify the record sequence number, for checkpointing the sys db
     sequenceNumColumn?: string = undefined;
     // In case sequence numbers aren't perfectly in order, how far off could they be?
@@ -120,7 +118,7 @@ function createTriggerSQL(
 }
 
 function createCatchupSql(
-    tc: DBTriggerWorkflowConfig,
+    tc: DBTriggerConfig,
     tableName: string,
     tableNameString: string,
     startSeqNum?: bigint | null,
@@ -255,7 +253,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
     constructor() {
     }
 
-    async createPoll(tc: DBTriggerWorkflowConfig, fullname: string, tname: string, tstr: string) {
+    async createPoll(tc: DBTriggerConfig, fullname: string, tname: string, tstr: string) {
         if (!this.executor) throw new Error("No executor to run");
 
         // Initiate catchup work
@@ -332,7 +330,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
 
                 if (mo.triggerIsWorkflow) {
                     // Initiate catchup work
-                    const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
+                    const tc = mo.triggerConfig;
                     const catchup = await this.createPoll(tc, fullname, tname, tstr);
 
                     // Catchup query
@@ -403,7 +401,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                         const fullname = `${cname}.${mname}`;
                         if (mo.triggerIsWorkflow) {
                             // Record the time of the wf kicked off (if given)
-                            const tc = mo.triggerConfig as DBTriggerWorkflowConfig;
+                            const tc = mo.triggerConfig;
                             let recseqnum: bigint | null = null;
                             let rectmstmp: number | null = null;
                             if (tc.sequenceNumColumn) {
@@ -564,7 +562,7 @@ class DBTPollingLoop {
     private trigMethodName: string;
 
     constructor(
-        readonly trigER: DBOSDBTrigger, readonly trigReg: DBTriggerWorkflowConfig, readonly methodReg: MethodRegistrationBase,
+        readonly trigER: DBOSDBTrigger, readonly trigReg: DBTriggerConfig, readonly methodReg: MethodRegistrationBase,
         readonly tname: string, readonly tstr: string
     )
     {
@@ -647,7 +645,7 @@ export function DBTrigger(triggerConfig: DBTriggerConfig) {
     return trigdec;
 }
 
-export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerWorkflowConfig) {
+export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerConfig) {
     function trigdec<This, Ctx extends WorkflowContext, Return, Key extends unknown[]>(
         target: object,
         propertyKey: string,
