@@ -38,8 +38,8 @@ class DBOSTriggerTestClassSN {
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2, installDBTrigger: true})
     @Workflow()
-    static async triggerWFBySeq(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    static async triggerWFBySeq(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        ctxt.logger.debug(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
@@ -50,8 +50,8 @@ class DBOSTriggerTestClassSN {
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000, installDBTrigger: true})
     @Workflow()
-    static async triggerWFByTS(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    static async triggerWFByTS(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        ctxt.logger.debug(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.tsRecordMap.set(key[0], rec as TestTable);

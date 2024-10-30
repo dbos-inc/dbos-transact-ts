@@ -51,7 +51,7 @@ class DBOSTriggerTestClassSN {
     })
     @Workflow()
     static async pollWFBySeq(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFSN Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        ctxt.logger.debug(`WFSN Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         const trec = rec as TestTable;
         if (!DBOSTriggerTestClassSN.snRecordMap.has(key[0]) ||
@@ -72,7 +72,7 @@ class DBOSTriggerTestClassSN {
     })
     @Workflow()
     static async pollWFByTS(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        console.log(`WFTS Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+        ctxt.logger.debug(`WFTS Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             const trec = rec as TestTable;
@@ -154,16 +154,11 @@ describe("test-db-trigger-polling", () => {
     });
   
     test("dbpoll-seqnum", async () => {
-        console.log("********** Test start");
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
-        console.log("********** Done inserts");
         while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Packed") await sleepms(10);
-        console.log("* Done wait for SN");
         while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Packed") await sleepms(10);
-        console.log("* Done wait for TS");
         while (DBOSTriggerTestClassSN.nSNUpdates < 1 || DBOSTriggerTestClassSN.nTSUpdates < 1) await sleepms(10);
-        console.log("********** Done wait round 1");
 
         // If these occurred close together, we would not see the insert+update separately...
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBeGreaterThanOrEqual(1);
@@ -173,15 +168,12 @@ describe("test-db-trigger-polling", () => {
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Packed");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Packed");
 
-        console.log("********** Do Updates");
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
-        console.log("********** Done updates");
         while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
         while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
         while (DBOSTriggerTestClassSN.snRecordMap.get(2)?.status !== "Ordered") await sleepms(10);
         while (DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status !== "Ordered") await sleepms(10);
-        console.log("********** Done wait round 2");
 
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Shipped");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Shipped");
@@ -189,9 +181,7 @@ describe("test-db-trigger-polling", () => {
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe("Ordered");
 
         // Take down
-        console.log("********** Disable event recvr");
         await testRuntime.deactivateEventReceivers();
-        console.log("********** Disable event recvr done");
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
@@ -206,9 +196,7 @@ describe("test-db-trigger-polling", () => {
         console.log("************************************************** Restart *****************************************************");
         DBOSTriggerTestClassSN.reset();
 
-        console.log("********** Init event recvr");
         await testRuntime.initEventReceivers();
-        console.log("********** Init event recvr done");
 
         console.log("************************************************** Restarted *****************************************************");
         DBOSTriggerTestClassSN.reset();
@@ -242,4 +230,3 @@ describe("test-db-trigger-polling", () => {
 
     }, 15000);
 });
-

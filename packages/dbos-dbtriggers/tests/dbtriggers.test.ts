@@ -57,8 +57,8 @@ class DBOSTriggerTestClass {
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true})
     @Workflow()
-    static async triggerWF(_ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        //console.log(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
+        ctxt.logger.debug(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect(op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);

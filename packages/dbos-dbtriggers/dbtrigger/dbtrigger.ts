@@ -375,7 +375,6 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                             }
                         }
                         catch(e) {
-                            console.log(e);
                             this.executor?.logger.error(e);
                         }
                     };
@@ -466,7 +465,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                             if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
                             if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
                             payload.operation = TriggerOperation.RecordUpserted;
-                            console.log(`Executing ${fullname} on ID ${wfParams.workflowUUID} queue ${wfParams.queueName}`);
+                            this.executor?.logger.debug(`Executing ${fullname} on ID ${wfParams.workflowUUID} queue ${wfParams.queueName}`);
                             await this.executor?.workflow(regOp.methodReg.registeredFunction as WorkflowFunction<unknown[], void>, wfParams, payload.operation, key, payload.record);
 
                             await this.executor?.upsertEventDispatchState({
@@ -613,7 +612,6 @@ class DBTPollingLoop {
                 }
             }
             catch(e) {
-                console.log(e);
                 this.trigER.executor?.logger.error(e);
             }
         }
