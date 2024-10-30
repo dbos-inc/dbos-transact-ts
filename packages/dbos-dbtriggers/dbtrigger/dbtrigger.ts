@@ -150,7 +150,7 @@ function createCatchupSql(
         )::text as payload
         FROM (
             SELECT *
-            FROM ${tableName} 
+            FROM ${tableName}
             WHERE ${sncpred} ${tscpred} 1=1
             ${oby}
         ) t
@@ -252,7 +252,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
     pollers: DBTPollingLoop[] = [];
     pollLoops: Promise<void>[] = [];
 
-    constructor() {        
+    constructor() {
     }
 
     async createPoll(tc: DBTriggerWorkflowConfig, fullname: string, tname: string, tstr: string) {
@@ -378,7 +378,7 @@ export class DBOSDBTrigger implements DBOSEventReceiver {
                             this.executor?.logger.error(e);
                         }
                     };
-    
+
                     await catchupFunc();
                 }
 

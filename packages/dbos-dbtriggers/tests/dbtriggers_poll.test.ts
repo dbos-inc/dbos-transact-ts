@@ -125,7 +125,7 @@ interface TestTable {
 
 describe("test-db-trigger-polling", () => {
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
     });
 
@@ -146,13 +146,13 @@ describe("test-db-trigger-polling", () => {
         testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
         DBOSTriggerTestClassSN.reset()
     });
-    
+
     afterEach(async () => {
         await testRuntime.deactivateEventReceivers();
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.destroy();
     });
-  
+
     test("dbpoll-seqnum", async () => {
         await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));

@@ -93,7 +93,7 @@ interface TestTable {
 
 describe("test-db-triggers", () => {
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
     });
 
@@ -113,13 +113,13 @@ describe("test-db-triggers", () => {
         testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
         DBOSTriggerTestClass.reset()
     });
-    
+
     afterEach(async () => {
         await testRuntime.deactivateEventReceivers();
         await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
         await testRuntime.destroy();
     });
-  
+
     test("trigger-nonwf", async () => {
         await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
