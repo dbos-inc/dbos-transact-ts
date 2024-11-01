@@ -1,9 +1,10 @@
-import { PoolClient } from "pg";
-import { Scheduled, SchedulerMode, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext, WorkflowQueue } from "../../src";
+import { Pool, PoolClient, PoolConfig } from "pg";
+import { DBOS, Scheduled, SchedulerMode, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext, WorkflowQueue } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
-import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import { createInternalTestRuntime, TestingRuntimeImpl } from "../../src/testing/testing_runtime";
 import { sleepms } from "../../src/utils";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
+import { PostgresSystemDatabase } from "../../src/system_database";
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -218,3 +219,153 @@ describe("scheduled-wf-tests-when-active", () => {
         }
     }, 15000);
 });
+
+export async function simulateDbRestart(currentDb: string, downtime: number, baseConfig: PoolConfig, basePool: Pool): Promise<void> {
+    const mainClient: PoolClient = await basePool.connect();
+
+    try {
+        // Get DB name
+        const currentDbResult = await mainClient.query<{current_database: string}>("SELECT current_database()");
+        const currentDb = currentDbResult.rows[0].current_database;
+        const tempDbName = "temp_database_for_maintenance";
+
+        // Create a temporary database
+        try {
+            await mainClient.query(`CREATE DATABASE ${tempDbName};`);
+            console.log(`Temporary database '${tempDbName}' created.`);
+        } catch (error) {
+            console.error("Could not create temp db:", error);
+        }
+
+        const tempClient = new Pool({
+            ...baseConfig,
+            database: tempDbName,
+        });
+
+        try {
+            const tempDbClient = await tempClient.connect();
+
+            // Disable new connections to the original database
+            await tempDbClient.query(`ALTER DATABASE ${currentDb} WITH ALLOW_CONNECTIONS false;`);
+
+            // Terminate all connections except the current one
+            await tempDbClient.query(`
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE pid <> pg_backend_pid()
+                AND datname = '${currentDb}';
+            `);
+
+            // Wait for the specified downtime
+            await sleepms(downtime);
+
+            // Re-enable new connections to the original database
+            await tempDbClient.query(`ALTER DATABASE ${currentDb} WITH ALLOW_CONNECTIONS true;`);
+            tempDbClient.release();
+        } catch (error) {
+            console.error(`Could not disable db ${currentDb}:`, error);
+        } finally {
+            await tempClient.end();
+        }
+
+        // Clean up the temporary database
+        try {
+            await mainClient.query(`
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE pid <> pg_backend_pid()
+                AND datname = '${tempDbName}';
+            `);
+            await mainClient.query(`DROP DATABASE ${tempDbName};`);
+            console.log(`Temporary database '${tempDbName}' dropped.`);
+        } catch (error) {
+            console.error(`Could not clean up temp db ${tempDbName}:`, error);
+        }
+    } finally {
+        mainClient.release();
+    }
+}
+
+class DBOSSchedDBDown {
+    static nCalls = 0;
+
+    @Transaction({isolationLevel: "READ COMMITTED"})
+    static async scheduledTxn(ctxt: TestTransactionContext) {
+        await ctxt.client.query("SELECT 1");
+        DBOSSchedDBDown.nCalls++;
+    }
+
+    @Scheduled({crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive})
+    @Workflow()
+    static async scheduledDefault(ctxt: WorkflowContext, _schedTime: Date, _startTime: Date) {
+        await ctxt.invoke(DBOSSchedDBDown).scheduledTxn();
+        return Promise.resolve();
+    }
+}
+
+describe("scheduled-wf-tests-when-db-down", () => {
+    let config: DBOSConfig;
+    let testRuntime: TestingRuntime;
+  
+    beforeAll(async () => {
+        config = generateDBOSTestConfig();
+        await setUpDBOSTestDb(config);  
+    });
+  
+    beforeEach(async () => {
+        testRuntime = await createInternalTestRuntime([DBOSSchedDBDown], config);
+        DBOSSchedDBDown.nCalls = 0;
+    });
+  
+    afterEach(async () => {
+        await testRuntime.destroy();
+    }, 10000);
+
+    test("test_appdb_downtime", async () => {
+        // Make sure two functions with the same name in different classes are not interfering with each other.
+        await sleepms(2000);
+        const appdbname = await testRuntime.queryUserDB<{current_database: string}>("SELECT current_database()");
+        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+        const sysdb = dbosExec.systemDatabase as PostgresSystemDatabase;
+        await simulateDbRestart(appdbname[0].current_database, 2000, sysdb.systemPoolConfig, sysdb.pool);
+        await sleepms(2000);
+        expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(3);
+    });
+
+    test("test_sysdb_downtime", async () => {
+        await sleepms(2000);
+        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+        const sysdb = dbosExec.systemDatabase as PostgresSystemDatabase;
+        const sysdbname = await sysdb.pool.query<{current_database: string}>("SELECT current_database()");
+        await simulateDbRestart(sysdbname.rows[0].current_database, 2000, sysdb.systemPoolConfig, sysdb.pool);
+        await sleepms(2000);
+        expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(3);
+    });
+});
+
+/*
+def test_appdb_downtime(dbos: DBOS) -> None:
+    wf_counter: int = 0
+
+    time.sleep(2)
+    simulate_db_restart(dbos._app_db.engine, 2)
+    time.sleep(2)
+    assert wf_counter > 2
+
+
+def test_sysdb_downtime(dbos: DBOS) -> None:
+    wf_counter: int = 0
+
+    @DBOS.scheduled("* * * * * *")
+    @DBOS.workflow()
+    def test_workflow(scheduled: datetime, actual: datetime) -> None:
+        nonlocal wf_counter
+        wf_counter += 1
+
+    time.sleep(2)
+    simulate_db_restart(dbos._sys_db.engine, 2)
+    time.sleep(2)
+    # We know there should be at least 3 occurrences from the 4 seconds when the DB was up.
+    #  There could be more than 4, depending on the pace the machine...
+    assert wf_counter > 2
+*/
