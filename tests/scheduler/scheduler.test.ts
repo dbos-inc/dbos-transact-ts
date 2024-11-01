@@ -225,8 +225,6 @@ export async function simulateDbRestart(currentDb: string, downtime: number, bas
 
     try {
         // Get DB name
-        const currentDbResult = await mainClient.query<{current_database: string}>("SELECT current_database()");
-        const currentDb = currentDbResult.rows[0].current_database;
         const tempDbName = "temp_database_for_maintenance";
 
         // Create a temporary database
@@ -330,7 +328,7 @@ describe("scheduled-wf-tests-when-db-down", () => {
         await simulateDbRestart(appdbname[0].current_database, 2000, sysdb.systemPoolConfig, sysdb.pool);
         await sleepms(2000);
         expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(3);
-    });
+    }, 15000);
 
     test("test_sysdb_downtime", async () => {
         await sleepms(2000);
@@ -340,7 +338,7 @@ describe("scheduled-wf-tests-when-db-down", () => {
         await simulateDbRestart(sysdbname.rows[0].current_database, 2000, sysdb.systemPoolConfig, sysdb.pool);
         await sleepms(2000);
         expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(3);
-    });
+    }, 15000);
 });
 
 /*
