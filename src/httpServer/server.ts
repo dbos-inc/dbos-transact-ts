@@ -24,6 +24,7 @@ import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
+import { asyncLocalCtx } from '../context';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -329,7 +330,11 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
               koaCtxt.body = await dbosExec.external(ro.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
-              const retValue = await ro.invoke(undefined, [oc, ...args]);
+              let cresult: unknown;
+              await asyncLocalCtx.run({cid: oc.cid}, async ()=> {
+                cresult = await ro.invoke(undefined, [oc, ...args]);
+              });
+              const retValue = cresult!
 
               // Set the body to the return value unless the body is already set by the handler.
               if (koaCtxt.body === undefined) {
