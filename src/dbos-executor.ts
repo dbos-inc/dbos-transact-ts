@@ -807,17 +807,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(recordedInputs)}`);
     }
 
-    const workflowPromise: Promise<R> = wf.call(params.configuredInstance, wCtxt, ...args)
-      .then(async (result) => {
-        // Check if the result is the same.
-        const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
-        if (result === undefined && !recordedResult) {
-          return result;
-        }
-        if (DBOSJSON.stringify(result) !== DBOSJSON.stringify(recordedResult)) {
-          this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
-        }
-        return recordedResult; // Always return the recorded result.
+    const workflowPromise: Promise<R> = asyncLocalCtx.run({cid: wCtxt.cid}, async () => {
+      return await wf.call(params.configuredInstance, wCtxt, ...args)
+        .then(async (result) => {
+          // Check if the result is the same.
+          const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
+          if (result === undefined && !recordedResult) {
+            return result;
+          }
+          if (DBOSJSON.stringify(result) !== DBOSJSON.stringify(recordedResult)) {
+            this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
+          }
+          return recordedResult; // Always return the recorded result.
+        });
       });
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
