@@ -5,12 +5,23 @@ import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
 import { UserDatabase } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
-import { DBOSConfigKeyTypeError } from "./error";
+import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
+import { AsyncLocalStorage } from 'async_hooks';
 
 let contextSeqNumber = 0;
+export const asyncLocalCtx = new AsyncLocalStorage<{ cid: number }>();
+
 export function getContextSeqNumber() {
-  return ++contextSeqNumber;
+  const cid = ++contextSeqNumber;
+  return cid;
 }
+
+export function checkContext(ctx: DBOSContext) {
+  if (ctx.cid !== asyncLocalCtx.getStore()?.cid) {
+    throw new DBOSNotRegisteredError("Context usage is not registered with Async Local Storage");
+  }
+}
+
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
