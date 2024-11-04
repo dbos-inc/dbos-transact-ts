@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient, pgNodeIsKeyConflictError } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { HTTPRequest, DBOSContext, DBOSContextImpl, getContextSeqNumber } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl, getContextSeqNumber, asyncLocalCtx } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
@@ -481,7 +481,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           await this.flushResultBufferProc(client);
         }
 
-        const result = await proc(ctxt, ...args);
+        let cresult: R | undefined;
+        await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+          cresult = await proc(ctxt, ...args);
+        });
+        const result = cresult!
 
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
@@ -689,7 +693,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         }
 
         // Execute the user's transaction.
-        const result = await txn.call(clsinst, tCtxt, ...args);
+        let cresult: R | undefined;
+        await asyncLocalCtx.run({cid: tCtxt.cid}, async ()=> {
+          cresult = await txn.call(clsinst, tCtxt, ...args);
+        });
+        const result = cresult!
 
         // Record the execution, commit, and return.
         if (readOnly) {
@@ -807,7 +815,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
-          result = await stepFn.call(clsInst, ctxt, ...args);
+          let cresult: R | undefined;
+          await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+            cresult = await stepFn.call(clsInst, ctxt, ...args);
+          });
+          result = cresult!
         } catch (error) {
           const e = error as Error
           this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
@@ -823,7 +835,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       }
     } else {
       try {
-        result = await stepFn.call(clsInst, ctxt, ...args);
+        let cresult: R | undefined;
+        await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+          cresult = await stepFn.call(clsInst, ctxt, ...args);
+        });
+        result = cresult!
       } catch (error) {
         err = error as Error;
       }

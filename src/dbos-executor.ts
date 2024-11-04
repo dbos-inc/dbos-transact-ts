@@ -36,7 +36,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, getContextSeqNumber, InitContext } from './context';
+import { asyncLocalCtx, DBOSContextImpl, getContextSeqNumber, InitContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -691,7 +691,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        result = await wf.call(params.configuredInstance, wCtxt, ...args);
+        let cresult: R | undefined;
+        await asyncLocalCtx.run({cid: wCtxt.cid}, async ()=> {
+          cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
+        });
+        result = cresult!
+
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
         if (internalStatus.queueName) {
