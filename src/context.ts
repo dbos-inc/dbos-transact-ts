@@ -7,6 +7,11 @@ import { UserDatabase } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError } from "./error";
 
+let contextSeqNumber = 0;
+export function getContextSeqNumber() {
+  return ++contextSeqNumber;
+}
+
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
   readonly headers?: IncomingHttpHeaders;  // A node's http.IncomingHttpHeaders object.
@@ -30,6 +35,7 @@ export interface DBOSContext {
 
   readonly logger: DBOSLogger;
   readonly span: Span;
+  readonly cid: number;
 
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
@@ -46,7 +52,7 @@ export class DBOSContextImpl implements DBOSContext {
   applicationID: string = process.env.DBOS__APPID || "";		// Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger;						// Wrapper around the global logger for this context.
 
-  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
+  constructor(readonly cid: number, readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;

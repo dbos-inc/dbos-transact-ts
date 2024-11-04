@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient, pgNodeIsKeyConflictError } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl, getContextSeqNumber } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
@@ -202,7 +202,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       parentCtx?.span,
     );
-    super(workflowName, span, dbosExec.logger, parentCtx);
+    super(getContextSeqNumber(), workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;

@@ -8,7 +8,7 @@ import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DBOSContextImpl } from "../context";
+import { DBOSContextImpl, getContextSeqNumber } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, WfInvokeWfs, WfInvokeWfsAsync, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
 import { InvokeFuncsInst } from "../httpServer/handler";
@@ -47,7 +47,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       },
       parentCtx?.span,
     );
-    super(workflowName, span, dbosExec.logger, parentCtx);
+    super(getContextSeqNumber(), workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;

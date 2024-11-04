@@ -36,7 +36,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext } from './context';
+import { DBOSContextImpl, getContextSeqNumber, InitContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -1074,7 +1074,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       assumedRole: status.assumedRole,
       authenticatedRoles: status.authenticatedRoles,
     });
-    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
+    const oc = new DBOSContextImpl(getContextSeqNumber(), status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;

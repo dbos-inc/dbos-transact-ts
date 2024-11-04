@@ -30,7 +30,7 @@ export class StepContextImpl extends DBOSContextImpl implements StepContext {
   constructor(workflowContext: WorkflowContextImpl | WorkflowContextDebug, functionID: number, span: Span, logger: Logger,
      params: StepConfig, commName: string)
   {
-    super(commName, span, logger, workflowContext);
+    super(workflowContext.cid, commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? true;
     this.intervalSeconds = params.intervalSeconds ?? 1;
