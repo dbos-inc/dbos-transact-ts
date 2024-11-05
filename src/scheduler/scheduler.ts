@@ -155,45 +155,57 @@ class DetachableLoop {
                 break;
             }
 
-            // Check crontab
-            // If this "wake up" time is not on the schedule, we shouldn't execute.
-            //  (While ATOW this wake-up time is a scheduled run time, it is not
-            //   contractually obligated to be so.  If this is obligated to be a
-            //   scheduled execution time, then we could make this an assertion
-            //   instead of a check.)
-            if (!this.timeMatcher.match(nextExecTime)) {
+            let completed = false;
+            try {
+                // Check crontab
+                // If this "wake up" time is not on the schedule, we shouldn't execute.
+                //  (While ATOW this wake-up time is a scheduled run time, it is not
+                //   contractually obligated to be so.  If this is obligated to be a
+                //   scheduled execution time, then we could make this an assertion
+                //   instead of a check.)
+                if (!this.timeMatcher.match(nextExecTime)) {
+                    this.lastExec = nextExecTime;
+                    continue;
+                }
+
+                // Init workflow
+                const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
+                this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
+                const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: this.queueName };
+                // All operations annotated with Scheduled decorators must take in these four
+                const args: ScheduledArgs = [nextExecTime, new Date()];
+
+                // We currently only support scheduled workflows
+                if (this.scheduledMethod.workflowConfig) {
+                    // Execute the workflow
+                    await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>, wfParams, ...args);
+                }
+                else {
+                    this.dbosExec.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
+                }
+
+                // Record the time of the wf kicked off
+                const ers: DBOSEventReceiverState = {
+                    service: SCHEDULER_EVENT_SERVICE_NAME,
+                    workflowFnName: this.scheduledMethodName,
+                    key: 'lastState',
+                    value: `${nextExecTime.getTime()}`,
+                    updateTime: nextExecTime.getTime(),
+                }
+
+                completed = true;
+                const updRec = await this.dbosExec.systemDatabase.upsertEventDispatchState(ers);
+                const dbTime = parseFloat(updRec.value!);
+                if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
+            }
+            catch (e) {
+                const err = e as Error;
+                this.dbosExec.logger.error(`Scheduler caught exception: ${err.message}`);
+            }
+
+            if (completed || this.schedMode === SchedulerMode.ExactlyOncePerIntervalWhenActive) {
                 this.lastExec = nextExecTime;
-                continue;
             }
-
-            // Init workflow
-            const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
-            this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: this.queueName };
-            // All operations annotated with Scheduled decorators must take in these four
-            const args: ScheduledArgs = [nextExecTime, new Date()];
-
-            // We currently only support scheduled workflows
-            if (this.scheduledMethod.workflowConfig) {
-                // Execute the workflow
-                await this.dbosExec.workflow(this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>, wfParams, ...args);
-            }
-            else {
-                this.dbosExec.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
-            }
-
-            // Record the time of the wf kicked off
-            const ers: DBOSEventReceiverState = {
-                service: SCHEDULER_EVENT_SERVICE_NAME,
-                workflowFnName: this.scheduledMethodName,
-                key: 'lastState',
-                value: `${nextExecTime.getTime()}`,
-                updateTime: nextExecTime.getTime(),
-            }
-            const updRec = await this.dbosExec.systemDatabase.upsertEventDispatchState(ers);
-            const dbTime = parseFloat(updRec.value!);
-            if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
-            this.lastExec = nextExecTime;
         }
     }
 
