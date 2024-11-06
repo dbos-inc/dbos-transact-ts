@@ -11,6 +11,7 @@ import {
   StatusString,
   Step,
   StepContext,
+  DBOS,
 } from "../../src";
 import { RequestIDHeader } from "../../src/httpServer/handler";
 import { DeleteApi, PatchApi, PutApi } from "../../src";
@@ -225,6 +226,26 @@ describe("httpserver-tests", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  test("not-authenticated2", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser2?name=alice");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-you2", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser2?name=alice&userid=go_away");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-authorized2", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser2?name=alice&userid=bob");
+    expect(response.statusCode).toBe(403);
+  });
+
+  test("authorized2", async () => {
+    const response = await request(testRuntime.getHandlersCallback()).get("/requireduser2?name=alice&userid=a_real_user");
+    expect(response.statusCode).toBe(200);
+  });
+
   test("test-workflowUUID-header", async () => {
     const workflowUUID = uuidv1();
     const response = await request(testRuntime.getHandlersCallback()).post("/workflow?name=bob").set({ "dbos-idempotency-key": workflowUUID });
@@ -422,6 +443,21 @@ describe("httpserver-tests", () => {
         throw new DBOSResponseError("roles don't include user!", 400);
       }
       if (ctxt.assumedRole !== "user") {
+        throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
+      }
+      return Promise.resolve(`Please say hello to ${name}`);
+    }
+
+    @GetApi("/requireduser2")
+    @RequiredRole(["user"])
+    static async testAuth2(_ctxt: HandlerContext, name: string) {
+      if (DBOS.authenticatedUser !== "a_real_user") {
+        throw new DBOSResponseError("uid not a real user!", 400);
+      }
+      if (!DBOS.authenticatedRoles.includes("user")) {
+        throw new DBOSResponseError("roles don't include user!", 400);
+      }
+      if (DBOS.assumedRole !== "user") {
         throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
       }
       return Promise.resolve(`Please say hello to ${name}`);
