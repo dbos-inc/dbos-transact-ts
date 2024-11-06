@@ -168,6 +168,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   scheduler: DBOSScheduler | null = null;
 
+  static globalInstance: DBOSExecutor | undefined = undefined;
+
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugMode ?? false;
@@ -228,6 +230,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.debug("Started workflow status buffer worker");
 
     this.initialized = false;
+    DBOSExecutor.globalInstance = this;
   }
 
  
@@ -480,6 +483,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     await this.procedurePool.end();
     await this.logger.destroy();
+
+    if (DBOSExecutor.globalInstance === this) {
+      DBOSExecutor.globalInstance = undefined;
+    }
   }
 
   /* WORKFLOW OPERATIONS */
