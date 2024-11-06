@@ -8,20 +8,21 @@ import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
 import { AsyncLocalStorage } from 'async_hooks';
 
-let contextSeqNumber = 0;
-export const asyncLocalCtx = new AsyncLocalStorage<{ cid: number }>();
+export const asyncLocalCtx = new AsyncLocalStorage<{ ctx: DBOSContext }>();
 
-export function getContextSeqNumber() {
-  const cid = ++contextSeqNumber;
-  return cid;
+export function getCurrentDBOSContext() : DBOSContext | undefined {
+  return asyncLocalCtx.getStore()?.ctx;
 }
 
-export function checkContext(ctx: DBOSContext) {
-  if (ctx.cid !== asyncLocalCtx.getStore()?.cid) {
-    throw new DBOSNotRegisteredError("Context usage is not registered with Async Local Storage");
-  }
+export function assertCurrentDBOSContext(): DBOSContext {
+  const ctx = asyncLocalCtx.getStore()?.ctx;
+  if (!ctx) throw new DBOSNotRegisteredError("No current DBOS Context");
+  return ctx;
 }
 
+export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
+  return await asyncLocalCtx.run({ctx}, callback)
+}
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
 export interface HTTPRequest {
@@ -46,7 +47,6 @@ export interface DBOSContext {
 
   readonly logger: DBOSLogger;
   readonly span: Span;
-  readonly cid: number;
 
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
@@ -63,7 +63,7 @@ export class DBOSContextImpl implements DBOSContext {
   applicationID: string = process.env.DBOS__APPID || "";		// Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger;						// Wrapper around the global logger for this context.
 
-  constructor(readonly cid: number, readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;

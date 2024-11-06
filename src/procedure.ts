@@ -37,7 +37,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
     logger: Logger,
     operationName: string
   ) {
-    super(workflowContext.cid, operationName, span, logger, workflowContext);
+    super(operationName, span, logger, workflowContext);
   }
   async query<R extends QueryResultRow>(sql: string, params: unknown[]): Promise<QueryResult<R>> {
     const { rowCount, rows } = await this.client.query<R>(sql, params);

@@ -1,6 +1,6 @@
 import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
-import { DBOSContext, DBOSContextImpl, getContextSeqNumber } from "../context";
+import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst, GetWorkflowsInput, GetWorkflowsOutput } from "../workflow";
 import { Transaction } from "../transaction";
@@ -101,7 +101,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       span = dbosExec.tracer.startSpanWithContext(extractedSpanContext, koaContext.url, spanAttributes);
     }
 
-    super(getContextSeqNumber(), koaContext.url, span, dbosExec.logger);
+    super(koaContext.url, span, dbosExec.logger);
 
     // If running in DBOS Cloud, set the executor ID
     if (process.env.DBOS__VMID) {

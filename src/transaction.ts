@@ -38,7 +38,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
     readonly functionID: number,
     operationName: string
   ) {
-    super(workflowContext.cid, operationName, span, logger, workflowContext);
+    super(operationName, span, logger, workflowContext);
     this.applicationConfig = workflowContext.applicationConfig;
   }
 }

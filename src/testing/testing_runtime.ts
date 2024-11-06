@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from "http";
 import { StepFunction } from "../step";
-import { HTTPRequest, DBOSContextImpl, getContextSeqNumber } from "../context";
+import { HTTPRequest, DBOSContextImpl } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { DBOSConfigKeyTypeError, DBOSError } from "../error";
 import { AsyncHandlerWfFuncs, AsyncHandlerWfFuncInst, InvokeFuncs, InvokeFuncsInst, SyncHandlerWfFuncs, SyncHandlerWfFuncsInst } from "../httpServer/handler";
@@ -192,7 +192,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
 
     // Creates a context to pass in necessary info.
     const span = dbosExec.tracer.startSpan("test");
-    const oc = new DBOSContextImpl(getContextSeqNumber(), "test", span, dbosExec.logger);
+    const oc = new DBOSContextImpl("test", span, dbosExec.logger);
     oc.authenticatedUser = params?.authenticatedUser ?? "";
     oc.request = params?.request ?? {};
     oc.authenticatedRoles = params?.authenticatedRoles ?? [];

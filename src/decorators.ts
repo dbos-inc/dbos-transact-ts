@@ -3,7 +3,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { checkContext, DBOSContext, DBOSContextImpl, InitContext } from "./context";
+import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
 import { StepConfig, StepContext } from "./step";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
@@ -410,10 +410,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
           opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
         }
       });
-
-      if (opCtx) {
-        checkContext(opCtx);
-      }
 
       return methReg.origFunction.call(this, ...validatedArgs);
     };

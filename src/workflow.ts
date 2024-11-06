@@ -10,7 +10,7 @@ import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient, pgNodeIsKeyConflictError } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { HTTPRequest, DBOSContext, DBOSContextImpl, getContextSeqNumber, asyncLocalCtx } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl, runWithDBOSContext } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
@@ -202,7 +202,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       },
       parentCtx?.span,
     );
-    super(getContextSeqNumber(), workflowName, span, dbosExec.logger, parentCtx);
+    super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
     this.#dbosExec = dbosExec;
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
@@ -482,7 +482,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         }
 
         let cresult: R | undefined;
-        await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+        await runWithDBOSContext(ctxt, async ()=> {
           cresult = await proc(ctxt, ...args);
         });
         const result = cresult!
@@ -694,7 +694,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
         // Execute the user's transaction.
         let cresult: R | undefined;
-        await asyncLocalCtx.run({cid: tCtxt.cid}, async ()=> {
+        await runWithDBOSContext(tCtxt, async ()=> {
           cresult = await txn.call(clsinst, tCtxt, ...args);
         });
         const result = cresult!
@@ -816,7 +816,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           let cresult: R | undefined;
-          await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+          await runWithDBOSContext(ctxt, async ()=> {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
           result = cresult!
@@ -836,7 +836,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     } else {
       try {
         let cresult: R | undefined;
-        await asyncLocalCtx.run({cid: ctxt.cid}, async ()=> {
+        await runWithDBOSContext(ctxt, async ()=> {
           cresult = await stepFn.call(clsInst, ctxt, ...args);
         });
         result = cresult!

@@ -24,7 +24,7 @@ import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
-import { asyncLocalCtx } from '../context';
+import { runWithDBOSContext } from '../context';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
@@ -331,7 +331,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             } else {
               // Directly invoke the handler code.
               let cresult: unknown;
-              await asyncLocalCtx.run({cid: oc.cid}, async ()=> {
+              await runWithDBOSContext(oc, async ()=> {
                 cresult = await ro.invoke(undefined, [oc, ...args]);
               });
               const retValue = cresult!

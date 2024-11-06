@@ -36,7 +36,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { asyncLocalCtx, DBOSContextImpl, getContextSeqNumber, InitContext } from './context';
+import { DBOSContextImpl, InitContext, runWithDBOSContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -692,7 +692,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Execute the workflow.
       try {
         let cresult: R | undefined;
-        await asyncLocalCtx.run({cid: wCtxt.cid}, async ()=> {
+        await runWithDBOSContext(wCtxt, async ()=> {
           cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
         });
         result = cresult!
@@ -807,7 +807,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(recordedInputs)}`);
     }
 
-    const workflowPromise: Promise<R> = asyncLocalCtx.run({cid: wCtxt.cid}, async () => {
+    const workflowPromise: Promise<R> = runWithDBOSContext(wCtxt, async () => {
       return await wf.call(params.configuredInstance, wCtxt, ...args)
         .then(async (result) => {
           // Check if the result is the same.
@@ -1081,7 +1081,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       assumedRole: status.assumedRole,
       authenticatedRoles: status.authenticatedRoles,
     });
-    const oc = new DBOSContextImpl(getContextSeqNumber(), status.workflowName, span, this.logger);
+    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
