@@ -52,7 +52,13 @@ function formatPgDatabaseError(err: DatabaseError): string {
 
 // Return if the error is caused by client request or by server internal.
 export function isClientError(dbosErrorCode: number) {
-  return (dbosErrorCode === DataValidationError) || (dbosErrorCode === WorkflowPermissionDeniedError) || (dbosErrorCode === TopicPermissionDeniedError) || (dbosErrorCode === ConflictingUUIDError) || (dbosErrorCode === NotRegisteredError);
+  return (
+    dbosErrorCode === DataValidationError ||
+    dbosErrorCode === WorkflowPermissionDeniedError ||
+    dbosErrorCode === TopicPermissionDeniedError ||
+    dbosErrorCode === ConflictingUUIDError ||
+    dbosErrorCode === NotRegisteredError
+  );
 }
 
 export class DBOSError extends Error {
@@ -179,5 +185,12 @@ const FailedSqlTransactionError = 19;
 export class DBOSFailedSqlTransactionError extends DBOSError {
   constructor(workflowUUID: string, txnName: string) {
     super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
+  }
+}
+
+const ExecutorNotInitializedError = 20;
+export class DBOSExecutorNotInitializedError extends DBOSError {
+  constructor() {
+    super("DBOS not initialized", ExecutorNotInitializedError);
   }
 }

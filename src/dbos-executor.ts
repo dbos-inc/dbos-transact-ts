@@ -95,7 +95,7 @@ interface ProcedureInfo {
   config: StoredProcedureConfig;
 }
 
-interface InternalWorkflowParams extends WorkflowParams {
+export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
@@ -233,7 +233,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     DBOSExecutor.globalInstance = this;
   }
 
- 
+
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
