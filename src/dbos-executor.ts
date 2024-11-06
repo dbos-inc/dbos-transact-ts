@@ -912,8 +912,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /**
    * Retrieve a handle for a workflow UUID.
    */
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R> {
-    return new RetrievedHandle(this.systemDatabase, workflowUUID);
+  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
+    return new RetrievedHandle(this.systemDatabase, workflowID);
+  }
+
+  getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
+    return this.systemDatabase.getWorkflowStatus(workflowID);
   }
 
   async queryUserDB(sql: string, params?: unknown[]) {

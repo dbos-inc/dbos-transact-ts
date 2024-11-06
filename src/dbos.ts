@@ -72,9 +72,15 @@ export class DBOS
     //////
     // Workflow and other operations
     //////
+    static getWorkflowStatus(workflowID: string) {
+        return DBOS.executor.getWorkflowStatus(workflowID);
+    }
+
+    static retrieveWorkflow(workflowID: string) {
+        return DBOS.executor.retrieveWorkflow(workflowID);
+    }
+
     // startWorkflow (child or not)
-    // getWorkflowStatus
-    // retrieveWorkflow
     // send
     // recv
     // sleep
