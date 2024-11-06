@@ -1,10 +1,10 @@
 import { getCurrentDBOSContext } from "./context";
-import { DBOSExecutor } from "./dbos-executor";
+import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 
 export class DBOS
-{
+{      
     ///////
     // Lifecycle
     ///////
@@ -14,6 +14,12 @@ export class DBOS
     static get executor() {
         return DBOSExecutor.globalInstance as DBOSExecutorContext;
     }
+
+    //////
+    // Globals
+    //////
+    static globalLogger?: DLogger;
+    static dbosConfig?: DBOSConfig;
 
     //////
     // Context

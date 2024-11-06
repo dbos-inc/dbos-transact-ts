@@ -8,7 +8,7 @@ import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { wfQueueRunner } from '../wfqueue';
-import { GlobalLogger } from '../telemetry/logs';
+import { DBOS } from '../dbos';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,11 +21,6 @@ export interface DBOSRuntimeConfig {
   admin_port: number;
 }
 export const defaultEntryPoint = "dist/operations.js";
-
-export class DBOS {
-  static globalLogger?: GlobalLogger;
-  static dbosConfig?: DBOSConfig;
-}
 
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
