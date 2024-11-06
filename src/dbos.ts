@@ -10,6 +10,7 @@ export class DBOS
     // Lifecycle
     ///////
     static launch() {
+        // TODO!
     }
 
     static get executor() {
@@ -55,6 +56,9 @@ export class DBOS
         return (getCurrentDBOSContext()?.assumedRole) ?? '';
     }
 
+    // sql session
+    // parent workflow ID
+
     static getConfig<T>(key: string): T | undefined;
     static getConfig<T>(key: string, defaultValue: T): T;
     static getConfig<T>(key: string, defaultValue?: T): T | undefined {
@@ -68,8 +72,29 @@ export class DBOS
     //////
     // Workflow and other operations
     //////
+    // startWorkflow (child or not)
+    // getWorkflowStatus
+    // retrieveWorkflow
+    // send
+    // recv
+    // sleep
+    // setEvent
+    // getEvent
+    // executeWorkflowId
+    // recoverPendingWorkflows
 
     //////
     // Decorators
     //////
+    //workflow
+    //transaction
+    //step
+    //class
+    //required roles
+    //scheduled
+    //etc
+
+    // Function registration
+    // Middleware ops like setting auth
+    // Setting next WF id
 }
