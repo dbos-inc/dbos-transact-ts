@@ -33,7 +33,7 @@ export class DBOS {
     const adminApp = DBOSHttpServer.setupAdminApp(executor);
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
 
-    const adminServer = adminApp.listen(runtimeConfig.admin_port, () => {
+    DBOS.adminServer = adminApp.listen(runtimeConfig.admin_port, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${runtimeConfig.admin_port}`);
     });
   }
