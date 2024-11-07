@@ -8,7 +8,7 @@ import { deserializeError } from "serialize-error";
 import { SystemDatabase } from "../system_database";
 import { UserDatabaseClient } from "../user_database";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DBOSContextImpl, runWithDBOSContext } from "../context";
+import { DBOSContextImpl, runWithTransactionContext } from "../context";
 import { ConfiguredInstance, getRegisteredOperations } from "../decorators";
 import { WFInvokeFuncs, WfInvokeWfs, WfInvokeWfsAsync, Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle, WorkflowStatus } from "../workflow";
 import { InvokeFuncsInst } from "../httpServer/handler";
@@ -174,7 +174,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
       }
       // If we have a proxy, then execute the user's transaction.
       let cresult: R | undefined;
-      await runWithDBOSContext(tCtxt, async ()=> {
+      await runWithTransactionContext(tCtxt, async ()=> {
         cresult = await txn.call(clsinst, tCtxt, ...args);
       });
       const result = cresult!;

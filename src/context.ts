@@ -3,10 +3,13 @@ import { GlobalLogger as Logger, Logger as DBOSLogger } from "./telemetry/logs";
 import { get } from "lodash";
 import { IncomingHttpHeaders } from "http";
 import { ParsedUrlQuery } from "querystring";
-import { UserDatabase } from "./user_database";
+import { UserDatabase, UserDatabaseClient } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
 import { AsyncLocalStorage } from 'async_hooks';
+import { WorkflowContext } from "./workflow";
+import { TransactionContextImpl } from "./transaction";
+import { StepContextImpl } from "./step";
 
 export interface DBOSLocalCtx {
   ctx: DBOSContext,
@@ -18,8 +21,8 @@ export interface DBOSLocalCtx {
   functionId?: number;
   inRecovery?: boolean;
   currStepFunctionId?: number;
-  currTxFunction_id?: number;
-  sqlSession?: unknown;
+  currTxFunctionId?: number;
+  sqlClient?: UserDatabaseClient;
   spans?: Span[];
 }
 
@@ -36,7 +39,32 @@ export function assertCurrentDBOSContext(): DBOSContext {
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
-  return await asyncLocalCtx.run({ctx}, callback)
+  return await asyncLocalCtx.run({ctx}, callback);
+}
+
+export async function runWithTransactionContext<Client extends UserDatabaseClient, R>(ctx: TransactionContextImpl<Client>, callback: ()=>Promise<R>) {
+  // TODO: Check we are in a workflow context and not in a step / transaction already
+  return await asyncLocalCtx.run({
+    ctx,
+    currTxFunctionId: ctx.functionID,
+    parentCtx: undefined, // TODO
+  },
+  callback);
+}
+
+export async function runWithStepContext<R>(ctx: StepContextImpl, callback: ()=>Promise<R>) {
+  // TODO: Check we are in a workflow context and not in a step / transaction already
+  return await asyncLocalCtx.run({
+    ctx,
+    currStepFunctionId: ctx.functionID,
+    parentCtx: undefined, // TODO
+  },
+  callback);
+}
+
+export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: ()=>Promise<R>) {
+  // TODO: Check context, this could be a child workflow?
+  return await asyncLocalCtx.run({ctx}, callback);
 }
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.

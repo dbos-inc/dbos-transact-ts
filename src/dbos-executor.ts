@@ -36,7 +36,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithDBOSContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -699,7 +699,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Execute the workflow.
       try {
         let cresult: R | undefined;
-        await runWithDBOSContext(wCtxt, async ()=> {
+        await runWithWorkflowContext(wCtxt, async ()=> {
           cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
         });
         result = cresult!
@@ -814,7 +814,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(recordedInputs)}`);
     }
 
-    const workflowPromise: Promise<R> = runWithDBOSContext(wCtxt, async () => {
+    const workflowPromise: Promise<R> = runWithWorkflowContext(wCtxt, async () => {
       return await wf.call(params.configuredInstance, wCtxt, ...args)
         .then(async (result) => {
           // Check if the result is the same.
