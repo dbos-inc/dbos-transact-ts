@@ -1,10 +1,13 @@
 import { MethodRegistrationBase, ArgRequiredOptions } from "./decorators";
-import { DBOSContextImpl } from "./context";
+import { DBOSContextImpl, getCurrentDBOSContext } from "./context";
 import { DBOSDataValidationError } from "./error";
 
 export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args)
 {
     let opCtx : DBOSContextImpl | undefined = undefined;
+    if (!methReg.passContext) {
+        opCtx = getCurrentDBOSContext() as DBOSContextImpl;
+    }
 
     const validationError = (msg:string) => {
         const err = new DBOSDataValidationError(msg);
@@ -14,7 +17,7 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
 
     // Input validation
     methReg.args.forEach((argDescriptor, idx) => {
-        if (idx === 0)
+        if (idx === 0 && methReg.passContext)
         {
           // Context, may find a more robust way.
           opCtx = args[idx] as DBOSContextImpl;

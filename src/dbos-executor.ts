@@ -12,6 +12,7 @@ import {
   WorkflowStatus,
   StatusString,
   BufferedResult,
+  ContextFreeFunction,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
@@ -701,7 +702,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         await runWithWorkflowContext(wCtxt, async ()=> {
-          cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
+          if (params.usesContext) {
+            cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
+          }
+          else {
+            cresult = await (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
+          }
         });
         result = cresult!
 

@@ -19,6 +19,7 @@ import { WorkflowQueue } from "./wfqueue";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
+export type ContextFreeFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
