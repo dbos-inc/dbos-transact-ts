@@ -27,16 +27,15 @@ import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { runWithDBOSContext } from '../context';
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
-export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
-export const HealthUrl = "/dbos-healthz"
-export const PerfUrl = "/dbos-perf"
-export const DeactivateUrl = "/deactivate"
+export const WorkflowRecoveryUrl = "/dbos-workflow-recovery";
+export const HealthUrl = "/dbos-healthz";
+export const PerfUrl = "/dbos-perf";
+export const DeactivateUrl = "/deactivate";
 
 export class DBOSHttpServer {
   readonly app: Koa;
   readonly adminApp: Koa;
   readonly applicationRouter: Router;
-  readonly adminRouter: Router;
   readonly logger: Logger;
 
   /**
@@ -46,21 +45,27 @@ export class DBOSHttpServer {
    */
   constructor(readonly dbosExec: DBOSExecutor) {
     this.applicationRouter = new Router();
-    this.adminRouter = new Router();
     this.logger = dbosExec.logger;
     this.app = new Koa();
-    this.adminApp = new Koa();
-    this.adminApp.use(bodyParser());
-    this.adminApp.use(cors());
+    this.adminApp = DBOSHttpServer.setupAdminApp(this.dbosExec);
 
-    // Register HTTP endpoints.
-    DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerDeactivateEndpoint(this.dbosExec, this.adminRouter);
-    this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
+  }
+
+  static setupAdminApp(dbosExec: DBOSExecutor): Koa {
+    const adminRouter = new Router();
+    const adminApp = new Koa();
+    adminApp.use(bodyParser());
+    adminApp.use(cors());
+
+    // Register HTTP endpoints.
+    DBOSHttpServer.registerHealthEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerRecoveryEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerPerfEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerDeactivateEndpoint(dbosExec, adminRouter);
+    adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
+    return adminApp;
   }
 
   /**
@@ -68,29 +73,8 @@ export class DBOSHttpServer {
    * @param port
    */
   async listen(port: number, adminPort: number) {
-    try {
-      await this.checkPortAvailability(port, "127.0.0.1");
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
-        process.exit(1);
-      } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
-      }
-    }
-
-    try {
-      await this.checkPortAvailability(port, "::1");
-    } catch (error) {
-      const err = error as NodeJS.ErrnoException;
-      if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
-        process.exit(1);
-      } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
-      }
-    }
+    await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
+    // TODO we should check adminPort as well.
 
     const appServer = this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
@@ -99,27 +83,54 @@ export class DBOSHttpServer {
     const adminServer = this.adminApp.listen(adminPort, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
     });
-    return {appServer: appServer, adminServer: adminServer}
+    return { appServer: appServer, adminServer: adminServer };
   }
 
-async checkPortAvailability(port: number, host: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-  const server = new net.Server();
-  server.on('error', (error: NodeJS.ErrnoException) => {
-    reject(error);
-  });
+  static async checkPortAvailabilityIPv4Ipv6(port: number, logger: Logger) {
+    try {
+      await this.checkPortAvailability(port, "127.0.0.1");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "EADDRINUSE") {
+        logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
+        process.exit(1);
+      } else {
+        logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
+      }
+    }
 
-  server.on('listening', () => {
-    server.close();
-    resolve();
-  });
+    try {
+      await this.checkPortAvailability(port, "::1");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "EADDRINUSE") {
+        logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
+        process.exit(1);
+      } else {
+        logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
+      }
+    }
+  }
 
-  server.listen({port:port, host: host},() => {
-    resolve();
-  });
+  static async checkPortAvailability(port: number, host: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+    const server = new net.Server();
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      reject(error);
+    });
 
-  });
-}
+    server.on('listening', () => {
+      server.close();
+      resolve();
+    });
+
+    server.listen({port:port, host: host},() => {
+      resolve();
+    });
+
+    });
+  }
+
   /**
    * Health check endpoint.
    */
@@ -160,7 +171,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
    * Returns information on VM performance since last call.
    */
   static registerPerfEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    let lastELU = performance.eventLoopUtilization()
+    let lastELU = performance.eventLoopUtilization();
     const perfHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       const currELU = performance.eventLoopUtilization();
       const elu = performance.eventLoopUtilization(currELU, lastELU);
@@ -175,12 +186,12 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   /**
    * Register Deactiviate endpoint.
    * Deactivate consumers so that they don'nt start new workflows.
-   * 
+   *
    */
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info("Deactivating Event Recievers");
+      dbosExec.logger.info("Deactivating Event Receivers");
       koaCtxt.body = "Deactivated";
       await koaNext();
     };
