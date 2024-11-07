@@ -7,17 +7,44 @@ import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
+import { DBOSHttpServer } from "./httpServer/server";
+import { Server } from "http";
 
 export class DBOS {
   ///////
   // Lifecycle
   ///////
+  static adminServer: Server | undefined = undefined;
   static async launch() {
+    // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
-    const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
+
+    // Initialize the DBOS executor
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
     DBOSExecutor.globalInstance = new DBOSExecutor(dbosConfig);
-    await DBOSExecutor.globalInstance.init();
-    // This needs to start the admin server as well
+    const executor: DBOSExecutor = DBOSExecutor.globalInstance;
+    await executor.init();
+
+    // Start the DBOS admin server
+    const logger = DBOS.logger;
+    const adminApp = DBOSHttpServer.setupAdminApp(executor);
+    await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
+
+    const adminServer = adminApp.listen(runtimeConfig.admin_port, () => {
+      this.logger.info(`DBOS Admin Server is running at http://localhost:${runtimeConfig.admin_port}`);
+    });
+  }
+
+  static async shutdown() {
+    // Stop the admin server
+    if (DBOS.adminServer) {
+      DBOS.adminServer.close();
+    }
+
+    // Stop the executor
+    if (DBOSExecutor.globalInstance) {
+      await DBOSExecutor.globalInstance.destroy();
+    }
   }
 
   static get executor() {
