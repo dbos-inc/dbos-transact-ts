@@ -1,7 +1,9 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
-import { Workflow, WorkflowContext, WorkflowHandle } from "./workflow";
+import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
+import { Workflow, WorkflowContext, WorkflowHandle, WorkflowParams } from "./workflow";
+import { Transaction } from "./transaction";
+import { StepFunction } from "./step";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
@@ -133,12 +135,28 @@ export class DBOS {
     return DBOS.executor.retrieveWorkflow(workflowID);
   }
 
-  static async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  static async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const executor = DBOS.executor;
     if (!executor) {
       throw new DBOSExecutorNotInitializedError();
     }
     return executor.workflow(wf, params, ...args);
+  }
+
+  static async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    const executor = DBOS.executor;
+    if (!executor) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return executor.transaction(txn, params, ...args);
+  }
+
+  static async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    const executor = DBOS.executor;
+    if (!executor) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return executor.external(stepFn, params, ...args);
   }
 
   static async sleepms(durationMS: number): Promise<void> {
