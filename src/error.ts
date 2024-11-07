@@ -194,3 +194,10 @@ export class DBOSExecutorNotInitializedError extends DBOSError {
     super("DBOS not initialized", ExecutorNotInitializedError);
   }
 }
+
+const InvalidWorkflowTransition = 21;
+export class DBOSInvalidWorkflowTransitionError extends DBOSError {
+  constructor() {
+    super("Invalid workflow state", InvalidWorkflowTransition);
+  }
+}

@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContext } from "./workflow";
 import { TransactionContextImpl } from "./transaction";
 import { StepContextImpl } from "./step";
+import { DBOSInvalidWorkflowTransitionError } from "./error";
 
 export interface DBOSLocalCtx {
   ctx: DBOSContext,
@@ -20,13 +21,41 @@ export interface DBOSLocalCtx {
   workflowId?: string;
   functionId?: number;
   inRecovery?: boolean;
-  currStepFunctionId?: number;
-  currTxFunctionId?: number;
+  curStepFunctionId?: number;
+  curTxFunctionId?: number;
   sqlClient?: UserDatabaseClient;
   spans?: Span[];
 }
 
+function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
+  if (ctx.workflowId === undefined) return false;
+  return true;
+}
+
+function isInStepCtx(ctx: DBOSLocalCtx) {
+  if (ctx.workflowId === undefined) return false;
+  if (ctx.curStepFunctionId) return true;
+  return false;
+}
+
+function isInTxnCtx(ctx: DBOSLocalCtx) {
+  if (ctx.workflowId === undefined) return false;
+  if (ctx.curTxFunctionId) return true;
+  return false;
+}
+
+function isInWorkflowCtx(ctx: DBOSLocalCtx) {
+  if (!isWithinWorkflowCtx(ctx)) return false;
+  if (isInStepCtx(ctx)) return false;
+  if (isInTxnCtx(ctx)) return false;
+  return true;
+}
+
 export const asyncLocalCtx = new AsyncLocalStorage<DBOSLocalCtx>();
+
+export function getCurrentContextStore() : DBOSLocalCtx | undefined {
+  return asyncLocalCtx.getStore();
+}
 
 export function getCurrentDBOSContext() : DBOSContext | undefined {
   return asyncLocalCtx.getStore()?.ctx;
@@ -39,32 +68,47 @@ export function assertCurrentDBOSContext(): DBOSContext {
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
-  return await asyncLocalCtx.run({ctx}, callback);
+  return await asyncLocalCtx.run({
+    ctx,
+    workflowId: ctx.workflowUUID,
+  }, callback);
 }
 
 export async function runWithTransactionContext<Client extends UserDatabaseClient, R>(ctx: TransactionContextImpl<Client>, callback: ()=>Promise<R>) {
-  // TODO: Check we are in a workflow context and not in a step / transaction already
+  // Check we are in a workflow context and not in a step / transaction already
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
+  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
   return await asyncLocalCtx.run({
     ctx,
-    currTxFunctionId: ctx.functionID,
-    parentCtx: undefined, // TODO
+    workflowId: ctx.workflowUUID,
+    curTxFunctionId: ctx.functionID,
+    parentCtx: pctx,
   },
   callback);
 }
 
 export async function runWithStepContext<R>(ctx: StepContextImpl, callback: ()=>Promise<R>) {
-  // TODO: Check we are in a workflow context and not in a step / transaction already
+  // Check we are in a workflow context and not in a step / transaction already
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
+  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
+
   return await asyncLocalCtx.run({
     ctx,
-    currStepFunctionId: ctx.functionID,
-    parentCtx: undefined, // TODO
+    workflowId: ctx.workflowUUID,
+    curStepFunctionId: ctx.functionID,
+    parentCtx: pctx,
   },
   callback);
 }
 
 export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: ()=>Promise<R>) {
   // TODO: Check context, this could be a child workflow?
-  return await asyncLocalCtx.run({ctx}, callback);
+  return await asyncLocalCtx.run({
+    ctx,
+    workflowId: ctx.workflowUUID,
+  }, callback);
 }
 
 // HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.

@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { getCurrentDBOSContext, HTTPRequest } from "./context";
+import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
 import { Workflow, WorkflowHandle } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
@@ -63,6 +63,22 @@ export class DBOS {
   }
   static get assumedRole(): string {
     return getCurrentDBOSContext()?.assumedRole ?? "";
+  }
+
+  static isInTransaction(): boolean {
+    return getCurrentContextStore()?.curTxFunctionId !== undefined;
+  }
+
+  static isInStep(): boolean {
+    return getCurrentContextStore()?.curStepFunctionId !== undefined;
+  }
+
+  static isWithinWorkflow(): boolean {
+    return getCurrentContextStore()?.workflowId !== undefined;
+  }
+
+  static isInWorkflow(): boolean {
+    return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
   }
 
   // sql session
