@@ -1,7 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
-import { Workflow, WorkflowContext, WorkflowHandle } from "./workflow";
+import { Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
@@ -133,7 +133,8 @@ export class DBOS {
     return DBOS.executor.retrieveWorkflow(workflowID);
   }
 
-  static async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  // This will not be needed ... you will just run the function
+  static async obs_workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const executor = DBOS.executor;
     if (!executor) {
       throw new DBOSExecutorNotInitializedError();
@@ -154,7 +155,6 @@ export class DBOS {
     return this.sleepms(durationSec * 1000);
   }
 
-  // sleep
   // startWorkflow (child or not)
   // send
   // recv
@@ -181,7 +181,19 @@ export class DBOS {
     return scheddec;
   }
 
-  //workflow
+  static workflow(config: WorkflowConfig={}) {
+    function decorator<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    {
+      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      registration.workflowConfig = config;
+      return descriptor;
+    }
+    return decorator;
+  }
+
   //transaction
   //step
   //class

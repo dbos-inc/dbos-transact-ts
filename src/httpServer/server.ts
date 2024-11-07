@@ -332,7 +332,7 @@ export class DBOSHttpServer {
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
             // configuredInstance is currently null; we don't allow configured handlers now.
-            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
+            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null, usesContext: true };
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
             } else if (ro.workflowConfig) {

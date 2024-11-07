@@ -99,6 +99,7 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
+  readonly usesContext: boolean;
 }
 
 export const OperationType = {
@@ -842,6 +843,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfType: TempWorkflowType.transaction,
       tempWfName: getRegisteredMethodName(txn),
       tempWfClass: getRegisteredMethodClassName(txn),
+      usesContext: true,
     }, ...args)).getResult();
   }
 
@@ -856,7 +858,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         tempWfType: TempWorkflowType.procedure,
         tempWfName: getRegisteredMethodName(proc),
         tempWfClass: getRegisteredMethodClassName(proc),
-        }, ...args)).getResult();
+        usesContext: true,
+      }, ...args)).getResult();
   }
 
   async executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
@@ -890,6 +893,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfType: TempWorkflowType.external,
       tempWfName: getRegisteredMethodName(stepFn),
       tempWfClass: getRegisteredMethodClassName(stepFn),
+      usesContext: true,
     }, ...args)).getResult();
   }
 
@@ -899,7 +903,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return await ctxt.send<T>(destinationUUID, message, topic);
     };
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
-    return (await this.workflow(temp_workflow, { workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, configuredInstance: null }, destinationUUID, message, topic)).getResult();
+    return (await this.workflow(temp_workflow, {
+      workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, configuredInstance: null,
+      usesContext: true,
+    }, destinationUUID, message, topic)).getResult();
   }
 
   /**
@@ -1010,7 +1017,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (wfInfo) {
       return this.workflow(wfInfo.workflow, {
         workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
-        queueName: wfStatus.queueName, executeWorkflow: true
+        queueName: wfStatus.queueName, executeWorkflow: true,
+        usesContext: true, // TODO TODO TODO
       },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       ...inputs);
@@ -1067,8 +1075,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
       throw new DBOSNotRegisteredError(wfName);
     }
+
+    return this.workflow(temp_workflow, {
+      workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst,
+      recovery: true, tempWfType, tempWfClass, tempWfName,
+      usesContext: true,
+    },
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return this.workflow(temp_workflow, { workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst, recovery: true, tempWfType, tempWfClass, tempWfName}, ...inputs);
+    ...inputs);
   }
 
   async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {

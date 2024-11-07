@@ -157,6 +157,8 @@ export interface MethodRegistrationBase {
   registeredFunction: Function | undefined;
   // eslint-disable-next-line @typescript-eslint/ban-types
   origFunction: Function;
+  // Pass context as first arg?
+  readonly passContext: boolean;
 
   invoke(pthis: unknown, args: unknown[]): unknown;
 }

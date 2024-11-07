@@ -394,7 +394,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, {
+      parentCtx: this, workflowUUID: childUUID,
+      usesContext: true, // TODO CTX
+    }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -418,11 +421,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     for (const op of ops) {
       if (asyncWf) {
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), {...params,  usesContext: true}, this.workflowUUID, funcId, ...args)
           : undefined;
       } else {
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), params, this.workflowUUID, funcId, ...args)
+          ? (...args: unknown[]) => this.#dbosExec.internalWorkflow((op.registeredFunction as Workflow<unknown[], unknown>), {...params, usesContext: true}, this.workflowUUID, funcId, ...args)
             .then((handle) => handle.getResult())
           : undefined;
       }
