@@ -1,14 +1,15 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
-import { Workflow, WorkflowHandle } from "./workflow";
+import { Workflow, WorkflowContext, WorkflowHandle } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSExecutorNotInitializedError } from "./error";
+import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
 import { registerAndWrapContextFreeFunction } from "./decorators";
+import { sleepms } from "./utils";
 
 export class DBOS {
   ///////
@@ -113,10 +114,23 @@ export class DBOS {
     return executor.workflow(wf, params, ...args);
   }
 
+  static async sleepms(durationMS: number): Promise<void> {
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInTransaction() || DBOS.isInStep()) {
+        throw new DBOSInvalidWorkflowTransitionError();
+      }
+      return (getCurrentDBOSContext()! as WorkflowContext).sleepms(durationMS);
+    }
+    await sleepms(durationMS);
+  }
+  static async sleep(durationSec: number): Promise<void> {
+    return this.sleepms(durationSec * 1000);
+  }
+
+  // sleep
   // startWorkflow (child or not)
   // send
   // recv
-  // sleep
   // setEvent
   // getEvent
   // executeWorkflowId
