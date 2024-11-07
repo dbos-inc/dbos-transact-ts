@@ -702,7 +702,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         await runWithWorkflowContext(wCtxt, async ()=> {
-          if (params.usesContext) {
+          if (params.usesContext ?? true) {
             cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
           }
           else {

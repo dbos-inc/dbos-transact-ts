@@ -11,7 +11,7 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
 
     const validationError = (msg:string) => {
         const err = new DBOSDataValidationError(msg);
-        opCtx?.span.addEvent("DataValidationError", { message: err.message });
+        opCtx?.span?.addEvent("DataValidationError", { message: err.message });
         return err;
     }
 
