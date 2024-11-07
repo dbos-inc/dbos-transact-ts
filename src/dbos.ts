@@ -7,6 +7,8 @@ import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
+import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
+import { registerAndWrapContextFreeFunction } from "./decorators";
 
 export class DBOS {
   ///////
@@ -107,15 +109,42 @@ export class DBOS {
   //////
   // Decorators
   //////
+  static scheduled(schedulerConfig: SchedulerConfig) {
+    function scheddec<This, Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>
+    ) {
+      const { descriptor, registration } = DBOS.registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const schedRegistration = registration as unknown as SchedulerRegistrationBase;
+      schedRegistration.schedulerConfig = schedulerConfig;
+
+      return descriptor;
+    }
+    return scheddec;
+  }
+
   //workflow
   //transaction
   //step
   //class
   //required roles
-  //scheduled
   //etc
 
+  /////
+  // Registration, etc
+  /////
+
   // Function registration
+  static registerAndWrapContextFreeFunction<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  )
+  {
+    return registerAndWrapContextFreeFunction(target, propertyKey, descriptor);
+  }
+
   // Middleware ops like setting auth
   // Setting next WF id
 }

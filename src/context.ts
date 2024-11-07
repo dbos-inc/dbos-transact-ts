@@ -8,7 +8,22 @@ import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
 import { AsyncLocalStorage } from 'async_hooks';
 
-export const asyncLocalCtx = new AsyncLocalStorage<{ ctx: DBOSContext }>();
+export interface DBOSLocalCtx {
+  ctx: DBOSContext,
+  parentCtx?: DBOSLocalCtx,
+  idAssignedForNextWorkflow?: string;
+  parentWorkflowId?: string;
+  parentWorkflowFid?: number;
+  workflowId?: string;
+  functionId?: number;
+  inRecovery?: boolean;
+  currStepFunctionId?: number;
+  currTxFunction_id?: number;
+  sqlSession?: unknown;
+  spans?: Span[];
+}
+
+export const asyncLocalCtx = new AsyncLocalStorage<DBOSLocalCtx>();
 
 export function getCurrentDBOSContext() : DBOSContext | undefined {
   return asyncLocalCtx.getStore()?.ctx;
