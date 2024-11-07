@@ -196,7 +196,7 @@ export class DBOSHttpServer {
       await koaNext();
     };
     router.get(DeactivateUrl, deactivateHandler);
-    dbosExec.logger.debug(`DBOS Server deactivate GET ${DeactivateUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
   }
 
   /**
