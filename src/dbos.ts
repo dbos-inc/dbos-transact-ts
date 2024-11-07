@@ -1,10 +1,10 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
-import { Workflow, WorkflowConfig, WorkflowContext, WorkflowHandle } from "./workflow";
+import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
+import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
+import { DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
@@ -134,13 +134,31 @@ export class DBOS {
   }
 
   // This will not be needed ... you will just run the function
-  static async obs_workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  /*
+  static async obs_workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
     const executor = DBOS.executor;
     if (!executor) {
       throw new DBOSExecutorNotInitializedError();
     }
     return executor.workflow(wf, params, ...args);
   }
+
+  static async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    const executor = DBOS.executor;
+    if (!executor) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return executor.transaction(txn, params, ...args);
+  }
+
+  static async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    const executor = DBOS.executor;
+    if (!executor) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return executor.external(stepFn, params, ...args);
+  }
+  */
 
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
