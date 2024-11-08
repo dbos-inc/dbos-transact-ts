@@ -143,22 +143,6 @@ export class DBOS {
     return executor.workflow(wf, params, ...args);
   }
 
-  static async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    const executor = DBOS.executor;
-    if (!executor) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return executor.transaction(txn, params, ...args);
-  }
-
-  static async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    const executor = DBOS.executor;
-    if (!executor) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return executor.external(stepFn, params, ...args);
-  }
-
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInTransaction() || DBOS.isInStep()) {
