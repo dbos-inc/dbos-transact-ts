@@ -76,24 +76,28 @@ export interface DBOSConfig {
   };
 }
 
-interface WorkflowInfo {
+interface WorkflowRegInfo {
   workflow: Workflow<unknown[], unknown>;
   config: WorkflowConfig;
+  registration?: MethodRegistrationBase; // Always set except for temp WF...
 }
 
-interface TransactionInfo {
+interface TransactionRegInfo {
   transaction: Transaction<unknown[], unknown>;
   config: TransactionConfig;
+  registration: MethodRegistrationBase;
 }
 
-interface StepInfo {
+interface StepRegInfo {
   step: StepFunction<unknown[], unknown>;
   config: StepConfig;
+  registration: MethodRegistrationBase;
 }
 
-interface ProcedureInfo {
+interface ProcedureRegInfo {
   procedure: StoredProcedure<unknown>;
   config: StoredProcedureConfig;
+  registration: MethodRegistrationBase;
 }
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -129,7 +133,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   static readonly tempWorkflowName = "temp_workflow";
 
-  readonly workflowInfoMap: Map<string, WorkflowInfo> = new Map([
+  readonly workflowInfoMap: Map<string, WorkflowRegInfo> = new Map([
     // We initialize the map with an entry for temporary workflows.
     [
       DBOSExecutor.tempWorkflowName,
@@ -142,9 +146,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       },
     ],
   ]);
-  readonly transactionInfoMap: Map<string, TransactionInfo> = new Map();
-  readonly stepInfoMap: Map<string, StepInfo> = new Map();
-  readonly procedureInfoMap: Map<string, ProcedureInfo> = new Map();
+  readonly transactionInfoMap: Map<string, TransactionRegInfo> = new Map();
+  readonly stepInfoMap: Map<string, StepRegInfo> = new Map();
+  readonly procedureInfoMap: Map<string, ProcedureRegInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
@@ -502,9 +506,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.workflowInfoMap.has(wfn)) {
       throw new DBOSError(`Repeated workflow name: ${wfn}`);
     }
-    const workflowInfo: WorkflowInfo = {
+    const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
       config: {...ro.workflowConfig},
+      registration: ro,
     };
     this.workflowInfoMap.set(wfn, workflowInfo);
     this.logger.debug(`Registered workflow ${wfn}`);
@@ -517,9 +522,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.transactionInfoMap.has(tfn)) {
       throw new DBOSError(`Repeated Transaction name: ${tfn}`);
     }
-    const txnInfo: TransactionInfo = {
+    const txnInfo: TransactionRegInfo = {
       transaction: txf,
       config: {...ro.txnConfig},
+      registration: ro,
     };
     this.transactionInfoMap.set(tfn, txnInfo);
     this.logger.debug(`Registered transaction ${tfn}`);
@@ -531,11 +537,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.stepInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
     }
-    const commInfo: StepInfo = {
+    const stepInfo: StepRegInfo = {
       step: comm,
       config: {...ro.commConfig},
+      registration: ro,
     };
-    this.stepInfoMap.set(cfn, commInfo);
+    this.stepInfoMap.set(cfn, stepInfo);
     this.logger.debug(`Registered step ${cfn}`);
   }
 
@@ -546,9 +553,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.procedureInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Procedure name: ${cfn}`);
     }
-    const procInfo: ProcedureInfo = {
+    const procInfo: ProcedureRegInfo = {
       procedure: proc,
       config: {...ro.procConfig},
+      registration: ro,
     };
     this.procedureInfoMap.set(cfn, procInfo);
     this.logger.debug(`Registered stored proc ${cfn}`);
@@ -585,7 +593,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
     const tfname = className + '.' + functionName;
-    let txnInfo: TransactionInfo | undefined = this.transactionInfoMap.get(tfname);
+    let txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
 
     if (!txnInfo && !className) {
       for (const [_wfn, tfr] of this.transactionInfoMap) {
@@ -609,7 +617,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
-    let commInfo: StepInfo | undefined = this.stepInfoMap.get(cfname);
+    let commInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
 
     if (!commInfo && !className) {
       for (const [_wfn, cfr] of this.stepInfoMap) {
@@ -1024,7 +1032,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return this.workflow(wfInfo.workflow, {
         workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
         queueName: wfStatus.queueName, executeWorkflow: true,
-        usesContext: true, // TODO TODO TODO
+        usesContext: wfInfo.registration?.passContext ?? true,
       },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       ...inputs);
