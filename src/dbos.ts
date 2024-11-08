@@ -13,10 +13,11 @@ import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { Server } from "http";
 import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from "./user_database";
-import { TransactionContextImpl } from "./transaction";
+import { TransactionConfig, TransactionContextImpl } from "./transaction";
 
 import { PoolClient } from "pg";
 import { Knex } from "knex";
+import { StepConfig } from "./step";
 
 export class DBOS {
   ///////
@@ -174,17 +175,6 @@ export class DBOS {
     return DBOS.executor.retrieveWorkflow(workflowID);
   }
 
-  // This will not be needed ... you will just run the function
-  /*
-  static async obs_workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    const executor = DBOS.executor;
-    if (!executor) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return executor.workflow(wf, params, ...args);
-  }
-  */
-
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInTransaction() || DBOS.isInStep()) {
@@ -215,7 +205,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>
     ) {
-      const { descriptor, registration } = DBOS.registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       const schedRegistration = registration as unknown as SchedulerRegistrationBase;
       schedRegistration.schedulerConfig = schedulerConfig;
 
@@ -237,8 +227,32 @@ export class DBOS {
     return decorator;
   }
 
-  //transaction
-  //step
+  static transaction(config: TransactionConfig={}) {
+    function decorator<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    {
+      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      registration.txnConfig = config;
+      return descriptor;
+    }
+    return decorator;
+  }
+
+  static step(config: StepConfig={}) {
+    function decorator<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    {
+      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      registration.commConfig = config;
+      return descriptor;
+    }
+    return decorator;
+  }
+
   //class
   //required roles
   //etc
