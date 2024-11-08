@@ -154,9 +154,11 @@ export interface MethodRegistrationBase {
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  registeredFunction: Function | undefined;
+  wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
   // eslint-disable-next-line @typescript-eslint/ban-types
-  origFunction: Function;
+  registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  origFunction: Function; // Function that the app provided
   // Pass context as first arg?
   readonly passContext: boolean;
 
@@ -184,6 +186,7 @@ implements MethodRegistrationBase
   isInstance: boolean;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
+  wrappedFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined = undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: StepConfig;
