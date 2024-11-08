@@ -115,7 +115,7 @@ export class DBOS {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
   }
 
-  // parent workflow ID
+  // TODO CTX parent workflow ID
 
   // sql session (various forms)
   static get sqlClient(): UserDatabaseClient {
@@ -126,31 +126,31 @@ export class DBOS {
 
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    // TODO check!
+    // TODO CTX check!
     return client as PoolClient;
   }
 
   static get knexClient(): Knex {
     const client = DBOS.sqlClient;
-    // TODO check!
+    // TODO CTX check!
     return client as Knex;
   }
 
   static get prismaClient(): PrismaClient {
     const client = DBOS.sqlClient;
-    // TODO check!
+    // TODO CTX check!
     return client as PrismaClient;
   }
 
   static get typeORMClient(): TypeORMEntityManager {
     const client = DBOS.sqlClient;
-    // TODO check!
+    // TODO CTX check!
     return client as TypeORMEntityManager;
   }
 
   static get drizzleClient(): DrizzleClient {
     const client = DBOS.sqlClient;
-    // TODO check!
+    // TODO CTX check!
     return client as DrizzleClient;
   }
 
@@ -290,6 +290,7 @@ export class DBOS {
     return decorator;
   }
 
+  // TODO CTX
   //class
   //required roles
   //etc
@@ -308,6 +309,7 @@ export class DBOS {
     return registerAndWrapContextFreeFunction(target, propertyKey, descriptor);
   }
 
+  // TODO CTX
   // Middleware ops like setting auth
   // Setting next WF id
 }
