@@ -1,5 +1,5 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
+import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
@@ -12,6 +12,11 @@ import { registerAndWrapContextFreeFunction } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { Server } from "http";
+import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from "./user_database";
+import { TransactionContextImpl } from "./transaction";
+
+import { PoolClient } from "pg";
+import { Knex } from "knex";
 
 export class DBOS {
   ///////
@@ -109,8 +114,44 @@ export class DBOS {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
   }
 
-  // sql session
   // parent workflow ID
+
+  // sql session (various forms)
+  static get sqlClient(): UserDatabaseClient {
+    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError();
+    const ctx = assertCurrentDBOSContext() as TransactionContextImpl<UserDatabaseClient>;
+    return ctx.client;
+  }
+
+  static get pgClient(): PoolClient {
+    const client = DBOS.sqlClient;
+    // TODO check!
+    return client as PoolClient;
+  }
+
+  static get knexClient(): Knex {
+    const client = DBOS.sqlClient;
+    // TODO check!
+    return client as Knex;
+  }
+
+  static get prismaClient(): PrismaClient {
+    const client = DBOS.sqlClient;
+    // TODO check!
+    return client as PrismaClient;
+  }
+
+  static get typeORMClient(): TypeORMEntityManager {
+    const client = DBOS.sqlClient;
+    // TODO check!
+    return client as TypeORMEntityManager;
+  }
+
+  static get drizzleClient(): DrizzleClient {
+    const client = DBOS.sqlClient;
+    // TODO check!
+    return client as DrizzleClient;
+  }
 
   static getConfig<T>(key: string): T | undefined;
   static getConfig<T>(key: string, defaultValue: T): T;
