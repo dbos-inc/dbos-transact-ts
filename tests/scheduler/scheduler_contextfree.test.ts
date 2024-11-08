@@ -71,7 +71,6 @@ class DBOSSchedTestClass {
         if (DBOSSchedTestClass.doSleep) {
             await DBOS.sleepms(2000);
         }
-        return Promise.resolve();
     }
 
     @DBOS.scheduled({crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive, queueName: q.name})
@@ -86,7 +85,6 @@ class DBOSSchedTestClass {
     @DBOS.workflow()
     static async scheduledLong(_schedTime: Date, _startTime: Date) {
         await DBOS.sleepms(100);
-        return Promise.resolve();
     }
 }
 
@@ -103,7 +101,6 @@ class DBOSSchedDuplicate {
     @DBOS.workflow()
     static async scheduledDefault(_schedTime: Date, _startTime: Date) {
         await DBOSSchedDuplicate.scheduledTxn();
-        return Promise.resolve();
     }
 }
 

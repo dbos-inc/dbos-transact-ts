@@ -1,7 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
-import { WorkflowConfig, WorkflowContext, WorkflowParams } from "./workflow";
+import { WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowParams } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
@@ -17,7 +17,7 @@ import { TransactionConfig, TransactionContextImpl, TransactionFunction } from "
 
 import { PoolClient } from "pg";
 import { Knex } from "knex";
-import { StepConfig } from "./step";
+import { StepConfig, StepFunction } from "./step";
 
 export class DBOS {
   ///////
@@ -222,6 +222,19 @@ export class DBOS {
     {
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.workflowConfig = config;
+
+      const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        const wfParams: WorkflowParams = {}; // TODO CTX set WFID
+        const handle = await DBOS.executor.workflow(
+          registration.origFunction as unknown as WorkflowFunction<Args, Return>,
+          wfParams, ...rawArgs
+        );
+        return await handle.getResult();
+      };
+
+      descriptor.value = invokeWrapper;
+      registration.wrappedFunction = invokeWrapper;
+
       return descriptor;
     }
     return decorator;
@@ -260,6 +273,18 @@ export class DBOS {
     {
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.commConfig = config;
+
+      const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        const wfParams: WorkflowParams = {};
+        return  await DBOS.executor.external(
+          registration.origFunction as unknown as StepFunction<Args, Return>,
+          wfParams, ...rawArgs
+        );
+      };
+
+      descriptor.value = invokeWrapper;
+      registration.wrappedFunction = invokeWrapper;
+
       return descriptor;
     }
     return decorator;
