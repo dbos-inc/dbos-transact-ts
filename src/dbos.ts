@@ -24,30 +24,43 @@ export class DBOS {
   // Lifecycle
   ///////
   static adminServer: Server | undefined = undefined;
+
+  static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
+    DBOS.dbosConfig = config;
+    DBOS.runtimeConfig = runtimeConfig;
+  }
+
   static async launch() {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
     // Initialize the DBOS executor
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
-    DBOSExecutor.globalInstance = new DBOSExecutor(dbosConfig);
+    if (!DBOS.dbosConfig) {
+      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
+      DBOS.dbosConfig = dbosConfig;
+      DBOS.runtimeConfig = runtimeConfig;
+    }
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    const adminApp = DBOSHttpServer.setupAdminApp(executor);
-    await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
+    if (DBOS.runtimeConfig) {
+      const adminApp = DBOSHttpServer.setupAdminApp(executor);
+      await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
 
-    DBOS.adminServer = adminApp.listen(runtimeConfig.admin_port, () => {
-      this.logger.info(`DBOS Admin Server is running at http://localhost:${runtimeConfig.admin_port}`);
-    });
+      DBOS.adminServer = adminApp.listen(DBOS.runtimeConfig.admin_port, () => {
+        this.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+      });
+    }
   }
 
   static async shutdown() {
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
+      DBOS.adminServer = undefined;
     }
 
     // Stop the executor
@@ -65,6 +78,7 @@ export class DBOS {
   //////
   static globalLogger?: DLogger;
   static dbosConfig?: DBOSConfig;
+  static runtimeConfig?: DBOSRuntimeConfig = undefined;
 
   //////
   // Context
