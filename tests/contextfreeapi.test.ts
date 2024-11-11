@@ -16,7 +16,7 @@ class TestFunctions
 
 async function main() {
   // First hurdle - configuration.
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   DBOS.setConfig(config);
 
   await DBOS.launch();
