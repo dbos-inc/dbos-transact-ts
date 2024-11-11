@@ -13,6 +13,8 @@ import {
   StatusString,
   BufferedResult,
   ContextFreeFunction,
+  GetWorkflowQueueInput,
+  GetWorkflowQueueOutput,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
@@ -45,7 +47,7 @@ import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
-import { DBOSEventReceiver, DBOSExecutorContext} from ".";
+import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput} from ".";
 
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
@@ -939,6 +941,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
     return this.systemDatabase.getWorkflowStatus(workflowID);
+  }
+
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    return this.systemDatabase.getWorkflows(input);
+  }
+
+  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
+    return this.systemDatabase.getWorkflowQueue(input);
   }
 
   async queryUserDB(sql: string, params?: unknown[]) {

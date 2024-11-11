@@ -23,6 +23,10 @@ async function main() {
 
   await TestFunctions.doWorkflow();
 
+  // Check for this to have run
+  const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
+  expect(wfs.workflowUUIDs.length).toBe(1);
+
   await DBOS.shutdown();
 }
 

@@ -1,7 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
 import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
-import { WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowParams } from "./workflow";
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowParams } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
@@ -187,6 +187,14 @@ export class DBOS {
 
   static retrieveWorkflow(workflowID: string) {
     return DBOS.executor.retrieveWorkflow(workflowID);
+  }
+
+  static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    return await DBOS.executor.getWorkflows(input);
+  }
+
+  static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
+    return await DBOS.executor.getWorkflowQueue(input);
   }
 
   static async sleepms(durationMS: number): Promise<void> {

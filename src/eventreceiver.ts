@@ -1,6 +1,6 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { WorkflowFunction, WorkflowHandle, WorkflowParams, WorkflowStatus } from './workflow';
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowFunction, WorkflowHandle, WorkflowParams, WorkflowStatus } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
@@ -49,6 +49,8 @@ export interface DBOSExecutorContext
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 
   // Event receiver state queries / updates
   /* 
