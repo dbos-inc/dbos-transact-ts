@@ -278,10 +278,46 @@ export class DBOS {
     }
   }
 
-  // send
-  // recv
-  // setEvent
-  // getEvent
+  static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError();
+      }
+      return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
+    }
+    return DBOS.executor.send(destinationID, message, topic);
+  }
+  
+  static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError();
+      }
+      return (getCurrentDBOSContext() as WorkflowContext).recv<T>(topic, timeoutSeconds);
+    }
+    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can recv
+  }
+
+  static async setEvent<T>(key: string, value: T): Promise<void> {
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError();
+      }
+      return (getCurrentDBOSContext() as WorkflowContext).setEvent(key, value);
+    }
+    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can set event
+  }
+
+  static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError();
+      }
+      return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
+    }
+    return DBOS.executor.getEvent(workflowID, key, timeoutSeconds);
+  }
+
   // executeWorkflowId
   // recoverPendingWorkflows
 
@@ -314,9 +350,10 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
-        const wfParams: WorkflowParams = {
+        const wfParams: InternalWorkflowParams = {
           workflowUUID: pctx?.idAssignedForNextWorkflow,
           queueName: pctx?.queueAssignedForWorkflows,
+          usesContext: false,
         };
         if (pctx) {
           pctx.idAssignedForNextWorkflow = undefined;

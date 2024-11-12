@@ -41,6 +41,33 @@ class TestFunctions
     ++TestFunctions.nSchedCalls;
     return Promise.resolve();
   }
+
+  @DBOS.workflow()
+  static async receiveWorkflow(v: string) {
+    const message1 = await DBOS.recv<string>();
+    const message2 = await DBOS.recv<string>();
+    return v + ':' + message1 + '|' + message2;
+  }
+
+  @DBOS.workflow()
+  static async sendWorkflow(destinationUUID: string) {
+    await DBOS.send(destinationUUID, "message1");
+    await DBOS.send(destinationUUID, "message2");
+  }
+
+  @DBOS.workflow()
+  static async setEventWorkflow(v1: string, v2: string) {
+    await DBOS.setEvent("key1", v1);
+    await DBOS.setEvent("key2", v2);
+    return Promise.resolve(0);
+  }
+
+  @DBOS.workflow()
+  static async getEventWorkflow(wfid: string) {
+    const kv1 = await DBOS.getEvent<string>(wfid, "key1");
+    const kv2 = await DBOS.getEvent<string>(wfid, "key2");
+    return kv1+','+kv2;
+  }
 }
 
 async function main() {
@@ -48,7 +75,6 @@ async function main() {
   const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
-
   await DBOS.launch();
 
   const res = await TestFunctions.doWorkflow();
@@ -77,8 +103,8 @@ async function main2() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
-
   await DBOS.launch();
+
   const res = await DBOS.withNextWorkflowID('aaaaa', async ()=>{
     return await TestFunctions.doWorkflowAAAAA();
   });
@@ -123,8 +149,8 @@ async function main5() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
-
   await DBOS.launch();
+
   const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
     return await TestFunctions.doWorkflow();
   });
@@ -144,6 +170,19 @@ async function main5() {
 
   await sleepms(2000);
   expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
+
+  await DBOS.shutdown();
+}
+
+async function main6() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  await DBOS.withNextWorkflowID('wfidset', async() => {
+    await TestFunctions.setEventWorkflow('a', 'b');
+  });
 
   await DBOS.shutdown();
 }
@@ -175,5 +214,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("assign_workflow_queue", async() => {
     await main5();
+  }, 15000);
+
+  test("send_recv_get_set", async() => {
+    await main6();
   }, 15000);
 });

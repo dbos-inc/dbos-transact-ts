@@ -161,12 +161,12 @@ export interface WorkflowContext extends DBOSContext {
 
   // These are subject to change...
 
-  send<T>(destinationUUID: string, message: T, topic?: string): Promise<void>;
+  send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T>(key: string, value: T): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
   sleep(durationSec: number): Promise<void>;
