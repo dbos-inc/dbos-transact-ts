@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest, runWithTopContext } from "./context";
-import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
+import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
 import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowHandle, WorkflowParams } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
@@ -8,7 +8,7 @@ import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } f
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { registerAndWrapContextFreeFunction } from "./decorators";
+import { MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { Server } from "http";
@@ -83,6 +83,7 @@ export class DBOS {
   static globalLogger?: DLogger;
   static dbosConfig?: DBOSConfig;
   static runtimeConfig?: DBOSRuntimeConfig = undefined;
+  static invokeWrappers: Map<unknown, unknown> = new Map();
 
   //////
   // Context
@@ -249,15 +250,21 @@ export class DBOS {
   }
 
   // startWorkflow (child or not)
-  static async startWorkflow<Args extends unknown[], Return>(func: (ctxt: WorkflowContext, ...args: Args) => Promise<Return>, ...args: Args)
+  static async startWorkflow<Args extends unknown[], Return>(func: (...args: Args) => Promise<Return>, ...args: Args)
     : Promise<WorkflowHandle<Return>>
   {
     const pctx = getCurrentContextStore();
-    const wfParams: WorkflowParams = {
+    const wfParams: InternalWorkflowParams = {
       workflowUUID: pctx?.idAssignedForNextWorkflow,
       queueName: pctx?.queueAssignedForWorkflows,
+      usesContext: false, // TODO: This does not allow interoperation...
     };
-    return DBOS.executor.workflow(func, wfParams, ...args);
+    if (DBOS.invokeWrappers.has(func)) {
+      return DBOS.executor.workflow(DBOS.invokeWrappers.get(func)! as WorkflowFunction<Args, Return>, wfParams, ...args);
+    }
+    else {
+      return DBOS.executor.workflow(func as unknown as WorkflowFunction<Args, Return>, wfParams, ...args);
+    }
   }
 
   // send
@@ -312,6 +319,13 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      Object.defineProperty(invokeWrapper, "name", {
+        value: registration.name,
+      });
+  
+      registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
+      // TODO CTX this should not be in here already, or if it is we need to do something different...
+      DBOS.invokeWrappers.set(invokeWrapper, registration.registeredFunction);
 
       return descriptor;
     }
@@ -337,7 +351,11 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
-  
+
+      Object.defineProperty(invokeWrapper, "name", {
+        value: registration.name,
+      });
+
       return descriptor;
     }
     return decorator;
@@ -362,6 +380,10 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+
+      Object.defineProperty(invokeWrapper, "name", {
+        value: registration.name,
+      });
 
       return descriptor;
     }

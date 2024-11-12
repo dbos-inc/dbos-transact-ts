@@ -21,6 +21,12 @@ class TestFunctions
     await TestFunctions.doTransaction();
     return 'done';
   }
+
+  @DBOS.workflow()
+  static async doWorkflowArg(arg: string) {
+    await TestFunctions.doTransaction();
+    return `done ${arg}`;
+  }
 }
 
 async function main() {
@@ -54,7 +60,6 @@ async function main() {
 }
 
 async function main2() {
-  // First hurdle - configuration.
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
@@ -68,6 +73,19 @@ async function main2() {
   // Validate that it had the ID given...
   const wfh = DBOS.retrieveWorkflow('aaaaa');
   expect (await wfh.getResult()).toBe('done');
+
+  await DBOS.shutdown();
+}
+
+async function main3() {
+  // First hurdle - configuration.
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+
+  await DBOS.launch();
+  const handle = await DBOS.startWorkflow(TestFunctions.doWorkflowArg, 'a');
+  expect (await handle.getResult()).toBe('done a');
 
   await DBOS.shutdown();
 }
@@ -88,7 +106,11 @@ describe("dbos-v2api-tests-main", () => {
     await main();
   }, 15000);
 
-  test("start_workflow", async() => {
+  test("assign_workflow_id", async() => {
     await main2();
+  }, 15000);
+
+  test("start_workflow", async() => {
+    await main3();
   }, 15000);
 });
