@@ -1,4 +1,4 @@
-import { DBOS } from '../src';
+import { DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 class TestFunctions
@@ -109,8 +109,35 @@ async function main4() {
   await DBOS.shutdown();
 }
 
+async function main5() {
+  const wfq = new WorkflowQueue('wfq');
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+
+  await DBOS.launch();
+  const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
+    return await TestFunctions.doWorkflow();
+  });
+  expect(res).toBe('done');
+
+  // Validate that it had the queue
+  /*
+  // To do when workflow can be suspended...
+  const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
+  expect (wfqcontent.workflows.length).toBe(1);
+  */
+  const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
+  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
+  expect(wfs.workflowUUIDs.length).toBe(1);
+  const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
+  expect(wfstat?.queueName).toBe('wfq');
+
+  await DBOS.shutdown();
+}
+
 // TODO:
-//  Workflow Q
+//  Scheduled
 //  Child workflows
 //  Send/Recv; SetEvent/ GetEvent
 //  Roles / Auth
@@ -133,5 +160,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("temp_step_transaction", async() => {
     await main4();
+  }, 15000);
+
+  test("assign_workflow_queue", async() => {
+    await main5();
   }, 15000);
 });

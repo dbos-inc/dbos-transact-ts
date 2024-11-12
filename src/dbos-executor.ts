@@ -174,7 +174,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   eventReceivers: DBOSEventReceiver[] = [];
 
-  scheduler: DBOSScheduler | null = null;
+  scheduler?: DBOSScheduler = undefined;
+  wfqEnded?: Promise<void> = undefined;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
 
@@ -1022,6 +1023,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     await this.scheduler?.destroyScheduler();
     wfQueueRunner.stop();
+    await this.wfqEnded;
   }
 
   async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {

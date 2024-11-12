@@ -24,10 +24,10 @@ export const defaultEntryPoint = "dist/operations.js";
 
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
-  private dbosExec: DBOSExecutor | null = null;
+  private dbosExec?: DBOSExecutor = undefined;
   private servers: { appServer: Server; adminServer: Server } | undefined;
-  private scheduler: DBOSScheduler | null = null;
-  private wfQueueRunner: Promise<void> | null = null;
+  private scheduler?: DBOSScheduler = undefined;
+  private wfQueueRunner?: Promise<void> = undefined;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.

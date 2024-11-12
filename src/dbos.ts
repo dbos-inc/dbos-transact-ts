@@ -7,7 +7,7 @@ import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
-import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
+import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
 import { MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
@@ -18,6 +18,7 @@ import { TransactionConfig, TransactionContextImpl, TransactionFunction } from "
 import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
+import { wfQueueRunner } from "./wfqueue";
 
 export class DBOS {
   ///////
@@ -44,6 +45,15 @@ export class DBOS {
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
+    DBOSExecutor.globalInstance.scheduler = new DBOSScheduler(DBOSExecutor.globalInstance);
+    DBOSExecutor.globalInstance.scheduler.initScheduler();
+
+    DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
+
+    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
+      await evtRcvr.initialize(DBOSExecutor.globalInstance);
+    }
+
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (DBOS.runtimeConfig) {
@@ -65,6 +75,7 @@ export class DBOS {
 
     // Stop the executor
     if (DBOSExecutor.globalInstance) {
+      await DBOSExecutor.globalInstance.deactivateEventReceivers();
       await DBOSExecutor.globalInstance.destroy();
       DBOSExecutor.globalInstance = undefined;
     }
