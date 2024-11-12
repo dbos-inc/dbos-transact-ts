@@ -180,9 +180,16 @@ async function main6() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
+  // This or: DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset'); ?
+  const wfhandle = await DBOS.startWorkflow(TestFunctions.getEventWorkflow, 'wfidset');
   await DBOS.withNextWorkflowID('wfidset', async() => {
     await TestFunctions.setEventWorkflow('a', 'b');
   });
+  const res = await wfhandle.getResult();
+
+  expect(res).toBe("a,b");
+  expect(await DBOS.getEvent('wfidset', 'key1')).toBe('a');
+  expect(await DBOS.getEvent('wfidset', 'key2')).toBe('b');
 
   await DBOS.shutdown();
 }
