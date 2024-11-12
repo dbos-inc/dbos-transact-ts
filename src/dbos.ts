@@ -8,7 +8,7 @@ import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } f
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
+import { getOrCreateClassRegistration, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { Server } from "http";
@@ -359,7 +359,7 @@ export class DBOS {
           pctx.idAssignedForNextWorkflow = undefined;
         }
         const handle = await DBOS.executor.workflow(
-          registration.origFunction as unknown as WorkflowFunction<Args, Return>,
+          registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
           wfParams, ...rawArgs
         );
         return await handle.getResult();
@@ -423,7 +423,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const wfParams: WorkflowParams = {};
         return  await DBOS.executor.external(
-          registration.origFunction as unknown as StepFunction<Args, Return>,
+          registration.registeredFunction as unknown as StepFunction<Args, Return>,
           wfParams, ...rawArgs
         );
       };
@@ -440,10 +440,28 @@ export class DBOS {
     return decorator;
   }
 
-  // TODO CTX
-  //class
-  //required roles
-  //etc
+  static defaultRequiredRole(anyOf: string[]) {
+    function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+    {
+       const clsreg = getOrCreateClassRegistration(ctor);
+       clsreg.requiredRole = anyOf;
+    }
+    return clsdec;
+  }
+
+  static requiredRole(anyOf: string[]) {
+    function apidec<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    {
+      const {descriptor, registration} = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      registration.requiredRole = anyOf;
+  
+      return descriptor;
+    }
+    return apidec;
+  }
 
   /////
   // Registration, etc
@@ -461,4 +479,5 @@ export class DBOS {
 
   // TODO CTX
   // Middleware ops like setting auth
+  // Initializers?  Deploy?  ORM Entities?
 }

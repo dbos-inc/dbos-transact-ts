@@ -1,6 +1,6 @@
 import { DBOS, WorkflowQueue } from '../src';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions
 {
@@ -67,6 +67,37 @@ class TestFunctions
     const kv1 = await DBOS.getEvent<string>(wfid, "key1");
     const kv2 = await DBOS.getEvent<string>(wfid, "key2");
     return kv1+','+kv2;
+  }
+}
+
+const testTableName = "dbos_test_kv";
+
+@DBOS.defaultRequiredRole(["user"])
+class TestSec {
+  @DBOS.requiredRole([])
+  @DBOS.workflow()
+  static async testAuth(name: string) {
+    return Promise.resolve(`hello ${name}`);
+  }
+
+  @DBOS.transaction()
+  static async testTranscation(name: string) {
+    const { rows } = await DBOS.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
+    return `hello ${rows[0].id}`;
+  }
+
+  @DBOS.workflow()
+  static async testWorkflow(name: string) {
+    const res = await TestSec.testTranscation(name);
+    return res;
+  }
+}
+
+class TestSec2 {
+  @DBOS.requiredRole(["user"])
+  @DBOS.workflow()
+  static async bye() {
+    return Promise.resolve({ message: `bye ${DBOS.assumedRole} ${DBOS.authenticatedUser}!` });
   }
 }
 
@@ -206,9 +237,29 @@ async function main6() {
   const rres2 = await wfhandler2.getResult();
   expect(rres2).toBe('r2:m1|m2');
 
+  await DBOS.shutdown();
+}
+
+async function main7() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  await expect(async()=>{
+    await TestSec.testWorkflow('unauthorized');
+  }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
+  
+  const res = await TestSec.testAuth('and welcome');
+  expect(res).toBe('hello and welcome');
+
+  await expect(async()=>{
+    await TestSec2.bye();
+  }).rejects.toThrow('User does not have a role with permission to call bye');
 
   await DBOS.shutdown();
 }
+
 
 // TODO:
 //  Child workflows
@@ -240,5 +291,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("send_recv_get_set", async() => {
     await main6();
+  }, 15000);
+
+  test("roles", async() => {
+    await main7();
   }, 15000);
 });
