@@ -1,4 +1,5 @@
 import { DBOS, WorkflowQueue } from '../src';
+import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 class TestFunctions
@@ -31,6 +32,14 @@ class TestFunctions
   static async doWorkflowArg(arg: string) {
     await TestFunctions.doTransaction("");
     return `done ${arg}`;
+  }
+
+  static nSchedCalls = 0;
+  @DBOS.scheduled({crontab: '* * * * * *'})
+  @DBOS.workflow()
+  static async doCron(_sdate: Date, _cdate: Date) {
+    ++TestFunctions.nSchedCalls;
+    return Promise.resolve();
   }
 }
 
@@ -133,11 +142,13 @@ async function main5() {
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
   expect(wfstat?.queueName).toBe('wfq');
 
+  await sleepms(2000);
+  expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
+
   await DBOS.shutdown();
 }
 
 // TODO:
-//  Scheduled
 //  Child workflows
 //  Send/Recv; SetEvent/ GetEvent
 //  Roles / Auth
