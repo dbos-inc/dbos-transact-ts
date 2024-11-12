@@ -4,7 +4,7 @@ import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
 import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowParams } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSInvalidWorkflowTransitionError } from "./error";
+import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
@@ -66,10 +66,14 @@ export class DBOS {
     // Stop the executor
     if (DBOSExecutor.globalInstance) {
       await DBOSExecutor.globalInstance.destroy();
+      DBOSExecutor.globalInstance = undefined;
     }
   }
 
   static get executor() {
+    if (!DBOSExecutor.globalInstance) {
+      throw new DBOSExecutorNotInitializedError();
+    }
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
   }
 
@@ -273,7 +277,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const wfParams: WorkflowParams = {};
-        return  await DBOS.executor.transaction(
+        return await DBOS.executor.transaction(
           registration.origFunction as unknown as TransactionFunction<Args, Return>,
           wfParams, ...rawArgs
         );
