@@ -50,9 +50,9 @@ class TestFunctions
   }
 
   @DBOS.workflow()
-  static async sendWorkflow(destinationUUID: string) {
-    await DBOS.send(destinationUUID, "message1");
-    await DBOS.send(destinationUUID, "message2");
+  static async sendWorkflow(destinationID: string) {
+    await DBOS.send(destinationID, "message1");
+    await DBOS.send(destinationID, "message2");
   }
 
   @DBOS.workflow()
@@ -191,12 +191,27 @@ async function main6() {
   expect(await DBOS.getEvent('wfidset', 'key1')).toBe('a');
   expect(await DBOS.getEvent('wfidset', 'key2')).toBe('b');
 
+  const wfhandler = await DBOS.withNextWorkflowID('wfidrecv', async() => {
+    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r');
+  });
+  await TestFunctions.sendWorkflow('wfidrecv');
+  const rres = await wfhandler.getResult();
+  expect(rres).toBe('r:message1|message2');
+
+  const wfhandler2 = await DBOS.withNextWorkflowID('wfidrecv2', async() => {
+    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r2');
+  });
+  await DBOS.send('wfidrecv2', 'm1');
+  await DBOS.send('wfidrecv2', 'm2');
+  const rres2 = await wfhandler2.getResult();
+  expect(rres2).toBe('r2:m1|m2');
+
+
   await DBOS.shutdown();
 }
 
 // TODO:
 //  Child workflows
-//  Send/Recv; SetEvent/ GetEvent
 //  Roles / Auth
 //  Recovery
 //  Configured instances
