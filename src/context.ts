@@ -13,9 +13,10 @@ import { StepContextImpl } from "./step";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
 
 export interface DBOSLocalCtx {
-  ctx: DBOSContext,
+  ctx?: DBOSContext,
   parentCtx?: DBOSLocalCtx,
   idAssignedForNextWorkflow?: string;
+  queueAssignedForWorkflows?: string;
   parentWorkflowId?: string;
   parentWorkflowFid?: number;
   workflowId?: string;
@@ -72,6 +73,10 @@ export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Prom
     ctx,
     workflowId: ctx.workflowUUID,
   }, callback);
+}
+
+export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: ()=>Promise<R>): Promise<R> {
+  return await asyncLocalCtx.run(ctx, callback);
 }
 
 export async function runWithTransactionContext<Client extends UserDatabaseClient, R>(ctx: TransactionContextImpl<Client>, callback: ()=>Promise<R>) {

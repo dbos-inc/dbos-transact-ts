@@ -14,6 +14,13 @@ class TestFunctions
     await TestFunctions.doTransaction();
     return 'done';
   }
+
+  @DBOS.workflow()
+  static async doWorkflowAAAAA() {
+    expect(DBOS.workflowID).toBe('aaaaa');
+    await TestFunctions.doTransaction();
+    return 'done';
+  }
 }
 
 async function main() {
@@ -38,20 +45,50 @@ async function main() {
   expect(wfstat?.status).toBe('SUCCESS');
 
   await DBOS.shutdown();
+
+  // Try a second run
+  await DBOS.launch();
+  const res2 = await TestFunctions.doWorkflow();
+  expect (res2).toBe('done');
+  await DBOS.shutdown();  
+}
+
+async function main2() {
+  // First hurdle - configuration.
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+
+  await DBOS.launch();
+  const res = await DBOS.withNextWorkflowID('aaaaa', async ()=>{
+    return await TestFunctions.doWorkflowAAAAA();
+  });
+  expect (res).toBe('done');
+
+  // Validate that it had the ID given...
+  const wfh = DBOS.retrieveWorkflow('aaaaa');
+  expect (await wfh.getResult()).toBe('done');
+
+  await DBOS.shutdown();
 }
 
 // TODO:
-//  Start workflow
-//  Workflow UUID
 //  Workflow Q
+//  startWorkflow
+//  Child workflows
 //  Send/Recv; SetEvent/ GetEvent
 //  Bare Tx
 //  Bare Communicator
 //  Roles / Auth
 //  Recovery
+//  Configured instances
 
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
     await main();
-  })
+  }, 15000);
+
+  test("start_workflow", async() => {
+    await main2();
+  }, 15000);
 });

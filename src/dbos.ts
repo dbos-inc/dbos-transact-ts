@@ -1,7 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest } from "./context";
+import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest, runWithTopContext } from "./context";
 import { DBOSConfig, DBOSExecutor } from "./dbos-executor";
-import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowParams } from "./workflow";
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowHandle, WorkflowParams } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
@@ -214,7 +214,52 @@ export class DBOS {
     return this.sleepms(durationSec * 1000);
   }
 
+  static async withNextWorkflowID<R>(wfid: string, callback: ()=>Promise<R>) : Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      const pcwfid = pctx.idAssignedForNextWorkflow;
+      try {
+        pctx.idAssignedForNextWorkflow = wfid;
+        return callback();
+      }
+      finally {
+        pctx.idAssignedForNextWorkflow = pcwfid;
+      }
+    }
+    else {
+      return runWithTopContext({idAssignedForNextWorkflow: wfid}, callback);
+    }
+  }
+
+  static async withWorkflowQueue<R>(wfq: string, callback: ()=>Promise<R>) : Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      const pcwfq = pctx.queueAssignedForWorkflows;
+      try {
+        pctx.queueAssignedForWorkflows = wfq;
+        return callback();
+      }
+      finally {
+        pctx.queueAssignedForWorkflows = pcwfq;
+      }
+    }
+    else {
+      return runWithTopContext({queueAssignedForWorkflows: wfq}, callback);
+    }
+  }
+
   // startWorkflow (child or not)
+  static async startWorkflow<Args extends unknown[], Return>(func: (ctxt: WorkflowContext, ...args: Args) => Promise<Return>, ...args: Args)
+    : Promise<WorkflowHandle<Return>>
+  {
+    const pctx = getCurrentContextStore();
+    const wfParams: WorkflowParams = {
+      workflowUUID: pctx?.idAssignedForNextWorkflow,
+      queueName: pctx?.queueAssignedForWorkflows,
+    };
+    return DBOS.executor.workflow(func, wfParams, ...args);
+  }
+
   // send
   // recv
   // setEvent
@@ -250,7 +295,14 @@ export class DBOS {
       registration.workflowConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        const wfParams: WorkflowParams = {}; // TODO CTX set WFID
+        const pctx = getCurrentContextStore();
+        const wfParams: WorkflowParams = {
+          workflowUUID: pctx?.idAssignedForNextWorkflow,
+          queueName: pctx?.queueAssignedForWorkflows,
+        };
+        if (pctx) {
+          pctx.idAssignedForNextWorkflow = undefined;
+        }
         const handle = await DBOS.executor.workflow(
           registration.origFunction as unknown as WorkflowFunction<Args, Return>,
           wfParams, ...rawArgs
@@ -337,5 +389,4 @@ export class DBOS {
 
   // TODO CTX
   // Middleware ops like setting auth
-  // Setting next WF id
 }
