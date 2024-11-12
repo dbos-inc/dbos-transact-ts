@@ -4,27 +4,32 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 class TestFunctions
 {
   @DBOS.transaction()
-  static async doTransaction() {
+  static async doTransaction(arg: string) {
     await DBOS.pgClient.query("SELECT 1");
-    return Promise.resolve();
+    return Promise.resolve(`selected ${arg}`);
+  }
+
+  @DBOS.step()
+  static async doStep(name: string) {
+    return Promise.resolve(`step ${name} done`);
   }
 
   @DBOS.workflow()
   static async doWorkflow() {
-    await TestFunctions.doTransaction();
+    await TestFunctions.doTransaction("");
     return 'done';
   }
 
   @DBOS.workflow()
   static async doWorkflowAAAAA() {
     expect(DBOS.workflowID).toBe('aaaaa');
-    await TestFunctions.doTransaction();
+    await TestFunctions.doTransaction("");
     return 'done';
   }
 
   @DBOS.workflow()
   static async doWorkflowArg(arg: string) {
-    await TestFunctions.doTransaction();
+    await TestFunctions.doTransaction("");
     return `done ${arg}`;
   }
 }
@@ -78,28 +83,40 @@ async function main2() {
 }
 
 async function main3() {
-  // First hurdle - configuration.
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
-
   await DBOS.launch();
+
   const handle = await DBOS.startWorkflow(TestFunctions.doWorkflowArg, 'a');
   expect (await handle.getResult()).toBe('done a');
 
   await DBOS.shutdown();
 }
 
+async function main4() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  const tres = await TestFunctions.doTransaction('a');
+  expect(tres).toBe("selected a");
+
+  const sres = await TestFunctions.doStep('a');
+  expect(sres).toBe("step a done");
+
+  await DBOS.shutdown();
+}
+
 // TODO:
 //  Workflow Q
-//  startWorkflow
 //  Child workflows
 //  Send/Recv; SetEvent/ GetEvent
-//  Bare Tx
-//  Bare Communicator
 //  Roles / Auth
 //  Recovery
 //  Configured instances
+//  Cleanup
 
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
@@ -112,5 +129,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("start_workflow", async() => {
     await main3();
+  }, 15000);
+
+  test("temp_step_transaction", async() => {
+    await main4();
   }, 15000);
 });

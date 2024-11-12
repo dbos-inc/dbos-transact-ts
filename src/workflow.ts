@@ -698,9 +698,17 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
         // Execute the user's transaction.
         let cresult: R | undefined;
-        await runWithTransactionContext(tCtxt, async ()=> {
-          cresult = await txn.call(clsinst, tCtxt, ...args);
-        });
+        if (txnInfo.registration.passContext) {
+          await runWithTransactionContext(tCtxt, async ()=> {
+            cresult = await txn.call(clsinst, tCtxt, ...args);
+          });
+        }
+        else {
+          await runWithTransactionContext(tCtxt, async ()=> {
+            const tf = txn as unknown as (...args: T)=>Promise<R>;
+            cresult = await tf.call(clsinst, ...args);
+          });
+        }
         const result = cresult!
 
         // Record the execution, commit, and return.
@@ -820,9 +828,17 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           let cresult: R | undefined;
-          await runWithStepContext(ctxt, async ()=> {
-            cresult = await stepFn.call(clsInst, ctxt, ...args);
-          });
+          if (commInfo.registration.passContext) {
+            await runWithStepContext(ctxt, async ()=> {
+              cresult = await stepFn.call(clsInst, ctxt, ...args);
+            });
+          }
+          else {
+            await runWithStepContext(ctxt, async ()=> {
+              const sf = stepFn as unknown as (...args: T) => Promise<R>;
+              cresult = await sf.call(clsInst, ...args);
+            });
+          }
           result = cresult!
         } catch (error) {
           const e = error as Error
@@ -840,10 +856,18 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     } else {
       try {
         let cresult: R | undefined;
-        await runWithStepContext(ctxt, async ()=> {
-          cresult = await stepFn.call(clsInst, ctxt, ...args);
-        });
-        result = cresult!
+        if (commInfo.registration.passContext) {
+          await runWithStepContext(ctxt, async ()=> {
+            cresult = await stepFn.call(clsInst, ctxt, ...args);
+          });
+        }
+        else {
+          await runWithStepContext(ctxt, async ()=> {
+            const sf = stepFn as unknown as (...args: T) => Promise<R>;
+            cresult = await sf.call(clsInst, ...args);
+          });
+        }
+      result = cresult!
       } catch (error) {
         err = error as Error;
       }

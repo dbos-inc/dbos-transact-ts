@@ -342,9 +342,11 @@ export class DBOS {
       registration.txnConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        const wfParams: WorkflowParams = {};
+        const wfParams: WorkflowParams = {
+          // TODO CTX we lost 'this'
+        };
         return await DBOS.executor.transaction(
-          registration.origFunction as unknown as TransactionFunction<Args, Return>,
+          registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
           wfParams, ...rawArgs
         );
       };
