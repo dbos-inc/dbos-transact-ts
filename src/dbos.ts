@@ -256,9 +256,19 @@ export class DBOS {
       finally {
         pctx.idAssignedForNextWorkflow = pcwfid;
       }
+    } else {
+      return runWithTopContext({ idAssignedForNextWorkflow: wfid }, callback);
     }
-    else {
-      return runWithTopContext({idAssignedForNextWorkflow: wfid}, callback);
+  }
+
+  static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      pctx.authenticatedUser = authedUser;
+      pctx.authenticatedRoles = authedRoles;
+      return callback();
+    } else {
+      return runWithTopContext({ authenticatedUser: authedUser, authenticatedRoles: authedRoles }, callback);
     }
   }
 
