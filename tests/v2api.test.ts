@@ -9,6 +9,7 @@ async function compileTypeScriptFile(filePath: string): Promise<boolean> {
       module: ts.ModuleKind.Node16,
       experimentalDecorators: true,
       emitDecoratorMetadata: true,
+      outDir: '../../dist',
       strict: true,
     });
     const emitResult = program.emit();
