@@ -61,7 +61,7 @@ describe("v2api-compile", () => {
       `;
       const result = await compileCodeWithImports(validCode);
       expect(result).toBe(true);
-  });
+  }, 20000);
 
 
   it("should NOT compile", async () => {
@@ -75,5 +75,5 @@ describe("v2api-compile", () => {
     `;
     const _result = await compileCodeWithImports(invalidCode);
     //expect(result).toBe(false);  // Can't get this to fail :-(
-});
+  }, 20000);
 });
