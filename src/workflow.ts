@@ -26,7 +26,7 @@ export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends
 
 // local type declarations for transaction and step functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
-type CommFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
+type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
@@ -34,13 +34,13 @@ export type WFInvokeFuncs<T> =
   T extends ConfiguredInstance
   ? never
   : {
-    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   };
 
 export type WFInvokeFuncsInst<T> =
   T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   }
   : never;
 
