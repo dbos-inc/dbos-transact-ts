@@ -666,15 +666,30 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const wConfig = wInfo.config;
 
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
-    // Fill wCtxt values that are otherwise set by params.parentCtx
+    // Compatibility with the old way of calling workflows, which would include a parentCtx
     const pctx = getCurrentContextStore();
     if (!params.usesContext && pctx) {
-      wCtxt.authenticatedUser = pctx.authenticatedUser || "";
-      wCtxt.assumedRole = pctx.assumedRole || "";
-      wCtxt.authenticatedRoles = pctx.authenticatedRoles || [];
-      wCtxt.request = pctx.request || {};
+      const span = this.tracer.startSpan(
+        wf.name,
+        {
+          operationUUID: workflowUUID,
+          operationType: OperationType.WORKFLOW,
+          status: StatusString.PENDING,
+          authenticatedUser: pctx.authenticatedUser,
+          assumedRole: pctx.assumedRole,
+          authenticatedRoles: pctx.authenticatedRoles,
+        }
+        // TODO the span should be taken from pctx
+        //pctx.span
+      );
+      params.parentCtx = new DBOSContextImpl(wf.name, span, this.logger);
+      params.parentCtx.request = pctx.request || {};
+      params.parentCtx.authenticatedUser = pctx.authenticatedUser || "";
+      params.parentCtx.assumedRole = pctx.assumedRole || "";
+      params.parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
+      params.parentCtx.workflowUUID = workflowUUID;
     }
+    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
