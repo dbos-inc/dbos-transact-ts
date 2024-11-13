@@ -1,7 +1,22 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { assertCurrentDBOSContext, getCurrentContextStore, getCurrentDBOSContext, HTTPRequest, runWithTopContext } from "./context";
+import {
+  assertCurrentDBOSContext,
+  getCurrentContextStore,
+  getCurrentDBOSContext,
+  HTTPRequest,
+  runWithTopContext
+} from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
-import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowConfig, WorkflowContext, WorkflowFunction, WorkflowHandle, WorkflowParams } from "./workflow";
+import {
+  GetWorkflowQueueInput,
+  GetWorkflowQueueOutput,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
+  WorkflowConfig,
+  WorkflowFunction,
+  WorkflowHandle,
+  WorkflowParams
+} from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
@@ -19,6 +34,9 @@ import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
+import {
+  WorkflowContext
+} from ".";
 
 export class DBOS {
   ///////
@@ -339,11 +357,18 @@ export class DBOS {
     return scheddec;
   }
 
-  static workflow(config: WorkflowConfig={}) {
-    function decorator<This, Args extends unknown[], Return>(
+  static workflow(config: WorkflowConfig={})
+  {
+    function decorator <
+      This,
+      Args extends unknown[],
+      Return
+    >
+    (
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+    )
     {
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.workflowConfig = config;

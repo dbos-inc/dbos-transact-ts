@@ -26,6 +26,9 @@ export interface DBOSLocalCtx {
   curTxFunctionId?: number;
   sqlClient?: UserDatabaseClient;
   spans?: Span[];
+  authenticatedUser?: string;
+  authorizedRoles?: string[];
+  assumedRole?: string;
 }
 
 function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
