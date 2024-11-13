@@ -37,6 +37,7 @@ import { wfQueueRunner } from "./wfqueue";
 import {
   WorkflowContext
 } from ".";
+import { ConfiguredInstance } from ".";
 
 export class DBOS {
   ///////
@@ -375,10 +376,22 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
+        let inst: ConfiguredInstance | undefined = undefined;
+        if (typeof this === 'function') {
+          // This is static          
+        }
+        else {
+          inst = this as ConfiguredInstance;
+          if (!("name" in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError();
+          }
+        }
+  
         const wfParams: InternalWorkflowParams = {
           workflowUUID: pctx?.idAssignedForNextWorkflow,
           queueName: pctx?.queueAssignedForWorkflows,
           usesContext: false,
+          configuredInstance : inst
         };
         if (pctx) {
           pctx.idAssignedForNextWorkflow = undefined;
@@ -415,8 +428,19 @@ export class DBOS {
       registration.txnConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        let inst: ConfiguredInstance | undefined = undefined;
+        if (typeof this === 'function') {
+          // This is static          
+        }
+        else {
+          inst = this as ConfiguredInstance;
+          if (!("name" in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError();
+          }
+        }
+
         const wfParams: WorkflowParams = {
-          // TODO CTX we lost 'this'
+          configuredInstance: inst
         };
         return await DBOS.executor.transaction(
           registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
@@ -446,7 +470,19 @@ export class DBOS {
       registration.commConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        const wfParams: WorkflowParams = {};
+        let inst: ConfiguredInstance | undefined = undefined;
+        if (typeof this === 'function') {
+          // This is static          
+        }
+        else {
+          inst = this as ConfiguredInstance;
+          if (!("name" in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError();
+          }
+        }
+        const wfParams: WorkflowParams = {
+          configuredInstance: inst
+        };
         return  await DBOS.executor.external(
           registration.registeredFunction as unknown as StepFunction<Args, Return>,
           wfParams, ...rawArgs
