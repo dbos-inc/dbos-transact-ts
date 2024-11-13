@@ -502,10 +502,11 @@ export class DBOS {
   }
 
   static defaultRequiredRole(anyOf: string[]) {
-    function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function clsdec<T extends { new (...args: any[]) : object }>(ctor: T)
     {
-       const clsreg = getOrCreateClassRegistration(ctor);
-       clsreg.requiredRole = anyOf;
+      const clsreg = getOrCreateClassRegistration(ctor);
+      clsreg.requiredRole = anyOf;
     }
     return clsdec;
   }

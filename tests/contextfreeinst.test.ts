@@ -71,7 +71,7 @@ class TestFunctions extends ConfiguredInstance
 
 const testTableName = "dbos_test_kv";
 
-//@DBOS.defaultRequiredRole(["user"])
+@DBOS.defaultRequiredRole(["user"])
 class _TestSec extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
@@ -131,17 +131,20 @@ async function main() {
   const resB = await instB.doWorkflow();
   expect (resB).toBe('done B');
 
-  /*
   // Check for this to have run
   const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
-  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
-  expect(wfs.workflowUUIDs.length).toBe(1);
+  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(2);
+  expect(wfs.workflowUUIDs.length).toBe(2);
   await DBOS.executor.flushWorkflowBuffers();
-  const wfh = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
-  expect((await wfh.getStatus())?.status).toBe('SUCCESS');
-  const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
-  expect(wfstat?.status).toBe('SUCCESS');
-  */
+  const wfh1 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
+  const wfh2 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[1]);
+  const stat1 = await wfh1.getStatus();
+  const stat2 = await wfh2.getStatus();
+  expect(stat1?.status).toBe('SUCCESS');
+  expect(stat2?.status).toBe('SUCCESS');
+  const arr = [stat1?.workflowConfigName, stat2?.workflowConfigName];
+  expect(arr.includes('A')).toBeTruthy();
+  expect(arr.includes('B')).toBeTruthy();
   await DBOS.shutdown();
 }
 

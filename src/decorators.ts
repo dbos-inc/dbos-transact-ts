@@ -573,7 +573,8 @@ export function ArgVarchar(length: number) {
 ///////////////////////
 
 export function DefaultRequiredRole(anyOf: string[]) {
-  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function clsdec<T extends { new (...args: any[]) : object }>(ctor: T)
   {
      const clsreg = getOrCreateClassRegistration(ctor);
      clsreg.requiredRole = anyOf;
