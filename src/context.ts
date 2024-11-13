@@ -6,15 +6,15 @@ import { ParsedUrlQuery } from "querystring";
 import { UserDatabase, UserDatabaseClient } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
-import { AsyncLocalStorage } from 'async_hooks';
+import { AsyncLocalStorage } from "async_hooks";
 import { WorkflowContext } from "./workflow";
 import { TransactionContextImpl } from "./transaction";
 import { StepContextImpl } from "./step";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
 
 export interface DBOSLocalCtx {
-  ctx?: DBOSContext,
-  parentCtx?: DBOSLocalCtx,
+  ctx?: DBOSContext;
+  parentCtx?: DBOSLocalCtx;
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   parentWorkflowId?: string;
@@ -27,8 +27,9 @@ export interface DBOSLocalCtx {
   sqlClient?: UserDatabaseClient;
   spans?: Span[];
   authenticatedUser?: string;
-  authorizedRoles?: string[];
+  authenticatedRoles?: string[];
   assumedRole?: string;
+  request?: HTTPRequest;
 }
 
 function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {

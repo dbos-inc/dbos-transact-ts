@@ -242,7 +242,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     DBOSExecutor.globalInstance = this;
   }
 
-
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
@@ -668,6 +667,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const wConfig = wInfo.config;
 
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
+    // Fill wCtxt values that are otherwise set by params.parentCtx
+    const pctx = getCurrentContextStore();
+    if (!params.usesContext && pctx) {
+      wCtxt.authenticatedUser = pctx.authenticatedUser || "";
+      wCtxt.assumedRole = pctx.assumedRole || "";
+      wCtxt.authenticatedRoles = pctx.authenticatedRoles || [];
+      wCtxt.request = pctx.request || {};
+    }
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
