@@ -257,14 +257,25 @@ async function main7() {
     await TestSec2.bye();
   }).rejects.toThrow('User does not have a role with permission to call bye');
 
+  /*
+  TODO CTX
+  const hijoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+    return await TestSec.testWorkflow('joe');
+  });
+  expect (hijoe).toBe('hello joe');
+
+  const byejoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+    return await TestSec2.bye();
+  });
+  expect (byejoe).toBe('bye user joe');
+  */
+
   await DBOS.shutdown();
 }
 
 // TODO:
 //  Child workflows
-//  Roles / Auth
 //  Recovery
-//  Configured instances
 //  Cleanup
 
 describe("dbos-v2api-tests-main", () => {
