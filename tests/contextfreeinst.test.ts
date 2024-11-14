@@ -1,4 +1,4 @@
-import { ConfiguredInstance, configureInstance, DBOS } from '../src';
+import { ConfiguredInstance, configureInstance, DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions extends ConfiguredInstance
@@ -199,7 +199,6 @@ async function main4() {
   await DBOS.shutdown();
 }
 
-/*
 async function main5() {
   const wfq = new WorkflowQueue('wfq');
   const config = generateDBOSTestConfig();
@@ -208,9 +207,9 @@ async function main5() {
   await DBOS.launch();
 
   const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
-    return await TestFunctions.doWorkflow();
+    return await instA.doWorkflow();
   });
-  expect(res).toBe('done');
+  expect(res).toBe('done A');
 
   // Validate that it had the queue
   // To do when workflow can be suspended...
@@ -222,13 +221,12 @@ async function main5() {
   expect(wfs.workflowUUIDs.length).toBe(1);
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
   expect(wfstat?.queueName).toBe('wfq');
-
-  await sleepms(2000);
-  expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
+  expect(wfstat?.workflowConfigName).toBe('A');
 
   await DBOS.shutdown();
 }
 
+/*
 async function main6() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
@@ -310,11 +308,11 @@ describe("dbos-v2api-tests-main", () => {
     await main4();
   }, 15000);
 
-  /*
   test("assign_workflow_queue", async() => {
     await main5();
   }, 15000);
 
+  /*
   test("send_recv_get_set", async() => {
     await main6();
   }, 15000);
