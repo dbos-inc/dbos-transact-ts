@@ -178,6 +178,7 @@ async function main3() {
 
   await DBOS.shutdown();
 }
+*/
 
 async function main4() {
   const config = generateDBOSTestConfig();
@@ -185,15 +186,20 @@ async function main4() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const tres = await TestFunctions.doTransaction('a');
-  expect(tres).toBe("selected a");
+  const tres1 = await instA.doTransaction('a');
+  expect(tres1).toBe("selected a from A");
+  const tres2 = await instB.doTransaction('b');
+  expect(tres2).toBe("selected b from B");
 
-  const sres = await TestFunctions.doStep('a');
-  expect(sres).toBe("step a done");
+  const sres1 = await instA.doStep('a');
+  expect(sres1).toBe("step a done from A");
+  const sres2 = await instB.doStep('b');
+  expect(sres2).toBe("step b done from B");
 
   await DBOS.shutdown();
 }
 
+/*
 async function main5() {
   const wfq = new WorkflowQueue('wfq');
   const config = generateDBOSTestConfig();
@@ -298,11 +304,13 @@ describe("dbos-v2api-tests-main", () => {
   test("start_workflow", async() => {
     await main3();
   }, 15000);
+  */
 
   test("temp_step_transaction", async() => {
     await main4();
   }, 15000);
 
+  /*
   test("assign_workflow_queue", async() => {
     await main5();
   }, 15000);
