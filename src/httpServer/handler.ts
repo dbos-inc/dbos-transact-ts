@@ -11,7 +11,7 @@ import { StepFunction } from "../step";
 import { APITypes, ArgSources } from "./handlerTypes";
 import { StoredProcedure } from "../procedure";
 import { WorkflowQueue } from "../wfqueue";
-import { getOrGenerateRequestID } from "./middleware";
+import { getOrGenerateRequestID, RequestIDHeader } from "./middleware";
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +70,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
     // Retrieve or generate the request ID
     const requestID = getOrGenerateRequestID(koaContext.request.headers);
+    koaContext.set(RequestIDHeader, requestID);
 
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();

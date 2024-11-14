@@ -53,8 +53,8 @@ describe("httpserver-tests", () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/hello");
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe("hello!");
+    const requestID: string = response.headers[RequestIDHeader.toLowerCase()];
     // Expect uuidValidate to be true
-    const requestID: string = response.headers[RequestIDHeader];
     expect(uuidValidate(requestID)).toBe(true);
   });
 
@@ -63,7 +63,7 @@ describe("httpserver-tests", () => {
     const response = await request(testRuntime.getHandlersCallback()).get("/hello/alice").set(RequestIDHeader, requestID);
     expect(response.statusCode).toBe(301);
     expect(response.text).toBe("wow alice");
-    expect(response.headers[RequestIDHeader]).toBe(requestID);
+    expect(response.headers[RequestIDHeader.toLowerCase()]).toBe(requestID);
   });
 
   test("get-query", async () => {

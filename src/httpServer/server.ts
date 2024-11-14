@@ -396,8 +396,6 @@ export class DBOSHttpServer {
               }
             );
             dbosExec.tracer.endSpan(oc.span);
-            // Add requestID to response headers.
-            koaCtxt.set(RequestIDHeader, oc.request.requestID as string);
             await koaNext();
           }
         };
