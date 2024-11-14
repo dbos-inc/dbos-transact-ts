@@ -1,12 +1,22 @@
 import Koa from "koa";
+import { Request, Response, NextFunction } from "express";
+import Fastity, { FastifyInstance } from "fastify";
+import { INestApplication } from "@nestjs/common";
+import { IncomingHttpHeaders } from "http";
+
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from "../decorators";
 import { DBOSUndefinedDecoratorInputError } from "../error";
-
+import { Logger as DBOSLogger } from "../telemetry/logs";
 import { UserDatabaseClient } from "../user_database";
+import { OperationType } from "../dbos-executor";
+import { DBOS } from "../dbos";
+import { HTTPRequest } from "../context";
 
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { Logger as DBOSLogger } from "../telemetry/logs";
-import { OpenAPIV3 as OpenApi3 } from 'openapi-types';
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
+import { trace, defaultTextMapGetter, ROOT_CONTEXT } from "@opentelemetry/api";
+import { OpenAPIV3 as OpenApi3 } from "openapi-types";
+import { v4 as uuidv4 } from "uuid";
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
 export interface MiddlewareContext {
@@ -146,5 +156,115 @@ type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2Secu
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {
-  return function <T extends { new(...args: unknown[]): object }>(_ctor: T) { }
+  return function <T extends { new (...args: unknown[]): object }>(_ctor: T) {};
+}
+
+/////////////////////////////////
+/* HTTP APP TRACING MIDDLEWARES */
+/////////////////////////////////
+
+export const RequestIDHeader = "X-Request-ID";
+export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
+  const reqID = headers[RequestIDHeader.toLowerCase()] as string | undefined; // RequestIDHeader is expected to be a single value, so we dismiss the possible string[] returned type.
+  if (reqID) {
+    return reqID;
+  }
+  const newID = uuidv4();
+  headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
+  return newID;
+}
+
+export function createHTTPSpan(request: HTTPRequest, httpTracer: W3CTraceContextPropagator): Span {
+  // If present, retrieve the trace context from the request
+  const extractedSpanContext = trace.getSpanContext(httpTracer.extract(ROOT_CONTEXT, request.headers, defaultTextMapGetter));
+  let span: Span;
+  const spanAttributes = {
+    operationType: OperationType.HANDLER,
+    requestID: request.requestID,
+    requestIP: request.ip,
+    requestURL: request.url,
+    requestMethod: request.method,
+  };
+  if (extractedSpanContext === undefined) {
+    // request.url should be defined by now. Let's cast it to string
+    span = DBOS.executor.tracer.startSpan(request.url as string, spanAttributes);
+  } else {
+    extractedSpanContext.isRemote = true;
+    span = DBOS.executor.tracer.startSpanWithContext(extractedSpanContext, request.url as string, spanAttributes);
+  }
+  return span;
+}
+
+export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
+  // Retrieve or generate the request ID
+  const requestID = getOrGenerateRequestID(ctx.request.headers);
+  // Attach it to the response headers (here through Koa's context)
+  ctx.set(RequestIDHeader, requestID);
+  const request: HTTPRequest = {
+    headers: ctx.request.headers,
+    rawHeaders: ctx.req.rawHeaders,
+    params: ctx.params,
+    body: ctx.request.body,
+    rawBody: ctx.request.rawBody,
+    query: ctx.request.query,
+    querystring: ctx.request.querystring,
+    url: ctx.request.url,
+    ip: ctx.request.ip,
+    method: ctx.request.method,
+    requestID,
+  };
+  const httpTracer = new W3CTraceContextPropagator();
+  const span = createHTTPSpan(request, httpTracer);
+
+  await DBOS.withTracedContext(span, request, next);
+
+  // Inject trace context into response headers.
+  // We cannot use the defaultTextMapSetter to set headers through Koa
+  // So we provide a custom setter that sets headers through Koa's context.
+  // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
+  interface Carrier {
+    context: Koa.Context;
+  }
+  httpTracer.inject(
+    trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
+    {
+      context: ctx,
+    },
+    {
+      set: (carrier: Carrier, key: string, value: string) => {
+        carrier.context.set(key, value);
+      },
+    }
+  );
+  DBOS.executor.tracer.endSpan(span);
+}
+
+export async function expressTracingMiddleware(req: Request, res: Response, next: NextFunction) {
+  // Retrieve or generate the request ID
+  const requestID = getOrGenerateRequestID(req.headers);
+  // Attach it to the response headers (here through Express's response)
+  res.setHeader(RequestIDHeader, requestID);
+  const request: HTTPRequest = {
+    headers: req.headers,
+    rawHeaders: req.rawHeaders,
+    params: req.params,
+    body: req.body,
+    rawBody: req.rawBody,
+    // query: req.query,
+    querystring: req.url.split("?")[1],
+    url: req.url,
+    ip: req.ip,
+    method: req.method,
+    requestID,
+  };
+  const httpTracer = new W3CTraceContextPropagator();
+  const span = createHTTPSpan(request, httpTracer);
+
+  await DBOS.withTracedContext(span, request, next as () => Promise<void>);
+
+  // We could probably define a context type and type the parameters in the set closure (see Koa middleware above)
+  httpTracer.inject(trace.setSpanContext(ROOT_CONTEXT, span.spanContext()), res, {
+    set: (_, header: string, value: string) => res.setHeader(header, value),
+  });
+  DBOS.executor.tracer.endSpan(span);
 }

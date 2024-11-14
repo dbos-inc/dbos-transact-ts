@@ -25,7 +25,7 @@ export interface DBOSLocalCtx {
   curStepFunctionId?: number;
   curTxFunctionId?: number;
   sqlClient?: UserDatabaseClient;
-  spans?: Span[];
+  span?: Span;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
@@ -130,6 +130,7 @@ export interface HTTPRequest {
   readonly query?: ParsedUrlQuery;         // Parsed query string.
   readonly querystring?: string;           // Unparsed raw query string.
   readonly url?: string;                   // Request URL.
+  readonly method?: string;                // Request HTTP method.
   readonly ip?: string;                    // Request remote address.
   readonly requestID?: string;             // Request ID. Gathered from headers or generated if missing.
 }

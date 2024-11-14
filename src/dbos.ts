@@ -26,9 +26,14 @@ import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBas
 import { getOrCreateClassRegistration, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
+import { koaTracingMiddleware, expressTracingMiddleware } from "./httpServer/middleware";
 import { Server } from "http";
 import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from "./user_database";
 import { TransactionConfig, TransactionContextImpl, TransactionFunction } from "./transaction";
+
+import Koa from "koa";
+import { Application as ExpressApp } from "express";
+import { INestApplication } from "@nestjs/common";
 
 import { PoolClient } from "pg";
 import { Knex } from "knex";
@@ -38,6 +43,12 @@ import {
   WorkflowContext
 } from ".";
 import { ConfiguredInstance } from ".";
+
+export interface DBOSHttpApps {
+  koaApp?: Koa;
+  expressApp?: ExpressApp;
+  nestApp?: INestApplication;
+}
 
 export class DBOS {
   ///////
@@ -50,7 +61,7 @@ export class DBOS {
     DBOS.runtimeConfig = runtimeConfig;
   }
 
-  static async launch() {
+  static async launch(httpApps?: DBOSHttpApps) {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
@@ -82,6 +93,22 @@ export class DBOS {
       DBOS.adminServer = adminApp.listen(DBOS.runtimeConfig.admin_port, () => {
         this.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
       });
+    }
+
+    if (httpApps) {
+      if (httpApps.koaApp) {
+        DBOS.logger.info("Setting up Koa tracing middleware");
+        httpApps.koaApp.use(koaTracingMiddleware);
+      }
+      if (httpApps.expressApp) {
+        DBOS.logger.info("Setting up Express tracing middleware");
+        httpApps.expressApp.use(expressTracingMiddleware);
+      }
+      if (httpApps.nestApp) {
+        // Nest can use express or fastify under the hood
+        DBOS.logger.info("Setting up NestJS tracing middleware");
+        httpApps.nestApp.use(expressTracingMiddleware);
+      }
     }
   }
 
@@ -261,6 +288,17 @@ export class DBOS {
     }
   }
 
+  static async withTracedContext<R>(span: Span, request: HTTPRequest, callback: () => Promise<R>): Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      pctx.span = span;
+      pctx.request = request;
+      return callback();
+    } else {
+      return runWithTopContext({ span, request }, callback);
+    }
+  }
+
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
@@ -418,7 +456,7 @@ export class DBOS {
       Object.defineProperty(invokeWrapper, "name", {
         value: registration.name,
       });
-  
+
       registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
       // TODO CTX this should not be in here already, or if it is we need to do something different...
       DBOS.invokeWrappers.set(invokeWrapper, registration.registeredFunction);
