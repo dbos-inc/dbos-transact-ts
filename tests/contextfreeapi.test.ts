@@ -154,7 +154,7 @@ async function main3() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const handle = await DBOS.startWorkflow(TestFunctions.doWorkflowArg, 'a');
+  const handle = await DBOS.startWorkflow(TestFunctions).doWorkflowArg('a');
   expect (await handle.getResult()).toBe('done a');
 
   await DBOS.shutdown();
@@ -212,7 +212,7 @@ async function main6() {
   await DBOS.launch();
 
   // This or: DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset'); ?
-  const wfhandle = await DBOS.startWorkflow(TestFunctions.getEventWorkflow, 'wfidset');
+  const wfhandle = await DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset');
   await DBOS.withNextWorkflowID('wfidset', async() => {
     await TestFunctions.setEventWorkflow('a', 'b');
   });
@@ -223,14 +223,14 @@ async function main6() {
   expect(await DBOS.getEvent('wfidset', 'key2')).toBe('b');
 
   const wfhandler = await DBOS.withNextWorkflowID('wfidrecv', async() => {
-    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r');
+    return await DBOS.startWorkflow(TestFunctions).receiveWorkflow('r');
   });
   await TestFunctions.sendWorkflow('wfidrecv');
   const rres = await wfhandler.getResult();
   expect(rres).toBe('r:message1|message2');
 
   const wfhandler2 = await DBOS.withNextWorkflowID('wfidrecv2', async() => {
-    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r2');
+    return await DBOS.startWorkflow(TestFunctions).receiveWorkflow('r2');
   });
   await DBOS.send('wfidrecv2', 'm1');
   await DBOS.send('wfidrecv2', 'm2');

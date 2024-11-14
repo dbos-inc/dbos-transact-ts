@@ -14,7 +14,6 @@ import {
   GetWorkflowsOutput,
   WorkflowConfig,
   WorkflowFunction,
-  WorkflowHandle,
   WorkflowParams
 } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
@@ -23,7 +22,7 @@ import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } f
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { getOrCreateClassRegistration, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
+import { getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { koaTracingMiddleware, expressTracingMiddleware } from "./httpServer/middleware";
@@ -41,7 +40,7 @@ import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
-import { WorkflowContext } from ".";
+import { WorkflowContext, WorkflowHandle } from ".";
 import { ConfiguredInstance } from ".";
 
 export interface DBOSHttpApps {
@@ -50,6 +49,23 @@ export interface DBOSHttpApps {
   nestApp?: INestApplication;
   fastifyApp?: FastifyInstance;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PossiblyWFFunc = (...args: any[]) => Promise<unknown>;
+type InvokeFunctionsAsync<T> =
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  T extends Function ?
+  {
+    [P in keyof T]: T[P] extends PossiblyWFFunc ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
+  }
+  : never;
+
+type InvokeFunctionsAsyncInst<T> =
+  T extends ConfiguredInstance
+  ? {
+    [P in keyof T]: T[P] extends PossiblyWFFunc ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
+  }
+  : never;
 
 export class DBOS {
   ///////
@@ -335,6 +351,7 @@ export class DBOS {
     }
   }
 
+  /*
   // startWorkflow (child or not)
   static async startWorkflow<Args extends unknown[], Return>(func: (...args: Args) => Promise<Return>, ...args: Args)
     : Promise<WorkflowHandle<Return>>
@@ -352,6 +369,48 @@ export class DBOS {
       return DBOS.executor.workflow(func as unknown as WorkflowFunction<Args, Return>, wfParams, ...args);
     }
   }
+  */
+  static startWorkflow<T extends ConfiguredInstance>(targetClass: T): InvokeFunctionsAsyncInst<T>;
+  static startWorkflow<T extends object>(targetClass: T): InvokeFunctionsAsync<T>;
+  static startWorkflow<T extends object>(target: T): InvokeFunctionsAsync<T> {
+    if (typeof target === 'function') {
+      return DBOS.proxyInvokeWF(target, null) as unknown as InvokeFunctionsAsync<T>;
+    }
+    else {
+      return DBOS.proxyInvokeWF(target, target as ConfiguredInstance) as unknown as InvokeFunctionsAsync<T>;
+    }
+  }
+
+  static proxyInvokeWF<T extends object>(object: T, configuredInstance: ConfiguredInstance | null):
+  InvokeFunctionsAsync<T>
+  {
+    const ops = getRegisteredOperations(object);
+    const proxy: Record<string, unknown> = {};
+
+    //const funcId = this.functionIDGetIncrement(); // TODO CTX this is child WF stuff
+    //const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
+
+    //const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
+
+    const pctx = getCurrentContextStore();
+    const wfParams: InternalWorkflowParams = {
+      workflowUUID: pctx?.idAssignedForNextWorkflow,
+      queueName: pctx?.queueAssignedForWorkflows,
+      usesContext: false, // TODO: This does not allow interoperation...
+      configuredInstance,
+    };
+
+    for (const op of ops) {
+      proxy[op.name] = op.workflowConfig
+        ? (...args: unknown[]) => DBOS.executor.workflow((op.registeredFunction as WorkflowFunction<unknown[], unknown>), wfParams, ...args)
+        : undefined;
+    }
+
+    // TODO CTX - should we put helpful errors for any function that may have "compiled" but is not a workflow?
+
+    return proxy as InvokeFunctionsAsync<T>;
+  }
+
 
   static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {

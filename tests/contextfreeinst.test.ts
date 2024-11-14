@@ -166,19 +166,17 @@ async function main2() {
   await DBOS.shutdown();
 }
 
-/*
 async function main3() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const handle = await DBOS.startWorkflow(TestFunctions.doWorkflowArg, 'a');
-  expect (await handle.getResult()).toBe('done a');
+  const handle = await DBOS.startWorkflow(instA).doWorkflowArg('a');
+  expect (await handle.getResult()).toBe('done a from A');
 
   await DBOS.shutdown();
 }
-*/
 
 async function main4() {
   const config = generateDBOSTestConfig();
@@ -226,7 +224,6 @@ async function main5() {
   await DBOS.shutdown();
 }
 
-/*
 async function main6() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
@@ -234,9 +231,9 @@ async function main6() {
   await DBOS.launch();
 
   // This or: DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset'); ?
-  const wfhandle = await DBOS.startWorkflow(TestFunctions.getEventWorkflow, 'wfidset');
+  const wfhandle = await DBOS.startWorkflow(instA).getEventWorkflow('wfidset');
   await DBOS.withNextWorkflowID('wfidset', async() => {
-    await TestFunctions.setEventWorkflow('a', 'b');
+    await instA.setEventWorkflow('a', 'b');
   });
   const res = await wfhandle.getResult();
 
@@ -245,23 +242,24 @@ async function main6() {
   expect(await DBOS.getEvent('wfidset', 'key2')).toBe('b');
 
   const wfhandler = await DBOS.withNextWorkflowID('wfidrecv', async() => {
-    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r');
+    return await DBOS.startWorkflow(instA).receiveWorkflow('r');
   });
-  await TestFunctions.sendWorkflow('wfidrecv');
+  await instA.sendWorkflow('wfidrecv');
   const rres = await wfhandler.getResult();
-  expect(rres).toBe('r:message1|message2');
+  expect(rres).toBe('A/r:message1|message2');
 
   const wfhandler2 = await DBOS.withNextWorkflowID('wfidrecv2', async() => {
-    return await DBOS.startWorkflow(TestFunctions.receiveWorkflow, 'r2');
+    return await DBOS.startWorkflow(instA).receiveWorkflow('r2');
   });
   await DBOS.send('wfidrecv2', 'm1');
   await DBOS.send('wfidrecv2', 'm2');
   const rres2 = await wfhandler2.getResult();
-  expect(rres2).toBe('r2:m1|m2');
+  expect(rres2).toBe('A/r2:m1|m2');
 
   await DBOS.shutdown();
 }
 
+/*
 async function main7() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
@@ -286,8 +284,6 @@ async function main7() {
 // TODO:
 //  Child workflows
 //  Roles / Auth
-//  Recovery
-//  Cleanup
 
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
@@ -298,11 +294,9 @@ describe("dbos-v2api-tests-main", () => {
     await main2();
   }, 15000);
 
-  /*
   test("start_workflow", async() => {
     await main3();
   }, 15000);
-  */
 
   test("temp_step_transaction", async() => {
     await main4();
@@ -312,11 +306,11 @@ describe("dbos-v2api-tests-main", () => {
     await main5();
   }, 15000);
 
-  /*
   test("send_recv_get_set", async() => {
     await main6();
   }, 15000);
 
+  /*
   test("roles", async() => {
     await main7();
   }, 15000);
