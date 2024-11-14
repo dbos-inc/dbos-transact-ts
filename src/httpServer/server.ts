@@ -14,7 +14,7 @@ import {
 } from "../error";
 import { DBOSExecutor } from "../dbos-executor";
 import { GlobalLogger as Logger } from "../telemetry/logs";
-import { MiddlewareDefaults, RequestIDHeader } from "./middleware";
+import { MiddlewareDefaults } from "./middleware";
 import { SpanStatusCode, trace, ROOT_CONTEXT } from "@opentelemetry/api";
 import { StepFunction } from "../step";
 import * as net from "net";
