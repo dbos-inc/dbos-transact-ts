@@ -351,25 +351,6 @@ export class DBOS {
     }
   }
 
-  /*
-  // startWorkflow (child or not)
-  static async startWorkflow<Args extends unknown[], Return>(func: (...args: Args) => Promise<Return>, ...args: Args)
-    : Promise<WorkflowHandle<Return>>
-  {
-    const pctx = getCurrentContextStore();
-    const wfParams: InternalWorkflowParams = {
-      workflowUUID: pctx?.idAssignedForNextWorkflow,
-      queueName: pctx?.queueAssignedForWorkflows,
-      usesContext: false, // TODO: This does not allow interoperation...
-    };
-    if (DBOS.invokeWrappers.has(func)) {
-      return DBOS.executor.workflow(DBOS.invokeWrappers.get(func)! as WorkflowFunction<Args, Return>, wfParams, ...args);
-    }
-    else {
-      return DBOS.executor.workflow(func as unknown as WorkflowFunction<Args, Return>, wfParams, ...args);
-    }
-  }
-  */
   static startWorkflow<T extends ConfiguredInstance>(targetClass: T): InvokeFunctionsAsyncInst<T>;
   static startWorkflow<T extends object>(targetClass: T): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T): InvokeFunctionsAsync<T> {
@@ -387,7 +368,8 @@ export class DBOS {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
-    //const funcId = this.functionIDGetIncrement(); // TODO CTX this is child WF stuff
+    // TODO CTX this is child WF stuff
+    //const funcId = this.functionIDGetIncrement();
     //const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
 
     //const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
