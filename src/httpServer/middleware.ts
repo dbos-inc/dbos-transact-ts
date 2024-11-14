@@ -1,7 +1,5 @@
 import Koa from "koa";
 import { Request, Response, NextFunction } from "express";
-import Fastity, { FastifyInstance } from "fastify";
-import { INestApplication } from "@nestjs/common";
 import { IncomingHttpHeaders } from "http";
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from "../decorators";
