@@ -13,14 +13,13 @@ import {
   StepContext,
   DBOS,
 } from "../../src";
-import { RequestIDHeader } from "../../src/httpServer/handler";
 import { DeleteApi, PatchApi, PutApi } from "../../src";
 import { WorkflowUUIDHeader } from "../../src/httpServer/server";
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import request from "supertest";
 import { ArgSource, HandlerContext } from "../../src/httpServer/handler";
 import { ArgSources } from "../../src/httpServer/handlerTypes";
-import { Authentication, KoaBodyParser } from "../../src/httpServer/middleware";
+import { Authentication, KoaBodyParser, RequestIDHeader } from "../../src/httpServer/middleware";
 import { v1 as uuidv1, validate as uuidValidate } from "uuid";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { DBOSNotAuthorizedError, DBOSResponseError } from "../../src/error";
