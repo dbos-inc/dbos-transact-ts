@@ -34,20 +34,21 @@ import { TransactionConfig, TransactionContextImpl, TransactionFunction } from "
 import Koa from "koa";
 import { Application as ExpressApp } from "express";
 import { INestApplication } from "@nestjs/common";
+import { FastifyInstance } from "fastify";
+import _ from "@fastify/express"; // This is for fastify.use()
 
 import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
-import {
-  WorkflowContext
-} from ".";
+import { WorkflowContext } from ".";
 import { ConfiguredInstance } from ".";
 
 export interface DBOSHttpApps {
   koaApp?: Koa;
   expressApp?: ExpressApp;
   nestApp?: INestApplication;
+  fastifyApp?: FastifyInstance;
 }
 
 export class DBOS {
@@ -104,8 +105,15 @@ export class DBOS {
         DBOS.logger.info("Setting up Express tracing middleware");
         httpApps.expressApp.use(expressTracingMiddleware);
       }
+      if (httpApps.fastifyApp) {
+        // Fastify can use express or middie under the hood, for middlewares.
+        // Middie happens to have the same semantic than express.
+        // See https://fastify.dev/docs/latest/Reference/Middleware/
+        DBOS.logger.info("Setting up Fastify tracing middleware");
+        httpApps.fastifyApp.use(expressTracingMiddleware);
+      }
       if (httpApps.nestApp) {
-        // Nest can use express or fastify under the hood
+        // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
         DBOS.logger.info("Setting up NestJS tracing middleware");
         httpApps.nestApp.use(expressTracingMiddleware);
       }
