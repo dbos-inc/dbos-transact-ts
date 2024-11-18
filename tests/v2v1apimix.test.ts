@@ -1,4 +1,4 @@
-import {DBOS, StepContext, TransactionContext, WorkflowContext} from '../src';
+import {ConfiguredInstance, configureInstance, DBOS, StepContext, TransactionContext, WorkflowContext} from '../src';
 import {Step, Transaction, Workflow} from '../src';
 import { PoolClient } from 'pg';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -130,6 +130,149 @@ describe("dbos-v1v2api-mix-tests-main", () => {
       expect (res112).toBe('wv1selected tv1step sv2 done');
 
       const res122 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V2V2();
+      expect (res122).toBe('wv1selected tv2step sv2 done');
+    }
+    finally {
+      await testRuntime?.destroy();
+    }
+  });
+});
+
+class TestFunctionsInst extends ConfiguredInstance
+{
+  constructor(name: string) {
+    super(name);
+  }
+
+  async initialize() {
+    return Promise.resolve();
+  }
+
+  @DBOS.transaction()
+  async doTransactionV2(arg: string) {
+    await DBOS.pgClient.query("SELECT 1");
+    return Promise.resolve(`selected ${arg}`);
+  }
+
+  @DBOS.step()
+  async doStepV2(name: string) {
+    return Promise.resolve(`step ${name} done`);
+  }
+
+  @DBOS.workflow()
+  async doWorkflowV2() {
+    return "wv2"
+         + await this.doTransactionV2("tv2")
+         + await this.doStepV2("sv2");
+  }
+
+  @Transaction()
+  async doTransactionV1(ctx: TransactionContext<PoolClient>, arg: string) {
+    await ctx.client.query("SELECT 1");
+    return Promise.resolve(`selected ${arg}`);
+  }
+
+  @Step()
+  async doStepV1(_ctx: StepContext, arg: string) {
+    return Promise.resolve(`step ${arg} done`);
+  }
+
+  @Workflow()
+  async doWorkflowV1(ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await ctx.invoke(this).doTransactionV1('tv1')
+         + await ctx.invoke(this).doStepV1('sv1');
+  }
+
+  @DBOS.workflow()
+  async doWorkflowV2_V2V1(): Promise<string> {
+    return "wv2"
+         + await this.doTransactionV2("tv2")
+         + await DBOS.invoke(this).doStepV1("sv1");
+  }
+
+  @DBOS.workflow()
+  async doWorkflowV2_V1V1(): Promise<string> {
+    return "wv2"
+         + await DBOS.invoke(this).doTransactionV1("tv1")
+         + await DBOS.invoke(this).doStepV1("sv1");
+  }
+
+  @DBOS.workflow()
+  async doWorkflowV2_V1V2(): Promise<string> {
+    return "wv2"
+         + await DBOS.invoke(this).doTransactionV1("tv1")
+         + await this.doStepV2("sv2");
+  }
+
+  @Workflow()
+  async doWorkflowV1_V2V1(ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await this.doTransactionV2("tv2")
+         + await ctx.invoke(this).doStepV1('sv1');
+  }
+
+  @Workflow()
+  async doWorkflowV1_V1V2(ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await ctx.invoke(this).doTransactionV1('tv1')
+         + await this.doStepV2('sv2');
+  }
+
+  @Workflow()
+  async doWorkflowV1_V2V2(_ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await this.doTransactionV2("tv2")
+         + await this.doStepV2('sv2');
+  }
+}
+
+const inst = configureInstance(TestFunctionsInst, 'i');
+
+async function mainInst() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+
+  await DBOS.launch();
+
+  const res2 = await inst.doWorkflowV2();
+  expect(res2).toBe('wv2selected tv2step sv2 done');
+
+  const res221 = await inst.doWorkflowV2_V2V1();
+  expect(res221).toBe('wv2selected tv2step sv1 done');
+
+  const res212 = await inst.doWorkflowV2_V1V2();
+  expect(res212).toBe('wv2selected tv1step sv2 done');
+
+  const res211 = await inst.doWorkflowV2_V1V1();
+  expect(res211).toBe('wv2selected tv1step sv1 done');
+
+  await DBOS.shutdown();
+}
+
+describe("dbos-v1v2api-mix-tests-main-inst", () => {
+  test("v2start", async () => {
+    await mainInst();
+  }, 15000);
+
+  test("v1start", async () => {
+    let testRuntime: TestingRuntime | undefined = undefined;
+    try {
+      const config = generateDBOSTestConfig();
+      await setUpDBOSTestDb(config);
+      testRuntime = await createInternalTestRuntime(undefined, config);
+
+      const res1 = await testRuntime.invokeWorkflow(inst).doWorkflowV1();
+      expect (res1).toBe('wv1selected tv1step sv1 done');
+
+      const res121 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V2V1();
+      expect (res121).toBe('wv1selected tv2step sv1 done');
+
+      const res112 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V1V2();
+      expect (res112).toBe('wv1selected tv1step sv2 done');
+
+      const res122 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V2V2();
       expect (res122).toBe('wv1selected tv2step sv2 done');
     }
     finally {
