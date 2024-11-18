@@ -14,7 +14,6 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   WorkflowConfig,
-  WorkflowContextImpl,
   WorkflowFunction,
   WorkflowParams
 } from "./workflow";
@@ -44,6 +43,7 @@ import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
 import { StepContext, StoredProcedureContext, TransactionContext, WorkflowContext, WorkflowHandle } from ".";
 import { ConfiguredInstance } from ".";
+import { StoredProcedureFunc } from "./procedure";
 
 export interface DBOSHttpApps {
   koaApp?: Koa;
@@ -90,7 +90,7 @@ type InvokeFuncs<T> =
 type InvokeFuncsInst<T> =
   T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   }
   : never;
   
@@ -420,9 +420,9 @@ export class DBOS {
     return proxy as InvokeFunctionsAsync<T>;
   }
 
-  invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
-  invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
-  invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
+  static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
+  static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
+  static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
     const wfctx = assertCurrentWorkflowContext();
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);
@@ -431,13 +431,12 @@ export class DBOS {
       for (const op of ops) {
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
-            op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx as WorkflowContextImpl, ...args)
-        /*
+            op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
+              op.registeredFunction as StepFunction<unknown[], unknown>, null, wfctx, ...args)
             : op.procConfig
-              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
-        */
+              ? (...args: unknown[]) => wfctx.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, ...args)
               : undefined;
       }
       return proxy as InvokeFuncs<T>;
@@ -450,11 +449,10 @@ export class DBOS {
       for (const op of ops) {
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
-              op.registeredFunction as TransactionFunction<unknown[], unknown>, targetInst, wfctx as WorkflowContextImpl, ...args)
-        /*
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, targetInst, wfctx, ...args)
           : op.commConfig
-            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
-        */
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
+              op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, wfctx, ...args)
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -599,9 +597,16 @@ export class DBOS {
           }
         }
 
+        if (DBOS.isWithinWorkflow()) {
+          const wfctx = assertCurrentWorkflowContext();
+          return await DBOSExecutor.globalInstance!.callTransactionFunction(
+            registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
+        }
+
         const wfParams: WorkflowParams = {
           configuredInstance: inst
         };
+
         return await DBOS.executor.transaction(
           registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
           wfParams, ...rawArgs
@@ -640,6 +645,13 @@ export class DBOS {
             throw new DBOSInvalidWorkflowTransitionError();
           }
         }
+
+        if (DBOS.isWithinWorkflow()) {
+          const wfctx = assertCurrentWorkflowContext();
+          return await DBOSExecutor.globalInstance!.callStepFunction(
+            registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
+        }
+
         const wfParams: WorkflowParams = {
           configuredInstance: inst
         };

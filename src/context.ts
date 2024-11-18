@@ -7,7 +7,7 @@ import { UserDatabase, UserDatabaseClient } from "./user_database";
 import { DBOSExecutor } from "./dbos-executor";
 import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from "./error";
 import { AsyncLocalStorage } from "async_hooks";
-import { WorkflowContext } from "./workflow";
+import { WorkflowContext, WorkflowContextImpl } from "./workflow";
 import { TransactionContextImpl } from "./transaction";
 import { StepContextImpl } from "./step";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
@@ -72,12 +72,12 @@ export function assertCurrentDBOSContext(): DBOSContext {
   return ctx;
 }
 
-export function assertCurrentWorkflowContext(): WorkflowContext {
+export function assertCurrentWorkflowContext(): WorkflowContextImpl {
   const ctx = assertCurrentDBOSContext();
   if (!isInWorkflowCtx(asyncLocalCtx.getStore()!)) {
     throw new DBOSInvalidWorkflowTransitionError();
   }
-  return ctx as WorkflowContext;
+  return ctx as WorkflowContextImpl;
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
