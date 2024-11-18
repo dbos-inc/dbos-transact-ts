@@ -19,7 +19,7 @@ import {
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
-import { StepConfig, StepFunction } from './step';
+import { StepConfig, StepContextImpl, StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
@@ -41,7 +41,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, getCurrentContextStore, runWithTransactionContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, getCurrentContextStore, runWithTransactionContext, runWithStepContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -1064,6 +1064,129 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }, ...args)).getResult();
   }
 
+  /**
+   * Execute a step function.
+   * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
+   * The step may execute many times, but once it is complete, it will not re-execute.
+   */
+  async callStepFunction<T extends unknown[], R>(
+    stepFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, wfCtx: WorkflowContextImpl, ...args: T
+  ): Promise<R> {
+    const commInfo = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
+    if (commInfo === undefined) {
+      throw new DBOSNotRegisteredError(stepFn.name);
+    }
+
+    const funcID = wfCtx.functionIDGetIncrement();
+    const maxRetryIntervalSec = 3600 // Maximum retry interval: 1 hour
+
+    const span: Span = this.tracer.startSpan(
+      stepFn.name,
+      {
+        operationUUID: wfCtx.workflowUUID,
+        operationType: OperationType.COMMUNICATOR,
+        authenticatedUser: wfCtx.authenticatedUser,
+        assumedRole: wfCtx.assumedRole,
+        authenticatedRoles: wfCtx.authenticatedRoles,
+        retriesAllowed: commInfo.config.retriesAllowed,
+        intervalSeconds: commInfo.config.intervalSeconds,
+        maxAttempts: commInfo.config.maxAttempts,
+        backoffRate: commInfo.config.backoffRate,
+      },
+      wfCtx.span,
+    );
+
+    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
+
+    await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+      await wfCtx.flushResultBuffer(client);
+    }, { isolationLevel: IsolationLevel.ReadCommitted });
+    wfCtx.resultBuffer.clear();
+
+    // Check if this execution previously happened, returning its original result if it did.
+    const check: R | DBOSNull = await this.systemDatabase.checkOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID);
+    if (check !== dbosNull) {
+      ctxt.span.setAttribute("cached", true);
+      ctxt.span.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(ctxt.span);
+      return check as R;
+    }
+
+    // Execute the step function.  If it throws an exception, retry with exponential backoff.
+    // After reaching the maximum number of retries, throw an DBOSError.
+    let result: R | DBOSNull = dbosNull;
+    let err: Error | DBOSNull = dbosNull;
+    if (ctxt.retriesAllowed) {
+      let numAttempts = 0;
+      let intervalSeconds: number = ctxt.intervalSeconds;
+      if (intervalSeconds > maxRetryIntervalSec) {
+        this.logger.warn(`Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
+      }
+      while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
+        try {
+          let cresult: R | undefined;
+          if (commInfo.registration.passContext) {
+            await runWithStepContext(ctxt, async ()=> {
+              cresult = await stepFn.call(clsInst, ctxt, ...args);
+            });
+          }
+          else {
+            await runWithStepContext(ctxt, async ()=> {
+              const sf = stepFn as unknown as (...args: T) => Promise<R>;
+              cresult = await sf.call(clsInst, ...args);
+            });
+          }
+          result = cresult!
+        } catch (error) {
+          const e = error as Error
+          this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
+          span.addEvent(`Step attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
+          if (numAttempts < ctxt.maxAttempts) {
+            // Sleep for an interval, then increase the interval by backoffRate.
+            // Cap at the maximum allowed retry interval.
+            await sleepms(intervalSeconds * 1000);
+            intervalSeconds *= ctxt.backoffRate;
+            intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
+          }
+        }
+      }
+    } else {
+      try {
+        let cresult: R | undefined;
+        if (commInfo.registration.passContext) {
+          await runWithStepContext(ctxt, async ()=> {
+            cresult = await stepFn.call(clsInst, ctxt, ...args);
+          });
+        }
+        else {
+          await runWithStepContext(ctxt, async ()=> {
+            const sf = stepFn as unknown as (...args: T) => Promise<R>;
+            cresult = await sf.call(clsInst, ...args);
+          });
+        }
+      result = cresult!
+      } catch (error) {
+        err = error as Error;
+      }
+    }
+
+    // `result` can only be dbosNull when the step timed out
+    if (result === dbosNull) {
+      // Record the error, then throw it.
+      err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
+      await this.systemDatabase.recordOperationError(wfCtx.workflowUUID, ctxt.functionID, err as Error);
+      ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      this.tracer.endSpan(ctxt.span);
+      throw err as Error;
+    } else {
+      // Record the execution and return.
+      await this.systemDatabase.recordOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID, result as R);
+      ctxt.span.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(ctxt.span);
+      return result as R;
+    }
+  }
+  
   async send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
