@@ -50,6 +50,20 @@ class TestFunctions
          + await DBOS.invoke(TestFunctions).doStepV1("sv1");
   }
 
+  @DBOS.workflow()
+  static async doWorkflowV2_V1V1(): Promise<string> {
+    return "wv2"
+         + await DBOS.invoke(TestFunctions).doTransactionV1("tv1")
+         + await DBOS.invoke(TestFunctions).doStepV1("sv1");
+  }
+
+  @DBOS.workflow()
+  static async doWorkflowV2_V1V2(): Promise<string> {
+    return "wv2"
+         + await DBOS.invoke(TestFunctions).doTransactionV1("tv1")
+         + await TestFunctions.doStepV2("sv2");
+  }
+
   @Workflow()
   static async doWorkflowV1_V2V1(ctx: WorkflowContext): Promise<string> {
     return "wv1"
@@ -78,11 +92,19 @@ async function main() {
   DBOS.setConfig(config);
 
   await DBOS.launch();
+
   const res2 = await TestFunctions.doWorkflowV2();
   expect(res2).toBe('wv2selected tv2step sv2 done');
 
   const res221 = await TestFunctions.doWorkflowV2_V2V1();
   expect(res221).toBe('wv2selected tv2step sv1 done');
+
+  const res212 = await TestFunctions.doWorkflowV2_V1V2();
+  expect(res212).toBe('wv2selected tv1step sv2 done');
+
+  const res211 = await TestFunctions.doWorkflowV2_V1V1();
+  expect(res211).toBe('wv2selected tv1step sv1 done');
+
   await DBOS.shutdown();
 }
 

@@ -79,7 +79,7 @@ type InvokeFunctionsAsyncInst<T> =
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TxFunc = (ctxt: TransactionContext<UserDatabaseClient>, ...args: any[]) => Promise<any>;
+type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
