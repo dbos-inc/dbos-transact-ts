@@ -106,7 +106,6 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly usesContext: boolean;
 }
 
 export const OperationType = {
@@ -668,7 +667,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Compatibility with the old way of calling workflows, which would include a parentCtx
     const pctx = getCurrentContextStore();
-    if (!params.usesContext && pctx) {
+    const passContext = wInfo.registration?.passContext ?? true;
+    if (!passContext && pctx) {
       const span = this.tracer.startSpan(
         wf.name,
         {
@@ -735,7 +735,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         await runWithWorkflowContext(wCtxt, async ()=> {
-          if (params.usesContext ?? true) {
+          if (passContext) {
             cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
           }
           else {
@@ -882,7 +882,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfType: TempWorkflowType.transaction,
       tempWfName: getRegisteredMethodName(txn),
       tempWfClass: getRegisteredMethodClassName(txn),
-      usesContext: true,
     }, ...args)).getResult();
   }
 
@@ -897,7 +896,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         tempWfType: TempWorkflowType.procedure,
         tempWfName: getRegisteredMethodName(proc),
         tempWfClass: getRegisteredMethodClassName(proc),
-        usesContext: true,
       }, ...args)).getResult();
   }
 
@@ -932,7 +930,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfType: TempWorkflowType.external,
       tempWfName: getRegisteredMethodName(stepFn),
       tempWfClass: getRegisteredMethodClassName(stepFn),
-      usesContext: true,
     }, ...args)).getResult();
   }
 
@@ -944,7 +941,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
     return (await this.workflow(temp_workflow, {
       workflowUUID: workflowUUID, tempWfType: TempWorkflowType.send, configuredInstance: null,
-      usesContext: true,
     }, destinationUUID, message, topic)).getResult();
   }
 
@@ -1066,7 +1062,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return this.workflow(wfInfo.workflow, {
         workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
         queueName: wfStatus.queueName, executeWorkflow: true,
-        usesContext: wfInfo.registration?.passContext ?? true,
       },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       ...inputs);
@@ -1127,7 +1122,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return this.workflow(temp_workflow, {
       workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst,
       recovery: true, tempWfType, tempWfClass, tempWfName,
-      usesContext: true,
     },
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     ...inputs);

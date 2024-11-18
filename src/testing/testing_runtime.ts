@@ -203,7 +203,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => dbosExec.transaction(op.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args)
           : op.workflowConfig
-            ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, {...wfParams,  usesContext: true}, ...args)
+            ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
             : op.commConfig
               ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig
@@ -211,7 +211,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
                 : undefined;
       } else {
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, {...wfParams,  usesContext: true}, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) => dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args).then((handle) => handle.getResult())
           : undefined;
       }
     }

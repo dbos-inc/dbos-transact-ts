@@ -378,7 +378,6 @@ export class DBOS {
     const wfParams: InternalWorkflowParams = {
       workflowUUID: pctx?.idAssignedForNextWorkflow,
       queueName: pctx?.queueAssignedForWorkflows,
-      usesContext: false, // TODO: This does not allow interoperation...
       configuredInstance,
     };
 
@@ -487,7 +486,6 @@ export class DBOS {
         const wfParams: InternalWorkflowParams = {
           workflowUUID: pctx?.idAssignedForNextWorkflow,
           queueName: pctx?.queueAssignedForWorkflows,
-          usesContext: false,
           configuredInstance : inst
         };
         if (pctx) {

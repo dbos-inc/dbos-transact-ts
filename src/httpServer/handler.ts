@@ -207,7 +207,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /////////////////////
 
   async #workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    return this.#dbosExec.workflow(wf, {...params, usesContext: true /*TODO CTX*/}, ...args);
+    return this.#dbosExec.workflow(wf, params, ...args);
   }
 
   async #transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
