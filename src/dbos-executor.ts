@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError } from "./error";
+import { Span } from "@opentelemetry/sdk-trace-base";
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError, DBOSFailedSqlTransactionError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -17,7 +18,7 @@ import {
   GetWorkflowQueueOutput,
 } from './workflow';
 
-import { IsolationLevel, Transaction, TransactionConfig } from './transaction';
+import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
 import { StepConfig, StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
@@ -35,11 +36,12 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
   DrizzleUserDatabase,
+  UserDatabaseClient,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, getCurrentContextStore } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, getCurrentContextStore, runWithTransactionContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
@@ -884,6 +886,135 @@ export class DBOSExecutor implements DBOSExecutorContext {
       tempWfClass: getRegisteredMethodClassName(txn),
     }, ...args)).getResult();
   }
+
+  async callTransactionFunction<T extends unknown[], R>(
+    txn: Transaction<T, R>, clsinst: ConfiguredInstance | null, wfCtx: WorkflowContextImpl, ...args: T
+  ): Promise<R> {
+    const txnInfo = this.getTransactionInfo(txn as Transaction<unknown[], unknown>);
+    if (txnInfo === undefined) {
+      throw new DBOSNotRegisteredError(txn.name);
+    }
+    const readOnly = txnInfo.config.readOnly ?? false;
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    const funcId = wfCtx.functionIDGetIncrement();
+    const span: Span = this.tracer.startSpan(
+      txn.name,
+      {
+        operationUUID: wfCtx.workflowUUID,
+        operationType: OperationType.TRANSACTION,
+        authenticatedUser: wfCtx.authenticatedUser,
+        assumedRole: wfCtx.assumedRole,
+        authenticatedRoles: wfCtx.authenticatedRoles,
+        readOnly: readOnly,
+        isolationLevel: txnInfo.config.isolationLevel,
+      },
+      wfCtx.span,
+    );
+
+    while (true) {
+      let txn_snapshot = "invalid";
+      const workflowUUID = wfCtx.workflowUUID;
+      const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
+        const tCtxt = new TransactionContextImpl(
+          this.userDatabase.getName(), client, wfCtx,
+          span, this.logger, funcId, txn.name);
+
+        // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
+        // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
+        if (wfCtx.presetUUID) {
+          const check: BufferedResult = await wfCtx.checkTxExecution<R>(client, funcId);
+          txn_snapshot = check.txn_snapshot;
+          if (check.output !== dbosNull) {
+            tCtxt.span.setAttribute("cached", true);
+            tCtxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.tracer.endSpan(tCtxt.span);
+            return check.output as R;
+          }
+        } else {
+          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
+          txn_snapshot = await wfCtx.retrieveTxSnapshot(client);
+        }
+
+        // For non-read-only transactions, flush the result buffer.
+        if (!readOnly) {
+          await wfCtx.flushResultBuffer(client);
+        }
+
+        // Execute the user's transaction.
+        let cresult: R | undefined;
+        if (txnInfo.registration.passContext) {
+          await runWithTransactionContext(tCtxt, async ()=> {
+            cresult = await txn.call(clsinst, tCtxt, ...args);
+          });
+        }
+        else {
+          await runWithTransactionContext(tCtxt, async ()=> {
+            const tf = txn as unknown as (...args: T)=>Promise<R>;
+            cresult = await tf.call(clsinst, ...args);
+          });
+        }
+        const result = cresult!
+
+        // Record the execution, commit, and return.
+        if (readOnly) {
+          // Buffer the output of read-only transactions instead of synchronously writing it.
+          const readOutput: BufferedResult = {
+            output: result,
+            txn_snapshot: txn_snapshot,
+            created_at: Date.now(),
+          }
+          wfCtx.resultBuffer.set(funcId, readOutput);
+        } else {
+          try {
+            // Synchronously record the output of write transactions and obtain the transaction ID.
+            const pg_txn_id = await wfCtx.recordOutputTx<R>(client, funcId, txn_snapshot, result);
+            tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
+            wfCtx.resultBuffer.clear();
+          } catch (error) {
+            if (this.userDatabase.isFailedSqlTransactionError(error)) {
+              this.logger.error(`Postgres aborted the ${txn.name} @Transaction of Workflow ${workflowUUID}, but the function did not raise an exception.  Please ensure that the @Transaction method raises an exception if the database transaction is aborted.`);
+              throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name)
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        return result;
+      };
+
+      try {
+        const result = await this.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+        span.setStatus({ code: SpanStatusCode.OK });
+        this.tracer.endSpan(span);
+        return result;
+      } catch (err) {
+        if (this.userDatabase.isRetriableTransactionError(err)) {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        }
+
+        // Record and throw other errors.
+        const e: Error = err as Error;
+        await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+          await wfCtx.flushResultBuffer(client);
+          await wfCtx.recordErrorTx(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+        wfCtx.resultBuffer.clear();
+        span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+        this.tracer.endSpan(span);
+        throw err;
+      }
+    }
+  }
+
 
   async procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
     // Create a workflow and call procedure.

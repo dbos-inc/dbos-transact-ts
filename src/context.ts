@@ -72,6 +72,14 @@ export function assertCurrentDBOSContext(): DBOSContext {
   return ctx;
 }
 
+export function assertCurrentWorkflowContext(): WorkflowContext {
+  const ctx = assertCurrentDBOSContext();
+  if (!isInWorkflowCtx(asyncLocalCtx.getStore()!)) {
+    throw new DBOSInvalidWorkflowTransitionError();
+  }
+  return ctx as WorkflowContext;
+}
+
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
   return await asyncLocalCtx.run({
     ctx,

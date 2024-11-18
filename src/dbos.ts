@@ -1,6 +1,7 @@
 import { Span } from "@opentelemetry/sdk-trace-base";
 import {
   assertCurrentDBOSContext,
+  assertCurrentWorkflowContext,
   getCurrentContextStore,
   getCurrentDBOSContext,
   HTTPRequest,
@@ -13,6 +14,7 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   WorkflowConfig,
+  WorkflowContextImpl,
   WorkflowFunction,
   WorkflowParams
 } from "./workflow";
@@ -40,7 +42,7 @@ import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
-import { WorkflowContext, WorkflowHandle } from ".";
+import { StepContext, StoredProcedureContext, TransactionContext, WorkflowContext, WorkflowHandle } from ".";
 import { ConfiguredInstance } from ".";
 
 export interface DBOSHttpApps {
@@ -66,6 +68,32 @@ type InvokeFunctionsAsyncInst<T> =
     [P in keyof T]: T[P] extends PossiblyWFFunc ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
   }
   : never;
+
+// local type declarations for invoking old-style transaction and step function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TxFunc = (ctxt: TransactionContext<UserDatabaseClient>, ...args: any[]) => Promise<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
+
+// Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
+type InvokeFuncs<T> =
+  T extends ConfiguredInstance
+  ? never
+  : {
+    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  };
+
+type InvokeFuncsInst<T> =
+  T extends ConfiguredInstance
+  ? {
+    [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+  }
+  : never;
+  
 
 export class DBOS {
   ///////
@@ -392,6 +420,46 @@ export class DBOS {
     return proxy as InvokeFunctionsAsync<T>;
   }
 
+  invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
+  invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
+  invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
+    const wfctx = assertCurrentWorkflowContext();
+    if (typeof object === 'function') {
+      const ops = getRegisteredOperations(object);
+
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        proxy[op.name] = op.txnConfig
+          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
+            op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx as WorkflowContextImpl, ...args)
+        /*
+          : op.commConfig
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
+            : op.procConfig
+              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
+        */
+              : undefined;
+      }
+      return proxy as InvokeFuncs<T>;
+    }
+    else {
+      const targetInst = object as ConfiguredInstance;
+      const ops = getRegisteredOperations(targetInst);
+
+      const proxy: Record<string, unknown> = {};
+      for (const op of ops) {
+        proxy[op.name] = op.txnConfig
+          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, targetInst, wfctx as WorkflowContextImpl, ...args)
+        /*
+          : op.commConfig
+            ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
+        */
+            : undefined;
+      }
+      return proxy as InvokeFuncsInst<T>;
+    }
+  }
 
   static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
@@ -432,9 +500,6 @@ export class DBOS {
     }
     return DBOS.executor.getEvent(workflowID, key, timeoutSeconds);
   }
-
-  // executeWorkflowId
-  // recoverPendingWorkflows
 
   //////
   // Decorators
@@ -635,6 +700,7 @@ export class DBOS {
   }
 
   // TODO CTX
-  // Middleware ops like setting auth
   // Initializers?  Deploy?  ORM Entities?
+  // executeWorkflowId
+  // recoverPendingWorkflows
 }
