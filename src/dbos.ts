@@ -41,7 +41,13 @@ import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
-import { StepContext, StoredProcedureContext, TransactionContext, WorkflowContext, WorkflowHandle } from ".";
+import {
+  StepContext,
+  StoredProcedureContext,
+  TransactionContext,
+  WorkflowContext,
+  WorkflowHandle
+} from ".";
 import { ConfiguredInstance } from ".";
 import { StoredProcedureFunc } from "./procedure";
 
