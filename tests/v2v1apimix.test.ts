@@ -56,6 +56,20 @@ class TestFunctions
          + await TestFunctions.doTransactionV2("tv2")
          + await ctx.invoke(TestFunctions).doStepV1('sv1');
   }
+
+  @Workflow()
+  static async doWorkflowV1_V1V2(ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await ctx.invoke(TestFunctions).doTransactionV1('tv1')
+         + await TestFunctions.doStepV2('sv2');
+  }
+
+  @Workflow()
+  static async doWorkflowV1_V2V2(_ctx: WorkflowContext): Promise<string> {
+    return "wv1"
+         + await TestFunctions.doTransactionV2("tv2")
+         +  await TestFunctions.doStepV2('sv2');
+  }
 }
 
 async function main() {
@@ -89,6 +103,12 @@ describe("dbos-v1v2api-mix-tests-main", () => {
 
       const res121 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V2V1();
       expect (res121).toBe('wv1selected tv2step sv1 done');
+
+      const res112 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V1V2();
+      expect (res112).toBe('wv1selected tv1step sv2 done');
+
+      const res122 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V2V2();
+      expect (res122).toBe('wv1selected tv2step sv2 done');
     }
     finally {
       await testRuntime?.destroy();
