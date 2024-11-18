@@ -72,7 +72,8 @@ class TestFunctions extends ConfiguredInstance
 const testTableName = "dbos_test_kv";
 
 @DBOS.defaultRequiredRole(["user"])
-class _TestSec extends ConfiguredInstance {
+
+class TestSec extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
   }
@@ -90,7 +91,7 @@ class _TestSec extends ConfiguredInstance {
   @DBOS.transaction()
   async testTranscation(name: string) {
     const { rows } = await DBOS.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
-    return `hello ${rows[0].id} from ${this.name}`;
+    return `hello ${name} ${rows[0].id} from ${this.name}`;
   }
 
   @DBOS.workflow()
@@ -100,7 +101,7 @@ class _TestSec extends ConfiguredInstance {
   }
 }
 
-class _TestSec2 extends ConfiguredInstance {
+class TestSec2 extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
   }
@@ -111,13 +112,16 @@ class _TestSec2 extends ConfiguredInstance {
 
   @DBOS.requiredRole(["user"])
   @DBOS.workflow()
-  static async bye() {
-    return Promise.resolve({ message: `bye ${DBOS.assumedRole} ${DBOS.authenticatedUser}!` });
+  async bye() {
+    return Promise.resolve(`bye ${DBOS.assumedRole} ${DBOS.authenticatedUser} from ${this.name}!`);
   }
 }
 
 const instA = configureInstance(TestFunctions, 'A');
 const instB = configureInstance(TestFunctions, 'B');
+
+const testSecInst = configureInstance(TestSec, 'Sec1');
+const testSec2Inst = configureInstance(TestSec2, 'Sec2');
 
 async function main() {
   // First hurdle - configuration.
@@ -259,27 +263,37 @@ async function main6() {
   await DBOS.shutdown();
 }
 
-/*
 async function main7() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
+  await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+  await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
 
   await expect(async()=>{
-    await TestSec.testWorkflow('unauthorized');
+    await testSecInst.testWorkflow('unauthorized');
   }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
   
-  const res = await TestSec.testAuth('and welcome');
-  expect(res).toBe('hello and welcome');
+  const res = await testSecInst.testAuth('and welcome');
+  expect(res).toBe('hello and welcome from Sec1');
 
   await expect(async()=>{
-    await TestSec2.bye();
+    await testSec2Inst.bye();
   }).rejects.toThrow('User does not have a role with permission to call bye');
+
+  const hijoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+    return await testSecInst.testWorkflow('joe');
+  });
+  expect (hijoe).toBe('hello joe 1 from Sec1');
+
+  const byejoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+    return await testSec2Inst.bye();
+  });
+  expect (byejoe).toBe('bye user joe from Sec2!');
 
   await DBOS.shutdown();
 }
-*/
 
 // TODO:
 //  Child workflows
@@ -310,9 +324,7 @@ describe("dbos-v2api-tests-main", () => {
     await main6();
   }, 15000);
 
-  /*
   test("roles", async() => {
     await main7();
   }, 15000);
-  */
 });
