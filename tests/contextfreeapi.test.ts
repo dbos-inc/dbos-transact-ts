@@ -83,7 +83,7 @@ class TestSec {
   @DBOS.transaction()
   static async testTranscation(name: string) {
     const { rows } = await DBOS.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
-    return `hello ${rows[0].id}`;
+    return `hello ${name} ${rows[0].id}`;
   }
 
   @DBOS.workflow()
@@ -97,7 +97,7 @@ class TestSec2 {
   @DBOS.requiredRole(["user"])
   @DBOS.workflow()
   static async bye() {
-    return Promise.resolve({ message: `bye ${DBOS.assumedRole} ${DBOS.authenticatedUser}!` });
+    return Promise.resolve(`bye ${DBOS.assumedRole} ${DBOS.authenticatedUser}!`);
   }
 }
 
@@ -245,6 +245,8 @@ async function main7() {
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
+  await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+  await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
 
   await expect(async()=>{
     await TestSec.testWorkflow('unauthorized');
@@ -257,18 +259,15 @@ async function main7() {
     await TestSec2.bye();
   }).rejects.toThrow('User does not have a role with permission to call bye');
 
-  /*
-  TODO CTX
   const hijoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
     return await TestSec.testWorkflow('joe');
   });
-  expect (hijoe).toBe('hello joe');
+  expect (hijoe).toBe('hello joe 1');
 
   const byejoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
     return await TestSec2.bye();
   });
-  expect (byejoe).toBe('bye user joe');
-  */
+  expect (byejoe).toBe('bye user joe!');
 
   await DBOS.shutdown();
 }
