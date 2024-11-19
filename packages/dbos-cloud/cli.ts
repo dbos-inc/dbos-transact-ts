@@ -220,8 +220,8 @@ applicationCommands
   .command("create")
   .description("Create a secret for this application")
   .argument("[string]", "application name (Default: name from package.json)")
-  .option("-s, --secretname <string>", "Specify the name of the secret to create")
-  .option("-v, --value <string>", "Specify the value of the secret to store with the name.")
+  .requiredOption("-s, --secretname <string>", "Specify the name of the secret to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the secret to store with the name.")
   .action(async (appName: string | undefined, options: { secretname: string; value: string }) => {
     const exitCode = await createSecret(DBOSCloudHost, appName, options.secretname , options.value);
     process.exit(exitCode);

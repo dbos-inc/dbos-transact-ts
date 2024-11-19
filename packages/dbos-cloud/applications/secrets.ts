@@ -66,8 +66,6 @@ export async function listSecrets(host: string, appName: string | undefined, jso
       return 1;
     }
     logger.info(`  ... app name is ${appName}.`);
-
-    logger.info(bearerToken);
   
     try {
       const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/secrets`, {
