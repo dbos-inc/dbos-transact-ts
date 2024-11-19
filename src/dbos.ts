@@ -717,8 +717,21 @@ export class DBOS {
     return registerAndWrapContextFreeFunction(target, propertyKey, descriptor);
   }
 
+  static async executeWorkflowById(workflowId: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>>
+  {
+    if (!DBOSExecutor.globalInstance) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return DBOSExecutor.globalInstance.executeWorkflowUUID(workflowId, startNewWorkflow);
+  }
+
+  static async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
+    if (!DBOSExecutor.globalInstance) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    return DBOSExecutor.globalInstance.recoverPendingWorkflows(executorIDs);
+  }
+
   // TODO CTX
   // Initializers?  Deploy?  ORM Entities?
-  // executeWorkflowId
-  // recoverPendingWorkflows
 }
