@@ -12,6 +12,7 @@ export async function createSecret(host: string, appName: string | undefined, se
     logger.error("Failed to get app name.");
     return 1;
   }
+
   logger.info(`  ... app name is ${appName}.`);
   logger.info(`  ... secret name is ${secretName}.`);
   logger.info(`  ... secret value is ${secretValue}.`);
@@ -74,7 +75,15 @@ export async function listSecrets(host: string, appName: string | undefined, jso
         return 1;
       }
   
-      logger.info(res.data);
+      if (json) {
+        console.log(JSON.stringify(res.data));
+      } else {
+        const secrets = res.data as string[];
+        secrets.forEach((secret) => {
+          logger.info(secret);
+        });
+      }
+      
       return 0;
     } catch (e) {
       const errorLabel = `Failed to retrieve versions for application ${appName}`;
