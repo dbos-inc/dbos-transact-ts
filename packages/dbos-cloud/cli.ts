@@ -214,8 +214,10 @@ applicationCommands
     process.exit(exitCode);
   });
 
-  applicationCommands
-  .command("secrets")
+  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").description("manage secrets for your application");
+
+  secretsCommands
+  .command("create")
   .description("Create a secret for this application")
   .argument("[string]", "application name (Default: name from package.json)")
   .option("-s, --secretname <string>", "Specify the name of the secret to create")
