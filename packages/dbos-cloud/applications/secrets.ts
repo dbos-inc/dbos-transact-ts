@@ -13,9 +13,15 @@ export async function createSecret(host: string, appName: string | undefined, se
     return 1;
   }
 
-  logger.info(`  ... app name is ${appName}.`);
-  logger.info(`  ... secret name is ${secretName}.`);
-  logger.info(`  ... secret value is ${secretValue}.`);
+  if (!secretName) {
+    logger.error("Secret name is required.");
+    return 1;
+  }
+
+    if (!secretValue) {
+        logger.error("Secret value is required.");
+        return 1;
+    }
 
   const body = {'ApplicationName': appName , 'SecretName':secretName, 'ClearSecretValue': secretValue};
  
