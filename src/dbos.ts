@@ -397,20 +397,41 @@ export class DBOS {
   }
 
   static proxyInvokeWF<T extends object>(object: T, configuredInstance: ConfiguredInstance | null):
-  InvokeFunctionsAsync<T>
+    InvokeFunctionsAsync<T>
   {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
-    // TODO CTX this is child WF stuff
-    //const funcId = this.functionIDGetIncrement();
-    //const childUUID = workflowUUID || (this.workflowUUID + "-" + funcId);
-
-    //const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
-
     const pctx = getCurrentContextStore();
+    let wfId = pctx?.idAssignedForNextWorkflow;
+
+    // If this is called from within a workflow, this is a child workflow,
+    //  For OAOO, we will need a consistent ID formed from the parent WF and call number
+    if (DBOS.isWithinWorkflow()) {
+      const wfctx = assertCurrentWorkflowContext();
+
+      const funcId = wfctx.functionIDGetIncrement();
+      wfId = wfId || (wfctx.workflowUUID + "-" + funcId);
+      const params : WorkflowParams = {
+        workflowUUID: wfId,
+        parentCtx: wfctx,
+        configuredInstance,
+        queueName: pctx?.queueAssignedForWorkflows
+      };
+
+      for (const op of ops) {
+        proxy[op.name] = op.workflowConfig
+          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.internalWorkflow(
+             (op.registeredFunction as WorkflowFunction<unknown[], unknown>),
+             params, wfctx.workflowUUID, funcId, ...args)
+          : undefined;
+      }
+
+      return proxy as InvokeFunctionsAsync<T>;
+    }
+
     const wfParams: InternalWorkflowParams = {
-      workflowUUID: pctx?.idAssignedForNextWorkflow,
+      workflowUUID: wfId,
       queueName: pctx?.queueAssignedForWorkflows,
       configuredInstance,
     };
@@ -551,9 +572,32 @@ export class DBOS {
             throw new DBOSInvalidWorkflowTransitionError();
           }
         }
-  
+
+        let wfId = pctx?.idAssignedForNextWorkflow;
+
+        // If this is called from within a workflow, this is a child workflow,
+        //  For OAOO, we will need a consistent ID formed from the parent WF and call number
+        if (DBOS.isWithinWorkflow()) {
+          const wfctx = assertCurrentWorkflowContext();
+
+          const funcId = wfctx.functionIDGetIncrement();
+          wfId = wfId || (wfctx.workflowUUID + "-" + funcId);
+          const params: WorkflowParams = {
+            workflowUUID: wfId,
+            parentCtx: wfctx,
+            configuredInstance: inst,
+            queueName: pctx?.queueAssignedForWorkflows
+          };
+
+          const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
+            registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
+            params, wfctx.workflowUUID, funcId, ...rawArgs  
+          );
+          return await cwfh.getResult();
+        }
+
         const wfParams: InternalWorkflowParams = {
-          workflowUUID: pctx?.idAssignedForNextWorkflow,
+          workflowUUID: wfId,
           queueName: pctx?.queueAssignedForWorkflows,
           configuredInstance : inst
         };

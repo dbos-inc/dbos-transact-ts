@@ -297,7 +297,6 @@ async function main7() {
 
 // TODO:
 //  Child workflows
-//  Roles / Auth
 
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {

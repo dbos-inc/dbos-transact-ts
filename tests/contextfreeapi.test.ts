@@ -101,6 +101,33 @@ class TestSec2 {
   }
 }
 
+class ChildWorkflows {
+  @DBOS.transaction({readOnly: true})
+  static async childTx() {
+    await DBOS.pgClient.query("SELECT 1");
+    return Promise.resolve(`selected ${DBOS.workflowID}`);
+  }
+
+  @DBOS.workflow()
+  static async childWF() {
+    const tres = await ChildWorkflows.childTx();
+    return `ChildID:${DBOS.workflowID}|${tres}`;
+  }
+
+  @DBOS.workflow()
+  static async callSubWF() {
+    const cres = await ChildWorkflows.childWF();
+    return `ParentID:${DBOS.workflowID}|${cres}`;
+  }
+
+  @DBOS.workflow()
+  static async startSubWF() {
+    const cwfh = await DBOS.startWorkflow(ChildWorkflows).childWF();
+    const cres = await cwfh.getResult();
+    return `ParentID:${DBOS.workflowID}|${cres}`;
+  }
+}
+
 async function main() {
   // First hurdle - configuration.
   const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
@@ -272,10 +299,24 @@ async function main7() {
   await DBOS.shutdown();
 }
 
-// TODO:
-//  Child workflows
-//  Recovery
-//  Cleanup
+async function main8() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  const res = await DBOS.withNextWorkflowID('child-direct', async ()=>{
+    return await ChildWorkflows.callSubWF();
+  });
+  expect (res).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
+
+  const cres = await DBOS.withNextWorkflowID('child-start', async ()=>{
+    return await ChildWorkflows.startSubWF();
+  });
+  expect (cres).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
+
+  await DBOS.shutdown();
+}
 
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
@@ -304,5 +345,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("roles", async() => {
     await main7();
+  }, 15000);
+
+  test("child-wf", async() => {
+    await main8();
   }, 15000);
 });

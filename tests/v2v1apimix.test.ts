@@ -227,6 +227,33 @@ class TestFunctionsInst extends ConfiguredInstance
   }
 }
 
+class ChildWorkflowsV1 {
+  @Transaction({readOnly: true})
+  static async childTx(tx: TransactionContext<PoolClient>) {
+    await tx.client.query("SELECT 1");
+    return Promise.resolve(`selected ${DBOS.workflowID}`);
+  }
+
+  @Workflow()
+  static async childWF(ctx: WorkflowContext) {
+    const tres = await ctx.invoke(ChildWorkflowsV1).childTx();
+    return `ChildID:${ctx.workflowUUID}|${tres}`;
+  }
+
+  @Workflow()
+  static async callSubWF(ctx: WorkflowContext) {
+    const cres = await ctx.invokeWorkflow(ChildWorkflowsV1).childWF();
+    return `ParentID:${ctx.workflowUUID}|${cres}`;
+  }
+
+  @Workflow()
+  static async startSubWF(ctx: WorkflowContext) {
+    const cwfh = await ctx.startWorkflow(ChildWorkflowsV1).childWF();
+    const cres = await cwfh.getResult();
+    return `ParentID:${ctx.workflowUUID}|${cres}`;
+  }
+}
+
 const inst = configureInstance(TestFunctionsInst, 'i');
 
 async function mainInst() {
@@ -274,6 +301,12 @@ describe("dbos-v1v2api-mix-tests-main-inst", () => {
 
       const res122 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V2V2();
       expect (res122).toBe('wv1selected tv2step sv2 done');
+
+      const rescwfv1 = await testRuntime.invokeWorkflow(ChildWorkflowsV1, 'child-direct').callSubWF();
+      expect (rescwfv1).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
+
+      const rescwfv1h = await testRuntime.startWorkflow(ChildWorkflowsV1, 'child-start').startSubWF();
+      expect (await rescwfv1h.getResult()).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
     }
     finally {
       await testRuntime?.destroy();
