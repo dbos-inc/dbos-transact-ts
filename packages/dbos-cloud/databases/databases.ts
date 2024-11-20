@@ -5,6 +5,7 @@ import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
 import { UserDBInstance } from "../applications/types.js";
 import { input, select } from "@inquirer/prompts";
+import promptSync from "prompt-sync";
 
 
 function isValidPassword(logger: Logger, password: string): boolean {
@@ -252,7 +253,7 @@ async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBO
   return res.data as UserDBInstance;
 }
 
-export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string) {
+export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string | undefined) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
 
@@ -263,11 +264,26 @@ export async function resetDBCredentials(host: string, dbName: string | undefine
 
   const bearerToken = "Bearer " + userCredentials.token;
 
-  if (!isValidPassword(logger, appDBPassword)) {
-    return 1;
-  }
-
   try {
+    const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
+
+    if (userDBInfo.IsLinked) {
+      if (userDBInfo.SupabaseReference !== null) {
+        logger.error("The DBOS CLI cannot reset the password of your Supabase database. Please reset it from your Supabase dashboard.")
+      } else {
+        logger.error("Error: You cannot reset the password of a linked database from the DBOS CLI.");
+      }
+      return 1;
+    }
+
+    const prompt = promptSync({ sigint: true });
+    if (!appDBPassword) {
+      appDBPassword = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
+    }
+    if (!isValidPassword(logger, appDBPassword)) {
+      return 1;
+    }
+
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/credentials`,
       { Password: appDBPassword },
@@ -337,7 +353,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string | undefined, password: string, local_suffix: boolean) {
+export async function connect(host: string, dbName: string | undefined, password: string | undefined, local_suffix: boolean) {
   const logger = getLogger();
 
   const userCredentials = await getCloudCredentials(host, logger);
@@ -359,17 +375,30 @@ export async function connect(host: string, dbName: string | undefined, password
 
     logger.info("Retrieving cloud database info...");
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
+    const isSupabase = userDBInfo.SupabaseReference !== null;
+
+    const prompt = promptSync({ sigint: true });
+    if (!password) {
+      if (isSupabase) {
+        password = prompt("Enter Supabase Database Password: ", { echo: "*" });
+      } else {
+        password = prompt("Enter Database Password: ", { echo: "*" });
+      }
+    }
+
+    const databaseUsername = isSupabase ? `postgres.${userDBInfo.SupabaseReference}` : userDBInfo.DatabaseUsername;
+
     console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
     console.log(`Host Name: ${userDBInfo.HostName}`);
     console.log(`Port: ${userDBInfo.Port}`);
-    console.log(`Database Username: ${userDBInfo.DatabaseUsername}`);
+    console.log(`Database Username: ${databaseUsername}`);
     console.log(`Status: ${userDBInfo.Status}`);
 
     logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`)
     const config: ConfigFile = loadConfigFile(dbosConfigFilePath);
     config.database.hostname = userDBInfo.HostName;
     config.database.port = userDBInfo.Port;
-    config.database.username = userDBInfo.DatabaseUsername;
+    config.database.username = databaseUsername;
     config.database.password = password;
     config.database.local_suffix = local_suffix;
     writeConfigFile(config, dbosConfigFilePath);
