@@ -253,7 +253,7 @@ async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBO
   return res.data as UserDBInstance;
 }
 
-export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string) {
+export async function resetDBCredentials(host: string, dbName: string | undefined, appDBPassword: string | undefined) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
 
@@ -264,11 +264,26 @@ export async function resetDBCredentials(host: string, dbName: string | undefine
 
   const bearerToken = "Bearer " + userCredentials.token;
 
-  if (!isValidPassword(logger, appDBPassword)) {
-    return 1;
-  }
-
   try {
+    const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
+
+    if (userDBInfo.IsLinked) {
+      if (userDBInfo.SupabaseReference !== null) {
+        logger.error("The DBOS CLI cannot reset the password of your Supabase database. Please reset it from your Supabase dashboard.")
+      } else {
+        logger.error("Error: You cannot reset the password of a linked database from the DBOS CLI.");
+      }
+      return 1;
+    }
+
+    const prompt = promptSync({ sigint: true });
+    if (!appDBPassword) {
+      appDBPassword = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
+    }
+    if (!isValidPassword(logger, appDBPassword)) {
+      return 1;
+    }
+
     await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/credentials`,
       { Password: appDBPassword },
