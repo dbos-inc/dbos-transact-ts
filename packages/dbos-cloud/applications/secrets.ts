@@ -25,8 +25,6 @@ export async function createSecret(host: string, appName: string | undefined, se
 
   const body = {'ApplicationName': appName , 'SecretName':secretName, 'ClearSecretValue': secretValue};
  
-  console.log(body);
-
   try {
     const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/applications/secrets`, body, {
       headers: {
@@ -40,7 +38,7 @@ export async function createSecret(host: string, appName: string | undefined, se
       return 1;
     }
 
-    logger.info(`Secret successfully created!`);
+    logger.info(`Secret ${secretName} successfully created!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve versions for application ${appName}`;
@@ -65,7 +63,7 @@ export async function listSecrets(host: string, appName: string | undefined, jso
       logger.error("Failed to get app name.");
       return 1;
     }
-    logger.info(`  ... app name is ${appName}.`);
+    logger.debug(`  ... app name is ${appName}.`);
   
     try {
       const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/secrets`, {
@@ -84,7 +82,7 @@ export async function listSecrets(host: string, appName: string | undefined, jso
       } else {
         const secrets = res.data as string[];
         secrets.forEach((secret) => {
-          logger.info(secret);
+          console.log(secret);
         });
       }
       
