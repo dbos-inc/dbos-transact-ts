@@ -319,9 +319,6 @@ databaseCommands
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    if (!options.password) {
-      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
-    }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
     process.exit(exitCode);
   });
@@ -332,9 +329,6 @@ databaseCommands
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    if (!options.password) {
-      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
-    }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
     process.exit(exitCode);
   });

@@ -5,6 +5,7 @@ import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
 import { copyFileSync, existsSync } from "fs";
 import { UserDBInstance } from "../applications/types.js";
 import { input, select } from "@inquirer/prompts";
+import promptSync from "prompt-sync";
 
 
 function isValidPassword(logger: Logger, password: string): boolean {
@@ -337,7 +338,7 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string | undefined, password: string, local_suffix: boolean) {
+export async function connect(host: string, dbName: string | undefined, password: string | undefined, local_suffix: boolean) {
   const logger = getLogger();
 
   const userCredentials = await getCloudCredentials(host, logger);
@@ -359,8 +360,18 @@ export async function connect(host: string, dbName: string | undefined, password
 
     logger.info("Retrieving cloud database info...");
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
+    const isSupabase = userDBInfo.SupabaseReference !== null;
 
-    const databaseUsername = userDBInfo.SupabaseReference === null ? userDBInfo.DatabaseUsername : `postgres.${userDBInfo.SupabaseReference}`
+    const prompt = promptSync({ sigint: true });
+    if (!password) {
+      if (isSupabase) {
+        password = prompt("Enter Supabase Database Password: ", { echo: "*" });
+      } else {
+        password = prompt("Enter Database Password: ", { echo: "*" });
+      }
+    }
+
+    const databaseUsername = isSupabase ? `postgres.${userDBInfo.SupabaseReference}` : userDBInfo.DatabaseUsername;
 
     console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
     console.log(`Host Name: ${userDBInfo.HostName}`);
