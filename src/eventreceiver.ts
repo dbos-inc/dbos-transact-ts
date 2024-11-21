@@ -54,7 +54,7 @@ export interface DBOSExecutorContext
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 
   // Event receiver state queries / updates
-  /* 
+  /*
    * An event dispatcher may keep state in the system database
    *  The 'service' should be unique to the event receiver keeping state, to separate from others
    *   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched

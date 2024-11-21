@@ -99,7 +99,7 @@ type InvokeFuncsInst<T> =
     [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   }
   : never;
-  
+
 
 export class DBOS {
   ///////
@@ -495,7 +495,7 @@ export class DBOS {
     }
     return DBOS.executor.send(destinationID, message, topic);
   }
-  
+
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -564,7 +564,7 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
-          // This is static          
+          // This is static
         }
         else {
           inst = this as ConfiguredInstance;
@@ -591,7 +591,7 @@ export class DBOS {
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
             registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
-            params, wfctx.workflowUUID, funcId, ...rawArgs  
+            params, wfctx.workflowUUID, funcId, ...rawArgs
           );
           return await cwfh.getResult();
         }
@@ -638,7 +638,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
-          // This is static          
+          // This is static
         }
         else {
           inst = this as ConfiguredInstance;
@@ -687,7 +687,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
-          // This is static          
+          // This is static
         }
         else {
           inst = this as ConfiguredInstance;
@@ -741,7 +741,7 @@ export class DBOS {
     {
       const {descriptor, registration} = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.requiredRole = anyOf;
-  
+
       return descriptor;
     }
     return apidec;

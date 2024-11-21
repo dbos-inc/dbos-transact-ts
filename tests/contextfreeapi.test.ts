@@ -154,7 +154,7 @@ async function main() {
   await DBOS.launch();
   const res2 = await TestFunctions.doWorkflow();
   expect (res2).toBe('done');
-  await DBOS.shutdown();  
+  await DBOS.shutdown();
 }
 
 async function main2() {
@@ -278,7 +278,7 @@ async function main7() {
   await expect(async()=>{
     await TestSec.testWorkflow('unauthorized');
   }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
-  
+
   const res = await TestSec.testAuth('and welcome');
   expect(res).toBe('hello and welcome');
 

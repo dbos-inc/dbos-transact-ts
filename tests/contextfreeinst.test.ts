@@ -274,7 +274,7 @@ async function main7() {
   await expect(async()=>{
     await testSecInst.testWorkflow('unauthorized');
   }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
-  
+
   const res = await testSecInst.testAuth('and welcome');
   expect(res).toBe('hello and welcome from Sec1');
 

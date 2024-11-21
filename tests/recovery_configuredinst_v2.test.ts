@@ -14,7 +14,7 @@ class CCRConfig {
   promise1: Promise<void>;
   resolve2: RF | undefined = undefined;
   promise2: Promise<void>;
-  
+
   constructor() {
     this.promise1 = new Promise<void>((resolve) => {
       this.resolve1 = resolve;

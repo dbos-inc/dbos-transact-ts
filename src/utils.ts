@@ -93,32 +93,32 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
         dbos_data: actualValue.toISOString()
     }
     return res;
-  } 
-  
+  }
+
   if (typeof actualValue === 'bigint') {
     const res: DBOSSerializedBigInt = {
       dbos_type: 'dbos_BigInt',
       dbos_data: actualValue.toString(),
     };
     return res;
-  } 
+  }
   return value;
 }
 
 function isSerializedBuffer(value: unknown): value is SerializedBuffer {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).type === 'Buffer';
 }
 
 function isSerializedDate(value: unknown): value is DBOSSerializedDate {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).dbos_type === 'dbos_Date';
 }
 
 function isSerializedBigInt(value: unknown): value is DBOSSerializedBigInt {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).dbos_type === 'dbos_BigInt';
 }

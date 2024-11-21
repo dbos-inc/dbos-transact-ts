@@ -1164,7 +1164,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             cresult = await sf.call(clsInst, ...args);
           });
         }
-      result = cresult!
+        result = cresult!
       } catch (error) {
         err = error as Error;
       }
@@ -1186,7 +1186,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return result as R;
     }
   }
-  
+
   async send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
