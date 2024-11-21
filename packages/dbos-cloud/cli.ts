@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { registerApp, updateApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
+import { registerApp, updateApp, listApps, deleteApp, deployAppCode, getAppLogs, createSecret, listSecrets } from "./applications/index.js";
 import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
@@ -211,6 +211,29 @@ applicationCommands
   .option("-p, --pagesize <integer>", "How many lines to fetch at once when paginating. Default is 1000", parseInt)
   .action(async (appName: string | undefined, options: { last: number; pagesize: number }) => {
     const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
+    process.exit(exitCode);
+  });
+
+  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").description("manage secrets for your application");
+
+  secretsCommands
+  .command("create")
+  .description("Create a secret for this application")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .requiredOption("-s, --secretname <string>", "Specify the name of the secret to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the secret to store with the name.")
+  .action(async (appName: string | undefined, options: { secretname: string; value: string }) => {
+    const exitCode = await createSecret(DBOSCloudHost, appName, options.secretname , options.value);
+    process.exit(exitCode);
+  });
+
+  secretsCommands
+  .command("list")
+  .description("List secrets for this application")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .option("--json", "Emit JSON output")
+  .action(async (appName: string | undefined, options: { json: boolean }) => {
+    const exitCode = await listSecrets(DBOSCloudHost, appName, options.json);
     process.exit(exitCode);
   });
 
