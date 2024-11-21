@@ -183,7 +183,7 @@ export class OpenApiGenerator {
         return;
       }
       if (param[1] !== ArgSources.URL && param[1] !== ArgSources.DEFAULT) {
-        this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
+        //this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
         return;
       }
     }
