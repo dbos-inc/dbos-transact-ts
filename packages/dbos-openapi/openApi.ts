@@ -182,9 +182,9 @@ export class OpenApiGenerator {
         this.#diags.raise(`Missing path parameter ${pathParam} for ${method.name}`, method.node);
         return;
       }
-      if (param[1] !== ArgSources.URL && param[1] !== ArgSources.DEFAULT) {
-        //this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
-        //return;
+      if (param[1] !== ArgSources.URL) {
+        this.#diags.raise(`Path parameter ${pathParam} must be a URL parameter: ${method.name}`, param[0].node);
+        return;
       }
     }
 
@@ -381,9 +381,8 @@ export class OpenApiGenerator {
     if (!httpDecorators.length) return undefined;
 
     if (httpDecorators.length > 1) {
-      // More than one is actually OK...  We'll only get the first
-      //this.#diags.raise(`Method ${method.name} has more than one Api decorator`);
-      //return;
+      this.#diags.raise(`Method ${method.name} has more than one Api decorator`);
+      return;
     }
     const apiDecorator = httpDecorators[0];
     const verb = apiDecorator.verb;
