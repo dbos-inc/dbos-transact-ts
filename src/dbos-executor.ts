@@ -680,9 +680,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
           authenticatedUser: pctx.authenticatedUser,
           assumedRole: pctx.assumedRole,
           authenticatedRoles: pctx.authenticatedRoles,
-        }
-        // TODO the span should be taken from pctx
-        //pctx.span
+        },
+        pctx.span,
       );
       params.parentCtx = new DBOSContextImpl(wf.name, span, this.logger);
       params.parentCtx.request = pctx.request || {};
