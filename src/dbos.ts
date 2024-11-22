@@ -54,6 +54,8 @@ import { StoredProcedureFunc } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
 
+// Declare all the HTTP applications a user can pass to the DBOS object during launch()
+// This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
 export interface DBOSHttpApps {
   koaApp?: Koa;
   expressApp?: ExpressApp;

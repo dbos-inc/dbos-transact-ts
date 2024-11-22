@@ -26,6 +26,7 @@ export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery";
 export const HealthUrl = "/dbos-healthz";
 export const PerfUrl = "/dbos-perf";
+// FIXME this should be /dbos-deactivate to be consistent with other endpoints.
 export const DeactivateUrl = "/deactivate";
 
 export class DBOSHttpServer {
