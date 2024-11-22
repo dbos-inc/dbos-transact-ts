@@ -1,6 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Express](https://expressjs.com/)
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Express.js](https://expressjs.com/)
 
 [Knex](https://docs.dbos.dev/tutorials/using-knex) is used for the database connection.
 
@@ -16,7 +16,21 @@ node start_postgres_docker.js
 
 If successful, the script should print `Database started successfully!`.
 
-Next, build the app:
+Next, you can build and run the app in one step under `nodemon`:
+
+```bash
+npm run dev
+```
+
+To see that it's working, visit this URL in your browser: [`http://localhost:9000/greeting/dbos`](http://localhost:9000/greeting/dbos).
+You should get this message: `Hello, dbos! You have been greeted 1 times.`
+Each time you refresh the page, the counter should go up by one!
+
+Congratulations! You just launched a DBOS application.
+
+
+### Separate steps
+Instead of using `nodemon`, the following separate steps can be used to build, run database setup, and start the app.
 
 ```bash
 npm run build
@@ -36,15 +50,9 @@ Finally, run the app:
 npx dbos-sdk start
 ```
 
-To see that it's working, visit this URL in your browser: [`http://localhost:3000/greeting/dbos`](http://localhost:3000/greeting/dbos).
-You should get this message: `Hello, dbos! You have been greeted 1 times.`
-Each time you refresh the page, the counter should go up by one!
-
-Congratulations! You just launched a DBOS application.
-
 ## Next Steps
 
-- To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it.  Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
+- To add more functionality to this application, modify `src/operations.ts`.  If you used `npm run dev`, it will automatically rebuild and restart.
 - For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
 - To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

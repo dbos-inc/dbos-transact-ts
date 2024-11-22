@@ -1,8 +1,8 @@
 // Welcome to DBOS!
 
-// This is a sample "Hello" app built with DBOS and Knex.
+// This is a sample "Hello" app built with DBOS, Express.js, and Knex.
 // It greets visitors and keeps track of how many times each visitor has been greeted.
-// To run this app, visit our Quickstart: https://docs.dbos.dev/getting-started/quickstart
+// To run this app, visit our Quickstart: https://docs.dbos.dev/quickstart
 
 import express from "express";
 import { DBOS } from '@dbos-inc/dbos-sdk';
@@ -14,7 +14,6 @@ export interface dbos_hello {
 }
 
 export class Hello {
-  // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
   @DBOS.transaction()  // Run this function as a database transaction
   static async helloTransaction(user: string) {
     // Retrieve and increment the number of times this user has been greeted.
@@ -63,11 +62,12 @@ export class Hello {
 export const app = express();
 app.use(express.json());
 
+// Example route
 app.get('/', async (_, res) => {
   res.send(await Hello.readme());
 });
 
-// Example route
+// Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
 app.get('/greeting/:user', async (req, res) => {
   const {user} = req.params;
   res.send(await Hello.helloTransaction(user));
