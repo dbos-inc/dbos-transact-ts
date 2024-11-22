@@ -668,29 +668,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const wConfig = wInfo.config;
 
-    // Compatibility with the old way of calling workflows, which would include a parentCtx
-    const pctx = getCurrentContextStore();
     const passContext = wInfo.registration?.passContext ?? true;
-    if (!passContext && pctx) {
-      const span = this.tracer.startSpan(
-        wf.name,
-        {
-          operationUUID: workflowUUID,
-          operationType: OperationType.WORKFLOW,
-          status: StatusString.PENDING,
-          authenticatedUser: pctx.authenticatedUser,
-          assumedRole: pctx.assumedRole,
-          authenticatedRoles: pctx.authenticatedRoles,
-        },
-        pctx.span,
-      );
-      params.parentCtx = new DBOSContextImpl(wf.name, span, this.logger);
-      params.parentCtx.request = pctx.request || {};
-      params.parentCtx.authenticatedUser = pctx.authenticatedUser || "";
-      params.parentCtx.assumedRole = pctx.assumedRole || "";
-      params.parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
-      params.parentCtx.workflowUUID = workflowUUID;
-    }
     const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(this, params.parentCtx, workflowUUID, wConfig, wf.name, presetUUID, params.tempWfType, params.tempWfName);
 
     const internalStatus: WorkflowStatusInternal = {

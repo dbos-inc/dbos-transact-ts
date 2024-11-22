@@ -214,7 +214,7 @@ export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
   const httpTracer = new W3CTraceContextPropagator();
   const span = createHTTPSpan(request, httpTracer);
 
-  await DBOS.withTracedContext(span, request, next);
+  await DBOS.withTracedContext(request.url as string, span, request, next);
 
   // Inject trace context into response headers.
   // We cannot use the defaultTextMapSetter to set headers through Koa
@@ -258,7 +258,7 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
   const httpTracer = new W3CTraceContextPropagator();
   const span = createHTTPSpan(request, httpTracer);
 
-  await DBOS.withTracedContext(span, request, next as () => Promise<void>);
+  await DBOS.withTracedContext(request.url as string, span, request, next as () => Promise<void>);
 
   // We could probably define a context type and type the parameters in the set closure (see Koa middleware above)
   httpTracer.inject(trace.setSpanContext(ROOT_CONTEXT, span.spanContext()), res, {

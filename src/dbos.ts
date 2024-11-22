@@ -5,7 +5,8 @@ import {
   getCurrentContextStore,
   getCurrentDBOSContext,
   HTTPRequest,
-  runWithTopContext
+  runWithTopContext,
+  DBOSContextImpl
 } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
 import {
@@ -15,7 +16,8 @@ import {
   GetWorkflowsOutput,
   WorkflowConfig,
   WorkflowFunction,
-  WorkflowParams
+  WorkflowParams,
+  WorkflowContextImpl
 } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
@@ -229,6 +231,7 @@ export class DBOS {
     if (executor) return executor.logger;
     return new GlobalLogger();
   }
+
   static get span(): Span | undefined {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.span;
@@ -368,9 +371,10 @@ export class DBOS {
     }
   }
 
-  static async withTracedContext<R>(span: Span, request: HTTPRequest, callback: () => Promise<R>): Promise<R> {
+  static async withTracedContext<R>(callerName: string, span: Span, request: HTTPRequest, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
+      pctx.operationCaller = callerName;
       pctx.span = span;
       pctx.request = request;
       return callback();
@@ -387,6 +391,17 @@ export class DBOS {
       return callback();
     } else {
       return runWithTopContext({ authenticatedUser: authedUser, authenticatedRoles: authedRoles }, callback);
+    }
+  }
+
+  // This generic setter helps users calling DBOS operation to pass a name, later used in seeding a parent OTel span for the operation.
+  static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      pctx.operationCaller = callerName;
+      return callback();
+    } else {
+      return runWithTopContext({ operationCaller: callerName }, callback);
     }
   }
 
@@ -452,10 +467,36 @@ export class DBOS {
       return proxy as InvokeFunctionsAsync<T>;
     }
 
+    // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
+    let parentCtx: DBOSContextImpl | undefined = undefined;
+    if (pctx) {
+      // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
+      let span = pctx.span;
+      if (!span) {
+        span = DBOS.executor.tracer.startSpan(
+          pctx.operationCaller || "startWorkflow",
+          {
+            operationUUID: wfId,
+            operationType: pctx.operationType,
+            authenticatedUser: pctx.authenticatedUser,
+            assumedRole: pctx.assumedRole,
+            authenticatedRoles: pctx.authenticatedRoles,
+          },
+        );
+      }
+      parentCtx = new DBOSContextImpl(pctx.operationCaller || "startWorkflow", span, DBOS.logger as GlobalLogger);
+      parentCtx.request = pctx.request || {};
+      parentCtx.authenticatedUser = pctx.authenticatedUser || "";
+      parentCtx.assumedRole = pctx.assumedRole || "";
+      parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
+      parentCtx.workflowUUID = wfId || "";
+    }
+
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
       queueName: pctx?.queueAssignedForWorkflows,
       configuredInstance,
+      parentCtx,
     };
 
     for (const op of ops) {
@@ -618,10 +659,36 @@ export class DBOS {
           return await cwfh.getResult();
         }
 
+        // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
+        let parentCtx: DBOSContextImpl | undefined = undefined;
+        if (pctx) {
+          // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
+          let span = pctx.span;
+          if (!span) {
+              span = DBOS.executor.tracer.startSpan(
+                pctx.operationCaller || "workflowCaller",
+                {
+                  operationUUID: wfId,
+                  operationType: pctx.operationType,
+                  authenticatedUser: pctx.authenticatedUser,
+                  assumedRole: pctx.assumedRole,
+                  authenticatedRoles: pctx.authenticatedRoles,
+                },
+              );
+          }
+          parentCtx = new DBOSContextImpl(pctx.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx.request = pctx.request || {};
+          parentCtx.authenticatedUser = pctx.authenticatedUser || "";
+          parentCtx.assumedRole = pctx.assumedRole || "";
+          parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
+          parentCtx.workflowUUID = wfId || "";
+        }
+
         const wfParams: InternalWorkflowParams = {
           workflowUUID: wfId,
           queueName: pctx?.queueAssignedForWorkflows,
-          configuredInstance : inst
+          configuredInstance : inst,
+          parentCtx,
         };
         if (pctx) {
           pctx.idAssignedForNextWorkflow = undefined;
