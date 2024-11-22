@@ -33,6 +33,7 @@ export class DBOSHttpServer {
   readonly adminApp: Koa;
   readonly applicationRouter: Router;
   readonly logger: Logger;
+  nRegisteredEndpoints: number = 0;
 
   /**
    * Create a Koa app.
@@ -72,7 +73,7 @@ export class DBOSHttpServer {
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
     // TODO we should check adminPort as well.
 
-    const appServer = this.app.listen(port, () => {
+    const appServer = this.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
 

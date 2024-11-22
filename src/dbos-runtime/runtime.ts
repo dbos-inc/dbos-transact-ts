@@ -25,7 +25,7 @@ export const defaultEntryPoint = "dist/operations.js";
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
   private dbosExec?: DBOSExecutor = undefined;
-  private servers: { appServer: Server; adminServer: Server } | undefined;
+  private servers: { appServer?: Server; adminServer: Server } | undefined;
   private scheduler?: DBOSScheduler = undefined;
   private wfQueueRunner?: Promise<void> = undefined;
 
@@ -129,7 +129,7 @@ export class DBOSRuntime {
       await evtRcvr.destroy();
     }
     if (this.servers) {
-      this.servers.appServer.close();
+      this.servers.appServer?.close();
       this.servers.adminServer.close();
     }
     await this.dbosExec?.destroy();
