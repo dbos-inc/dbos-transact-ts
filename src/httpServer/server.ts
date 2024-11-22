@@ -33,7 +33,7 @@ export class DBOSHttpServer {
   readonly adminApp: Koa;
   readonly applicationRouter: Router;
   readonly logger: Logger;
-  nRegisteredEndpoints: number = 0;
+  static nRegisteredEndpoints: number = 0;
 
   /**
    * Create a Koa app.
@@ -73,7 +73,7 @@ export class DBOSHttpServer {
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
     // TODO we should check adminPort as well.
 
-    const appServer = this.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
+    const appServer = DBOSHttpServer.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
 
@@ -202,6 +202,7 @@ export class DBOSHttpServer {
   static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router, app: Koa) {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
+    DBOSHttpServer.nRegisteredEndpoints = 0;
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
@@ -209,6 +210,7 @@ export class DBOSHttpServer {
           dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
           return;
         }
+        ++DBOSHttpServer.nRegisteredEndpoints;
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
