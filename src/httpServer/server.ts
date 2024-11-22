@@ -284,7 +284,7 @@ export class DBOSHttpServer {
             const args: unknown[] = [];
             ro.args.forEach((marg, idx) => {
               marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
-              if (idx === 0) {
+              if (idx === 0 && ro.passContext) {
                 return; // Do not parse the context.
               }
 
@@ -339,7 +339,12 @@ export class DBOSHttpServer {
               // Directly invoke the handler code.
               let cresult: unknown;
               await runWithDBOSContext(oc, async ()=> {
-                cresult = await ro.invoke(undefined, [oc, ...args]);
+                if (ro.passContext) {
+                  cresult = await ro.invoke(undefined, [oc, ...args]);
+                }
+                else {
+                  cresult = await ro.invoke(undefined, [...args]);
+                }
               });
               const retValue = cresult!
 

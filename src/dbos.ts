@@ -35,13 +35,14 @@ import Koa from "koa";
 import { Application as ExpressApp } from "express";
 import { INestApplication } from "@nestjs/common";
 import { FastifyInstance } from "fastify";
-import _ from "@fastify/express"; // This is for fastify.use()
+import _fastifyExpress from "@fastify/express"; // This is for fastify.use()
 
 import { PoolClient } from "pg";
 import { Knex } from "knex";
 import { StepConfig, StepFunction } from "./step";
 import { wfQueueRunner } from "./wfqueue";
 import {
+  HandlerContext,
   StepContext,
   StoredProcedureContext,
   TransactionContext,
@@ -50,6 +51,8 @@ import {
 } from ".";
 import { ConfiguredInstance } from ".";
 import { StoredProcedureFunc } from "./procedure";
+import { APITypes } from "./httpServer/handlerTypes";
+import { HandlerRegistrationBase } from "./httpServer/handler";
 
 export interface DBOSHttpApps {
   koaApp?: Koa;
@@ -100,6 +103,20 @@ type InvokeFuncsInst<T> =
   }
   : never;
 
+function httpApiDec(verb: APITypes, url: string) {
+  return function apidec<This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+  ) {
+    const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+    const handlerRegistration = registration as unknown as HandlerRegistrationBase;
+    handlerRegistration.apiURL = url;
+    handlerRegistration.apiType = verb;
+
+    return descriptor;
+  }
+}
 
 export class DBOS {
   ///////
@@ -218,6 +235,9 @@ export class DBOS {
 
   static get request(): HTTPRequest | undefined {
     return getCurrentDBOSContext()?.request;
+  }
+  static get koaContext(): Koa.Context | undefined {
+    return (getCurrentDBOSContext() as HandlerContext)?.koaContext;
   }
 
   static get workflowID(): string | undefined {
@@ -721,6 +741,26 @@ export class DBOS {
       return descriptor;
     }
     return decorator;
+  }
+
+  static getApi(url: string) {
+    return httpApiDec(APITypes.GET, url)
+  }
+
+  static postApi(url: string) {
+    return httpApiDec(APITypes.POST, url)
+  }
+
+  static putApi(url: string) {
+    return httpApiDec(APITypes.PUT, url)
+  }
+
+  static patchApi(url: string) {
+    return httpApiDec(APITypes.PATCH, url)
+  }
+
+  static deleteApi(url: string) {
+    return httpApiDec(APITypes.DELETE, url)
   }
 
   static defaultRequiredRole(anyOf: string[]) {
