@@ -388,7 +388,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.userDatabase.init(this.debugMode);
       if (!this.debugMode) {
         await this.systemDatabase.init();
-        await this.recoverPendingWorkflows();
       }
     } catch (err) {
       if (err instanceof AggregateError) {
@@ -424,6 +423,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await m.origFunction(new InitContext(this));
         }
       }
+
+      await this.recoverPendingWorkflows();
     }
 
     this.logger.info("Workflow executor initialized");
