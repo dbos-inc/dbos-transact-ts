@@ -16,8 +16,7 @@ import {
   GetWorkflowsOutput,
   WorkflowConfig,
   WorkflowFunction,
-  WorkflowParams,
-  WorkflowContextImpl
+  WorkflowParams
 } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";

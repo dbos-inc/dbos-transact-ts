@@ -182,8 +182,8 @@ export class DBOSHttpServer {
   }
 
   /**
-   * Register Deactiviate endpoint.
-   * Deactivate consumers so that they don'nt start new workflows.
+   * Register Deactivate endpoint.
+   * Deactivate consumers so that they don't start new workflows.
    *
    */
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
