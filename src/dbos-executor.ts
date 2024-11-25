@@ -41,7 +41,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, getCurrentContextStore, runWithTransactionContext, runWithStepContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { serializeError } from 'serialize-error';
