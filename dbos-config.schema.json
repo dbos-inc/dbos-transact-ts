@@ -145,6 +145,13 @@
         "admin_port": {
             "type": "number",
             "description": "The port number of the admin server (Default: 3001 or the app server port + 1)"
+        },
+        "start": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The command to start the application"
         }
       }
     },

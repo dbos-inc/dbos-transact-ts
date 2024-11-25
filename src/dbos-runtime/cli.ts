@@ -60,12 +60,18 @@ program
       console.warn("\x1b[33m%s\x1b[0m", "The --configfile option is deprecated. Please use --appDir instead.");
     }
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    if (runtimeConfig.start === "") {
+    // If no start commands are provided, start the DBOS runtime
+    if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
       await runtime.initAndStart();
     } else {
       const logger = getGlobalLogger(dbosConfig);
-      runStartCommand(runtimeConfig.start, logger);
+      for (const command of runtimeConfig.start) {
+        const ret = await runStartCommand(command, logger);
+        if (ret !== 0) {
+          process.exit(ret);
+        }
+      }
     }
   });
 

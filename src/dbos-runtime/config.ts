@@ -270,7 +270,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     entrypoints: [...entrypoints],
     port: appPort,
     admin_port: Number(configFile.runtimeConfig?.admin_port) || appPort + 1,
-    start: configFile.runtimeConfig?.start || "",
+    start: configFile.runtimeConfig?.start || [],
   };
 
   return [dbosConfig, runtimeConfig];
