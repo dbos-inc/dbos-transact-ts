@@ -32,6 +32,7 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
       } else {
         const errorMsg = `Child process exited with code ${code ?? "unknown"} or signal ${signal ?? "unknown"}`;
         logger.error(errorMsg);
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
         reject(code);
       }
     });
@@ -39,6 +40,7 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
     // Must be caught by the caller
     child.on("error", (error) => {
       logger.error(`Failed to start child process: ${error.message}`);
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       reject(1);
     });
   });
