@@ -19,6 +19,7 @@ export interface DBOSRuntimeConfig {
   entrypoints: string[];
   port: number;
   admin_port: number;
+  start: string;
 }
 export const defaultEntryPoint = "dist/operations.js";
 
@@ -40,7 +41,6 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);

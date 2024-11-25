@@ -1,17 +1,18 @@
 #!/usr/bin/env node
-import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
-import { Command } from 'commander';
-import { DBOSConfig } from '../dbos-executor';
-import { debugWorkflow } from './debug';
-import { migrate, rollbackMigration } from './migrate';
-import { GlobalLogger } from '../telemetry/logs';
-import { TelemetryCollector } from '../telemetry/collector';
-import { TelemetryExporter } from '../telemetry/exporters';
-import { configure } from './configure';
-import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from './workflow_management';
-import { GetWorkflowsInput, StatusString } from '..';
-import { exit } from 'node:process';
+import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
+import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from "./config";
+import { Command } from "commander";
+import { DBOSConfig } from "../dbos-executor";
+import { debugWorkflow } from "./debug";
+import { migrate, rollbackMigration } from "./migrate";
+import { GlobalLogger } from "../telemetry/logs";
+import { TelemetryCollector } from "../telemetry/collector";
+import { TelemetryExporter } from "../telemetry/exporters";
+import { configure } from "./configure";
+import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from "./workflow_management";
+import { GetWorkflowsInput, StatusString } from "..";
+import { exit } from "node:process";
+import { runStartCommand } from "./start";
 
 const program = new Command();
 
@@ -52,15 +53,20 @@ program
   .option("-l, --loglevel <string>", "Specify log level")
   .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
-  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .option("--app-version <string>", "override DBOS__APPVERSION environment variable")
+  .option("--no-app-version", "ignore DBOS__APPVERSION environment variable")
   .action(async (options: DBOSCLIStartOptions) => {
     if (options?.configfile) {
-      console.warn('\x1b[33m%s\x1b[0m', "The --configfile option is deprecated. Please use --appDir instead.");
+      console.warn("\x1b[33m%s\x1b[0m", "The --configfile option is deprecated. Please use --appDir instead.");
     }
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
-    await runtime.initAndStart();
+    if (runtimeConfig.start === "") {
+      const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
+      await runtime.initAndStart();
+    } else {
+      const logger = getGlobalLogger(dbosConfig);
+      runStartCommand(runtimeConfig.start, logger);
+    }
   });
 
 program
@@ -223,4 +229,11 @@ export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalL
     logger.error(e);
   }
   terminate(returnCode);
+}
+
+function getGlobalLogger(configFile: DBOSConfig): GlobalLogger {
+  if (configFile.telemetry?.OTLPExporter) {
+    return new GlobalLogger(new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), configFile.telemetry?.logs);
+  }
+  return new GlobalLogger();
 }
