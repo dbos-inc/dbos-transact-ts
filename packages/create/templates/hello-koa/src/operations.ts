@@ -2,32 +2,33 @@
 
 // This is a sample "Hello" app built with DBOS.
 // It greets visitors and keeps track of how many times each visitor has been greeted.
-// To run this app, visit our Quickstart: https://docs.dbos.dev/getting-started/quickstart
 
-import { DBOS } from '@dbos-inc/dbos-sdk';
+// First, let's import DBOS
+import { DBOS } from "@dbos-inc/dbos-sdk";
 
-// The schema of the database table used in this example.
+// Then, let's declare a type representing the "dbos_hello" database table
 export interface dbos_hello {
   name: string;
   greet_count: number;
 }
 
+// Now let's define a class with some static functions.
+// DBOS uses TypeScript decorators to automatically make your functions reliable, so they need to be static.
 export class Hello {
-
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
-  @DBOS.getApi('/greeting/:user')
-  @DBOS.transaction()  // Run this function as a database transaction
+  @DBOS.getApi("/greeting/:user")
+  @DBOS.transaction() // Run this function as a database transaction
   static async helloTransaction(user: string) {
     // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
-    const { rows } = await DBOS.knexClient.raw(query, [user]) as { rows: dbos_hello[] };
+    const { rows } = (await DBOS.knexClient.raw(query, [user])) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
     return Hello.makeHTML(greeting);
   }
 
   // Serve a quick readme for the app at the / endpoint
-  @DBOS.getApi('/')
+  @DBOS.getApi("/")
   static async readme() {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>

@@ -1,8 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Express.js](https://expressjs.com/)
-
-[Knex](https://docs.dbos.dev/tutorials/using-knex) is used for the database connection.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/tutorials/using-knex) to interact with postgres.
 
 ## Getting Started
 
