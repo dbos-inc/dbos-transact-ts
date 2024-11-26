@@ -67,9 +67,14 @@ program
     } else {
       const logger = getGlobalLogger(dbosConfig);
       for (const command of runtimeConfig.start) {
-        const ret = await runStartCommand(command, logger);
-        if (ret !== 0) {
-          process.exit(ret);
+        try {
+          const ret = await runStartCommand(command, logger);
+          if (ret !== 0) {
+            process.exit(ret);
+          }
+        } catch (e) {
+          // We always reject the command with a return code
+          process.exit(e as number);
         }
       }
     }

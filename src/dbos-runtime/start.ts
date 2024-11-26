@@ -15,7 +15,7 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
 
     // Handle parent signals and forward to child
     const handleSignal = (signal: NodeJS.Signals) => {
-      logger.info(`Received ${signal}, forwarding to child process...`);
+      logger.debug(`Received ${signal}, forwarding to  process...`);
       if (child.pid) {
         process.kill(child.pid, signal);
       }
@@ -26,11 +26,11 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
 
     // Cleanup when child exits
     child.on("exit", (code, signal) => {
-      if (code === 0) {
-        logger.info(`Child process exited successfully with code ${code} or signal ${signal}`);
+      if (code === 0 || signal === "SIGTERM" || signal === "SIGINT") {
+        logger.info(`Process exited successfully with code ${code ?? "unknown"} or signal ${signal ?? "unknown"}`);
         resolve(0);
       } else {
-        const errorMsg = `Child process exited with code ${code ?? "unknown"} or signal ${signal ?? "unknown"}`;
+        const errorMsg = `Process exited with code ${code ?? "unknown"} or signal ${signal ?? "unknown"}`;
         logger.error(errorMsg);
         // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
         reject(code);
@@ -39,7 +39,7 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
 
     // Must be caught by the caller
     child.on("error", (error) => {
-      logger.error(`Failed to start child process: ${error.message}`);
+      logger.error(`Failed to start process: ${error.message}`);
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
       reject(1);
     });
