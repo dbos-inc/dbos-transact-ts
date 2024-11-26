@@ -13,4 +13,4 @@ async function main() {
   });
 }
 
-main().then(()=>{}).catch((e) => console.log(e));
+main().catch(console.log);
