@@ -2,29 +2,33 @@
 
 // This is a sample "Hello" app built with DBOS, Express.js, and Knex.
 // It greets visitors and keeps track of how many times each visitor has been greeted.
-// To run this app, visit our Quickstart: https://docs.dbos.dev/quickstart
 
+// First let's import express and DBOS
 import express from "express";
-import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DBOS } from "@dbos-inc/dbos-sdk";
 
-// The schema of the database table used in this example.
+// Then, let's declare a type representing the "dbos_hello" database table
 export interface dbos_hello {
   name: string;
   greet_count: number;
 }
 
+// Now let's define a class with some static functions.
+// DBOS uses TypeScript decorators to automatically make your functions reliable, so they need to be static.
 export class Hello {
-  @DBOS.transaction()  // Run this function as a database transaction
+  // This function greets a user and increments the greet count in the database.
+  // The @DBOS.transaction() decorator ensures that this function runs as a transaction, only once.
+  @DBOS.transaction()
   static async helloTransaction(user: string) {
-    // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
-    const { rows } = await DBOS.knexClient.raw(query, [user]) as { rows: dbos_hello[] };
+    const { rows } = (await DBOS.knexClient.raw(query, [user])) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
     return Hello.makeHTML(greeting);
   }
 
-  // Serve a quick readme for the app at the / endpoint
+  // Finally, we will declare helper functions to serve static HTML to user.s
+
   static async readme() {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
@@ -59,16 +63,19 @@ export class Hello {
   }
 }
 
+// Now, let's create an Express app and define some routes.
 export const app = express();
+// Parse JSON payloads and make it available to req.body
 app.use(express.json());
 
-// Example route
-app.get('/', async (_, res) => {
+// We'll serve the README at the root of the app
+app.get("/", async (_, res) => {
   res.send(await Hello.readme());
 });
 
 // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
-app.get('/greeting/:user', async (req, res) => {
-  const {user} = req.params;
+// The handler will in turn call a reliable DBOS operation (helloTransaction) to greet the user
+app.get("/greeting/:user", async (req, res) => {
+  const { user } = req.params;
   res.send(await Hello.helloTransaction(user));
 });

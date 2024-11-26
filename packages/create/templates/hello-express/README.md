@@ -28,9 +28,9 @@ Each time you refresh the page, the counter should go up by one!
 
 Congratulations! You just launched a DBOS application.
 
+## Production build
 
-### Separate steps
-Instead of using `nodemon`, the following separate steps can be used to build, run database setup, and start the app.
+In production, instead of using `nodemon`, the following separate steps should be used to build, run database setup, and start the app.
 
 ```bash
 npm run build
@@ -50,9 +50,28 @@ Finally, run the app:
 npx dbos-sdk start
 ```
 
+## The application
+
+- In `src/operations.ts`, the Express app object is created and configured to serve an "hello world" DBOS workflow on `/greetings/:user`. This file also hosts the code of said DBOS workflow: an `Hello` class with a single `helloTransaction` method.
+- `src/main.ts` declares the code to start a DBOS instance and an Express application. When you pass the Express app object as parameter to `DBOS.launch()`, DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+
+To add more functionality to this application, modify `src/operations.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
+
+## Running in DBOS Cloud
+
+To deploy this app to DBOS Cloud, first install the DBOS Cloud CLI (example with [npm](https://www.npmjs.com/)):
+
+```shell
+npm i -g @dbos-inc/dbos-cloud
+```
+
+Then, run this command to deploy your app:
+
+```shell
+dbos-cloud app deploy
+```
+
 ## Next Steps
 
-- To add more functionality to this application, modify `src/operations.ts`.  If you used `npm run dev`, it will automatically rebuild and restart.
 - For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
