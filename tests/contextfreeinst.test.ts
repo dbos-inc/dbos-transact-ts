@@ -120,16 +120,13 @@ class TestSec2 extends ConfiguredInstance {
 const instA = configureInstance(TestFunctions, 'A');
 const instB = configureInstance(TestFunctions, 'B');
 
-const testSecInst = configureInstance(TestSec, 'Sec1');
-const testSec2Inst = configureInstance(TestSec2, 'Sec2');
-
 async function main() {
   // First hurdle - configuration.
   const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
-
+  
   const resA = await instA.doWorkflow();
   expect (resA).toBe('done A');
   const resB = await instB.doWorkflow();
@@ -264,6 +261,9 @@ async function main6() {
 }
 
 async function main7() {
+  const testSecInst = DBOS.configureInstance(TestSec, 'Sec1');
+  const testSec2Inst = DBOS.configureInstance(TestSec2, 'Sec2');
+
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);

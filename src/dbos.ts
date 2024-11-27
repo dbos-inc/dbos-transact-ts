@@ -24,7 +24,7 @@ import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } f
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
+import { configureInstance, getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { koaTracingMiddleware, expressTracingMiddleware } from "./httpServer/middleware";
@@ -858,6 +858,10 @@ export class DBOS {
   /////
   // Registration, etc
   /////
+  static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
+  {
+    return configureInstance(cls, name, ...args);
+  }
 
   // Function registration
   static registerAndWrapContextFreeFunction<This, Args extends unknown[], Return>(
