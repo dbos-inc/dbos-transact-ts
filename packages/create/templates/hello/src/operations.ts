@@ -15,7 +15,7 @@ export interface dbos_hello {
 
 export class Hello {
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
-  // The @Transaction() decorator ensures that this function runs as a transaction, only once.
+  // The @Transaction() decorator ensures that this function runs as a database transaction.
   @GetApi("/greeting/:user")
   @Transaction() // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, @ArgSource(ArgSources.URL) user: string) {

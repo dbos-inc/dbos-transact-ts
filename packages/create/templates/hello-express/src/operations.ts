@@ -17,7 +17,7 @@ export interface dbos_hello {
 // DBOS uses TypeScript decorators to automatically make your functions reliable, so they need to be static.
 export class Hello {
   // This function greets a user and increments the greet count in the database.
-  // The @DBOS.transaction() decorator ensures that this function runs as a transaction, only once.
+  // The @DBOS.transaction() decorator ensures that this function runs as a database transaction.
   @DBOS.transaction()
   static async helloTransaction(user: string) {
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
