@@ -22,17 +22,4 @@ describe("operations-test", () => {
     const rows = await DBOS.executor.queryUserDB("SELECT * FROM dbos_hello WHERE name=$1", ["dbos"]) as dbos_hello[];
     expect(rows[0].greet_count).toBe(1);
   });
-
-  /**
-   * Test the HTTP endpoint.
-   */
-  /*
-  test("test-endpoint", async () => {
-    const res = await request(???).get(
-      "/greeting/dbos"
-    );
-    expect(res.statusCode).toBe(200);
-    expect(res.text).toMatch("Hello, dbos! You have been greeted");
-  });
-  */
 });
