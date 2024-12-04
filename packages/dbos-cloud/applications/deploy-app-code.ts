@@ -72,7 +72,6 @@ async function createZipData(logger: CLILogger): Promise<string> {
   const files = await fg(globPattern, {
     dot: true,
     onlyFiles: true,
-    // ignore: [`**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"],
     ignore: [...hardcodedIgnorePatterns, ...globIgnorePatterns],
   });
 
