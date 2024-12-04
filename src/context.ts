@@ -17,8 +17,6 @@ export interface DBOSLocalCtx {
   parentCtx?: DBOSLocalCtx;
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
-  parentWorkflowId?: string;
-  parentWorkflowFid?: number;
   workflowId?: string;
   functionId?: number;
   inRecovery?: boolean;
