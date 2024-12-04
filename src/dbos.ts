@@ -126,6 +126,7 @@ export class DBOS {
   // Lifecycle
   ///////
   static adminServer: Server | undefined = undefined;
+  static appServer: Server | undefined = undefined;
 
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
@@ -166,6 +167,14 @@ export class DBOS {
       });
     }
 
+    // Create the DBOS HTTP server
+    //  This may be a no-op if there are no registered endpoints
+    const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
+    if (DBOS.runtimeConfig) {
+      // This will not listen if there's no decorated endpoint
+      DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
+    }
+
     if (httpApps) {
       if (httpApps.koaApp) {
         DBOS.logger.info("Setting up Koa tracing middleware");
@@ -191,6 +200,12 @@ export class DBOS {
   }
 
   static async shutdown() {
+    // Stop the app server
+    if (DBOS.appServer) {
+      DBOS.appServer.close();
+      DBOS.appServer = undefined;
+    }
+
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -210,6 +225,15 @@ export class DBOS {
       throw new DBOSExecutorNotInitializedError();
     }
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
+  }
+
+  // This retrieves the HTTP handlers callback for DBOS HTTP.
+  //  (This is the one that handles the @DBOS.getApi, etc., methods.)
+  // Useful for testing purposes, or to combine the DBOS service with routes.
+  // If you are using your own HTTP server, this won't return anything.
+  static getHTTPHandlersCallback() {
+    if (!DBOSHttpServer.instance) return undefined;
+    return DBOSHttpServer.instance.app.callback();
   }
 
   //////
