@@ -10,11 +10,11 @@ type TestTransactionContext = TransactionContext<PoolClient>;
 describe("scheduled-wf-tests-simple", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         DBOSSchedTestClass.reset(true);
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
 
     beforeEach(async () => {
@@ -24,7 +24,7 @@ describe("scheduled-wf-tests-simple", () => {
     afterEach(async () => {
         await testRuntime.destroy();
     }, 10000);
-  
+
     test("wf-scheduled", async () => {
         // Make sure two functions with the same name in different classes are not interfering with each other.
         await sleepms(2500);
@@ -126,18 +126,18 @@ class DBOSSchedTestClassOAOO {
 describe("scheduled-wf-tests-oaoo", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
-  
+
     beforeEach(async () => {
     });
-  
+
     afterEach(async () => {
     }, 10000);
-  
+
     test("wf-scheduled-recover", async () => {
         DBOSSchedTestClassOAOO.reset();
         testRuntime = await createInternalTestRuntime(undefined, config);
@@ -170,18 +170,18 @@ describe("scheduled-wf-tests-oaoo", () => {
 describe("scheduled-wf-tests-when-active", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
-  
+
     beforeEach(async () => {
     });
-  
+
     afterEach(async () => {
     }, 10000);
-  
+
     test("wf-scheduled-recover", async () => {
         DBOSSchedTestClass.reset(false);
         testRuntime = await createInternalTestRuntime(undefined, config);

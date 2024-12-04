@@ -2,11 +2,7 @@ import Koa, { Context } from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from "@koa/cors";
-import {
-  RequestIDHeader,
-  HandlerContextImpl,
-  HandlerRegistrationBase,
-} from "./handler";
+import { HandlerContextImpl, HandlerRegistrationBase } from "./handler";
 import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
 import { Workflow } from "../workflow";
@@ -18,25 +14,27 @@ import {
 } from "../error";
 import { DBOSExecutor } from "../dbos-executor";
 import { GlobalLogger as Logger } from "../telemetry/logs";
-import { MiddlewareDefaults } from './middleware';
-import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
-import { StepFunction } from '../step';
-import * as net from 'net';
-import { performance } from 'perf_hooks';
-import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
+import { MiddlewareDefaults } from "./middleware";
+import { SpanStatusCode, trace, ROOT_CONTEXT } from "@opentelemetry/api";
+import { StepFunction } from "../step";
+import * as net from "net";
+import { performance } from "perf_hooks";
+import { DBOSJSON, exhaustiveCheckGuard } from "../utils";
+import { runWithDBOSContext } from "../context";
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
-export const WorkflowRecoveryUrl = "/dbos-workflow-recovery"
-export const HealthUrl = "/dbos-healthz"
-export const PerfUrl = "/dbos-perf"
-export const DeactivateUrl = "/deactivate"
+export const WorkflowRecoveryUrl = "/dbos-workflow-recovery";
+export const HealthUrl = "/dbos-healthz";
+export const PerfUrl = "/dbos-perf";
+// FIXME this should be /dbos-deactivate to be consistent with other endpoints.
+export const DeactivateUrl = "/deactivate";
 
 export class DBOSHttpServer {
   readonly app: Koa;
   readonly adminApp: Koa;
   readonly applicationRouter: Router;
-  readonly adminRouter: Router;
   readonly logger: Logger;
+  static nRegisteredEndpoints: number = 0;
 
   /**
    * Create a Koa app.
@@ -45,21 +43,27 @@ export class DBOSHttpServer {
    */
   constructor(readonly dbosExec: DBOSExecutor) {
     this.applicationRouter = new Router();
-    this.adminRouter = new Router();
     this.logger = dbosExec.logger;
     this.app = new Koa();
-    this.adminApp = new Koa();
-    this.adminApp.use(bodyParser());
-    this.adminApp.use(cors());
+    this.adminApp = DBOSHttpServer.setupAdminApp(this.dbosExec);
 
-    // Register HTTP endpoints.
-    DBOSHttpServer.registerHealthEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerRecoveryEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerPerfEndpoint(this.dbosExec, this.adminRouter);
-    DBOSHttpServer.registerDeactivateEndpoint(this.dbosExec, this.adminRouter);
-    this.adminApp.use(this.adminRouter.routes()).use(this.adminRouter.allowedMethods());
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
+  }
+
+  static setupAdminApp(dbosExec: DBOSExecutor): Koa {
+    const adminRouter = new Router();
+    const adminApp = new Koa();
+    adminApp.use(bodyParser());
+    adminApp.use(cors());
+
+    // Register HTTP endpoints.
+    DBOSHttpServer.registerHealthEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerRecoveryEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerPerfEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerDeactivateEndpoint(dbosExec, adminRouter);
+    adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
+    return adminApp;
   }
 
   /**
@@ -67,15 +71,29 @@ export class DBOSHttpServer {
    * @param port
    */
   async listen(port: number, adminPort: number) {
+    await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
+    // TODO we should check adminPort as well.
+
+    const appServer = DBOSHttpServer.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
+      this.logger.info(`DBOS Server is running at http://localhost:${port}`);
+    });
+
+    const adminServer = this.adminApp.listen(adminPort, () => {
+      this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
+    });
+    return { appServer: appServer, adminServer: adminServer };
+  }
+
+  static async checkPortAvailabilityIPv4Ipv6(port: number, logger: Logger) {
     try {
       await this.checkPortAvailability(port, "127.0.0.1");
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
-      if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
+      if (err.code === "EADDRINUSE") {
+        logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
         process.exit(1);
       } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
+        logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
       }
     }
 
@@ -83,42 +101,34 @@ export class DBOSHttpServer {
       await this.checkPortAvailability(port, "::1");
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
-      if (err.code === 'EADDRINUSE') {
-        this.logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
+      if (err.code === "EADDRINUSE") {
+        logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
         process.exit(1);
       } else {
-        this.logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
+        logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
       }
     }
-
-    const appServer = this.app.listen(port, () => {
-      this.logger.info(`DBOS Server is running at http://localhost:${port}`);
-    });
-
-    const adminServer = this.adminApp.listen(adminPort, () => {
-      this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
-    });
-    return {appServer: appServer, adminServer: adminServer}
   }
 
-async checkPortAvailability(port: number, host: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-  const server = new net.Server();
-  server.on('error', (error: NodeJS.ErrnoException) => {
-    reject(error);
-  });
+  static async checkPortAvailability(port: number, host: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+    const server = new net.Server();
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      reject(error);
+    });
 
-  server.on('listening', () => {
-    server.close();
-    resolve();
-  });
+    server.on('listening', () => {
+      server.close();
+      resolve();
+    });
 
-  server.listen({port:port, host: host},() => {
-    resolve();
-  });
+    server.listen({port:port, host: host},() => {
+      resolve();
+    });
 
-  });
-}
+    });
+  }
+
   /**
    * Health check endpoint.
    */
@@ -159,7 +169,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
    * Returns information on VM performance since last call.
    */
   static registerPerfEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    let lastELU = performance.eventLoopUtilization()
+    let lastELU = performance.eventLoopUtilization();
     const perfHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       const currELU = performance.eventLoopUtilization();
       const elu = performance.eventLoopUtilization(currELU, lastELU);
@@ -172,19 +182,19 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   }
 
   /**
-   * Register Deactiviate endpoint.
-   * Deactivate consumers so that they don'nt start new workflows.
-   * 
+   * Register Deactivate endpoint.
+   * Deactivate consumers so that they don't start new workflows.
+   *
    */
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info("Deactivating Event Recievers");
+      dbosExec.logger.info("Deactivating Event Receivers");
       koaCtxt.body = "Deactivated";
       await koaNext();
     };
     router.get(DeactivateUrl, deactivateHandler);
-    dbosExec.logger.info(`DBOS Server deactivate GET ${DeactivateUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
   }
 
   /**
@@ -193,6 +203,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
   static registerDecoratedEndpoints(dbosExec: DBOSExecutor, router: Router, app: Koa) {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
+    DBOSHttpServer.nRegisteredEndpoints = 0;
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
@@ -200,6 +211,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
           dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
           return;
         }
+        ++DBOSHttpServer.nRegisteredEndpoints;
         const defaults = ro.defaults as MiddlewareDefaults;
         // Check if we need to apply a custom CORS
         if (defaults.koaCors) {
@@ -276,7 +288,7 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
             const args: unknown[] = [];
             ro.args.forEach((marg, idx) => {
               marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
-              if (idx === 0) {
+              if (idx === 0 && ro.passContext) {
                 return; // Do not parse the context.
               }
 
@@ -329,7 +341,16 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
               koaCtxt.body = await dbosExec.external(ro.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
-              const retValue = await ro.invoke(undefined, [oc, ...args]);
+              let cresult: unknown;
+              await runWithDBOSContext(oc, async ()=> {
+                if (ro.passContext) {
+                  cresult = await ro.invoke(undefined, [oc, ...args]);
+                }
+                else {
+                  cresult = await ro.invoke(undefined, [...args]);
+                }
+              });
+              const retValue = cresult!
 
               // Set the body to the return value unless the body is already set by the handler.
               if (koaCtxt.body === undefined) {
@@ -384,8 +405,6 @@ async checkPortAvailability(port: number, host: string): Promise<void> {
               }
             );
             dbosExec.tracer.endSpan(oc.span);
-            // Add requestID to response headers.
-            koaCtxt.set(RequestIDHeader, oc.request.requestID as string);
             await koaNext();
           }
         };

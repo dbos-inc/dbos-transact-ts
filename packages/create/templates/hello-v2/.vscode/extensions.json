@@ -1,0 +1,7 @@
+{
+	// Automatically recommend the DBOS extension to VSCode users.
+	// Documentation on extensions.json: http://go.microsoft.com/fwlink/?LinkId=827846
+	"recommendations": [
+		"dbos-inc.dbos-ttdbg"
+	]
+}

@@ -101,7 +101,7 @@ export function writeConfigFile(configFile: YAML.Document, configFilePath: strin
 export function retrieveApplicationName(configFile: ConfigFile): string {
   let appName = configFile.name;
   if (appName !== undefined) {
-    return appName
+    return appName;
   }
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
   appName = packageJson.name;
@@ -114,20 +114,20 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
 export function constructPoolConfig(configFile: ConfigFile) {
   let databaseName: string | undefined = configFile.database.app_db_name;
   if (databaseName === undefined) {
-    const appName = retrieveApplicationName(configFile)
-    databaseName = appName.toLowerCase().replaceAll('-', '_');
+    const appName = retrieveApplicationName(configFile);
+    databaseName = appName.toLowerCase().replaceAll("-", "_");
     if (databaseName.match(/^\d/)) {
       databaseName = "_" + databaseName; // Append an underscore if the name starts with a digit
     }
   }
-  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName
+  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: databaseName
+    database: databaseName,
   };
 
   if (!poolConfig.database) {
@@ -137,7 +137,7 @@ export function constructPoolConfig(configFile: ConfigFile) {
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
   if (configFile.database.ssl === false) {
     // If SSL is set to false, do not use TLS
-    poolConfig.ssl = false
+    poolConfig.ssl = false;
   } else if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
@@ -179,7 +179,7 @@ export interface ParseOptions {
  * */
 export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
-    process.chdir(cliOptions.appDir)
+    process.chdir(cliOptions.appDir);
   }
   const configFilePath = cliOptions?.configfile ?? dbosConfigFilePath;
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
@@ -213,7 +213,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   }
 
   if (configFile.language && configFile.language !== "node") {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
   }
 
   /*******************************/
@@ -270,6 +270,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     entrypoints: [...entrypoints],
     port: appPort,
     admin_port: Number(configFile.runtimeConfig?.admin_port) || appPort + 1,
+    start: configFile.runtimeConfig?.start || [],
   };
 
   return [dbosConfig, runtimeConfig];
@@ -287,7 +288,7 @@ function isValidDBname(dbName: string): boolean {
   }
   if (dbName.match(/^\d/)) {
     // Cannot start with a digit
-    return false
+    return false;
   }
   return validator.matches(dbName, "^[a-z0-9_]+$");
 }

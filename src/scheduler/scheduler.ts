@@ -169,7 +169,9 @@ class DetachableLoop {
             // Init workflow
             const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
             this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: this.queueName };
+            const wfParams = {
+                workflowUUID: workflowUUID, configuredInstance: null, queueName: this.queueName,
+            };
             // All operations annotated with Scheduled decorators must take in these four
             const args: ScheduledArgs = [nextExecTime, new Date()];
 

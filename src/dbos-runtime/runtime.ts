@@ -8,7 +8,7 @@ import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { wfQueueRunner } from '../wfqueue';
-import { GlobalLogger } from '../telemetry/logs';
+import { DBOS } from '../dbos';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,20 +19,16 @@ export interface DBOSRuntimeConfig {
   entrypoints: string[];
   port: number;
   admin_port: number;
+  start: string[];
 }
 export const defaultEntryPoint = "dist/operations.js";
 
-export class DBOS {
-  static globalLogger?: GlobalLogger;
-  static dbosConfig?: DBOSConfig;
-}
-
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
-  private dbosExec: DBOSExecutor | null = null;
-  private servers: { appServer: Server; adminServer: Server } | undefined;
-  private scheduler: DBOSScheduler | null = null;
-  private wfQueueRunner: Promise<void> | null = null;
+  private dbosExec?: DBOSExecutor = undefined;
+  private servers: { appServer?: Server; adminServer: Server } | undefined;
+  private scheduler?: DBOSScheduler = undefined;
+  private wfQueueRunner?: Promise<void> = undefined;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -45,7 +41,6 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
@@ -134,7 +129,7 @@ export class DBOSRuntime {
       await evtRcvr.destroy();
     }
     if (this.servers) {
-      this.servers.appServer.close();
+      this.servers.appServer?.close();
       this.servers.adminServer.close();
     }
     await this.dbosExec?.destroy();

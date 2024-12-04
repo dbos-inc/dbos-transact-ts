@@ -4,8 +4,8 @@
 // It greets visitors and keeps track of how many times each visitor has been greeted.
 // To run this app, visit our Quickstart: https://docs.dbos.dev/getting-started/quickstart
 
-import { HandlerContext, TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from '@dbos-inc/dbos-sdk';
-import { Knex } from 'knex';
+import { HandlerContext, TransactionContext, Transaction, GetApi, ArgSource, ArgSources } from "@dbos-inc/dbos-sdk";
+import { Knex } from "knex";
 
 // The schema of the database table used in this example.
 export interface dbos_hello {
@@ -14,10 +14,10 @@ export interface dbos_hello {
 }
 
 export class Hello {
-
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
-  @GetApi('/greeting/:user')
-  @Transaction()  // Run this function as a database transaction
+  // The @Transaction() decorator ensures that this function runs as a database transaction.
+  @GetApi("/greeting/:user")
+  @Transaction() // Run this function as a database transaction
   static async helloTransaction(ctxt: TransactionContext<Knex>, @ArgSource(ArgSources.URL) user: string) {
     // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
@@ -26,6 +26,8 @@ export class Hello {
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
     return Hello.makeHTML(greeting);
   }
+
+  // Let's declare helper functions to serve static HTML
 
   // Serve a quick readme for the app at the / endpoint
   @GetApi('/')

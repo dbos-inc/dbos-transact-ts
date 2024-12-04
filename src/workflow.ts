@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, DBOSNull, OperationType, dbosNull } from "./dbos-executor";
+import { DBOSExecutor, OperationType, dbosNull } from "./dbos-executor";
 import { transaction_outputs } from "../schemas/user_db_schema";
-import { IsolationLevel, Transaction, TransactionContext, TransactionContextImpl } from "./transaction";
-import { StepFunction, StepContext, StepContextImpl } from "./step";
-import { DBOSError, DBOSFailedSqlTransactionError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
+import { IsolationLevel, Transaction, TransactionContext } from "./transaction";
+import { StepFunction, StepContext } from "./step";
+import { DBOSError, DBOSNotRegisteredError, DBOSWorkflowConflictUUIDError } from "./error";
 import { serializeError, deserializeError } from "serialize-error";
 import { DBOSJSON, sleepms } from "./utils";
 import { SystemDatabase } from "./system_database";
 import { UserDatabaseClient, pgNodeIsKeyConflictError } from "./user_database";
 import { SpanStatusCode } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl, runWithDBOSContext } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from "./decorators";
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext, StoredProcedureContextImpl } from "./procedure";
 import { InvokeFuncsInst } from "./httpServer/handler";
@@ -19,13 +19,14 @@ import { WorkflowQueue } from "./wfqueue";
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
+export type ContextFreeFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
 
 // Utility type that removes the initial parameter of a function
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
 
 // local type declarations for transaction and step functions
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
-type CommFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
+type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
@@ -33,13 +34,13 @@ export type WFInvokeFuncs<T> =
   T extends ConfiguredInstance
   ? never
   : {
-    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   };
 
 export type WFInvokeFuncsInst<T> =
   T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends TxFunc | CommFunc | ProcFunc ? P : never]: T[P] extends TxFunc | CommFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
+    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
   }
   : never;
 
@@ -160,12 +161,12 @@ export interface WorkflowContext extends DBOSContext {
 
   // These are subject to change...
 
-  send<T>(destinationUUID: string, message: T, topic?: string): Promise<void>;
+  send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T>(key: string, value: T): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
 
   sleepms(durationMS: number): Promise<void>;
   sleep(durationSec: number): Promise<void>;
@@ -394,7 +395,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
     const funcId = this.functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + "-" + funcId;
-    return this.#dbosExec.internalWorkflow(wf, { parentCtx: this, workflowUUID: childUUID }, this.workflowUUID, funcId, ...args);
+    return this.#dbosExec.internalWorkflow(wf, {
+      parentCtx: this, workflowUUID: childUUID,
+    }, this.workflowUUID, funcId, ...args);
   }
 
   async invokeChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<R> {
@@ -481,7 +484,11 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           await this.flushResultBufferProc(client);
         }
 
-        const result = await proc(ctxt, ...args);
+        let cresult: R | undefined;
+        await runWithDBOSContext(ctxt, async ()=> {
+          cresult = await proc(ctxt, ...args);
+        });
+        const result = cresult!
 
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
@@ -636,117 +643,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * If it encounters any other error, throw it.
    */
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, clsinst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const txnInfo = this.#dbosExec.getTransactionInfo(txn as Transaction<unknown[], unknown>);
-    if (txnInfo === undefined) {
-      throw new DBOSNotRegisteredError(txn.name);
-    }
-    const readOnly = txnInfo.config.readOnly ?? false;
-    let retryWaitMillis = 1;
-    const backoffFactor = 1.5;
-    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    const funcId = this.functionIDGetIncrement();
-    const span: Span = this.#dbosExec.tracer.startSpan(
-      txn.name,
-      {
-        operationUUID: this.workflowUUID,
-        operationType: OperationType.TRANSACTION,
-        authenticatedUser: this.authenticatedUser,
-        assumedRole: this.assumedRole,
-        authenticatedRoles: this.authenticatedRoles,
-        readOnly: readOnly,
-        isolationLevel: txnInfo.config.isolationLevel,
-      },
-      this.span,
-    );
-
-    while (true) {
-      let txn_snapshot = "invalid";
-      const workflowUUID = this.workflowUUID;
-      const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
-        const tCtxt = new TransactionContextImpl(
-          this.#dbosExec.userDatabase.getName(), client, this,
-          span, this.#dbosExec.logger, funcId, txn.name);
-
-        // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
-        // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
-        if (this.presetUUID) {
-          const check: BufferedResult = await this.checkTxExecution<R>(client, funcId);
-          txn_snapshot = check.txn_snapshot;
-          if (check.output !== dbosNull) {
-            tCtxt.span.setAttribute("cached", true);
-            tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-            this.#dbosExec.tracer.endSpan(tCtxt.span);
-            return check.output as R;
-          }
-        } else {
-          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
-          txn_snapshot = await this.retrieveTxSnapshot(client);
-        }
-
-        // For non-read-only transactions, flush the result buffer.
-        if (!readOnly) {
-          await this.flushResultBuffer(client);
-        }
-
-        // Execute the user's transaction.
-        const result = await txn.call(clsinst, tCtxt, ...args);
-
-        // Record the execution, commit, and return.
-        if (readOnly) {
-          // Buffer the output of read-only transactions instead of synchronously writing it.
-          const readOutput: BufferedResult = {
-            output: result,
-            txn_snapshot: txn_snapshot,
-            created_at: Date.now(),
-          }
-          this.resultBuffer.set(funcId, readOutput);
-        } else {
-          try {
-            // Synchronously record the output of write transactions and obtain the transaction ID.
-            const pg_txn_id = await this.recordOutputTx<R>(client, funcId, txn_snapshot, result);
-            tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
-            this.resultBuffer.clear();
-          } catch (error) {
-            if (this.#dbosExec.userDatabase.isFailedSqlTransactionError(error)) {
-              this.logger.error(`Postgres aborted the ${txn.name} @Transaction of Workflow ${workflowUUID}, but the function did not raise an exception.  Please ensure that the @Transaction method raises an exception if the database transaction is aborted.`);
-              throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name)
-            } else {
-              throw error;
-            }
-          }
-        }
-
-        return result;
-      };
-
-      try {
-        const result = await this.#dbosExec.userDatabase.transaction(wrappedTransaction, txnInfo.config);
-        span.setStatus({ code: SpanStatusCode.OK });
-        this.#dbosExec.tracer.endSpan(span);
-        return result;
-      } catch (err) {
-        if (this.#dbosExec.userDatabase.isRetriableTransactionError(err)) {
-          // serialization_failure in PostgreSQL
-          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
-          // Retry serialization failures.
-          await sleepms(retryWaitMillis);
-          retryWaitMillis *= backoffFactor;
-          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
-          continue;
-        }
-
-        // Record and throw other errors.
-        const e: Error = err as Error;
-        await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
-          await this.flushResultBuffer(client);
-          await this.recordErrorTx(client, funcId, txn_snapshot, e);
-        }, { isolationLevel: IsolationLevel.ReadCommitted });
-        this.resultBuffer.clear();
-        span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-        this.#dbosExec.tracer.endSpan(span);
-        throw err;
-      }
-    }
+    return this.#dbosExec.callTransactionFunction(txn, clsinst, this, ...args);
   }
 
   /**
@@ -755,95 +652,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The step may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, clsInst: ConfiguredInstance | null, ...args: T): Promise<R> {
-    const commInfo = this.#dbosExec.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
-    if (commInfo === undefined) {
-      throw new DBOSNotRegisteredError(stepFn.name);
-    }
-
-    const funcID = this.functionIDGetIncrement();
-    const maxRetryIntervalSec = 3600 // Maximum retry interval: 1 hour
-
-    const span: Span = this.#dbosExec.tracer.startSpan(
-      stepFn.name,
-      {
-        operationUUID: this.workflowUUID,
-        operationType: OperationType.COMMUNICATOR,
-        authenticatedUser: this.authenticatedUser,
-        assumedRole: this.assumedRole,
-        authenticatedRoles: this.authenticatedRoles,
-        retriesAllowed: commInfo.config.retriesAllowed,
-        intervalSeconds: commInfo.config.intervalSeconds,
-        maxAttempts: commInfo.config.maxAttempts,
-        backoffRate: commInfo.config.backoffRate,
-      },
-      this.span,
-    );
-
-    const ctxt: StepContextImpl = new StepContextImpl(this, funcID, span, this.#dbosExec.logger, commInfo.config, stepFn.name);
-
-    await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
-      await this.flushResultBuffer(client);
-    }, { isolationLevel: IsolationLevel.ReadCommitted });
-    this.resultBuffer.clear();
-
-    // Check if this execution previously happened, returning its original result if it did.
-    const check: R | DBOSNull = await this.#dbosExec.systemDatabase.checkOperationOutput<R>(this.workflowUUID, ctxt.functionID);
-    if (check !== dbosNull) {
-      ctxt.span.setAttribute("cached", true);
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#dbosExec.tracer.endSpan(ctxt.span);
-      return check as R;
-    }
-
-    // Execute the step function.  If it throws an exception, retry with exponential backoff.
-    // After reaching the maximum number of retries, throw an DBOSError.
-    let result: R | DBOSNull = dbosNull;
-    let err: Error | DBOSNull = dbosNull;
-    if (ctxt.retriesAllowed) {
-      let numAttempts = 0;
-      let intervalSeconds: number = ctxt.intervalSeconds;
-      if (intervalSeconds > maxRetryIntervalSec) {
-        this.logger.warn(`Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`)
-      }
-      while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
-        try {
-          result = await stepFn.call(clsInst, ctxt, ...args);
-        } catch (error) {
-          const e = error as Error
-          this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
-          span.addEvent(`Step attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
-          if (numAttempts < ctxt.maxAttempts) {
-            // Sleep for an interval, then increase the interval by backoffRate.
-            // Cap at the maximum allowed retry interval.
-            await sleepms(intervalSeconds * 1000);
-            intervalSeconds *= ctxt.backoffRate;
-            intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
-          }
-        }
-      }
-    } else {
-      try {
-        result = await stepFn.call(clsInst, ctxt, ...args);
-      } catch (error) {
-        err = error as Error;
-      }
-    }
-
-    // `result` can only be dbosNull when the step timed out
-    if (result === dbosNull) {
-      // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
-      await this.#dbosExec.systemDatabase.recordOperationError(this.workflowUUID, ctxt.functionID, err as Error);
-      ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      this.#dbosExec.tracer.endSpan(ctxt.span);
-      throw err as Error;
-    } else {
-      // Record the execution and return.
-      await this.#dbosExec.systemDatabase.recordOperationOutput<R>(this.workflowUUID, ctxt.functionID, result as R);
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.#dbosExec.tracer.endSpan(ctxt.span);
-      return result as R;
-    }
+    return this.#dbosExec.callStepFunction(stepFn, clsInst, this, ...args);
   }
 
   /**

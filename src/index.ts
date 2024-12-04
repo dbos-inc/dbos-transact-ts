@@ -144,7 +144,6 @@ export {
 
 export {
   DBOSRuntimeConfig,
-  DBOS,
 } from "./dbos-runtime/runtime";
 
 export {
@@ -154,3 +153,7 @@ export {
 export {
   WorkflowQueue,
 } from "./wfqueue"
+
+export {
+  DBOS,
+} from "./dbos"

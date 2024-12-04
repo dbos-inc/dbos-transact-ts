@@ -99,8 +99,15 @@ export class GlobalLogger {
 /* CONTEXT LOGGER */
 /******************/
 
+export interface DLogger {
+  info(logEntry: unknown, metadata?: ContextualMetadata): void;
+  debug(logEntry: unknown, metadata?: ContextualMetadata): void;
+  warn(logEntry: unknown, metadata?: ContextualMetadata): void;
+  error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void;
+}
+
 // Wrapper around our global logger. Expected to be instantiated by a new contexts so they can inject contextual metadata
-export class Logger {
+export class Logger implements DLogger {
   readonly metadata: ContextualMetadata;
   constructor(private readonly globalLogger: GlobalLogger, readonly ctx: DBOSContextImpl) {
     this.metadata = {
@@ -109,20 +116,20 @@ export class Logger {
     };
   }
 
-  info(logEntry: unknown): void {
-    this.globalLogger.info(logEntry, this.metadata);
+  info(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.globalLogger.info(logEntry, metadata ?? this.metadata);
   }
 
-  debug(logEntry: unknown): void {
-    this.globalLogger.debug(logEntry, this.metadata);
+  debug(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.globalLogger.debug(logEntry, metadata ?? this.metadata);
   }
 
-  warn(logEntry: unknown): void {
-    this.globalLogger.warn(logEntry, this.metadata);
+  warn(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.globalLogger.warn(logEntry, metadata ?? this.metadata);
   }
 
-  error(inputError: unknown): void {
-    this.globalLogger.error(inputError, this.metadata);
+  error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
+    this.globalLogger.error(inputError, metadata ?? this.metadata);
   }
 }
 

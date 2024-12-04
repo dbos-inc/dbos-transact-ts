@@ -905,7 +905,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       updateSeq: (res.rows[0].update_seq !== undefined && res.rows[0].update_seq !== null ? BigInt(res.rows[0].update_seq) : undefined),
     };
   }
-  
+
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     let query = this.knexDB<{workflow_uuid: string}>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`).orderBy('created_at', 'desc');
     if (input.workflowName) {
@@ -987,7 +987,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `, [workflowId]);
     }
   }
-  
+
   async  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]> {
     const startTimeMs = new Date().getTime();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
@@ -1048,7 +1048,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         // If we did not update this record, probably someone else did.  Count in either case.
         ++numRecentQueries;
-      }  
+      }
     }, {isolationLevel: "repeatable read"});
 
     // If we have a rate limit, garbage-collect all completed functions started

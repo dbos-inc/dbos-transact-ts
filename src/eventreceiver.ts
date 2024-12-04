@@ -1,6 +1,6 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowFunction, WorkflowHandle, WorkflowParams, WorkflowStatus } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
@@ -46,11 +46,15 @@ export interface DBOSExecutorContext
   external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  flushWorkflowBuffers(): Promise<void>;
+  getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 
   // Event receiver state queries / updates
-  /* 
+  /*
    * An event dispatcher may keep state in the system database
    *  The 'service' should be unique to the event receiver keeping state, to separate from others
    *   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched

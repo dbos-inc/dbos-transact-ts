@@ -304,7 +304,7 @@ interface TypeORMDataSource {
   dropDatabase(): Promise<void>;
 }
 
-interface TypeORMEntityManager {
+export interface TypeORMEntityManager {
   query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>
   transaction<R>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>): Promise<R>
 }
