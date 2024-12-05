@@ -92,6 +92,7 @@ declare module "@dbos-inc/dbos-sdk" {
   export interface HandlerContext extends DBOSContext { }
   export interface WorkflowContext extends DBOSContext { }
   export interface CommunicatorContext extends DBOSContext { }
+  export interface StepContext extends DBOSContext { }
   export interface TransactionContext<T> extends DBOSContext { }
   export interface StoredProcedureContext extends DBOSContext { }
   export interface InitContext extends DBOSContext {}

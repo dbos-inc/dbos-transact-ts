@@ -4,6 +4,7 @@ import {
   GetApi, PostApi, PutApi, PatchApi, DeleteApi, HandlerContext,
   Workflow, WorkflowContext,
   Communicator, CommunicatorContext,
+  Step, StepContext,
   Transaction, TransactionContext,
   StoredProcedure, StoredProcedureContext,
   DBOSInitializer, DBOSDeploy, InitContext,
@@ -27,31 +28,47 @@ export class Test {
   static async testDeleteHandler(ctxt: HandlerContext): Promise<void> {  }
 
   @DBOS.getApi('/test')
-  static async testGetHandler_v2(ctxt: HandlerContext): Promise<void> {  }
+  static async testGetHandler_v2(): Promise<void> {  }
 
   @DBOS.postApi('/test')
-  static async testPostHandler_v2(ctxt: HandlerContext): Promise<void> {  }
+  static async testPostHandler_v2(): Promise<void> {  }
 
   @DBOS.patchApi('/test')
-  static async testPatchHandler_v2(ctxt: HandlerContext): Promise<void> {  }
+  static async testPatchHandler_v2(): Promise<void> {  }
 
   @DBOS.putApi('/test')
-  static async testPutHandler_v2(ctxt: HandlerContext): Promise<void> {  }
+  static async testPutHandler_v2(): Promise<void> {  }
 
   @DBOS.deleteApi('/test')
-  static async testDeleteHandler_v2(ctxt: HandlerContext): Promise<void> {  }
+  static async testDeleteHandler_v2(): Promise<void> {  }
 
   @GetApi('/test')
   @Workflow()
-  static async testGetHandlerWorkflow(ctxt: HandlerContext): Promise<void> {  }
+  static async testGetHandlerWorkflow(ctxt: WorkflowContext): Promise<void> {  }
 
   @GetApi('/test')
   @Transaction()
-  static async testGetHandlerTx(ctxt: HandlerContext): Promise<void> {  }
+  static async testGetHandlerTx(ctxt: TransactionContext<Knex>): Promise<void> {  }
 
   @GetApi('/test')
   @Communicator()
-  static async testGetHandlerComm(ctxt: HandlerContext): Promise<void> {  }
+  static async testGetHandlerComm(ctxt: CommunicatorContext): Promise<void> {  }
+
+  @GetApi('/test')
+  @Step()
+  static async testGetHandlerStep(ctxt: StepContext): Promise<void> {  }
+
+  @DBOS.getApi('/test')
+  @DBOS.workflow()
+  static async testGetHandlerWorkflow_v2(): Promise<void> {  }
+
+  @DBOS.getApi('/test')
+  @DBOS.transaction()
+  static async testGetHandlerTx_v2(): Promise<void> {  }
+
+  @DBOS.getApi('/test')
+  @DBOS.step()
+  static async testGetHandlerStep_v2(): Promise<void> {  }
 
   @Workflow()
   static async testWorkflow(ctxt: WorkflowContext): Promise<void> {  }
@@ -59,8 +76,20 @@ export class Test {
   @Communicator()
   static async testCommunicator(ctxt: CommunicatorContext, message: string): Promise<void> {  }
 
+  @Step()
+  static async testStep(ctxt: StepContext, message: string): Promise<void> {  }
+
   @Transaction()
   static async testTransaction(ctxt: TransactionContext<Knex>, message: string): Promise<void> {  }
+
+  @DBOS.workflow()
+  static async testWorkflow_v2(): Promise<void> {  }
+
+  @DBOS.step()
+  static async testStep_v2(message: string): Promise<void> {  }
+
+  @DBOS.transaction()
+  static async testTransaction_v2(message: string): Promise<void> {  }
 
   @StoredProcedure()
   static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
@@ -102,6 +131,7 @@ import {
   DeleteApi as TestDeleteApi, HandlerContext,
   Workflow as TestWorkflow, WorkflowContext,
   Communicator as TestCommunicator, CommunicatorContext,
+  Step as TestStep, StepContext,
   Transaction as TestTransaction, TransactionContext,
   StoredProcedure as TestStoredProcedure, StoredProcedureContext,
   DBOSInitializer as TestInitializer, DBOSDeploy as TestDeploy, InitContext,
@@ -151,14 +181,42 @@ export class Test {
   @TestCommunicator()
   static async testGetHandlerComm(ctxt: HandlerContext): Promise<void> {  }
 
+  @TestGetApi('/test')
+  @TestStep()
+  static async testGetHandlerStep(ctxt: StepContext): Promise<void> {  }
+
+  @TestDBOS.getApi('/test')
+  @TestDBOS.workflow()
+  static async testGetHandlerWorkflow_v2(): Promise<void> {  }
+
+  @TestDBOS.getApi('/test')
+  @TestDBOS.transaction()
+  static async testGetHandlerTx_v2(): Promise<void> {  }
+
+  @TestDBOS.getApi('/test')
+  @TestDBOS.step()
+  static async testGetHandlerStep_v2(): Promise<void> {  }
+
   @TestWorkflow()
   static async testWorkflow(ctxt: WorkflowContext): Promise<void> {  }
 
   @TestCommunicator()
   static async testCommunicator(ctxt: CommunicatorContext, message: string): Promise<void> {  }
 
+  @TestStep()
+  static async testStep(ctxt: StepContext, message: string): Promise<void> {  }
+
   @TestTransaction()
   static async testTransaction(ctxt: TransactionContext<Knex>, message: string): Promise<void> {  }
+
+  @TestDBOS.workflow()
+  static async testWorkflow_v2(): Promise<void> {  }
+
+  @TestDBOS.step()
+  static async testStep_v2(message: string): Promise<void> {  }
+
+  @TestDBOS.transaction()
+  static async testTransaction_v2(message: string): Promise<void> {  }
 
   @TestStoredProcedure()
   static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }

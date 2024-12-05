@@ -26,8 +26,10 @@ describe("more compiler", () => {
             testGetHandlerWorkflow: "workflow",
             testGetHandlerTx: "transaction",
             testGetHandlerComm: "step",
+            testGetHandlerStep: "step",
             testWorkflow: "workflow",
             testCommunicator: "step",
+            testStep: "step",
             testTransaction: "transaction",
             testProcedure: "storedProcedure",
             testReadOnlyProcedure: "storedProcedure",
@@ -45,6 +47,13 @@ describe("more compiler", () => {
             testDeleteHandler_v2: "handler",
             testPutHandler_v2: "handler",
             testPatchHandler_v2: "handler",
+            testGetHandlerWorkflow_v2: "workflow",
+            testGetHandlerTx_v2: "transaction",
+            testGetHandlerStep_v2: "step",
+
+            testStep_v2: "step",
+            testTransaction_v2: "transaction",
+            testWorkflow_v2: "workflow",
         };
         expect(actual).toEqual(expected);
     });
