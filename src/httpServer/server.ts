@@ -35,6 +35,7 @@ export class DBOSHttpServer {
   readonly applicationRouter: Router;
   readonly logger: Logger;
   static nRegisteredEndpoints: number = 0;
+  static instance?: DBOSHttpServer = undefined;
 
   /**
    * Create a Koa app.
@@ -49,6 +50,8 @@ export class DBOSHttpServer {
 
     DBOSHttpServer.registerDecoratedEndpoints(this.dbosExec, this.applicationRouter, this.app);
     this.app.use(this.applicationRouter.routes()).use(this.applicationRouter.allowedMethods());
+
+    DBOSHttpServer.instance = this;
   }
 
   static setupAdminApp(dbosExec: DBOSExecutor): Koa {
@@ -71,17 +74,23 @@ export class DBOSHttpServer {
    * @param port
    */
   async listen(port: number, adminPort: number) {
+    const appServer = await this.appListen(port);
+
+    // TODO we should check adminPort as well.  This is done elsewhere though...
+    const adminServer = this.adminApp.listen(adminPort, () => {
+      this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
+    });
+    return { appServer: appServer, adminServer: adminServer };
+  }
+
+  async appListen(port: number) {
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
-    // TODO we should check adminPort as well.
 
     const appServer = DBOSHttpServer.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
       this.logger.info(`DBOS Server is running at http://localhost:${port}`);
     });
 
-    const adminServer = this.adminApp.listen(adminPort, () => {
-      this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
-    });
-    return { appServer: appServer, adminServer: adminServer };
+    return appServer;
   }
 
   static async checkPortAvailabilityIPv4Ipv6(port: number, logger: Logger) {
