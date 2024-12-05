@@ -1,10 +1,15 @@
 import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName} from "../cloudutils.js";
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, DBOSCloudCredentials} from "../cloudutils.js";
+
+export interface CreateSecretRequest {
+  ApplicationName: string;
+  SecretName: string;
+  ClearSecretValue: string;
+}
 
 export async function createSecret(host: string, appName: string | undefined, secretName: string, secretValue: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
 
   logger.debug("Retrieving app name...");
   appName = appName || retrieveApplicationName(logger);
@@ -23,10 +28,16 @@ export async function createSecret(host: string, appName: string | undefined, se
         return 1;
     }
 
-  const body = {'ApplicationName': appName , 'SecretName':secretName, 'ClearSecretValue': secretValue};
+  const request = {'ApplicationName': appName , 'SecretName':secretName, 'ClearSecretValue': secretValue};
  
+  return postCreateSecret(host, userCredentials, request);
+}
+
+export async function postCreateSecret(host: string, userCredentials: DBOSCloudCredentials, request: CreateSecretRequest): Promise<number> {
+  const logger = getLogger();
+  const bearerToken = "Bearer " + userCredentials.token;
   try {
-    const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/applications/secrets`, body, {
+    const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/applications/secrets`, request, {
       headers: {
         "Content-Type": "application/json",
         Authorization: bearerToken,
@@ -34,14 +45,14 @@ export async function createSecret(host: string, appName: string | undefined, se
     });
     
     if (res.status !== 200) {
-      logger.error(`Failed to create secret for application ${appName}`);
+      logger.error(`Failed to create secret for application ${request.ApplicationName}`);
       return 1;
     }
 
-    logger.info(`Secret ${secretName} successfully created!`);
+    logger.info(`Secret ${request.SecretName} successfully created!`);
     return 0;
   } catch (e) {
-    const errorLabel = `Failed to retrieve versions for application ${appName}`;
+    const errorLabel = `Failed to retrieve versions for application ${request.ApplicationName}`;
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);
