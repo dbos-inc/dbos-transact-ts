@@ -26,6 +26,7 @@ import { Logger } from "winston";
 import { chooseAppDBServer } from "../databases/databases.js";
 import YAML from "yaml";
 import { ConfigFile } from "../configutils.js";
+import fs from 'fs';
 
 type DeployOutput = {
   ApplicationName: string;
@@ -44,15 +45,34 @@ function getFilePermissions(filePath: string) {
   return stats.mode;
 }
 
+function parseIgnoreFile(filePath: string) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs
+  .readFileSync(filePath, 'utf-8')
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#')); // Exclude empty lines and comments
+}
+
 async function createZipData(logger: CLILogger): Promise<string> {
+  
   const zip = new JSZip();
 
   const globPattern = convertPathForGlob(path.join(process.cwd(), "**", "*"));
 
+  const dbosIgnoreFilePath = '.dbosignore';
+
+  const ignorePatterns = parseIgnoreFile(dbosIgnoreFilePath);
+  const globIgnorePatterns = ignorePatterns.map((pattern) =>
+    pattern.startsWith('!') ? `!${pattern.slice(1)}` : `**/${pattern}`
+  ) ;
+
+  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"];
+
   const files = await fg(globPattern, {
     dot: true,
     onlyFiles: true,
-    ignore: [`**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"],
+    ignore: [...hardcodedIgnorePatterns, ...globIgnorePatterns],
   });
 
   files.forEach((file) => {
