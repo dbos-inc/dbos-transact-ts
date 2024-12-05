@@ -265,7 +265,7 @@ export function removeDecorators(file: tsm.SourceFile | tsm.Project) {
 }
 
 export function removeUnusedFiles(project: tsm.Project) {
-  // get the files w/ one or more @Transaction functions
+  // get the files w/ one or more @StoredProc functions
   const procFiles = new Set<tsm.SourceFile>();
   for (const file of project.getSourceFiles()) {
     const procMethods = getProcMethods(file);
@@ -274,7 +274,7 @@ export function removeUnusedFiles(project: tsm.Project) {
     }
   }
 
-  // get all the files that are imported by the txFiles
+  // get all the files that are imported by the procFiles
   const procImports = new Set<tsm.SourceFile>();
   for (const file of procFiles) {
     procImports.add(file);
