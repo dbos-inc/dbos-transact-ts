@@ -1,5 +1,7 @@
 import axios, { AxiosError } from "axios";
+import dotenv from 'dotenv';
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, DBOSCloudCredentials} from "../cloudutils.js";
+import { readFileSync } from "fs";
 
 export interface CreateSecretRequest {
   ApplicationName: string;
@@ -26,9 +28,9 @@ export async function createSecret(host: string, appName: string | undefined, se
     if (!secretValue) {
         logger.error("Secret value is required.");
         return 1;
-    }
+  }
 
-  const request = {'ApplicationName': appName , 'SecretName':secretName, 'ClearSecretValue': secretValue};
+  const request = { ApplicationName: appName, SecretName: secretName, ClearSecretValue: secretValue };
  
   return postCreateSecret(host, userCredentials, request);
 }
@@ -49,7 +51,7 @@ export async function postCreateSecret(host: string, userCredentials: DBOSCloudC
       return 1;
     }
 
-    logger.info(`Secret ${request.SecretName} successfully created!`);
+    logger.info(`Secret ${request.SecretName} successfully updated!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve versions for application ${request.ApplicationName}`;
@@ -61,6 +63,33 @@ export async function postCreateSecret(host: string, userCredentials: DBOSCloudC
     }
     return 1;
   }
+}
+
+export async function importSecrets(host: string, appName: string | undefined, envPath: string): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  appName = appName || retrieveApplicationName(logger);
+  if (!appName) {
+    logger.error("Failed to get app name.");
+    return 1;
+  }
+
+  logger.info(`Importing secrets from ${envPath}`)
+
+  const envConfig = readFileSync(envPath, 'utf-8');
+  
+  // Parse the content using dotenv
+  const parsed = dotenv.parse(envConfig);
+  const envPairs = Object.entries(parsed)
+
+  for (const [secret, value] of envPairs) {
+    const request = { ApplicationName: appName, SecretName: secret, ClearSecretValue: value };
+    const exitCode = await postCreateSecret(host, userCredentials, request);
+    if (exitCode !== 0) {
+      return exitCode
+    }
+  }
+  return 0;
 }
 
 export async function listSecrets(host: string, appName: string | undefined, json: boolean): Promise<number> {
