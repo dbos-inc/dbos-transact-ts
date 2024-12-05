@@ -1,5 +1,5 @@
 import axios, { AxiosError } from "axios";
-import dotenv, { DotenvParseOutput, DotenvPopulateInput } from 'dotenv';
+import dotenv, { DotenvPopulateInput } from 'dotenv';
 import dotenvExpand from 'dotenv-expand'
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, DBOSCloudCredentials} from "../cloudutils.js";
 import { readFileSync } from "fs";
