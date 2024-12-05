@@ -1,4 +1,4 @@
-import { StoredProcedure, StoredProcedureContext, Transaction, TransactionContext, Workflow, WorkflowContext } from '@dbos-inc/dbos-sdk';
+import { DBOS, StoredProcedure, StoredProcedureContext, Transaction, TransactionContext, Workflow, WorkflowContext } from '@dbos-inc/dbos-sdk';
 import { Knex } from 'knex';
 
 // The schema of the database table used in this example.
@@ -120,6 +120,24 @@ export class StoredProcTest {
     const greeting = await ctxt.invoke(StoredProcTest).helloProcedure(user);
 
     return { count, greeting };
+  }
+
+  @DBOS.workflow()
+  static async txAndProcGreetingWorkflow_v2(user: string): Promise<{ count: number; greeting: string; }> {
+    // Retrieve the number of times this user has been greeted.
+    const count = await this.getGreetCountTx_v2(user);
+    const greeting = await DBOS.invoke(this).helloProcedure(user);
+
+    return { count, greeting };
+  }
+
+  @DBOS.transaction({ readOnly: true })
+  static async getGreetCountTx_v2(user: string): Promise<number> {
+    const query = "SELECT greet_count FROM dbos_hello WHERE name = ?;";
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const result = await DBOS.knexClient.raw(query, user) as { rows: dbos_hello[] } | undefined;
+    if (result && result.rows.length > 0) { return result.rows[0].greet_count; }
+    return 0;
   }
 }
 

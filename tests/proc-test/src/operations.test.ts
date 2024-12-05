@@ -1,4 +1,4 @@
-import { TestingRuntime, parseConfigFile } from "@dbos-inc/dbos-sdk";
+import { DBOS, TestingRuntime, parseConfigFile } from "@dbos-inc/dbos-sdk";
 import { StoredProcTest } from "./operations";
 import { v1 as uuidv1 } from "uuid";
 
@@ -11,10 +11,10 @@ import { Client, ClientConfig } from "pg";
 async function runSql<T>(config: ClientConfig, func: (client: Client) => Promise<T>) {
   const client = new Client(config);
   try {
-      await client.connect();
-      return await func(client);
+    await client.connect();
+    return await func(client);
   } finally {
-      await client.end();
+    await client.end();
   }
 }
 
@@ -169,6 +169,37 @@ describe("operations-test", () => {
     expectNullResult(txRows[1].error);
 
   });
+
+  test("test-txAndProcGreetingWorkflow_v2", async () => {
+
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    try {
+
+      const wfUUID = uuidv1();
+      const user = "txAndProcWF";
+      const res = await DBOS.withNextWorkflowID(wfUUID, async () => {
+        return await StoredProcTest.txAndProcGreetingWorkflow_v2(user);
+      })
+
+      expect(res.count).toBe(0);
+      expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+
+      const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
+      expect(txRows.length).toBe(2);
+      expect(txRows[0].function_id).toBe(0);
+      expect(txRows[0].output).toBe("0");
+      expectNullResult(txRows[0].error);
+
+      expect(txRows[1].function_id).toBe(1);
+      expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+      expectNullResult(txRows[1].error);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
 
   test("test-procErrorWorkflow", async () => {
     const wfid = uuidv1();
