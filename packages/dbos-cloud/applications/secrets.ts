@@ -79,7 +79,8 @@ export async function importSecrets(host: string, appName: string | undefined, e
 
   const envConfig = readFileSync(envPath, 'utf-8');
 
-  // Parse the content using dotenv
+  // Parse the content using dotenv and expand it to support interpolation.
+  // Supported syntax guide: https://dotenvx.com/docs/env-file
   const parsed = dotenv.parse(envConfig);
   const expandedEnv = { ...process.env } as DotenvPopulateInput;
   const options = {
