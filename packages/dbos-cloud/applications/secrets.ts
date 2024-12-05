@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
-import dotenv from 'dotenv';
+import dotenv, { DotenvParseOutput, DotenvPopulateInput } from 'dotenv';
+import dotenvExpand from 'dotenv-expand'
 import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, DBOSCloudCredentials} from "../cloudutils.js";
 import { readFileSync } from "fs";
 
@@ -77,13 +78,23 @@ export async function importSecrets(host: string, appName: string | undefined, e
   logger.info(`Importing secrets from ${envPath}`)
 
   const envConfig = readFileSync(envPath, 'utf-8');
-  
+
   // Parse the content using dotenv
   const parsed = dotenv.parse(envConfig);
-  const envPairs = Object.entries(parsed)
+  const expandedEnv = { ...process.env } as DotenvPopulateInput;
+  const options = {
+    processEnv: expandedEnv,
+    parsed
+  }
+  dotenvExpand.expand(options);
 
-  for (const [secret, value] of envPairs) {
-    const request = { ApplicationName: appName, SecretName: secret, ClearSecretValue: value };
+  for (const secret of Object.keys(parsed)) {
+    const expandedValue = expandedEnv[secret];
+    if (expandedValue === undefined) {
+      logger.error(`No value found for secret ${secret}`)
+      return 1;
+    }
+    const request = { ApplicationName: appName, SecretName: secret, ClearSecretValue: expandedValue };
     const exitCode = await postCreateSecret(host, userCredentials, request);
     if (exitCode !== 0) {
       return exitCode
