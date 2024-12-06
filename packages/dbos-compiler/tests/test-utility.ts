@@ -63,7 +63,7 @@ declare module "@dbos-inc/dbos-sdk" {
     isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
     readOnly?: boolean;
   }
-  export interface CommunicatorConfig {
+  export interface StepConfig {
     retriesAllowed?: boolean;
     intervalSeconds?: number;
     maxAttempts?: number;
@@ -77,8 +77,13 @@ declare module "@dbos-inc/dbos-sdk" {
 
   export function GetApi(url:string);
   export function PostApi(url:string);
+  export function PutApi(url:string);
+  export function PatchApi(url:string);
+  export function DeleteApi(url:string);
+
   export function Workflow(config?: WorkflowConfig);
-  export function Communicator(config?: CommunicatorConfig);
+  export function Communicator(config?: StepConfig);
+  export function Step(config?: StepConfig);
   export function Transaction(config?: TransactionConfig);
   export function StoredProcedure(config?: StoredProcedureConfig);
   export function DBOSDeploy();
@@ -87,8 +92,21 @@ declare module "@dbos-inc/dbos-sdk" {
   export interface HandlerContext extends DBOSContext { }
   export interface WorkflowContext extends DBOSContext { }
   export interface CommunicatorContext extends DBOSContext { }
+  export interface StepContext extends DBOSContext { }
   export interface TransactionContext<T> extends DBOSContext { }
   export interface StoredProcedureContext extends DBOSContext { }
   export interface InitContext extends DBOSContext {}
+
+  export class DBOS {
+    static workflow(config?: WorkflowConfig);
+    static transaction(config?: TransactionConfig);
+    static step(config?: StepConfig);
+    static getApi(url: string);
+    static postApi(url: string);
+    static putApi(url: string);
+    static patchApi(url: string);
+    static deleteApi(url: string);
+  }
+
 }
 `;
