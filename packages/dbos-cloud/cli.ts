@@ -19,6 +19,7 @@ import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
 import { orgInvite, orgListUsers, renameOrganization, joinOrganization } from "./organizations/organization.js";
 import { ListWorkflowsInput, listWorkflows } from "./applications/manage-workflows.js";
+import { importSecrets } from "./applications/secrets.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -214,16 +215,26 @@ applicationCommands
     process.exit(exitCode);
   });
 
-  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").description("manage secrets for your application");
+  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").alias("env").description("Manage your application environment and secrets");
 
   secretsCommands
   .command("create")
   .description("Create a secret for this application")
   .argument("[string]", "application name (Default: name from package.json)")
-  .requiredOption("-s, --secretname <string>", "Specify the name of the secret to create")
-  .requiredOption("-v, --value <string>", "Specify the value of the secret to store with the name.")
+  .requiredOption("-s, --name <string>", "Specify the name of the secret to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the secret.")
   .action(async (appName: string | undefined, options: { secretname: string; value: string }) => {
     const exitCode = await createSecret(DBOSCloudHost, appName, options.secretname , options.value);
+    process.exit(exitCode);
+  });
+
+  secretsCommands
+  .command("import")
+  .description("Import environment variables and secrets from a dotenv file")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .requiredOption("-d, --dotenv <string>", "Path to a dotenv file")
+  .action(async (appName: string | undefined, options: { dotenv: string; }) => {
+    const exitCode = await importSecrets(DBOSCloudHost, appName, options.dotenv);
     process.exit(exitCode);
   });
 
