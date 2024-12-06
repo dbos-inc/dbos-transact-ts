@@ -153,12 +153,12 @@
           },
           "description": "Commands to start the application"
         },
-        "build": {
+        "setup": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Commands to build the application"
+          "description": "Commands to setup the application execution environment"
         }
       }
     },

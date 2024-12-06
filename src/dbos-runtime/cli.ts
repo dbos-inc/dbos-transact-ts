@@ -47,26 +47,6 @@ const packageJson = require("../../../package.json") as { version: string };
 program.version(packageJson.version);
 
 program
-  .command("build")
-  .description("Build the application")
-  .option("-d, --appDir <string>", "Specify the application root directory")
-  .action(async (options: DBOSCLIStartOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    const logger = getGlobalLogger(dbosConfig);
-    for (const command of runtimeConfig.build) {
-      try {
-        const ret = await runCommand(command, logger, options.appDir);
-        if (ret !== 0) {
-          process.exit(ret);
-        }
-      } catch (e) {
-        // We always reject the command with a return code
-        process.exit(e as number);
-      }
-    }
-  });
-
-program
   .command("start")
   .description("Start the server")
   .option("-p, --port <number>", "Specify the port number")
