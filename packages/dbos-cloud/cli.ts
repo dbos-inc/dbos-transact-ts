@@ -215,14 +215,14 @@ applicationCommands
     process.exit(exitCode);
   });
 
-  const secretsCommands = applicationCommands.command("env").alias("secrets").alias("sec").alias("secret").description("Manage your application environment and secrets");
+  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").alias("env").description("Manage your application environment and secrets");
 
   secretsCommands
   .command("create")
-  .description("Create an environment variable for this application")
+  .description("Create a secret for this application")
   .argument("[string]", "application name (Default: name from package.json)")
-  .requiredOption("-s, --name <string>", "Specify the name of the environment variable to create")
-  .requiredOption("-v, --value <string>", "Specify the value of the variable.")
+  .requiredOption("-s, --name <string>", "Specify the name of the secret to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the secret.")
   .action(async (appName: string | undefined, options: { secretname: string; value: string }) => {
     const exitCode = await createSecret(DBOSCloudHost, appName, options.secretname , options.value);
     process.exit(exitCode);
@@ -230,7 +230,7 @@ applicationCommands
 
   secretsCommands
   .command("import")
-  .description("Import environment variables from a dotenv file")
+  .description("Import environment variables and secrets from a dotenv file")
   .argument("[string]", "application name (Default: name from package.json)")
   .requiredOption("-d, --dotenv <string>", "Path to a dotenv file")
   .action(async (appName: string | undefined, options: { dotenv: string; }) => {
@@ -240,7 +240,7 @@ applicationCommands
 
   secretsCommands
   .command("list")
-  .description("List environment variables for this application")
+  .description("List secrets for this application")
   .argument("[string]", "application name (Default: name from package.json)")
   .option("--json", "Emit JSON output")
   .action(async (appName: string | undefined, options: { json: boolean }) => {
