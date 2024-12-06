@@ -1,5 +1,5 @@
 import * as tsm from "ts-morph";
-import { DecoratorArgument, getDbosMethodKind, getStoredProcConfig, parseDecoratorArgument } from "../compiler.js";
+import { DecoratorArgument, getDbosMethodKind, getImportSpecifier, getStoredProcConfig, parseDecoratorArgument } from "../compiler.js";
 import { sampleDbosClass, sampleDbosClassAliased } from "./test-code.js";
 import { makeTestProject } from "./test-utility.js";
 import { describe, it, expect } from 'vitest';
@@ -58,72 +58,68 @@ describe("more compiler", () => {
         expect(actual).toEqual(expected);
     });
 
-    // describe("aliased getDecoratorInfo", () => {
-    //     it("testGetHandler", () => {
-    //         const file = aliasProject.getSourceFileOrThrow("operations.ts");
-    //         const cls = file.getClassOrThrow("Test");
-    //         const method = cls.getStaticMethodOrThrow("testGetHandler");
-    //         const decoratorInfo = method.getDecorators().map(getDecoratorInfo);
+    describe("aliased getDecoratorInfo", () => {
+        it("testGetHandler", () => {
+            const file = aliasProject.getSourceFileOrThrow("operations.ts");
+            const cls = file.getClassOrThrow("Test");
+            const method = cls.getStaticMethodOrThrow("testGetHandler");
 
-    //         const expected = <TestDecoratorInfo[]>[{
-    //             name: "GetApi",
-    //             alias: "TestGetApi",
-    //             module: "@dbos-inc/dbos-sdk",
-    //             args: ["/test"]
-    //         }];
+            const expected = <DecoratorInfo[]>[{
+                name: "GetApi",
+                alias: "TestGetApi",
+                module: "@dbos-inc/dbos-sdk",
+                args: ["/test"]
+            }];
 
-    //         testDecorators(expected, decoratorInfo);
-    //     });
-    // });
+            testDecorators(expected, method.getDecorators());
+        });
+    });
 
-    // describe("getDecoratorInfo", () => {
-    //     it("testGetHandler", () => {
-    //         const method = cls.getStaticMethodOrThrow("testGetHandler");
-    //         const decoratorInfo = method.getDecorators().map(getDecoratorInfo);
+    describe("getDecoratorInfo", () => {
+        it("testGetHandler", () => {
+            const method = cls.getStaticMethodOrThrow("testGetHandler");
 
-    //         const expected = <TestDecoratorInfo[]>[{
-    //             name: "GetApi",
-    //             alias: undefined,
-    //             module: "@dbos-inc/dbos-sdk",
-    //             args: ["/test"]
-    //         }];
+            const expected = <DecoratorInfo[]>[{
+                name: "GetApi",
+                alias: undefined,
+                module: "@dbos-inc/dbos-sdk",
+                args: ["/test"]
+            }];
 
-    //         testDecorators(expected, decoratorInfo);
-    //     });
+            testDecorators(expected, method.getDecorators());
+        });
 
-    //     it("testGetHandlerWorkflow", () => {
-    //         const method = cls.getStaticMethodOrThrow("testGetHandlerWorkflow");
-    //         const decoratorInfo = method.getDecorators().map(getDecoratorInfo);
+        it("testGetHandlerWorkflow", () => {
+            const method = cls.getStaticMethodOrThrow("testGetHandlerWorkflow");
 
-    //         const expected: TestDecoratorInfo[] = [{
-    //             name: "GetApi",
-    //             alias: undefined,
-    //             module: "@dbos-inc/dbos-sdk",
-    //             args: ["/test"]
-    //         }, {
-    //             name: "Workflow",
-    //             alias: undefined,
-    //             module: "@dbos-inc/dbos-sdk",
-    //             args: []
-    //         }];
+            const expected: DecoratorInfo[] = [{
+                name: "GetApi",
+                alias: undefined,
+                module: "@dbos-inc/dbos-sdk",
+                args: ["/test"]
+            }, {
+                name: "Workflow",
+                alias: undefined,
+                module: "@dbos-inc/dbos-sdk",
+                args: []
+            }];
 
-    //         testDecorators(expected, decoratorInfo);
-    //     });
+            testDecorators(expected, method.getDecorators());
+        });
 
-    //     it("testConfiguredProcedure", () => {
-    //         const method = cls.getStaticMethodOrThrow("testConfiguredProcedure");
-    //         const decoratorInfo = method.getDecorators().map(getDecoratorInfo);
+        it("testConfiguredProcedure", () => {
+            const method = cls.getStaticMethodOrThrow("testConfiguredProcedure");
 
-    //         const expected: TestDecoratorInfo[] = [{
-    //             name: "StoredProcedure",
-    //             alias: undefined,
-    //             module: "@dbos-inc/dbos-sdk",
-    //             args: [{ readOnly: true, isolationLevel: "READ COMMITTED" }]
-    //         }];
+            const expected: DecoratorInfo[] = [{
+                name: "StoredProcedure",
+                alias: undefined,
+                module: "@dbos-inc/dbos-sdk",
+                args: [{ readOnly: true, isolationLevel: "READ COMMITTED" }]
+            }];
 
-    //         testDecorators(expected, decoratorInfo);
-    //     });
-    // })
+            testDecorators(expected, method.getDecorators());
+        });
+    })
 
     describe("getStoredProcConfig", () => {
         it("testProcedure", () => {
@@ -176,21 +172,39 @@ describe("more compiler", () => {
     })
 });
 
-// type TestDecoratorInfo = Omit<DecoratorInfo, 'args'> & {
-//     args: DecoratorArgument[];
-// };
+interface DecoratorInfo {
+    name: string;
+    alias?: string;
+    module?: string;
+    args: DecoratorArgument[];
+  }
 
-// function testDecorators(expected: TestDecoratorInfo[], actual: DecoratorInfo[]) {
-//     expect(actual.length).toEqual(expected.length);
-//     for (let i = 0; i < expected.length; i++) {
-//         testDecorator(expected[i], actual[i]);
-//     }
-// }
-// function testDecorator(expected: TestDecoratorInfo, actual: DecoratorInfo) {
-//     expect(actual.name).toEqual(expected.name);
-//     expect(actual.alias).toEqual(expected.alias);
-//     expect(actual.module).toEqual(expected.module);
 
-//     const args = actual.args?.map(parseDecoratorArgument);
-//     expect(args).toEqual(expected.args);
-// }
+function testDecorators(expected: DecoratorInfo[], actual: tsm.Decorator[]) {
+    expect(actual.length).toEqual(expected.length);
+    for (let i = 0; i < expected.length; i++) {
+        testDecorator(expected[i], actual[i]);
+    }
+}
+function testDecorator(expected: DecoratorInfo, actual: tsm.Decorator) {
+
+    const callExpr = actual.getCallExpressionOrThrow();
+
+    const expr = callExpr.getExpression();
+    const idExpr = tsm.Node.isIdentifier(expr) 
+        ? expr
+        : expr.asKindOrThrow(tsm.SyntaxKind.PropertyAccessExpression).getExpressionIfKindOrThrow(tsm.SyntaxKind.Identifier);
+
+    const impSpec = getImportSpecifier(idExpr)
+    expect(impSpec).not.toBeNull();
+
+    const { name, alias } = impSpec!.getStructure();
+    const modSpec = impSpec!.getImportDeclaration().getModuleSpecifier();
+
+    expect(expected.name).toEqual(name);
+    expect(expected.alias).toEqual(alias);
+    expect(expected.module).toEqual(modSpec.getLiteralText());
+
+    const args = callExpr.getArguments().map(parseDecoratorArgument) ?? undefined;
+    expect(args).toEqual(expected.args);
+}

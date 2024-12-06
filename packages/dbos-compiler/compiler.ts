@@ -1,4 +1,3 @@
-import { UndefinedVariableError } from 'liquidjs';
 import tsm from 'ts-morph';
 
 export type CompileResult = {
@@ -330,7 +329,7 @@ function isValid<T>(value: T | null | undefined): value is T { return !!value; }
 
 type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "step" | "initializer";
 
-function getImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
+export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
   const symbol = node?.getSymbol();
   if (symbol) {
     const importSpecifiers = symbol.getDeclarations()
