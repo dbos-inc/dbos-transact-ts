@@ -20,7 +20,7 @@ export interface DBOSRuntimeConfig {
   port: number;
   admin_port: number;
   start: string[];
-  build: string[];
+  setup: string[];
 }
 export const defaultEntryPoint = "dist/operations.js";
 
