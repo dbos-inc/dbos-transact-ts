@@ -178,7 +178,7 @@ describe("operations-test", () => {
     try {
 
       const wfUUID = uuidv1();
-      const user = "txAndProcWF";
+      const user = "txAndProcWFv2";
       const res = await DBOS.withNextWorkflowID(wfUUID, async () => {
         return await StoredProcTest.txAndProcGreetingWorkflow_v2(user);
       })
