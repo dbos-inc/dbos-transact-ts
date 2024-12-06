@@ -151,7 +151,14 @@
           "items": {
             "type": "string"
           },
-          "description": "The command to start the application"
+          "description": "Commands to start the application"
+        },
+        "build": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commands to build the application"
         }
       }
     },

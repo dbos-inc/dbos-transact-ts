@@ -12,7 +12,7 @@ import { configure } from "./configure";
 import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from "./workflow_management";
 import { GetWorkflowsInput, StatusString } from "..";
 import { exit } from "node:process";
-import { runStartCommand } from "./start";
+import { runCommand } from "./commands";
 
 const program = new Command();
 
@@ -47,6 +47,26 @@ const packageJson = require("../../../package.json") as { version: string };
 program.version(packageJson.version);
 
 program
+  .command("build")
+  .description("Build the application")
+  .option("-d, --appDir <string>", "Specify the application root directory")
+  .action(async (options: DBOSCLIStartOptions) => {
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
+    const logger = getGlobalLogger(dbosConfig);
+    for (const command of runtimeConfig.build) {
+      try {
+        const ret = await runCommand(command, logger, options.appDir);
+        if (ret !== 0) {
+          process.exit(ret);
+        }
+      } catch (e) {
+        // We always reject the command with a return code
+        process.exit(e as number);
+      }
+    }
+  });
+
+program
   .command("start")
   .description("Start the server")
   .option("-p, --port <number>", "Specify the port number")
@@ -68,7 +88,7 @@ program
       const logger = getGlobalLogger(dbosConfig);
       for (const command of runtimeConfig.start) {
         try {
-          const ret = await runStartCommand(command, logger);
+          const ret = await runCommand(command, logger, options.appDir);
           if (ret !== 0) {
             process.exit(ret);
           }
@@ -152,9 +172,9 @@ workflowCommands
       endTime: options.endTime,
       status: options.status as typeof StatusString[keyof typeof StatusString],
       applicationVersion: options.applicationVersion,
-    }
+    };
     const output = await listWorkflows(dbosConfig, input, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands
@@ -166,7 +186,7 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands
