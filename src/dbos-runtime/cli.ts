@@ -12,7 +12,7 @@ import { configure } from "./configure";
 import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from "./workflow_management";
 import { GetWorkflowsInput, StatusString } from "..";
 import { exit } from "node:process";
-import { runStartCommand } from "./start";
+import { runCommand } from "./commands";
 
 const program = new Command();
 
@@ -68,7 +68,7 @@ program
       const logger = getGlobalLogger(dbosConfig);
       for (const command of runtimeConfig.start) {
         try {
-          const ret = await runStartCommand(command, logger);
+          const ret = await runCommand(command, logger, options.appDir);
           if (ret !== 0) {
             process.exit(ret);
           }
@@ -152,9 +152,9 @@ workflowCommands
       endTime: options.endTime,
       status: options.status as typeof StatusString[keyof typeof StatusString],
       applicationVersion: options.applicationVersion,
-    }
+    };
     const output = await listWorkflows(dbosConfig, input, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands
@@ -166,7 +166,7 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands

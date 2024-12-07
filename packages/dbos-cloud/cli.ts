@@ -221,10 +221,10 @@ applicationCommands
   .command("create")
   .description("Create a secret for this application")
   .argument("[string]", "application name (Default: name from package.json)")
-  .requiredOption("-s, --secretname <string>", "Specify the name of the secret to create")
-  .requiredOption("-v, --value <string>", "Specify the value of the secret.")
-  .action(async (appName: string | undefined, options: { secretname: string; value: string }) => {
-    const exitCode = await createSecret(DBOSCloudHost, appName, options.secretname , options.value);
+  .requiredOption("-s, --name <string>", "Specify the name of the variable to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the variable")
+  .action(async (appName: string | undefined, options: { name: string; value: string }) => {
+    const exitCode = await createSecret(DBOSCloudHost, appName, options.name , options.value);
     process.exit(exitCode);
   });
 

@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { GlobalLogger } from "../telemetry/logs";
 
 // Run the "start" command provided by users in their dbos-config.yaml
-export function runStartCommand(command: string, logger: GlobalLogger): Promise<number> {
+export function runCommand(command: string, logger: GlobalLogger, cwd: string | undefined): Promise<number> {
   return new Promise((resolve, reject) => {
     // Split the command into the executable and its arguments
     const [executable, ...args] = command.split(" ");
@@ -11,6 +11,7 @@ export function runStartCommand(command: string, logger: GlobalLogger): Promise<
     const child = spawn(executable, args, {
       stdio: "inherit", // Forward stdin, stdout, stderr
       shell: true, // Use the shell to interpret the command
+      cwd,
     });
 
     // Handle parent signals and forward to child
