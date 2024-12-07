@@ -26,9 +26,9 @@ export async function createSecret(host: string, appName: string | undefined, se
     return 1;
   }
 
-    if (!secretValue) {
-        logger.error("Secret value is required.");
-        return 1;
+  if (!secretValue) {
+    logger.error("Secret value is required.");
+    return 1;
   }
 
   const request = { ApplicationName: appName, SecretName: secretName, ClearSecretValue: secretValue };
