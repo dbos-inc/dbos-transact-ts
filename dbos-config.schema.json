@@ -151,7 +151,14 @@
           "items": {
             "type": "string"
           },
-          "description": "The command to start the application"
+          "description": "Commands to start the application"
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commands to setup the application execution environment"
         }
       }
     },

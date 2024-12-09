@@ -20,6 +20,7 @@ export interface DBOSRuntimeConfig {
   port: number;
   admin_port: number;
   start: string[];
+  setup: string[];
 }
 export const defaultEntryPoint = "dist/operations.js";
 
@@ -120,8 +121,7 @@ export class DBOSRuntime {
     try {
       wfQueueRunner.stop();
       await this.wfQueueRunner;
-    }
-    catch (err) {
+    } catch (err) {
       const e = err as Error;
       this.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
     }
