@@ -454,7 +454,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     return this.startChildWorkflow(wf, ...args);
   }
 
-  async #invokeProcLocal<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+  async #invokeProcLocal<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, span: Span, config: StoredProcedureConfig, funcId: number) {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
@@ -540,7 +540,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
   }
 
-  async #invokeProcRemote<R>(proc: StoredProcedure<R>, args: unknown[], span: Span, config: StoredProcedureConfig, funcId: number) {
+  async #invokeProcRemote<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, span: Span, config: StoredProcedureConfig, funcId: number) {
     const readOnly = config.readOnly ?? false;
 
     const $jsonCtx = {
@@ -552,7 +552,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
     // args and bufferedResults before being passed to dbosExec.callProcedure
-    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)];
+    const $args = [this.workflowUUID, funcId, this.presetUUID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
       const bufferedResults = new Array<[number, unknown, string, number?]>();
@@ -565,7 +565,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
 
     type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
-    const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc, $args);
+    const [{ return_value }] = await this.#dbosExec.callProcedure<ReturnValue>(proc as StoredProcedure<unknown[], unknown>, $args);
 
     const { error, output, txn_snapshot, txn_id, created_at } = return_value;
 
@@ -601,7 +601,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   // TODO: ConfiguredInstance support
-  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+  async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, ...args: T): Promise<R> {
     const procInfo = this.#dbosExec.getProcedureInfo(proc);
     if (procInfo === undefined) { throw new DBOSNotRegisteredError(proc.name); }
     const executeLocally = procInfo.config.executeLocally ?? false;
@@ -717,7 +717,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
-              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
+              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, ...args)
               : undefined;
       }
       return proxy as WFInvokeFuncs<T>;

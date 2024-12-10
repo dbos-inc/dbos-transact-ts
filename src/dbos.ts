@@ -51,7 +51,7 @@ import {
   WorkflowHandle
 } from ".";
 import { ConfiguredInstance } from ".";
-import { StoredProcedureFunc } from "./procedure";
+import { StoredProcedure } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
 
@@ -549,7 +549,7 @@ export class DBOS {
             ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
               op.registeredFunction as StepFunction<unknown[], unknown>, null, wfctx, ...args)
             : op.procConfig
-              ? (...args: unknown[]) => wfctx.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, ...args)
+              ? (...args: unknown[]) => wfctx.procedure<unknown[], unknown>(op.registeredFunction as StoredProcedure<unknown[], unknown>, ...args)
               : undefined;
       }
       return proxy as InvokeFuncs<T>;

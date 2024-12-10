@@ -99,7 +99,7 @@ interface StepRegInfo {
 }
 
 interface ProcedureRegInfo {
-  procedure: StoredProcedure<unknown>;
+  procedure: StoredProcedure<unknown[], unknown>;
   config: StoredProcedureConfig;
   registration: MethodRegistrationBase;
 }
@@ -453,7 +453,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async callProcedure<R extends QueryResultRow = any>(proc: StoredProcedure<unknown>, args: unknown[]): Promise<R[]> {
+  async callProcedure<R extends QueryResultRow = any>(proc: StoredProcedure<unknown[], unknown>, args: unknown[]): Promise<R[]> {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
@@ -551,7 +551,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerProcedure(ro: MethodRegistrationBase) {
-    const proc = ro.registeredFunction as StoredProcedure<unknown>;
+    const proc = ro.registeredFunction as StoredProcedure<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
 
     if (this.procedureInfoMap.has(cfn)) {
@@ -639,11 +639,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
-  getProcedureClassName(pf: StoredProcedure<unknown>) {
+  getProcedureClassName<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
     return getRegisteredMethodClassName(pf);
   }
 
-  getProcedureInfo(pf: StoredProcedure<unknown>) {
+  getProcedureInfo<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
     const pfName = getRegisteredMethodClassName(pf) + '.' + pf.name;
     return this.procedureInfoMap.get(pfName);
   }
@@ -994,11 +994,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
 
-  async procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call procedure.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.procedure(proc, ...args);
+      return await ctxtImpl.procedure(proc, ...(args as T));
     };
     return (await this.workflow(temp_workflow,
       { ...params,
