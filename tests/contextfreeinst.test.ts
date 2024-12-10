@@ -67,6 +67,12 @@ class TestFunctions extends ConfiguredInstance
     const kv2 = await DBOS.getEvent<string>(wfid, "key2");
     return kv1+','+kv2;
   }
+
+  awaitThis: Promise<void> | undefined = undefined;
+  @DBOS.workflow()
+  async awaitAPromise() {
+    await this.awaitThis;
+  }
 }
 
 const testTableName = "dbos_test_kv";
@@ -210,11 +216,6 @@ async function main5() {
   });
   expect(res).toBe('done A');
 
-  // Validate that it had the queue
-  // To do when workflow can be suspended...
-  //const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
-  //expect (wfqcontent.workflows.length).toBe(1);
-
   const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.workflowUUIDs.length).toBe(1);
@@ -222,6 +223,26 @@ async function main5() {
   expect(wfstat?.queueName).toBe('wfq');
   expect(wfstat?.workflowConfigName).toBe('A');
 
+  // Check queues in startWorkflow
+  let resolve: ()=>void = ()=>{};
+  instA.awaitThis = new Promise<void>((r) => {
+    resolve = r;
+  });
+  
+  const wfhq = await DBOS.startWorkflow(instA, {workflowID: 'waitPromiseWFI', queueName: wfq.name}).awaitAPromise()
+  const wfstatsw = await DBOS.getWorkflowStatus('waitPromiseWFI');
+  expect(wfstatsw?.queueName).toBe('wfq');
+
+  // Validate that it had the queue
+  const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
+  expect(wfqcontent.workflows.length).toBe(1);
+  expect(wfqcontent.workflows[0].workflowID).toBe('waitPromiseWFI');
+
+  resolve(); // Let WF finish
+  await wfhq.getResult();
+
+  // Quick check on scheduled WFs
+  
   await DBOS.shutdown();
 }
 
@@ -231,7 +252,6 @@ async function main6() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  // This or: DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset'); ?
   const wfhandle = await DBOS.startWorkflow(instA).getEventWorkflow('wfidset');
   await DBOS.withNextWorkflowID('wfidset', async() => {
     await instA.setEventWorkflow('a', 'b');
