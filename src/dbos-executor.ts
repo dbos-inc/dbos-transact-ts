@@ -41,21 +41,22 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithDBOSContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
-import { serializeError } from 'serialize-error';
+import { deserializeError, serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
-import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from "pg-protocol/dist/messages";
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput} from ".";
+import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput } from ".";
 
 import { get } from "lodash";
 import { wfQueueRunner, WorkflowQueue } from "./wfqueue";
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from "./debugpoint";
 import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBOSEventReceiverQuery, DBNotificationCallback, DBNotificationListener } from "./eventreceiver";
+import { transaction_outputs } from "../schemas/user_db_schema";
 
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -124,6 +125,8 @@ const TempWorkflowType = {
   external: "external",
   send: "send",
 } as const;
+
+type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
 export class DBOSExecutor implements DBOSExecutorContext {
   initialized: boolean;
@@ -302,7 +305,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const DrizzleExports = require("drizzle-orm/node-postgres");
       const drizzlePool = new Pool(userDBConfig);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const drizzle= DrizzleExports.drizzle(drizzlePool, {schema: this.drizzleEntities});
+      const drizzle = DrizzleExports.drizzle(drizzlePool, { schema: this.drizzleEntities });
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug("Loaded Drizzle user database");
@@ -332,12 +335,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   getRegistrationsFor(obj: DBOSEventReceiver) {
-    const res: {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[] = [];
+    const res: { methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase }[] = [];
     for (const r of this.registeredOperations) {
       if (!r.eventReceiverInfo.has(obj)) continue;
       const methodConfig = r.eventReceiverInfo.get(obj)!;
       const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
-      res.push({methodReg: r, methodConfig, classConfig})
+      res.push({ methodReg: r, methodConfig, classConfig })
     }
     return res;
   }
@@ -453,26 +456,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async callProcedure<R extends QueryResultRow = any>(proc: StoredProcedure<unknown[], unknown>, args: unknown[]): Promise<R[]> {
-    const client = await this.procedurePool.connect();
-    const log = (msg: NoticeMessage) => this.#logNotice(msg);
-
-    const procClassName = this.getProcedureClassName(proc);
-    const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = this.config.appVersion
-      ? `v${this.config.appVersion}_${plainProcName}`
-      : plainProcName;
-
-    const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
-    try {
-      client.on('notice', log);
-      return await client.query<R>(sql, args).then(value => value.rows);
-    } finally {
-      client.off('notice', log);
-      client.release();
-    }
-  }
-
   async destroy() {
     if (this.pendingWorkflowMap.size > 0) {
       this.logger.info("Waiting for pending workflows to finish.");
@@ -501,7 +484,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   /* WORKFLOW OPERATIONS */
 
-  #registerWorkflow(ro :MethodRegistrationBase) {
+  #registerWorkflow(ro: MethodRegistrationBase) {
     const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
@@ -512,7 +495,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
-      config: {...ro.workflowConfig},
+      config: { ...ro.workflowConfig },
       registration: ro,
     };
     this.workflowInfoMap.set(wfn, workflowInfo);
@@ -528,7 +511,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const txnInfo: TransactionRegInfo = {
       transaction: txf,
-      config: {...ro.txnConfig},
+      config: { ...ro.txnConfig },
       registration: ro,
     };
     this.transactionInfoMap.set(tfn, txnInfo);
@@ -543,7 +526,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const stepInfo: StepRegInfo = {
       step: comm,
-      config: {...ro.commConfig},
+      config: { ...ro.commConfig },
       registration: ro,
     };
     this.stepInfoMap.set(cfn, stepInfo);
@@ -559,7 +542,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const procInfo: ProcedureRegInfo = {
       procedure: proc,
-      config: {...ro.procConfig},
+      config: { ...ro.procConfig },
       registration: ro,
     };
     this.procedureInfoMap.set(cfn, procInfo);
@@ -588,7 +571,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    return {wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName)};
+    return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
@@ -612,7 +595,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    return {txnInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
   getStepInfo(cf: StepFunction<unknown[], unknown>) {
@@ -636,7 +619,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return { commInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
   getProcedureClassName<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
@@ -700,7 +683,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if ((wCtxt.tempWfOperationType !== TempWorkflowType.transaction
-        && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
+      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
       || params.queueName !== undefined
     ) {
       // TODO: Make this transactional (and with the queue step below)
@@ -714,7 +697,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Execute the workflow.
       try {
         let cresult: R | undefined;
-        await runWithWorkflowContext(wCtxt, async ()=> {
+        await runWithWorkflowContext(wCtxt, async () => {
           if (passContext) {
             cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
           }
@@ -743,7 +726,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
-          const e = err as Error & {dbos_already_logged?: boolean};
+          const e = err as Error & { dbos_already_logged?: boolean };
           this.logger.error(e);
           e.dbos_already_logged = true
           if (wCtxt.isTempWorkflow) {
@@ -847,9 +830,53 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
           return recordedResult; // Always return the recorded result.
         });
-      });
+    });
     return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
+
+  /**
+ * Retrieve the transaction snapshot information of the current transaction
+ */
+  static async #retrieveSnapshot(query: QueryFunction): Promise<string> {
+    const rows = await query<{ txn_snapshot: string }>("SELECT pg_current_snapshot()::text as txn_snapshot;", []);
+    return rows[0].txn_snapshot;
+  }
+
+  /**
+ * Check if an operation has already executed in a workflow.
+ * If it previously executed successfully, return its output.
+ * If it previously executed and threw an error, throw that error.
+ * Otherwise, return DBOSNull.
+ * Also return the transaction snapshot information of this current transaction.
+ */
+  async #checkExecution<R>(query: QueryFunction, workflowUUID: string, funcID: number): Promise<BufferedResult> {
+    // Note: we read the current snapshot, not the recorded one!
+    const rows = await query<transaction_outputs & { recorded: boolean }>(
+      "(SELECT output, error, txn_snapshot, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, false as recorded) ORDER BY recorded",
+      [workflowUUID, funcID]
+    );
+
+    if (rows.length === 0 || rows.length > 2) {
+      this.logger.error("Unexpected! This should never happen. Returned rows: " + rows.toString());
+      throw new DBOSError("This should never happen. Returned rows: " + rows.toString());
+    }
+
+    const res: BufferedResult = {
+      output: dbosNull,
+      txn_snapshot: ""
+    }
+    // recorded=false row will be first because we used ORDER BY.
+    res.txn_snapshot = rows[0].txn_snapshot;
+    if (rows.length === 2) {
+      if (DBOSJSON.parse(rows[1].error) !== null) {
+        throw deserializeError(DBOSJSON.parse(rows[1].error));
+      } else {
+        res.output = DBOSJSON.parse(rows[1].output) as R;
+      }
+    }
+    return res;
+  }
+
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call transaction.
@@ -902,7 +929,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
         if (wfCtx.presetUUID) {
-          const check: BufferedResult = await wfCtx.checkTxExecution<R>(client, funcId);
+          const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
+          const check: BufferedResult = await this.#checkExecution<R>(func, workflowUUID, funcId);
           txn_snapshot = check.txn_snapshot;
           if (check.output !== dbosNull) {
             tCtxt.span.setAttribute("cached", true);
@@ -912,7 +940,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
         } else {
           // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
-          txn_snapshot = await wfCtx.retrieveTxSnapshot(client);
+          const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
+          txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -923,13 +952,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // Execute the user's transaction.
         let cresult: R | undefined;
         if (txnInfo.registration.passContext) {
-          await runWithTransactionContext(tCtxt, async ()=> {
+          await runWithTransactionContext(tCtxt, async () => {
             cresult = await txn.call(clsinst, tCtxt, ...args);
           });
         }
         else {
-          await runWithTransactionContext(tCtxt, async ()=> {
-            const tf = txn as unknown as (...args: T)=>Promise<R>;
+          await runWithTransactionContext(tCtxt, async () => {
+            const tf = txn as unknown as (...args: T) => Promise<R>;
             cresult = await tf.call(clsinst, ...args);
           });
         }
@@ -993,22 +1022,230 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-
   async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call procedure.
-    const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
+    const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.procedure(proc, ...(args as T));
+      return this.callProcedureFunction(proc, ctxtImpl, ...args);
     };
-    return (await this.workflow(temp_workflow,
-      { ...params,
+    return await (await this.workflow(temp_workflow,
+      {
+        ...params,
         tempWfType: TempWorkflowType.procedure,
         tempWfName: getRegisteredMethodName(proc),
         tempWfClass: getRegisteredMethodClassName(proc),
       }, ...args)).getResult();
   }
 
-  async executeProcedure<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
+  async callProcedureFunction<T extends unknown[], R>(
+    proc: StoredProcedure<T, R>, wfCtx: WorkflowContextImpl, ...args: T
+  ): Promise<R> {
+    const procInfo = this.getProcedureInfo(proc);
+    if (procInfo === undefined) {
+      throw new DBOSNotRegisteredError(proc.name);
+    }
+
+    const executeLocally = procInfo.config.executeLocally ?? false;
+    const funcId = wfCtx.functionIDGetIncrement();
+    const span: Span = this.tracer.startSpan(
+      proc.name,
+      {
+        operationUUID: wfCtx.workflowUUID,
+        operationType: OperationType.PROCEDURE,
+        authenticatedUser: wfCtx.authenticatedUser,
+        assumedRole: wfCtx.assumedRole,
+        authenticatedRoles: wfCtx.authenticatedRoles,
+        readOnly: procInfo.config.readOnly ?? false,
+        isolationLevel: procInfo.config.isolationLevel,
+        executeLocally,
+      },
+      wfCtx.span,
+    );
+
+    try {
+      const result = executeLocally
+        ? await this.#callProcedureFunctionLocal(proc, args, wfCtx, span, procInfo.config, funcId)
+        : await this.#callProcedureFunctionRemote(proc, args, wfCtx, span, procInfo.config, funcId);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (e) {
+      const { message } = e as { message: string };
+      span.setStatus({ code: SpanStatusCode.ERROR, message });
+      throw e;
+    } finally {
+      this.tracer.endSpan(span);
+    }
+  }
+
+  async #callProcedureFunctionLocal<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, wfCtx: WorkflowContextImpl, span: Span, config: StoredProcedureConfig, funcId: number): Promise<R> {
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    const readOnly = config.readOnly ?? false;
+
+    while (true) {
+      let txn_snapshot = "invalid";
+      const wrappedProcedure = async (client: PoolClient): Promise<R> => {
+        const ctxt = new StoredProcedureContextImpl(client, wfCtx, span, this.logger, proc.name);
+
+        if (wfCtx.presetUUID) {
+          const func = <T>(sql: string, args: unknown[]) => this.procedurePool.query(sql, args).then(v => v.rows as T[]);
+          const check: BufferedResult = await this.#checkExecution<R>(func, wfCtx.workflowUUID, wfCtx.functionID);
+          txn_snapshot = check.txn_snapshot;
+          if (check.output !== dbosNull) {
+            ctxt.span.setAttribute("cached", true);
+            ctxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.tracer.endSpan(ctxt.span);
+            return check.output as R;
+          }
+        } else {
+          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
+          const func = <T>(sql: string, args: unknown[]) => this.procedurePool.query(sql, args).then(v => v.rows as T[]);
+          txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
+        }
+
+        // For non-read-only transactions, flush the result buffer.
+        if (!readOnly) {
+          await wfCtx.flushResultBufferProc(client);
+        }
+
+        let cresult: R | undefined;
+        await runWithDBOSContext(ctxt, async () => {
+          cresult = await proc(ctxt, ...args);
+        });
+        const result = cresult!
+
+        if (readOnly) {
+          // Buffer the output of read-only transactions instead of synchronously writing it.
+          const readOutput: BufferedResult = {
+            output: result,
+            txn_snapshot: txn_snapshot,
+            created_at: Date.now(),
+          }
+          wfCtx.resultBuffer.set(funcId, readOutput);
+        } else {
+          // Synchronously record the output of write transactions and obtain the transaction ID.
+          const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
+          ctxt.span.setAttribute("pg_txn_id", pg_txn_id);
+          wfCtx.resultBuffer.clear();
+        }
+
+        return result;
+      };
+
+      try {
+        const result = await this.invokeStoredProcFunction(wrappedProcedure, { isolationLevel: config.isolationLevel });
+        span.setStatus({ code: SpanStatusCode.OK });
+        return result;
+      } catch (err) {
+        if (this.userDatabase.isRetriableTransactionError(err)) {
+          // serialization_failure in PostgreSQL
+          span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        }
+
+        // Record and throw other errors.
+        const e: Error = err as Error;
+        await this.invokeStoredProcFunction(async (client: PoolClient) => {
+          await wfCtx.flushResultBufferProc(client);
+          await wfCtx.recordErrorProc(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+
+        await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
+          await wfCtx.flushResultBuffer(client);
+          await wfCtx.recordErrorTx(client, funcId, txn_snapshot, e);
+        }, { isolationLevel: IsolationLevel.ReadCommitted });
+        wfCtx.resultBuffer.clear();
+        throw err;
+      }
+    }
+  }
+
+  async #callProcedureFunctionRemote<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, wfCtx: WorkflowContextImpl, span: Span, config: StoredProcedureConfig, funcId: number): Promise<R> {
+    const readOnly = config.readOnly ?? false;
+
+    const $jsonCtx = {
+      request: wfCtx.request,
+      authenticatedUser: wfCtx.authenticatedUser,
+      authenticatedRoles: wfCtx.authenticatedRoles,
+      assumedRole: wfCtx.assumedRole,
+    };
+
+    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
+    // args and bufferedResults before being passed to #invokeStoredProc
+    const $args = [wfCtx.workflowUUID, funcId, wfCtx.presetUUID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
+    if (!readOnly) {
+      // function_id, output, txn_snapshot, created_at
+      const bufferedResults = new Array<[number, unknown, string, number?]>();
+      for (const [functionID, { output, txn_snapshot, created_at }] of wfCtx.resultBuffer.entries()) {
+        bufferedResults.push([functionID, output, txn_snapshot, created_at]);
+      }
+      // sort by function ID
+      bufferedResults.sort((a, b) => a[0] - b[0]);
+      $args.unshift(bufferedResults.length > 0 ? JSON.stringify(bufferedResults) : null);
+    }
+
+    type ReturnValue = { return_value: { output?: R, error?: unknown, txn_id?: string, txn_snapshot?: string, created_at?: number } };
+    const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(proc as StoredProcedure<unknown[], unknown>, $args);
+
+    const { error, output, txn_snapshot, txn_id, created_at } = return_value;
+
+    // buffered results are persisted in r/w stored procs, even if it returns an error
+    if (!readOnly) {
+      wfCtx.resultBuffer.clear();
+    }
+
+    // if the stored proc returns an error, deserialize and throw it.
+    // stored proc saves the error in tx_output before returning
+    if (error) {
+      throw deserializeError(error);
+    }
+
+    // if txn_snapshot is provided, the output needs to be buffered
+    if (readOnly && txn_snapshot) {
+      wfCtx.resultBuffer.set(funcId, {
+        output,
+        txn_snapshot,
+        created_at: created_at ?? Date.now(),
+      });
+    }
+
+    if (!readOnly) {
+      wfCtx.resultBuffer.clear();
+    }
+
+    if (txn_id) {
+      span.setAttribute("pg_txn_id", txn_id);
+    }
+    span.setStatus({ code: SpanStatusCode.OK });
+    return output!;
+  }
+
+  async #invokeStoredProc<R extends QueryResultRow = any>(proc: StoredProcedure<unknown[], unknown>, args: unknown[]): Promise<R[]> {
+    const client = await this.procedurePool.connect();
+    const log = (msg: NoticeMessage) => this.#logNotice(msg);
+
+    const procClassName = this.getProcedureClassName(proc);
+    const plainProcName = `${procClassName}_${proc.name}_p`;
+    const procName = this.config.appVersion
+      ? `v${this.config.appVersion}_${plainProcName}`
+      : plainProcName;
+
+    const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
+    try {
+      client.on('notice', log);
+      return await client.query<R>(sql, args).then(value => value.rows);
+    } finally {
+      client.off('notice', log);
+      client.release();
+    }
+  }
+
+  async invokeStoredProcFunction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
     const client = await this.procedurePool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -1104,12 +1341,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         try {
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
-            await runWithStepContext(ctxt, async ()=> {
+            await runWithStepContext(ctxt, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
           }
           else {
-            await runWithStepContext(ctxt, async ()=> {
+            await runWithStepContext(ctxt, async () => {
               const sf = stepFn as unknown as (...args: T) => Promise<R>;
               cresult = await sf.call(clsInst, ...args);
             });
@@ -1132,12 +1369,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         if (commInfo.registration.passContext) {
-          await runWithStepContext(ctxt, async ()=> {
+          await runWithStepContext(ctxt, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
         }
         else {
-          await runWithStepContext(ctxt, async ()=> {
+          await runWithStepContext(ctxt, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });
@@ -1223,10 +1460,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       close: async () => {
         for (const nname of channels) {
           try {
-              await notificationsClient.query(`UNLISTEN ${nname};`);
+            await notificationsClient.query(`UNLISTEN ${nname};`);
           }
-          catch(e) {
-              this.logger.warn(e);
+          catch (e) {
+            this.logger.warn(e);
           }
           notificationsClient.release();
         }
@@ -1285,7 +1522,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
 
-    const {wfInfo, configuredInst} = this.getWorkflowInfoByStatus(wfStatus);
+    const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
     const workflowStartUUID = startNewWorkflow ? undefined : workflowUUID;
@@ -1295,8 +1532,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
         queueName: wfStatus.queueName, executeWorkflow: true,
       },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      ...inputs);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ...inputs);
     }
 
     // Should be temporary workflows. Parse the name of the workflow.
@@ -1313,7 +1550,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     let tempWfName: string | undefined;
     let tempWfClass: string | undefined;
     if (nameArr[1] === TempWorkflowType.transaction) {
-      const {txnInfo, clsInst} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
+      const { txnInfo, clsInst } = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!txnInfo) {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
@@ -1327,7 +1564,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.external) {
-      const {commInfo, clsInst} = this.getStepInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
+      const { commInfo, clsInst } = this.getStepInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!commInfo) {
         this.logger.error(`Cannot find step info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
@@ -1355,8 +1592,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst,
       recovery: true, tempWfType, tempWfClass, tempWfName,
     },
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    ...inputs);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      ...inputs);
   }
 
   async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {

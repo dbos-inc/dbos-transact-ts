@@ -250,7 +250,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let result: Awaited<R> | Error;
     try {
-      result = await this.#dbosExec.executeProcedure(wrappedProcedure, procInfo.config);
+      result = await this.#dbosExec.invokeStoredProcFunction(wrappedProcedure, procInfo.config);
     } catch (e) {
       result = e as Error;
     }
