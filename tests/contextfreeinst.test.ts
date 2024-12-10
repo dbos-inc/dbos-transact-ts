@@ -241,8 +241,6 @@ async function main5() {
   resolve(); // Let WF finish
   await wfhq.getResult();
 
-  // Quick check on scheduled WFs
-  
   await DBOS.shutdown();
 }
 
