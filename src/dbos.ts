@@ -366,8 +366,11 @@ export class DBOS {
     }
     await sleepms(durationMS);
   }
-  static async sleep(durationSec: number): Promise<void> {
+  static async sleepSecs(durationSec: number): Promise<void> {
     return this.sleepms(durationSec * 1000);
+  }
+  static async sleep(durationMS: number): Promise<void> {
+    return this.sleepms(durationMS);
   }
 
   static async withNextWorkflowID<R>(wfid: string, callback: ()=>Promise<R>) : Promise<R> {
