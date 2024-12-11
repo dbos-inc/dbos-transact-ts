@@ -172,8 +172,6 @@ export interface WorkflowContext extends DBOSContext {
   sleep(durationSec: number): Promise<void>;
 }
 
-type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
-
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #dbosExec;
@@ -213,113 +211,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
   functionIDGetIncrement(): number {
     return this.functionID++;
-  }
-
-  /**
-   * Write all entries in the workflow result buffer to the database.
-   * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.
-   */
-  async #flushResultBuffer(query: QueryFunction, isKeyConflict: (error: unknown) => boolean): Promise<void> {
-    const funcIDs = Array.from(this.resultBuffer.keys());
-    if (funcIDs.length === 0) {
-      return;
-    }
-    funcIDs.sort();
-    try {
-      let sqlStmt = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ";
-      let paramCnt = 1;
-      const values: any[] = [];
-      for (const funcID of funcIDs) {
-        // Capture output and also transaction snapshot information.
-        // Initially, no txn_id because no queries executed.
-        const recorded = this.resultBuffer.get(funcID);
-        const output = recorded!.output;
-        const txnSnapshot = recorded!.txn_snapshot;
-        const createdAt = recorded!.created_at!;
-        if (paramCnt > 1) {
-          sqlStmt += ", ";
-        }
-        sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-        values.push(this.workflowUUID, funcID, DBOSJSON.stringify(output), DBOSJSON.stringify(null), txnSnapshot, createdAt);
-      }
-      this.logger.debug(sqlStmt);
-      await query(sqlStmt, values);
-    } catch (error) {
-      if (isKeyConflict(error)) {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  flushResultBuffer(client: UserDatabaseClient): Promise<void> {
-    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#flushResultBuffer(func, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
-  }
-
-  flushResultBufferProc(client: PoolClient): Promise<void> {
-    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-    return this.#flushResultBuffer(func, pgNodeIsKeyConflictError);
-  }
-
-
-  /**
-   * Write a operation's output to the database.
-   */
-  async #recordOutput<R>(query: QueryFunction, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown) => boolean): Promise<string> {
-    try {
-      const serialOutput = DBOSJSON.stringify(output);
-      const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;",
-        [this.workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()]);
-      return rows[0].txn_id;
-    } catch (error) {
-      if (isKeyConflict(error)) {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  recordOutputTx<R>(client: UserDatabaseClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
-    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#recordOutput(func, funcID, txnSnapshot, output, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
-  }
-
-  recordOutputProc<R>(client: PoolClient, funcID: number, txnSnapshot: string, output: R): Promise<string> {
-    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-    return this.#recordOutput(func, funcID, txnSnapshot, output, pgNodeIsKeyConflictError);
-  }
-
-  /**
-   * Record an error in an operation to the database.
-   */
-  async #recordError(query: QueryFunction, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown) => boolean): Promise<void> {
-    try {
-      const serialErr = DBOSJSON.stringify(serializeError(err));
-      await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;",
-        [this.workflowUUID, funcID, serialErr, txnSnapshot, Date.now()]);
-    } catch (error) {
-      if (isKeyConflict(error)) {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(this.workflowUUID);
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  recordErrorTx(client: UserDatabaseClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
-    const func = <T>(sql: string, args: unknown[]) => this.#dbosExec.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#recordError(func, funcID, txnSnapshot, err, (error) => this.#dbosExec.userDatabase.isKeyConflictError(error));
-  }
-
-  recordErrorProc(client: PoolClient, funcID: number, txnSnapshot: string, err: Error): Promise<void> {
-    const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-    return this.#recordError(func, funcID, txnSnapshot, err, pgNodeIsKeyConflictError);
   }
 
   /**
@@ -378,6 +269,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       return this.proxyInvokeWF(target, workflowUUID, true, target as ConfiguredInstance, queue) as unknown as WfInvokeWfsAsync<T>;
     }
   }
+
   invokeWorkflow<T extends object>(target: T, workflowUUID?: string): WfInvokeWfs<T> {
     if (typeof target === 'function') {
       return this.proxyInvokeWF(target, workflowUUID, false, null) as unknown as WfInvokeWfs<T>;
@@ -423,7 +315,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
-      await this.flushResultBuffer(client);
+      await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
@@ -440,7 +332,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const timeoutFunctionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
-      await this.flushResultBuffer(client);
+      await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
@@ -455,7 +347,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const functionID: number = this.functionIDGetIncrement();
 
     await this.#dbosExec.userDatabase.transaction(async (client: UserDatabaseClient) => {
-      await this.flushResultBuffer(client);
+      await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
     }, { isolationLevel: IsolationLevel.ReadCommitted });
     this.resultBuffer.clear();
 
