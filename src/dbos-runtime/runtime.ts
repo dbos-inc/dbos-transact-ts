@@ -89,6 +89,7 @@ export class DBOSRuntime {
       if (fs.existsSync(operations)) {
         const operationsURL = pathToFileURL(operations).href;
         exports = (await import(operationsURL)) as Promise<ModuleExports>;
+        DBOS.globalLogger?.debug(`Loaded operations from ${operations}`);
       } else {
         throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
       }
@@ -96,6 +97,7 @@ export class DBOSRuntime {
       for (const key in exports) {
         if (isObject(exports[key])) {
           classes.push(exports[key] as object);
+          DBOS.globalLogger?.debug(`Loaded class ${key}`);
         }
       }
       allClasses.push(...classes);
