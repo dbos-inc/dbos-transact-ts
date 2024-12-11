@@ -536,12 +536,13 @@ export class DBOS {
       for (const op of ops) {
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
-            op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx, ...args)
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx, ...args)
           : op.commConfig
             ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
-              op.registeredFunction as StepFunction<unknown[], unknown>, null, wfctx, ...args)
+                op.registeredFunction as StepFunction<unknown[], unknown>, null, wfctx, ...args)
             : op.procConfig
-              ? (...args: unknown[]) => wfctx.procedure<unknown[], unknown>(op.registeredFunction as StoredProcedure<unknown[], unknown>, ...args)
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callProcedureFunction(
+                  op.registeredFunction as StoredProcedure<unknown[], unknown>, wfctx, ...args)
               : undefined;
       }
       return proxy as InvokeFuncs<T>;
