@@ -42,7 +42,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithDBOSContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithDBOSContext, runWithStoredProcContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -1174,11 +1174,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     while (true) {
       let txn_snapshot = "invalid";
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
-        const ctxt = new StoredProcedureContextImpl(client, wfCtx, span, this.logger, proc.name);
+        const ctxt = new StoredProcedureContextImpl(client, wfCtx, span, this.logger, funcId, proc.name);
 
         if (wfCtx.presetUUID) {
           const func = <T>(sql: string, args: unknown[]) => this.procedurePool.query(sql, args).then(v => v.rows as T[]);
-          const check: BufferedResult = await this.#checkExecution<R>(func, wfCtx.workflowUUID, wfCtx.functionID);
+          const check: BufferedResult = await this.#checkExecution<R>(func, wfCtx.workflowUUID, funcId);
           txn_snapshot = check.txn_snapshot;
           if (check.output !== dbosNull) {
             ctxt.span.setAttribute("cached", true);
@@ -1198,7 +1198,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         let cresult: R | undefined;
-        await runWithDBOSContext(ctxt, async () => {
+        await runWithStoredProcContext(ctxt, async () => {
           cresult = await proc(ctxt, ...args);
         });
         const result = cresult!

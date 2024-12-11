@@ -35,6 +35,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
     workflowContext: WorkflowContextImpl | WorkflowContextDebug,
     span: Span,
     logger: Logger,
+    readonly functionID: number,
     operationName: string
   ) {
     super(operationName, span, logger, workflowContext);

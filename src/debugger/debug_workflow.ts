@@ -229,7 +229,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     let check: RecordedResult<R> | Error;
     const wrappedProcedure = async (client: PoolClient): Promise<R> => {
       check = await this.checkProcExecution<R>(client, funcId);
-      const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
+      const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, funcId, proc.name);
 
       if (check instanceof Error) {
         if (this.#dbosExec.debugProxy) {
