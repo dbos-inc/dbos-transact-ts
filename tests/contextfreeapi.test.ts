@@ -1,5 +1,4 @@
 import { DBOS, WorkflowQueue } from '../src';
-import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions
@@ -226,7 +225,7 @@ async function main5() {
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
   expect(wfstat?.queueName).toBe('wfq');
 
-  await sleepms(2000);
+  await DBOS.sleepSeconds(2);
   expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
 
   await DBOS.shutdown();

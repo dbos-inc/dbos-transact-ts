@@ -366,7 +366,7 @@ export class DBOS {
     }
     await sleepms(durationMS);
   }
-  static async sleepSecs(durationSec: number): Promise<void> {
+  static async sleepSeconds(durationSec: number): Promise<void> {
     return this.sleepms(durationSec * 1000);
   }
   static async sleep(durationMS: number): Promise<void> {
