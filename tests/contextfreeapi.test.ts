@@ -1,5 +1,4 @@
 import { DBOS, WorkflowQueue } from '../src';
-import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions
@@ -246,7 +245,7 @@ async function main5() {
   await wfhq.getResult();
 
   // Quick check on scheduled WFs
-  await sleepms(2000);
+  await DBOS.sleepSeconds(2);
   expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
 
   await DBOS.shutdown();
