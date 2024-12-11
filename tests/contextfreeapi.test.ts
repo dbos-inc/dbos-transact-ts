@@ -1,5 +1,4 @@
 import { DBOS, WorkflowQueue } from '../src';
-import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions
@@ -67,6 +66,12 @@ class TestFunctions
     const kv1 = await DBOS.getEvent<string>(wfid, "key1");
     const kv2 = await DBOS.getEvent<string>(wfid, "key2");
     return kv1+','+kv2;
+  }
+
+  static awaitThis: Promise<void> | undefined = undefined;
+  @DBOS.workflow()
+  static async awaitAPromise() {
+    await TestFunctions.awaitThis;
   }
 }
 
@@ -214,19 +219,33 @@ async function main5() {
   });
   expect(res).toBe('done');
 
-  // Validate that it had the queue
-  /*
-  // To do when workflow can be suspended...
-  const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
-  expect (wfqcontent.workflows.length).toBe(1);
-  */
+
   const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.workflowUUIDs.length).toBe(1);
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
   expect(wfstat?.queueName).toBe('wfq');
 
-  await sleepms(2000);
+  // Check queues in startWorkflow
+  let resolve: ()=>void = ()=>{};
+  TestFunctions.awaitThis = new Promise<void>((r) => {
+    resolve = r;
+  });
+
+  const wfhq = await DBOS.startWorkflow(TestFunctions, {workflowID: 'waitPromiseWF', queueName: wfq.name}).awaitAPromise()
+  const wfstatsw = await DBOS.getWorkflowStatus('waitPromiseWF');
+  expect(wfstatsw?.queueName).toBe('wfq');
+
+  // Validate that it had the queue
+  const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
+  expect(wfqcontent.workflows.length).toBe(1);
+  expect(wfqcontent.workflows[0].workflowID).toBe('waitPromiseWF');
+
+  resolve(); // Let WF finish
+  await wfhq.getResult();
+
+  // Quick check on scheduled WFs
+  await DBOS.sleepSeconds(2);
   expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
 
   await DBOS.shutdown();
@@ -238,7 +257,6 @@ async function main6() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  // This or: DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset'); ?
   const wfhandle = await DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset');
   await DBOS.withNextWorkflowID('wfidset', async() => {
     await TestFunctions.setEventWorkflow('a', 'b');
