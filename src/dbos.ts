@@ -121,6 +121,11 @@ function httpApiDec(verb: APITypes, url: string) {
   }
 }
 
+export interface StartWorkflowParams {
+  workflowID?: string;
+  queueName?: string;
+}
+
 export class DBOS {
   ///////
   // Lifecycle
@@ -437,25 +442,25 @@ export class DBOS {
     }
   }
 
-  static startWorkflow<T extends ConfiguredInstance>(targetClass: T): InvokeFunctionsAsyncInst<T>;
-  static startWorkflow<T extends object>(targetClass: T): InvokeFunctionsAsync<T>;
-  static startWorkflow<T extends object>(target: T): InvokeFunctionsAsync<T> {
+  static startWorkflow<T extends ConfiguredInstance>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsyncInst<T>;
+  static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
+  static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
     if (typeof target === 'function') {
-      return DBOS.proxyInvokeWF(target, null) as unknown as InvokeFunctionsAsync<T>;
+      return DBOS.proxyInvokeWF(target, null, params) as unknown as InvokeFunctionsAsync<T>;
     }
     else {
-      return DBOS.proxyInvokeWF(target, target as ConfiguredInstance) as unknown as InvokeFunctionsAsync<T>;
+      return DBOS.proxyInvokeWF(target, target as ConfiguredInstance, params) as unknown as InvokeFunctionsAsync<T>;
     }
   }
 
-  static proxyInvokeWF<T extends object>(object: T, configuredInstance: ConfiguredInstance | null):
+  static proxyInvokeWF<T extends object>(object: T, configuredInstance: ConfiguredInstance | null, inParams?: StartWorkflowParams):
     InvokeFunctionsAsync<T>
   {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
     const pctx = getCurrentContextStore();
-    let wfId = pctx?.idAssignedForNextWorkflow;
+    let wfId = inParams?.workflowID ?? pctx?.idAssignedForNextWorkflow;
 
     // If this is called from within a workflow, this is a child workflow,
     //  For OAOO, we will need a consistent ID formed from the parent WF and call number
@@ -464,18 +469,18 @@ export class DBOS {
 
       const funcId = wfctx.functionIDGetIncrement();
       wfId = wfId || (wfctx.workflowUUID + "-" + funcId);
-      const params : WorkflowParams = {
+      const wfParams : WorkflowParams = {
         workflowUUID: wfId,
         parentCtx: wfctx,
         configuredInstance,
-        queueName: pctx?.queueAssignedForWorkflows
+        queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows
       };
 
       for (const op of ops) {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) => DBOSExecutor.globalInstance!.internalWorkflow(
              (op.registeredFunction as WorkflowFunction<unknown[], unknown>),
-             params, wfctx.workflowUUID, funcId, ...args)
+             wfParams, wfctx.workflowUUID, funcId, ...args)
           : undefined;
       }
 
@@ -509,7 +514,7 @@ export class DBOS {
 
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
-      queueName: pctx?.queueAssignedForWorkflows,
+      queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
       configuredInstance,
       parentCtx,
     };
