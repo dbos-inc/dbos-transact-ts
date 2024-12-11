@@ -23,7 +23,7 @@ import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
 import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
-import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
+import { DBOSRuntime, DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
 import { configureInstance, getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
@@ -149,6 +149,11 @@ export class DBOS {
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     }
+
+    if (DBOS.runtimeConfig && DBOS.runtimeConfig.entrypoints.length > 0) {
+      await DBOSRuntime.loadClasses(DBOS.runtimeConfig.entrypoints);
+    }
+
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
