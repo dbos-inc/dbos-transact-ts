@@ -20,7 +20,7 @@ import { StepFunction } from "../step";
 import * as net from "net";
 import { performance } from "perf_hooks";
 import { DBOSJSON, exhaustiveCheckGuard } from "../utils";
-import { runWithDBOSContext } from "../context";
+import { runWithHandlerContext } from "../context";
 
 export const WorkflowUUIDHeader = "dbos-idempotency-key";
 export const WorkflowRecoveryUrl = "/dbos-workflow-recovery";
@@ -351,7 +351,7 @@ export class DBOSHttpServer {
             } else {
               // Directly invoke the handler code.
               let cresult: unknown;
-              await runWithDBOSContext(oc, async ()=> {
+              await runWithHandlerContext(oc, async ()=> {
                 if (ro.passContext) {
                   cresult = await ro.invoke(undefined, [oc, ...args]);
                 }

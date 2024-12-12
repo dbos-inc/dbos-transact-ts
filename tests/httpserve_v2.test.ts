@@ -209,6 +209,9 @@ describe("dbos-v2api-tests-http", () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
+  });
+
+  beforeEach(async () => {
     await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
   });
