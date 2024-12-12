@@ -18,6 +18,19 @@ async function runSql<T>(config: ClientConfig, func: (client: Client) => Promise
   }
 }
 
+function randomString(length?: number) {
+  length ??= 4 + Math.floor(Math.random() * 10);
+
+  let result = '';
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
+
+
 describe("operations-test", () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
@@ -69,7 +82,7 @@ describe("operations-test", () => {
 
   test("test-procGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
-    const user = "procWF";
+    const user = `procWF_${randomString()}`;
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -92,7 +105,7 @@ describe("operations-test", () => {
 
   test("test-debug-procGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
-    const user = "debugProcWF";
+    const user = `debugProcWF_${randomString()}`;
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -112,7 +125,7 @@ describe("operations-test", () => {
   test("test-txGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
 
-    const user = "txWF";
+    const user = `txWF_${randomString()}`;
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).txAndProcGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -130,7 +143,7 @@ describe("operations-test", () => {
 
   test("test-procLocalGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
-    const user = "procLocalWF";
+    const user = `procLocalWF_${randomString()}`;    
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procLocalGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -153,7 +166,7 @@ describe("operations-test", () => {
 
   test("test-txAndProcGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
-    const user = "txAndProcWF";
+    const user = `txAndProcWF_${randomString()}`;
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).txAndProcGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -178,7 +191,7 @@ describe("operations-test", () => {
     try {
 
       const wfUUID = uuidv1();
-      const user = "txAndProcWFv2";
+      const user = `txAndProcWFv2_${randomString()}`;
       const res = await DBOS.withNextWorkflowID(wfUUID, async () => {
         return await StoredProcTest.txAndProcGreetingWorkflow_v2(user);
       })
@@ -203,7 +216,7 @@ describe("operations-test", () => {
 
   test("test-procErrorWorkflow", async () => {
     const wfid = uuidv1();
-    const user = "procErrorWF";
+    const user = `procErrorWF_${randomString()}`;
     await expect(testRuntime.invokeWorkflow(StoredProcTest, wfid).procErrorWorkflow(user)).rejects.toThrow("This is a test error");
 
     const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfid);
