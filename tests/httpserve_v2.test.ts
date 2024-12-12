@@ -1,13 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 
 import bodyParser from '@koa/bodyparser';
-import { ArgSource, ArgSources, Authentication, DBOS, DBOSResponseError, KoaBodyParser, MiddlewareContext } from '../src';
+import { ArgSource, ArgSources, Authentication, DBOS, DBOSResponseError, KoaBodyParser, MiddlewareContext, StatusString } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 import { WorkflowUUIDHeader } from '../src/httpServer/server';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import request from "supertest";
-import { validate as uuidValidate } from "uuid";
+import { v1 as uuidv1, validate as uuidValidate } from "uuid";
 import { RequestIDHeader } from '../src/httpServer/middleware';
+import { IncomingMessage } from "http";
 
 const testTableName = "dbos_test_kv";
 
@@ -227,5 +228,226 @@ describe("dbos-v2api-tests-http", () => {
     const requestID: string = response.headers[RequestIDHeader.toLowerCase()];
     // Expect uuidValidate to be true
     expect(uuidValidate(requestID)).toBe(true);
+  });
+
+  test("get-url", async () => {
+    const requestID = "my-request-id";
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/hello/alice").set(RequestIDHeader, requestID);
+    expect(response.statusCode).toBe(301);
+    expect(response.text).toBe("wow alice");
+    expect(response.headers[RequestIDHeader.toLowerCase()]).toBe(requestID);
+  });
+
+  test("get-query", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/query?name=alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("get-querybody", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/querybody").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-query", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).delete("/testdeletequery?name=alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-url", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).delete("/testdeleteurl/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("delete-body", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).delete("/testdeletebody").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("post-test", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/testpost").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("post-test-custom-body", async () => {
+    let response = await request(DBOS.getHTTPHandlersCallback()!).post("/testpost").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(DBOS.getHTTPHandlersCallback()!).post("/testpost").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("put-test", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).put("/testput").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("put-test-custom-body", async () => {
+    let response = await request(DBOS.getHTTPHandlersCallback()!).put("/testput").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(DBOS.getHTTPHandlersCallback()!).put("/testput").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("patch-test", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).patch("/testpatch").send({ name: "alice" });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+  });
+
+  test("patch-test-custom-body", async () => {
+    let response = await request(DBOS.getHTTPHandlersCallback()!).patch("/testpatch").set('Content-Type', 'application/custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello alice");
+    response = await request(DBOS.getHTTPHandlersCallback()!).patch("/testpatch").set('Content-Type', 'application/rejected-custom-content-type').send(JSON.stringify({ name: "alice" }));
+    expect(response.statusCode).toBe(400);
+  });
+
+  test("endpoint-transaction", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/transaction/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+  test("endpoint-step", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/step/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("alice");
+  });
+
+  test("endpoint-workflow", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/workflow?name=alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+  test("endpoint-error", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/error").send({ name: "alice" });
+    expect(response.statusCode).toBe(500);
+    expect(response.body.details.code).toBe("23505"); // Should be the expected error.
+  });
+
+  test("endpoint-handler", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/handler/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+  test("endpoint-testStartWorkflow", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/testStartWorkflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+  test("endpoint-testInvokeWorkflow", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/testInvokeWorkflow/alice");
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+  });
+
+  // This feels unclean, but supertest doesn't expose the error message the people we want. See:
+  //   https://github.com/ladjs/supertest/issues/95
+  interface Res {
+    res: IncomingMessage;
+  }
+
+  test("response-error", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/dbos-error");
+    expect(response.statusCode).toBe(503);
+    expect((response as unknown as Res).res.statusMessage).toBe("customize error");
+    expect(response.body.message).toBe("customize error");
+  });
+
+  test("datavalidation-error", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/query");
+    expect(response.statusCode).toBe(400);
+    expect(response.body.details.dbosErrorCode).toBe(9);
+  });
+
+  test("dbos-redirect", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/redirect");
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe("/redirect-dbos");
+  });
+
+  test("not-authenticated", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser?name=alice");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-you", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser?name=alice&userid=go_away");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-authorized", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser?name=alice&userid=bob");
+    expect(response.statusCode).toBe(403);
+  });
+
+  test("authorized", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser?name=alice&userid=a_real_user");
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("not-authenticated2", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser2?name=alice");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-you2", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser2?name=alice&userid=go_away");
+    expect(response.statusCode).toBe(401);
+  });
+
+  test("not-authorized2", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser2?name=alice&userid=bob");
+    expect(response.statusCode).toBe(403);
+  });
+
+  test("authorized2", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/requireduser2?name=alice&userid=a_real_user");
+    expect(response.statusCode).toBe(200);
+  });
+
+  test("test-workflowUUID-header", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/workflow?name=bob").set({ "dbos-idempotency-key": workflowUUID });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    await DBOS.executor.flushWorkflowBuffers();
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+      request: { url: "/workflow?name=bob" },
+    });
+  });
+
+  test("endpoint-handler-UUID", async () => {
+    const workflowUUID = uuidv1();
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/handler/bob").set({ "dbos-idempotency-key": workflowUUID });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe("hello 1");
+
+    // Retrieve the workflow with UUID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe("hello 1");
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+      request: { url: "/handler/bob" },
+    });
   });
 });
