@@ -19,7 +19,6 @@
     "src"
   ],
   "exclude": [
-    "**/*.test.ts",
     "dist"
   ]
 }

@@ -2,8 +2,8 @@ import { DBOS, TestingRuntime, parseConfigFile } from "@dbos-inc/dbos-sdk";
 import { StoredProcTest } from "./operations";
 import { v1 as uuidv1 } from "uuid";
 
-import { transaction_outputs } from "../../../schemas/user_db_schema";
-import { workflow_status } from "../../../schemas/system_db_schema";
+import { workflow_status } from "@dbos-inc/dbos-sdk/schemas/system_db_schema";
+import { transaction_outputs } from "@dbos-inc/dbos-sdk/schemas/user_db_schema";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "@dbos-inc/dbos-sdk/dist/src/testing/testing_runtime";
 import { DBOSConfig } from "@dbos-inc/dbos-sdk";
 import { Client, ClientConfig } from "pg";
