@@ -52,7 +52,7 @@ import {
   WorkflowHandle
 } from ".";
 import { ConfiguredInstance } from ".";
-import { StoredProcedure } from "./procedure";
+import { StoredProcedure, StoredProcedureConfig } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
 
@@ -812,6 +812,18 @@ export class DBOS {
 
       return descriptor;
     }
+    return decorator;
+  }
+
+  static storedProcedure(config: StoredProcedureConfig={}) {
+    function decorator<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+    {
+      return inDescriptor;
+    }
+
     return decorator;
   }
 
