@@ -12,6 +12,7 @@ import { TransactionContextImpl } from "./transaction";
 import { StepContextImpl } from "./step";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
 import { StoredProcedureContextImpl } from "./procedure";
+import { HandlerContextImpl } from "./httpServer/handler";
 
 export interface DBOSLocalCtx {
   ctx?: DBOSContext;
@@ -81,10 +82,38 @@ export function assertCurrentWorkflowContext(): WorkflowContextImpl {
   return ctx as WorkflowContextImpl;
 }
 
+export function getNextWFID(assignedID?: string) {
+  let wfId = assignedID;
+  if (!wfId) {
+    const pctx = getCurrentContextStore();
+    const nextID = pctx?.idAssignedForNextWorkflow;
+    if (nextID) {
+      wfId = nextID;
+      pctx.idAssignedForNextWorkflow = undefined;
+    }
+  }
+  return wfId;
+}
+
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
   return await asyncLocalCtx.run({
     ctx,
-    workflowId: ctx.workflowUUID,
+    idAssignedForNextWorkflow: ctx.workflowUUID,
+    request: ctx.request,
+    authenticatedRoles: ctx.authenticatedRoles,
+    authenticatedUser: ctx.authenticatedUser,
+    span: ctx.span,
+  }, callback);
+}
+
+export async function runWithHandlerContext<R>(ctx: HandlerContextImpl, callback: ()=>Promise<R>) {
+  return await asyncLocalCtx.run({
+    ctx,
+    idAssignedForNextWorkflow: ctx.workflowUUID,
+    request: ctx.request,
+    authenticatedRoles: ctx.authenticatedRoles,
+    authenticatedUser: ctx.authenticatedUser,
+    span: ctx.span,
   }, callback);
 }
 

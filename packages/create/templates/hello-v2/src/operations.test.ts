@@ -5,6 +5,7 @@ import request from "supertest";
 describe("operations-test", () => {
   beforeAll(async () => {
     await DBOS.launch();
+    await DBOS.launchAppHTTPServer();
   });
 
   afterAll(async () => {
