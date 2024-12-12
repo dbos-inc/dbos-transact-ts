@@ -6,7 +6,8 @@ import {
   getCurrentDBOSContext,
   HTTPRequest,
   runWithTopContext,
-  DBOSContextImpl
+  DBOSContextImpl,
+  getNextWFID
 } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
 import {
@@ -20,7 +21,7 @@ import {
 } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
+import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
@@ -224,12 +225,27 @@ export class DBOS {
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
   }
 
+  static async launchAppHTTPServer() {
+    if (!DBOSExecutor.globalInstance) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    // Create the DBOS HTTP server
+    //  This may be a no-op if there are no registered endpoints
+    const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
+    if (DBOS.runtimeConfig) {
+      // This will not listen if there's no decorated endpoint
+      DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
+    }
+  }
+
   // This retrieves the HTTP handlers callback for DBOS HTTP.
   //  (This is the one that handles the @DBOS.getApi, etc., methods.)
   // Useful for testing purposes, or to combine the DBOS service with routes.
   // If you are using your own HTTP server, this won't return anything.
   static getHTTPHandlersCallback() {
-    if (!DBOSHttpServer.instance) return undefined;
+    if (!DBOSHttpServer.instance) {
+      return undefined;
+    }
     return DBOSHttpServer.instance.app.callback();
   }
 
@@ -258,11 +274,24 @@ export class DBOS {
     return undefined;
   }
 
-  static get request(): HTTPRequest | undefined {
+  static getRequest(): HTTPRequest | undefined {
     return getCurrentDBOSContext()?.request;
   }
-  static get koaContext(): Koa.Context | undefined {
+
+  static get request(): HTTPRequest {
+    const r = DBOS.getRequest();
+    if (!r) throw new DBOSError("`DBOS.request` accessed from outside of HTTP requests");
+    return r;
+  }
+
+  static getKoaContext(): Koa.Context | undefined {
     return (getCurrentDBOSContext() as HandlerContext)?.koaContext;
+  }
+
+  static get koaContext(): Koa.Context {
+    const r = DBOS.getKoaContext();
+    if (!r) throw new DBOSError("`DBOS.koaContext` accessed from outside koa request");
+    return r;
   }
 
   static get workflowID(): string | undefined {
@@ -462,8 +491,8 @@ export class DBOS {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
+    let wfId = getNextWFID(inParams?.workflowID);
     const pctx = getCurrentContextStore();
-    let wfId = inParams?.workflowID ?? pctx?.idAssignedForNextWorkflow;
 
     // If this is called from within a workflow, this is a child workflow,
     //  For OAOO, we will need a consistent ID formed from the parent WF and call number
@@ -659,7 +688,7 @@ export class DBOS {
           }
         }
 
-        let wfId = pctx?.idAssignedForNextWorkflow;
+        let wfId = getNextWFID(undefined);
 
         // If this is called from within a workflow, this is a child workflow,
         //  For OAOO, we will need a consistent ID formed from the parent WF and call number
@@ -713,9 +742,7 @@ export class DBOS {
           configuredInstance : inst,
           parentCtx,
         };
-        if (pctx) {
-          pctx.idAssignedForNextWorkflow = undefined;
-        }
+
         const handle = await DBOS.executor.workflow(
           registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
           wfParams, ...rawArgs
