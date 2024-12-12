@@ -67,7 +67,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     pattern.startsWith('!') ? `!${pattern.slice(1)}` : `**/${pattern}`
   ) ;
 
-  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"];
+  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**", "./.python-version"];
 
   const files = await fg(globPattern, {
     dot: true,
