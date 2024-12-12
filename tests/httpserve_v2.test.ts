@@ -1,9 +1,45 @@
-import { ArgSource, ArgSources, DBOS, DBOSResponseError } from '../src';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
+import bodyParser from '@koa/bodyparser';
+import { ArgSource, ArgSources, Authentication, DBOS, DBOSResponseError, KoaBodyParser, MiddlewareContext } from '../src';
+import { DBOSNotAuthorizedError } from '../src/error';
 import { WorkflowUUIDHeader } from '../src/httpServer/server';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import request from "supertest";
+import { validate as uuidValidate } from "uuid";
+import { RequestIDHeader } from '../src/httpServer/middleware';
 
 const testTableName = "dbos_test_kv";
 
+async function testAuthMiddlware(ctx: MiddlewareContext) {
+  if (ctx.requiredRole.length > 0) {
+    const { userid } = ctx.koaContext.request.query;
+    const uid = userid?.toString();
+
+    if (!uid || uid.length === 0) {
+      const err = new DBOSNotAuthorizedError("Not logged in.", 401);
+      throw err;
+    } else {
+      if (uid === "go_away") {
+        throw new DBOSNotAuthorizedError("Go away.", 401);
+      }
+      return Promise.resolve({
+        authenticatedUser: uid,
+        authenticatedRoles: uid === "a_real_user" ? ["user"] : ["other"],
+      });
+    }
+  }
+  return;
+}
+
+@Authentication(testAuthMiddlware)
+@KoaBodyParser(bodyParser({
+  extendTypes: {
+    json: ["application/json", "application/custom-content-type"],
+  },
+  encoding: "utf-8",
+  parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE']
+}))
 class TestEndpoints {
   @DBOS.transaction()
   static async getKey() {
@@ -129,23 +165,67 @@ class TestEndpoints {
     res = await TestEndpoints.testTransaction(name);
     return res;
   }
+
+  @DBOS.getApi("/requireduser")
+  @DBOS.requiredRole(["user"])
+  static async testAuth(name: string) {
+    if (DBOS.authenticatedUser !== "a_real_user") {
+      throw new DBOSResponseError("uid not a real user!", 400);
+    }
+    if (!DBOS.authenticatedRoles.includes("user")) {
+      throw new DBOSResponseError("roles don't include user!", 400);
+    }
+    if (DBOS.assumedRole !== "user") {
+      throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
+    }
+    return Promise.resolve(`Please say hello to ${name}`);
+  }
+
+  @DBOS.getApi("/requireduser2")
+  @DBOS.requiredRole(["user"])
+  static async testAuth2(name: string) {
+    if (DBOS.authenticatedUser !== "a_real_user") {
+      throw new DBOSResponseError("uid not a real user!", 400);
+    }
+    if (!DBOS.authenticatedRoles.includes("user")) {
+      throw new DBOSResponseError("roles don't include user!", 400);
+    }
+    if (DBOS.assumedRole !== "user") {
+      throw new DBOSResponseError("Should never happen! Not assumed to be user", 400);
+    }
+    return Promise.resolve(`Please say hello to ${name}`);
+  }
 }
 
 async function main() {
-  const config = generateDBOSTestConfig();
-  await setUpDBOSTestDb(config);
-  DBOS.setConfig(config);
-  await DBOS.launch();
-  await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-  await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-
   await TestEndpoints.getKey();
-
-  await DBOS.shutdown();
 }
 
 describe("dbos-v2api-tests-http", () => {
+  beforeAll(async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.launchAppHTTPServer();
+    await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
+
   test("simple-functions", async () => {
     await main();
   }, 15000);
+
+  test("get-hello", async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/hello");
+    expect(response.statusCode).toBe(200);
+    expect(response.body.message).toBe("hello!");
+    const requestID: string = response.headers[RequestIDHeader.toLowerCase()];
+    // Expect uuidValidate to be true
+    expect(uuidValidate(requestID)).toBe(true);
+  });
 });

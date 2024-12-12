@@ -20,7 +20,7 @@ import {
 } from "./workflow";
 import { DBOSExecutorContext } from "./eventreceiver";
 import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
+import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
@@ -224,12 +224,27 @@ export class DBOS {
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
   }
 
+  static async launchAppHTTPServer() {
+    if (!DBOSExecutor.globalInstance) {
+      throw new DBOSExecutorNotInitializedError();
+    }
+    // Create the DBOS HTTP server
+    //  This may be a no-op if there are no registered endpoints
+    const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
+    if (DBOS.runtimeConfig) {
+      // This will not listen if there's no decorated endpoint
+      DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
+    }
+  }
+
   // This retrieves the HTTP handlers callback for DBOS HTTP.
   //  (This is the one that handles the @DBOS.getApi, etc., methods.)
   // Useful for testing purposes, or to combine the DBOS service with routes.
   // If you are using your own HTTP server, this won't return anything.
   static getHTTPHandlersCallback() {
-    if (!DBOSHttpServer.instance) return undefined;
+    if (!DBOSHttpServer.instance) {
+      return undefined;
+    }
     return DBOSHttpServer.instance.app.callback();
   }
 
@@ -258,11 +273,24 @@ export class DBOS {
     return undefined;
   }
 
-  static get request(): HTTPRequest | undefined {
+  static getRequest(): HTTPRequest | undefined {
     return getCurrentDBOSContext()?.request;
   }
-  static get koaContext(): Koa.Context | undefined {
+
+  static get request(): HTTPRequest {
+    const r = DBOS.getRequest();
+    if (!r) throw new DBOSError("`DBOS.request` accessed from outside of HTTP requests");
+    return r;
+  }
+
+  static getKoaContext(): Koa.Context | undefined {
     return (getCurrentDBOSContext() as HandlerContext)?.koaContext;
+  }
+
+  static get koaContext(): Koa.Context {
+    const r = DBOS.getKoaContext();
+    if (!r) throw new DBOSError("`DBOS.koaContext` accessed from outside koa request");
+    return r;
   }
 
   static get workflowID(): string | undefined {
