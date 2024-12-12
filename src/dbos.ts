@@ -6,7 +6,8 @@ import {
   getCurrentDBOSContext,
   HTTPRequest,
   runWithTopContext,
-  DBOSContextImpl
+  DBOSContextImpl,
+  getNextWFID
 } from "./context";
 import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
 import {
@@ -490,8 +491,8 @@ export class DBOS {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
+    let wfId = getNextWFID(inParams?.workflowID);
     const pctx = getCurrentContextStore();
-    let wfId = inParams?.workflowID ?? pctx?.idAssignedForNextWorkflow;
 
     // If this is called from within a workflow, this is a child workflow,
     //  For OAOO, we will need a consistent ID formed from the parent WF and call number
@@ -687,7 +688,7 @@ export class DBOS {
           }
         }
 
-        let wfId = pctx?.idAssignedForNextWorkflow;
+        let wfId = getNextWFID(undefined);
 
         // If this is called from within a workflow, this is a child workflow,
         //  For OAOO, we will need a consistent ID formed from the parent WF and call number
@@ -741,9 +742,7 @@ export class DBOS {
           configuredInstance : inst,
           parentCtx,
         };
-        if (pctx) {
-          pctx.idAssignedForNextWorkflow = undefined;
-        }
+
         const handle = await DBOS.executor.workflow(
           registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
           wfParams, ...rawArgs

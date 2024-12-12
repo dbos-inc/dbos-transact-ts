@@ -81,6 +81,19 @@ export function assertCurrentWorkflowContext(): WorkflowContextImpl {
   return ctx as WorkflowContextImpl;
 }
 
+export function getNextWFID(assignedID?: string) {
+  let wfId = assignedID;
+  if (!wfId) {
+    const pctx = getCurrentContextStore();
+    const nextID = pctx?.idAssignedForNextWorkflow;
+    if (nextID) {
+      wfId = nextID;
+      pctx.idAssignedForNextWorkflow = undefined;
+    }
+  }
+  return wfId;
+}
+
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: ()=>Promise<R>) {
   return await asyncLocalCtx.run({
     ctx,
