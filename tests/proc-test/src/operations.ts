@@ -126,7 +126,7 @@ export class StoredProcTest {
   static async txAndProcGreetingWorkflow_v2(user: string): Promise<{ count: number; greeting: string; }> {
     // Retrieve the number of times this user has been greeted.
     const count = await StoredProcTest.getGreetCountTx_v2(user);
-    const greeting = await StoredProcTest.helloProcedure_v2(user);
+    const greeting = await DBOS.invoke(StoredProcTest).helloProcedure(user);
 
     return { count, greeting };
   }
