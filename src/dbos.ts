@@ -55,6 +55,7 @@ import { ConfiguredInstance } from ".";
 import { StoredProcedureFunc } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
+import { set } from "lodash";
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -137,6 +138,13 @@ export class DBOS {
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+  }
+
+  // For unit testing purposes only
+  static setAppConfig<T>(key: string, newValue: T): void {
+    const conf = DBOS.dbosConfig?.application;
+    if (!conf) throw new DBOSExecutorNotInitializedError();
+    set(conf, key, newValue);
   }
 
   static async launch(httpApps?: DBOSHttpApps) {
