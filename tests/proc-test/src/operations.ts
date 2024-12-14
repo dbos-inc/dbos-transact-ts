@@ -1,6 +1,6 @@
 import { DBOS, StoredProcedure, StoredProcedureContext, Transaction, TransactionContext, Workflow, WorkflowContext } from '@dbos-inc/dbos-sdk';
 import { Knex } from 'knex';
-import { sleepms } from '../../../dist/src/utils';
+import { sleepms } from '../../../src/utils';
 
 // The schema of the database table used in this example.
 export interface dbos_hello {

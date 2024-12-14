@@ -72,7 +72,7 @@ export interface CommonOptions {
 }
 
 interface CompileOptions extends CommonOptions {
-  outDir?: string,
+  out?: string,
 }
 
 function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): string | undefined {
@@ -106,8 +106,11 @@ program
     if (tsconfigPath) {
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
-        const outDir = options.outDir ?? process.cwd();
+        const outDir = options.out ?? process.cwd();
         await emitSqlFiles(outDir, compileResult, options.appVersion);
+      }
+      else {
+        console.warn("Compilation produced no result.");
       }
     }
   });
