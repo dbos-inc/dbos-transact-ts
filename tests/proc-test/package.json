@@ -2,7 +2,7 @@
   "name": "proc-test",
   "version": "0.0.1",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc",
     "test": "npx dbos rollback && npx dbos migrate && jest --detectOpenHandles",
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
@@ -24,7 +24,7 @@
     "typescript-eslint": "^8.0.0-alpha.30"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "file:../..",
+    "@dbos-inc/dbos-sdk": "file:../../dist",
     "knex": "3.1.0"
   }
 }
