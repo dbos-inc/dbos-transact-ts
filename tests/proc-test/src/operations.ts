@@ -140,7 +140,7 @@ export class StoredProcTest {
     return 0;
   }
 
-  @DBOS.storedProcedure()
+  @DBOS.storedTransaction()
   static async helloProcedure_v2(user: string): Promise<string> {
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
     const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);

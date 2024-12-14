@@ -815,7 +815,7 @@ export class DBOS {
     return decorator;
   }
 
-  static storedProcedure(config: StoredProcedureConfig={}) {
+  static storedTransaction(config: StoredProcedureConfig={}) {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
