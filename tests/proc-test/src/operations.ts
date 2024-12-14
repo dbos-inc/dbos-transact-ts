@@ -1,5 +1,6 @@
 import { DBOS, StoredProcedure, StoredProcedureContext, Transaction, TransactionContext, Workflow, WorkflowContext } from '@dbos-inc/dbos-sdk';
 import { Knex } from 'knex';
+import { sleepms } from '../../../dist/src/utils';
 
 // The schema of the database table used in this example.
 export interface dbos_hello {
@@ -83,7 +84,6 @@ export class StoredProcTest {
     return parseInt(rows[0].count);
   }
 
-
   @Workflow()
   static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; rowCount: number }> {
     const count = await ctxt.invoke(StoredProcTest).getGreetCountLocal(user);
@@ -139,6 +139,10 @@ export class StoredProcTest {
     if (result && result.rows.length > 0) { return result.rows[0].greet_count; }
     return 0;
   }
+
+  @StoredProcedure({}) // like getHelloRowCount, but never called
+  static async completelyUnusedSPWithBug(_ctxt: StoredProcedureContext): Promise<number> {
+    await sleepms(10);
+    return 0;
+  }
 }
-
-
