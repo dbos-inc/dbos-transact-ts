@@ -573,6 +573,42 @@ export class DBOS {
   static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
+    if (!DBOS.isWithinWorkflow()) {
+      // Run the temp workflow way...
+      if (typeof object === 'function') {
+        const ops = getRegisteredOperations(object);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, {}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {}, ...args)
+              : op.procConfig
+                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, {}, ...args)
+                : undefined;
+        }
+        return proxy as InvokeFuncs<T>;
+      }
+      else {
+        const targetInst = object as ConfiguredInstance;
+        const ops = getRegisteredOperations(targetInst);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+                op.registeredFunction as TransactionFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+              : undefined;
+        }
+        return proxy as InvokeFuncsInst<T>;
+      }  
+    }
     const wfctx = assertCurrentWorkflowContext();
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);
