@@ -1,6 +1,8 @@
 import { DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
+DBOS.logger.info("This should not cause a kaboom.");
+
 class TestFunctions
 {
   @DBOS.transaction()

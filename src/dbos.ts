@@ -271,7 +271,7 @@ export class DBOS {
   static get logger(): DLogger {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.logger;
-    const executor = DBOS.executor;
+    const executor = DBOSExecutor.globalInstance;
     if (executor) return executor.logger;
     return new GlobalLogger();
   }
