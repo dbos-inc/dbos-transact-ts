@@ -302,7 +302,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const DrizzleExports = require("drizzle-orm/node-postgres");
       const drizzlePool = new Pool(userDBConfig);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const drizzle= DrizzleExports.drizzle(drizzlePool, {schema: this.drizzleEntities});
+      const drizzle = DrizzleExports.drizzle(drizzlePool, { schema: this.drizzleEntities });
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug("Loaded Drizzle user database");
@@ -332,12 +332,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   getRegistrationsFor(obj: DBOSEventReceiver) {
-    const res: {methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase}[] = [];
+    const res: { methodConfig: unknown, classConfig: unknown, methodReg: MethodRegistrationBase }[] = [];
     for (const r of this.registeredOperations) {
       if (!r.eventReceiverInfo.has(obj)) continue;
       const methodConfig = r.eventReceiverInfo.get(obj)!;
       const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
-      res.push({methodReg: r, methodConfig, classConfig})
+      res.push({ methodReg: r, methodConfig, classConfig })
     }
     return res;
   }
@@ -501,7 +501,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   /* WORKFLOW OPERATIONS */
 
-  #registerWorkflow(ro :MethodRegistrationBase) {
+  #registerWorkflow(ro: MethodRegistrationBase) {
     const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
@@ -512,7 +512,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
-      config: {...ro.workflowConfig},
+      config: { ...ro.workflowConfig },
       registration: ro,
     };
     this.workflowInfoMap.set(wfn, workflowInfo);
@@ -528,7 +528,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const txnInfo: TransactionRegInfo = {
       transaction: txf,
-      config: {...ro.txnConfig},
+      config: { ...ro.txnConfig },
       registration: ro,
     };
     this.transactionInfoMap.set(tfn, txnInfo);
@@ -543,7 +543,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const stepInfo: StepRegInfo = {
       step: comm,
-      config: {...ro.commConfig},
+      config: { ...ro.commConfig },
       registration: ro,
     };
     this.stepInfoMap.set(cfn, stepInfo);
@@ -559,7 +559,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const procInfo: ProcedureRegInfo = {
       procedure: proc,
-      config: {...ro.procConfig},
+      config: { ...ro.procConfig },
       registration: ro,
     };
     this.procedureInfoMap.set(cfn, procInfo);
@@ -588,7 +588,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    return {wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName)};
+    return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
@@ -612,7 +612,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    return {txnInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
   getStepInfo(cf: StepFunction<unknown[], unknown>) {
@@ -714,7 +714,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Execute the workflow.
       try {
         let cresult: R | undefined;
-        await runWithWorkflowContext(wCtxt, async ()=> {
+        await runWithWorkflowContext(wCtxt, async () => {
           if (passContext) {
             cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
           }
@@ -743,7 +743,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
-          const e = err as Error & {dbos_already_logged?: boolean};
+          const e = err as Error & { dbos_already_logged?: boolean };
           this.logger.error(e);
           e.dbos_already_logged = true
           if (wCtxt.isTempWorkflow) {
@@ -1104,12 +1104,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         try {
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
-            await runWithStepContext(ctxt, async ()=> {
+            await runWithStepContext(ctxt, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
           }
           else {
-            await runWithStepContext(ctxt, async ()=> {
+            await runWithStepContext(ctxt, async () => {
               const sf = stepFn as unknown as (...args: T) => Promise<R>;
               cresult = await sf.call(clsInst, ...args);
             });
@@ -1132,12 +1132,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         if (commInfo.registration.passContext) {
-          await runWithStepContext(ctxt, async ()=> {
+          await runWithStepContext(ctxt, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
         }
         else {
-          await runWithStepContext(ctxt, async ()=> {
+          await runWithStepContext(ctxt, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });
@@ -1223,10 +1223,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       close: async () => {
         for (const nname of channels) {
           try {
-              await notificationsClient.query(`UNLISTEN ${nname};`);
+            await notificationsClient.query(`UNLISTEN ${nname};`);
           }
-          catch(e) {
-              this.logger.warn(e);
+          catch (e) {
+            this.logger.warn(e);
           }
           notificationsClient.release();
         }
@@ -1285,7 +1285,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const parentCtx = this.#getRecoveryContext(workflowUUID, wfStatus);
 
-    const {wfInfo, configuredInst} = this.getWorkflowInfoByStatus(wfStatus);
+    const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
     const workflowStartUUID = startNewWorkflow ? undefined : workflowUUID;
@@ -1313,7 +1313,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     let tempWfName: string | undefined;
     let tempWfClass: string | undefined;
     if (nameArr[1] === TempWorkflowType.transaction) {
-      const {txnInfo, clsInst} = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
+      const { txnInfo, clsInst } = this.getTransactionInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!txnInfo) {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
@@ -1327,7 +1327,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
       clsinst = clsInst;
     } else if (nameArr[1] === TempWorkflowType.external) {
-      const {commInfo, clsInst} = this.getStepInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
+      const { commInfo, clsInst } = this.getStepInfoByNames(wfStatus.workflowClassName, nameArr[2], wfStatus.workflowConfigName);
       if (!commInfo) {
         this.logger.error(`Cannot find step info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);

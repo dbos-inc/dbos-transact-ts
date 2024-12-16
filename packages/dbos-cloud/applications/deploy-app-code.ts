@@ -67,7 +67,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     pattern.startsWith('!') ? `!${pattern.slice(1)}` : `**/${pattern}`
   ) ;
 
-  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"];
+  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**", "**/.python-version"];
 
   const files = await fg(globPattern, {
     dot: true,
@@ -135,13 +135,21 @@ export async function deployAppCode(
     }
   } else if (appLanguage === AppLanguages.Python as string) {
     logger.debug("Checking for requirements.txt...");
-    const requirementsTxtExists = existsSync(path.join(process.cwd(), "requirements.txt"));
+    const requirementsPath = path.join(process.cwd(), "requirements.txt")
+    const requirementsTxtExists = existsSync(requirementsPath);
     logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
 
     if (!requirementsTxtExists) {
       logger.error("No requirements.txt found. Please create one before deploying.");
       return 1;
     }
+
+    const content = fs.readFileSync(requirementsPath, 'utf8');
+    if (!content.includes("dbos")) {
+      logger.error("Your requirements.txt does not include 'dbos'. Please make sure you include all your dependencies.");
+      return 1;
+    }
+
   } else {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
     return 1;
