@@ -55,6 +55,7 @@ import { ConfiguredInstance } from ".";
 import { StoredProcedureFunc } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
+import { set } from "lodash";
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -137,6 +138,13 @@ export class DBOS {
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+  }
+
+  // For unit testing purposes only
+  static setAppConfig<T>(key: string, newValue: T): void {
+    const conf = DBOS.dbosConfig?.application;
+    if (!conf) throw new DBOSExecutorNotInitializedError();
+    set(conf, key, newValue);
   }
 
   static async launch(httpApps?: DBOSHttpApps) {
@@ -263,7 +271,7 @@ export class DBOS {
   static get logger(): DLogger {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.logger;
-    const executor = DBOS.executor;
+    const executor = DBOSExecutor.globalInstance;
     if (executor) return executor.logger;
     return new GlobalLogger();
   }
@@ -565,6 +573,42 @@ export class DBOS {
   static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
+    if (!DBOS.isWithinWorkflow()) {
+      // Run the temp workflow way...
+      if (typeof object === 'function') {
+        const ops = getRegisteredOperations(object);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, {}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {}, ...args)
+              : op.procConfig
+                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, {}, ...args)
+                : undefined;
+        }
+        return proxy as InvokeFuncs<T>;
+      }
+      else {
+        const targetInst = object as ConfiguredInstance;
+        const ops = getRegisteredOperations(targetInst);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+                op.registeredFunction as TransactionFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+              : undefined;
+        }
+        return proxy as InvokeFuncsInst<T>;
+      }  
+    }
     const wfctx = assertCurrentWorkflowContext();
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);

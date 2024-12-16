@@ -1,6 +1,8 @@
 import { DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
+DBOS.logger.info("This should not cause a kaboom.");
+
 class TestFunctions
 {
   @DBOS.transaction()
@@ -17,6 +19,7 @@ class TestFunctions
   @DBOS.workflow()
   static async doWorkflow() {
     await TestFunctions.doTransaction("");
+    expect(DBOS.getConfig('is_in_unit_test', false)).toBe(true);
     return 'done';
   }
 
@@ -138,6 +141,7 @@ async function main() {
   const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
+  DBOS.setAppConfig('is_in_unit_test', true);
   await DBOS.launch();
 
   const res = await TestFunctions.doWorkflow();
@@ -212,6 +216,7 @@ async function main5() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
+  DBOS.setAppConfig('is_in_unit_test', true);
   await DBOS.launch();
 
   const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
