@@ -84,8 +84,8 @@ export interface AWSServiceConfig
 ## Available Functions
 ```typescript
 // Loads an AWS configuration by its section name within the `application` part of dbos-config.yaml
-function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSServiceConfig
+function getAWSConfigByName(cfgname: string): AWSServiceConfig
 
 // Reads a key from within dbos-config.yaml and uses the value of that key to load an AWS configuration section
-function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string) : AWSServiceConfig
+function getConfigForAWSService(svccfgname: string) : AWSServiceConfig
 ```
