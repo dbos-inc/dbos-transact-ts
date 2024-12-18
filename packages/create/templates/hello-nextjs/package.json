@@ -11,8 +11,6 @@
   "dependencies": {
     "@dbos-inc/dbos-sdk": "^1.29.15",
     "next": "15.0.3",
-    "oracledb": "^6.6.0",
-    "pg-query-stream": "^4.7.1",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
     "typeorm": "^0.3.20",
