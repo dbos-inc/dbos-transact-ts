@@ -17,7 +17,7 @@ class dbosWorkflowClass {
         const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
         const { rows } = await DBOS.sqlClient.client.raw(query, [userName]) as { rows: dbos_hello[] };
         const greet_count = rows[0].greet_count;
-        const greeting = `Hello, ${userName}! You have been greeted ${greet_count} times.`;
+        const greeting = `Hello! You have been greeted ${greet_count} times.`;
         return greeting;
     }
 }
