@@ -275,6 +275,12 @@ async function mainInst() {
   const res211 = await inst.doWorkflowV2_V1V1();
   expect(res211).toBe('wv2selected tv1step sv1 done');
 
+  const resX = await DBOS.invoke(ChildWorkflowsV1).childTx();
+  expect(resX.startsWith('selected')).toBeTruthy();
+
+  const resS = await DBOS.invoke(TestFunctions).doStepV1('bare');
+  expect(resS).toBe('step bare done');
+
   await DBOS.shutdown();
 }
 

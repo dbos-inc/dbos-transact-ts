@@ -74,7 +74,8 @@ export function assertCurrentDBOSContext(): DBOSContext {
 }
 
 export function assertCurrentWorkflowContext(): WorkflowContextImpl {
-  if (!isInWorkflowCtx(asyncLocalCtx.getStore()!)) {
+  const ctxs = getCurrentContextStore();
+  if (!ctxs || !isInWorkflowCtx(ctxs)) {
     throw new DBOSInvalidWorkflowTransitionError();
   }
   const ctx = assertCurrentDBOSContext();
