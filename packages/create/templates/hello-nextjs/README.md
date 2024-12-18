@@ -1,8 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, [Next.js](https://nextjs.org) and [Knex](https://docs.dbos.dev/tutorials/using-knex) to interact with postgres.
-
-The [Next.js](https://nextjs.org) files were created with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/tutorials/using-knex) to interact with postgres.
 
 ## Getting Started
 
@@ -15,25 +13,79 @@ node start_postgres_docker.js
 ```
 
 If successful, the script should print `Database started successfully!`.
+
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Production build
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+In production, instead of using `nodemon`, the following separate steps should be used to build, run database setup, and start the app.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+```
 
-## Learn More
+Then, run a schema migration to create some tables:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx dbos migrate
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If successful, the migration should print `Migration successful!`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Finally, run the app:
 
-## Deploy on Vercel
+```bash
+npm run start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+To see that it's working, visit this URL in your browser: [`http://localhost:3000/`](http://localhost:3000/).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Click on the "Run DBOS Workflow" button.
+
+You should get this message: `Hello, dbos! You have been greeted 1 times.`
+Each time you refresh the page, the counter should go up by one!
+
+Congratulations! You just launched a DBOS application.
+
+## The application
+
+- In `src/action/dbosWorkflow.tsx`, the DBOS workflow is created. When called, it increments a counter in the database and returns a greeting.
+
+- The code below in the same file, launches the dbos runtime. This is required for DBOS runtime to start. Do not remove the code
+```
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+    await DBOS.launch();
+}
+```
+- The workflow is called by the POST method in app/greetings/route.ts.
+
+- The POST is called by the component in src/components/callDBOSWorkflow.tsx. It calls the route /greetings.
+
+- The component is called from the main UI page.tsx.
+
+- This is how the DBOS workflow is wired to the NextJs application.
+
+
+ DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+
+To add more functionality to this application, modify `src/operations.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
+
+## Running in DBOS Cloud
+
+To deploy this app to DBOS Cloud, first install the DBOS Cloud CLI (example with [npm](https://www.npmjs.com/)):
+
+```shell
+npm i -g @dbos-inc/dbos-cloud
+```
+
+Then, run this command to deploy your app:
+
+```shell
+dbos-cloud app deploy
+```
+
+## Next Steps
+
+- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
+- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
+
