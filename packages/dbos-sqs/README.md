@@ -30,19 +30,19 @@ If a different configuration file section should be used for SQS, the `aws_sqs_c
 ### Imports
 First, ensure that the communicator is imported:
 ```typescript
-import { SQSCommunicator } from "@dbos-inc/dbos-sqs";
+import { DBOS_SQS } from "@dbos-inc/dbos-sqs";
 ```
 
 ### Selecting A Configuration
-`SQSCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`DBOS_SQS` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
-const sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config'});
+const sqsCfg = configureInstance(DBOS_SQS, 'default', {awscfgname: 'aws_config'});
 ```
 
 ### Sending With Standard Queues
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SQSCommunicator` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), call the `DBOS_SQS` function from the workflow context:
 ```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
+    const sendRes = await sqsCfg.sendMessage(
         {
             MessageBody: "{/*app data goes here*/}",
         },
@@ -53,7 +53,7 @@ Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutor
 Sending to [SQS FIFO queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fifo-queues.html) is the same as with standard queues, except that FIFO queues need a `MessageDeduplicationId` (or content-based deduplication) and can be sharded by a `MessageGroupId`.
 
 ```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
+    const sendRes = await sqsCfg.sendMessage(
         {
             MessageBody: "{/*app data goes here*/}",
             MessageDeduplicationId: "Message key goes here",
@@ -91,7 +91,7 @@ class SQSEventProcessor {
 }
 ```
 
-Then, within the class, one or more methods should be decorated to handle SQS messages:
+Then, within the class, one or more methods should be decorated with `SQSMessageConsumer` to handle SQS messages:
 ```typescript
 @SQSConfigure({awscfgname: 'sqs_receiver'})
 class SQSEventProcessor {
@@ -102,6 +102,8 @@ class SQSEventProcessor {
   }
 }
 ```
+
+*NOTE:* The DBOS `@SQSMessageConsumer` decorator currently must decorate an old-style DBOS workflow, which is also decorated with `@Workflow` and requires a first argument of type `WorkflowContext`.
 
 ### Concurrency and Rate Limiting
 By default, `@SQSMessageConsumer` workflows are started immediately after message receipt.  If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/workflow-queues).

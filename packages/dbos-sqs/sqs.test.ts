@@ -1,7 +1,6 @@
 import { Message } from "@aws-sdk/client-sqs";
-import { SQSCommunicator, SQSMessageConsumer } from "./index";
-export { SQSCommunicator };
-import { TestingRuntime, createTestingRuntime, configureInstance, WorkflowContext, Workflow } from "@dbos-inc/dbos-sdk";
+import { DBOS_SQS, SQSMessageConsumer } from "./index";
+import { DBOS, WorkflowContext, Workflow, parseConfigFile } from "@dbos-inc/dbos-sdk";
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -25,9 +24,8 @@ class SQSReceiver
 }
 
 describe("sqs-tests", () => {
-  let testRuntime: TestingRuntime | undefined = undefined;
   let sqsIsAvailable = true;
-  let sqsCfg: SQSCommunicator | undefined = undefined;
+  let sqsCfg: DBOS_SQS | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not
@@ -36,13 +34,15 @@ describe("sqs-tests", () => {
     }
     else {
       // This would normally be a global or static or something
-      sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config', queueUrl: process.env['SQS_QUEUE_URL']});
+      const [cfg, rtCfg] = parseConfigFile({configfile: 'sqs-test-dbos-config.yaml'});
+      DBOS.setConfig(cfg, rtCfg);
+      sqsCfg = DBOS.configureInstance(DBOS_SQS, 'default', {awscfgname: 'aws_config', queueUrl: process.env['SQS_QUEUE_URL']});
     }
   });
 
   beforeEach(async () => {
     if (sqsIsAvailable) {
-      testRuntime = await createTestingRuntime(undefined,'sqs-test-dbos-config.yaml');
+      await DBOS.launch();
     }
     else {
       console.log("SQS Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and SQS_QUEUE_URL");
@@ -51,20 +51,20 @@ describe("sqs-tests", () => {
 
   afterEach(async () => {
     if (sqsIsAvailable) {
-      await testRuntime?.destroy();
+      await DBOS.shutdown();
     }
   }, 10000);
 
   // This tests receive also; which is already wired up
   test("sqs-send", async () => {
-    if (!sqsIsAvailable || !testRuntime || !sqsCfg) {
+    if (!sqsIsAvailable || !sqsCfg) {
       console.log("SQS unavailable, skipping SQS tests");
       return;
     }
     const sv: ValueObj = {
       val: 10,
     }
-    const ser = await testRuntime.invoke(sqsCfg).sendMessage(
+    const ser = await sqsCfg.sendMessage(
         {
             MessageBody: JSON.stringify(sv),
         },
