@@ -1,13 +1,8 @@
-import { FileRecord, S3Ops } from "./s3_utils";
+import { FileRecord, DBOS_S3 } from "./s3_utils";
 import {
-  TestingRuntime, createTestingRuntime,
-  configureInstance,
-  Communicator, CommunicatorContext,
-  Transaction, TransactionContext,
-  WorkflowContext,
+    DBOS,
 } from "@dbos-inc/dbos-sdk";
 
-import { Knex } from 'knex';
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
 import { PresignedPost } from "@aws-sdk/s3-presigned-post";
@@ -39,16 +34,14 @@ interface UserFile extends FileDetails, FileRecord {
   file_time: number;
 }
 
-type KnexTransactionContext = TransactionContext<Knex>;
-
 class TestUserFileTable {
   //////////
   //// Database table
   //////////
 
   // Pick a file ID
-  @Communicator()
-  static chooseFileRecord(_ctx: CommunicatorContext, details: FileDetails): Promise<UserFile> {
+  @DBOS.step()
+  static chooseFileRecord(details: FileDetails): Promise<UserFile> {
       const rec: UserFile = {
           user_id: details.user_id,
           file_status: FileStatus.PENDING,
@@ -80,125 +73,117 @@ class TestUserFileTable {
   
   // File table DML operations
   // Whole record is known
-  @Transaction()
-  static async insertFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-      await ctx.client<FileDetails>('user_files').insert(TestUserFileTable.toFileDetails(rec));
+  @DBOS.transaction()
+  static async insertFileRecord(rec: UserFile) {
+      await DBOS.knexClient<FileDetails>('user_files').insert(TestUserFileTable.toFileDetails(rec));
   }
-  @Transaction()
-  static async updateFileRecord(ctx: KnexTransactionContext, rec: UserFile) {
-      await ctx.client<FileDetails>('user_files').update(TestUserFileTable.toFileDetails(rec)).where({file_id: rec.file_id});
+  @DBOS.transaction()
+  static async updateFileRecord(rec: UserFile) {
+      await DBOS.knexClient<FileDetails>('user_files').update(TestUserFileTable.toFileDetails(rec)).where({file_id: rec.file_id});
   }
   // Delete when part of record is known
-  @Transaction()
-  static async deleteFileRecordById(ctx: KnexTransactionContext, file_id: string) {
-      await ctx.client<FileDetails>('user_files').delete().where({file_id});
+  @DBOS.transaction()
+  static async deleteFileRecordById(file_id: string) {
+      await DBOS.knexClient<FileDetails>('user_files').delete().where({file_id});
   }
 
   // Queries
-  @Transaction({readOnly: true})
-  static async lookUpByFields(ctx: KnexTransactionContext, fields: FileDetails) {
-      const rv = await ctx.client<FileDetails>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+  @DBOS.transaction({readOnly: true})
+  static async lookUpByFields(fields: FileDetails) {
+      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
       return rv ? [rv] : [];
   }
-  @Transaction({readOnly: true})
-  static async lookUpByName(ctx: KnexTransactionContext, user_id: string, file_type: string, file_name: string) {
-      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
+  @DBOS.transaction({readOnly: true})
+  static async lookUpByName(user_id: string, file_type: string, file_name: string) {
+      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
       return rv ? [rv] : [];
   }
-  @Transaction({readOnly: true})
-  static async lookUpByType(ctx: KnexTransactionContext, user_id: string, file_type: string) {
-      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
+  @DBOS.transaction({readOnly: true})
+  static async lookUpByType(user_id: string, file_type: string) {
+      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
       return rv;
   }
-  @Transaction({readOnly: true})
-  static async lookUpByUser(ctx: KnexTransactionContext, user_id: string) {
-      const rv = await ctx.client<FileDetails>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
+  @DBOS.transaction({readOnly: true})
+  static async lookUpByUser(user_id: string) {
+      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
       return rv;
   }
 }
 
 describe("ses-tests", () => {
-  let testRuntime: TestingRuntime | undefined = undefined;
   let s3IsAvailable = true;
-  let s3Cfg : S3Ops | undefined = undefined;
+  let s3Cfg : DBOS_S3 | undefined = undefined;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Check if S3 is available and update app config, skip the test if it's not
     if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET'] ) {
       s3IsAvailable = false;
+      console.log("S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET");
     }
     else {
-      s3Cfg = configureInstance(S3Ops, 'default', {
+      s3Cfg = DBOS.configureInstance(DBOS_S3, 'default', {
         awscfgname: 'aws_config',
         bucket: "",
         s3Callbacks: {
-          newActiveFile: async (ctx: WorkflowContext, frec: unknown) => {
+          newActiveFile: async (frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
-            return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
+            return await TestUserFileTable.insertFileRecord(rec);
           },
-          newPendingFile: async (ctx: WorkflowContext, frec: unknown) => {
+          newPendingFile: async (frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.PENDING;
-            return await ctx.invoke(TestUserFileTable).insertFileRecord(rec);
+            return await TestUserFileTable.insertFileRecord(rec);
           },
-          fileActivated: async (ctx: WorkflowContext, frec: unknown) => {
+          fileActivated: async (frec: unknown) => {
             const rec = frec as UserFile;
             rec.file_status = FileStatus.ACTIVE;
-            return await ctx.invoke(TestUserFileTable).updateFileRecord(rec);
+            return await TestUserFileTable.updateFileRecord(rec);
           },
-          fileDeleted: async (ctx: WorkflowContext, frec: unknown) => {
+          fileDeleted: async (frec: unknown) => {
             const rec = frec as UserFile;
-            return await ctx.invoke(TestUserFileTable).deleteFileRecordById(rec.file_id);
+            return await TestUserFileTable.deleteFileRecordById(rec.file_id);
           }
         }
       });
+      await DBOS.launch();
+      s3Cfg!.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
     }
   });
 
-  beforeEach(async () => {
+  afterAll(async () => {
     if (s3IsAvailable) {
-      testRuntime = await createTestingRuntime();
-      s3Cfg!.config.bucket = testRuntime.getConfig<string>('s3_bucket', 's3bucket');
-    }
-    else {
-      console.log("S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET");
-    }
-  });
-
-  afterEach(async () => {
-    if (s3IsAvailable) {
-      await testRuntime?.destroy();
+      await DBOS.shutdown();
     }
   }, 10000);
 
   test("s3-basic-ops", async () => {
-    if (!s3IsAvailable || !testRuntime) {
+    if (!s3IsAvailable) {
       console.log("S3 unavailable, skipping S3 tests");
       return;
     }
 
     const fn = `filepath/FN_${new Date().toISOString()}`;
-    const putres = await testRuntime.invoke(s3Cfg!).put(fn, "Test string from DBOS");
+    const putres = await s3Cfg!.put(fn, "Test string from DBOS");
     expect(putres).toBeDefined();
 
-    const getres = await testRuntime.invoke(s3Cfg!).get(fn);
+    const getres = await s3Cfg!.get(fn);
     expect(getres).toBeDefined();
     expect(getres).toBe('Test string from DBOS');
 
-    const delres = await testRuntime.invoke(s3Cfg!).delete(fn);
+    const delres = await s3Cfg!.delete(fn);
     expect(delres).toBeDefined();
   });
 
   test("s3-presgined-ops", async () => {
-    if (!s3IsAvailable || !testRuntime) {
+    if (!s3IsAvailable) {
       console.log("S3 unavailable, skipping S3 tests");
       return;
     }
   
     const fn = `presigned_filepath/FN_${new Date().toISOString()}`;
 
-    const postres = await testRuntime.invoke(s3Cfg!).createPresignedPost(fn, 30, {contentType: 'text/plain'});
+    const postres = await s3Cfg!.createPresignedPost(fn, 30, {contentType: 'text/plain'});
     expect(postres).toBeDefined();
     try {
         const res = await uploadToS3(postres, './src/s3_utils.test.ts');
@@ -211,18 +196,18 @@ describe("ses-tests", () => {
     }
 
     // Make a fetch request to test it...
-    const geturl = await testRuntime.invoke(s3Cfg!).presignedGetURL(fn, 30);
+    const geturl = await s3Cfg!.presignedGetURL(fn, 30);
     await downloadFromS3(geturl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 
     // Delete it
-    const delres = await testRuntime.invoke(s3Cfg!).delete(fn);
+    const delres = await s3Cfg!.delete(fn);
     expect(delres).toBeDefined();
   });
 
   test("s3-simple-wfs", async () => {
-    if (!s3IsAvailable || !testRuntime) {
+    if (!s3IsAvailable) {
       console.log("S3 unavailable, skipping S3 tests");
       return;
     }
@@ -232,24 +217,24 @@ describe("ses-tests", () => {
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
     const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
-    const myFileRec = await testRuntime.invoke(TestUserFileTable).chooseFileRecord(myFile);
-    await testRuntime.invokeWorkflow(s3Cfg!).saveStringToFile(
+    const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
+    await s3Cfg!.saveStringToFile(
       myFileRec, 'This is my file'
     );
 
     // Get the file contents out of DBOS (using the table index)
-    const mytxt = await testRuntime.invokeWorkflow(s3Cfg!).readStringFromFile(
+    const mytxt = await s3Cfg!.readStringFromFile(
       myFileRec
     );
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFileRec);
+    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
     expect(dfhandle).toBeDefined();
   });
 
   test("s3-complex-wfs", async () => {
-    if (!s3IsAvailable || !testRuntime) {
+    if (!s3IsAvailable) {
       console.log("S3 unavailable, skipping S3 tests");
       return;
     }
@@ -261,10 +246,10 @@ describe("ses-tests", () => {
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
     const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
-    const myFileRec = await testRuntime.invoke(TestUserFileTable).chooseFileRecord(myFile);
-    const wfhandle = await testRuntime.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, {contentType: 'text/plain'});
+    const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
+    const wfhandle = await DBOS.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, {contentType: 'text/plain'});
     //    Get the presigned post
-    const ppost = await testRuntime.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
+    const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
     //    Upload to the URL
     try {
         const res = await uploadToS3(ppost!, './src/s3_utils.test.ts');
@@ -276,13 +261,13 @@ describe("ses-tests", () => {
         expect(e).toBeUndefined();
     }
     //    Notify WF
-    await testRuntime.send<boolean>(wfhandle.getWorkflowUUID(), true, "uploadfinish");
+    await DBOS.send<boolean>(wfhandle.getWorkflowUUID(), true, "uploadfinish");
 
     //    Wait for WF complete
     const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const myurl = await testRuntime.invokeWorkflow(s3Cfg!).getFileReadURL(myFileRec);
+    const myurl = await s3Cfg!.getFileReadURL(myFileRec);
     expect (myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
@@ -291,7 +276,7 @@ describe("ses-tests", () => {
 
     // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await testRuntime.invokeWorkflow(s3Cfg!).deleteFile(myFileRec);
+    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
     expect(dfhandle).toBeDefined();
   });
 
