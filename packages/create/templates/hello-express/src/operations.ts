@@ -79,3 +79,21 @@ app.get("/greeting/:user", async (req, res) => {
   const { user } = req.params;
   res.send(await Hello.helloTransaction(user));
 });
+
+// Finally, let's start the server
+async function main() {
+  await DBOS.launch({expressApp: app});
+
+  const PORT = DBOS.runtimeConfig?.port ?? 3000;
+  const ENV = process.env.NODE_ENV || 'development';
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+    console.log(`🌟 Environment: ${ENV}`);
+  });
+}
+
+// Only start the server when this file is run directly from Node
+if (require.main === module) {
+  main().catch(console.log);
+}

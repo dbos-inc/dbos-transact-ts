@@ -2,6 +2,6 @@
   "watch": ["src/","migrations/"],
   "ext": "ts,json",
   "ignore": ["src/**/*.test.ts"],
-  "exec": "npm run build && npx dbos migrate && node dist/main.js"
+  "exec": "npm run build && npx dbos migrate && node dist/operations.js"
 }
 
