@@ -147,7 +147,7 @@ describe("ses-tests", () => {
         }
       });
       await DBOS.launch();
-      s3Cfg!.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
+      s3Cfg.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
     }
   });
 
