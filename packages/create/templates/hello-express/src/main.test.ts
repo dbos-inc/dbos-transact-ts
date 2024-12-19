@@ -1,5 +1,5 @@
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { app, dbos_hello, Hello } from "./operations";
+import { app, dbos_hello, Hello } from "./main";
 import request from "supertest";
 
 describe("operations-test", () => {
