@@ -4,10 +4,11 @@
     "target": "esnext",                                  /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
     "experimentalDecorators": true,                      /* Enable experimental support for legacy experimental decorators. */
     "emitDecoratorMetadata": true,                       /* Emit design-type metadata for decorated declarations in source files. */
-    "module": "Node16",                                /* Specify what module code is generated. */
+    "module": "node16",                                  /* Specify what module code is generated. */
     "declaration": true,                                 /* Generate .d.ts files from TypeScript and JavaScript files in your project. */
     "declarationMap": true,                              /* Create sourcemaps for d.ts files. */
     "sourceMap": true,                                   /* Create source map files for emitted JavaScript files. */
+    "rootDir": ".",
     "outDir": "./dist",                                  /* Specify an output folder for all emitted files. */
     "newLine": "lf",                                     /* Set the newline character for emitting files. */
     "esModuleInterop": true,                             /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */
@@ -16,9 +17,9 @@
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
   "include": [                                         /* Specifies an array of filenames or patterns to include in the program. */
-    "."
+    "./*.ts"
   ],
   "exclude": [
-    "dist",
-  ],
+    "dist"
+  ]
 }
