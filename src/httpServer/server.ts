@@ -187,7 +187,7 @@ export class DBOSHttpServer {
       await koaNext();
     };
     router.get(PerfUrl, perfHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Perf GET ${HealthUrl}`);
+    dbosExec.logger.debug(`DBOS Server Registered Perf GET ${PerfUrl}`);
   }
 
   /**
