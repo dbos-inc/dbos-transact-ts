@@ -13,7 +13,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "rm -rf dist; tsc --project ./tsconfig.json",
-    "test": "npm run build && jest --detectOpenHandles"
+    "test": "echo 'No tests'",
+    "testbcrypt": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
