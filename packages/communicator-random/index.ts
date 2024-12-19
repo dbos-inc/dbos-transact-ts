@@ -1,5 +1,5 @@
 
-import {Communicator, CommunicatorContext} from '@dbos-inc/dbos-sdk';
+import {Communicator, CommunicatorContext, DBOS} from '@dbos-inc/dbos-sdk';
 
 class RandomCommunicator
 {
@@ -9,8 +9,17 @@ class RandomCommunicator
     }
 }
 
+class DBOSRandom
+{
+    @DBOS.step()
+    static random() : Promise<number> {
+        return Promise.resolve(Math.random());
+    }
+}
+
 export
 {
     RandomCommunicator,
     RandomCommunicator as RandomStep,
+    DBOSRandom,
 }

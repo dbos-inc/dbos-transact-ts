@@ -24,12 +24,19 @@
  *   will be configured into the instance.
  */
 
-import { Error as DBOSError } from "@dbos-inc/dbos-sdk";
+import { Error as DBOSError, DBOS } from "@dbos-inc/dbos-sdk";
 
 interface ConfigProvider
 {
     getConfig<T>(key: string): T | undefined;
     getConfig<T>(key: string, defaultValue: T): T;
+}
+
+class DBOSCP implements ConfigProvider
+{
+    getConfig<T>(key: string): T | undefined;
+    getConfig<T>(key: string, defaultValue: T): T;
+    getConfig<T>(key: string, defaultValue?: T) {return DBOS.getConfig(key, defaultValue)};
 }
 
 export interface AWSServiceConfig
@@ -99,10 +106,18 @@ export function loadAWSConfigByName(ctx: ConfigProvider, cfgname: string): AWSSe
     };
 }
 
+export function getAWSConfigByName(cfgname: string): AWSServiceConfig {
+    return loadAWSConfigByName(new DBOSCP(), cfgname);
+}
+
 export function getAWSConfigForService(ctx: ConfigProvider, svccfgname: string) : AWSServiceConfig
 {
     if (svccfgname && ctx.getConfig<string>(svccfgname, '')) {
         return loadAWSConfigByName(ctx, ctx.getConfig<string>(svccfgname, ''));
     }
     return loadAWSConfigByName(ctx, 'aws_config');
+}
+
+export function getConfigForAWSService(svccfgname: string) {
+    return getAWSConfigForService(new DBOSCP(), svccfgname);
 }

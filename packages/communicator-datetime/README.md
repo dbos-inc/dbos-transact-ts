@@ -2,15 +2,15 @@
 
 This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for getting the current date / time.
 
-The reason that date retrieval should be wrapped in a `@Step` is so that replayed workflows get the recorded value and therefore have the same behavior as the original.
+The reason that date retrieval should be wrapped in a `@DBOS.step` is so that replayed workflows get the recorded value and therefore have the same behavior as the original run.
 
 ## Available Functions
 
-### `getCurrentDate()`
+### `DBOSDateTime.getCurrentDate()`
 
 This function returns a `Date` object representing the current clock time.
 
-### `getCurrentTime()`
+### `DBOSDateTime.getCurrentTime()`
 This function returns a `number` of milliseconds since January 1, 1970, UTC, in the same manner as `new Date().getTime()`.
 
 
