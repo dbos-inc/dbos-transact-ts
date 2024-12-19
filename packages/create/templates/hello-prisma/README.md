@@ -25,7 +25,7 @@ Prisma provides rich support for [schema migrations](https://www.prisma.io/docs/
 Fore more information, see [our docs](https://docs.dbos.dev/tutorials/using-prisma).
 
 ```bash
-npx dbos-sdk migrate
+npx dbos migrate
 ```
 
 If successful, the migration should print `Migration successful!`.
@@ -33,7 +33,7 @@ If successful, the migration should print `Migration successful!`.
 Finally, run the app:
 
 ```bash
-npx dbos-sdk start
+npx dbos start
 ```
 
 To see that it's working, visit this URL in your browser: [`http://localhost:3000/greeting/dbos`](http://localhost:3000/greeting/dbos).

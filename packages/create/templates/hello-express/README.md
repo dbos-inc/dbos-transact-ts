@@ -37,7 +37,7 @@ npm run build
 Then, run a schema migration to create some tables:
 
 ```bash
-npx dbos-sdk migrate
+npx dbos migrate
 ```
 
 If successful, the migration should print `Migration successful!`.
@@ -45,15 +45,17 @@ If successful, the migration should print `Migration successful!`.
 Finally, run the app:
 
 ```bash
-npx dbos-sdk start
+npx dbos start
 ```
 
 ## The application
 
-- In `src/operations.ts`, the Express app object is created and configured to serve an "hello world" DBOS workflow on `/greetings/:user`. This file also hosts the code of said DBOS workflow: an `Hello` class with a single `helloTransaction` method.
-- `src/main.ts` declares the code to start a DBOS instance and an Express application. When you pass the Express app object as parameter to `DBOS.launch()`, DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+In `src/main.ts`, the Express app object is created and configured to serve an "hello world" DBOS workflow on `/greetings/:user`. This file also hosts the code of said DBOS workflow: an `Hello` class with a single `helloTransaction` method.
 
-To add more functionality to this application, modify `src/operations.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
+
+Then the `main()` function declares the code to start a DBOS instance and an Express application. When you pass the Express app object as parameter to `DBOS.launch()`, DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+
+To add more functionality to this application, modify `src/main.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
 
 ## Running in DBOS Cloud
 

@@ -37,7 +37,7 @@ npm run build
 Then, run a schema migration to create some tables:
 
 ```bash
-npx dbos-sdk migrate
+npx dbos migrate
 ```
 
 If successful, the migration should print `Migration successful!`.
@@ -45,7 +45,7 @@ If successful, the migration should print `Migration successful!`.
 Finally, run the app:
 
 ```bash
-npx dbos-sdk start
+npx dbos start
 ```
 
 ## The application
