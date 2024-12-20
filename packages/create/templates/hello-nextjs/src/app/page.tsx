@@ -1,5 +1,6 @@
 import Image from "next/image";
 import CallDBOSWorkflow from "../components/client/callDBOSWorkflow";
+import BackGroundTask from "@/components/client/BackGroundTask";
 
 export default function Home() {
   return (
@@ -7,6 +8,9 @@ export default function Home() {
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
           <div>
             <CallDBOSWorkflow wfResult=""/>
+          </div>
+          <div>
+            <BackGroundTask />
           </div>
         </main>
       <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">

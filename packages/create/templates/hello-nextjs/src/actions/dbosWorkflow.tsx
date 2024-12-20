@@ -23,7 +23,7 @@ class dbosWorkflowClass {
 
     @DBOS.transaction()
     static async backgroundTaskStep(i : number) {
-        DBOS.sleepSeconds(2);
+        // DBOS.sleepSeconds(2);
         DBOS.logger.info(`Completed step ${i}`);
     }
 
@@ -32,7 +32,9 @@ class dbosWorkflowClass {
         DBOS.logger.info("Hello from background task!");
         for (let j = 0; j < i; j++) {
             await dbosWorkflowClass.backgroundTaskStep(j);
-            DBOS.setEvent("steps_event", j)
+            DBOS.logger.info("Sleeping for 2 seconds");
+            await DBOS.sleepSeconds(2);
+            await DBOS.setEvent("steps_event", j)
         }
         DBOS.logger.info("Background task complete!");
     } 
@@ -52,4 +54,10 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
 export async function dbosWorkflow(userName: string) {
     DBOS.logger.info("Hello from DBOS!");
     return await dbosWorkflowClass.helloDBOS(userName);
+}
+
+export async function dbosBackgroundTask() {
+    DBOS.logger.info("Hello from DBOS!");
+    // DBOS.withNextWorkflowID("my_workflow_id", await dbosWorkflowClass.backgroundTask(10));
+    return await dbosWorkflowClass.backgroundTask(10);
 }
