@@ -38,15 +38,15 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
 
-kafkaCfg = configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
+kafkaCfg = DBOS.configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
     createPartitioner: Partitioners.DefaultPartitioner
 });
 ```
 
 ### Sending
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `KafkaProduceStep` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), call the `KafkaProduceStep` function from a workflow:
 ```typescript   
-const sendRes = await wfCtx.invoke(kafkaCfg).sendMessage({value: ourMessage});
+const sendRes = await kafkaCfg.send({value: ourMessage});
 ```
 
 ## Receiving Messages

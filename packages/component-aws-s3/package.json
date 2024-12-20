@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/component-aws-s3",
   "version": "0.0.0-placeholder",
-  "description": "Component library - S3 communicators and workflows",
+  "description": "Component library - DBOS S3 steps and workflows",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -11,7 +11,7 @@ import {
     logLevel,
     Partitioners,
 } from "kafkajs";
-import { Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
+import { DBOS, Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from "@dbos-inc/dbos-sdk";
 import { TransactionFunction } from "@dbos-inc/dbos-sdk";
 import { WorkflowFunction } from "@dbos-inc/dbos-sdk";
@@ -228,6 +228,11 @@ export class KafkaProduceStep extends ConfiguredInstance
   @Step()
   async sendMessages(_ctx: StepContext, msg: Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
+  }
+
+  @DBOS.step()
+  async send(msg: Message | Message[]) {
+    return await this.producer?.send({topic: this.topic, messages: msg instanceof Array ? msg : [msg]});
   }
 
   async disconnect() {
