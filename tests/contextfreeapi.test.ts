@@ -1,5 +1,6 @@
-import { DBOS, WorkflowQueue } from '../src';
+import { Authentication, DBOS, DBOSResponseError, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import jwt from "koa-jwt";
 
 DBOS.logger.info("This should not cause a kaboom.");
 
@@ -135,6 +136,52 @@ class ChildWorkflows {
     return `ParentID:${DBOS.workflowID}|${cres}`;
   }
 }
+
+const testJwt = jwt({
+  secret: 'your-secret-goes-here'
+});
+
+export async function testAuthMiddleware(ctx: MiddlewareContext) {
+  // Only extract user and roles if the operation specifies required roles.
+  if (ctx.requiredRole.length > 0) {
+    //console.log("required role: ", ctx.requiredRole);
+    if (!ctx.koaContext.state.user) {
+      throw new DBOSResponseError("No authenticated user!", 401);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const authenticatedUser: string = ctx.koaContext.state.user["preferred_username"] ?? "";
+    //console.log("current user: ", authenticatedUser);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const authenticatedRoles: string[] = ctx.koaContext.state.user["realm_access"]["roles"] ?? [];
+    //console.log("JWT claimed roles: ", authenticatedRoles);
+    if (authenticatedRoles.includes("appAdmin")) {
+      // appAdmin role has more priviledges than appUser.
+      authenticatedRoles.push("appUser");
+    }
+    //console.log("authenticated roles: ", authenticatedRoles);
+    return Promise.resolve({ authenticatedUser: authenticatedUser, authenticatedRoles: authenticatedRoles });
+  }
+}
+
+@DBOS.defaultRequiredRole(["appUser"])
+@Authentication(testAuthMiddleware)
+@KoaMiddleware(testJwt)
+export class AuthTestOps {
+  @DBOS.transaction()
+  @DBOS.getApi("/api/list_all")
+  static async listAccountsFunc() {
+    return Promise.resolve('ok');
+  }
+
+  @DBOS.transaction()
+  @DBOS.postApi("/api/create_account")
+  @DBOS.requiredRole(["appAdmin"]) // Only an admin can create a new account.
+  static async createAccountFunc() {
+    return Promise.resolve('ok');
+  }
+}
+
 
 async function main() {
   // First hurdle - configuration.
@@ -318,6 +365,10 @@ async function main7() {
     return await TestSec2.bye();
   });
   expect (byejoe).toBe('bye user joe!');
+
+  await DBOS.withAuthedContext('admin', ['appAdmin'], async () => {
+    expect(await AuthTestOps.createAccountFunc()).toBe('ok');
+  });
 
   await DBOS.shutdown();
 }

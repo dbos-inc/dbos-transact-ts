@@ -836,8 +836,35 @@ export class DBOS {
             registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const pctx = getCurrentContextStore();
+        let span = pctx?.span;
+        if (!span) {
+          span = DBOS.executor.tracer.startSpan(
+            pctx?.operationCaller || "transactionCaller",
+            {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            },
+          );
+        }
+
+        let parentCtx: DBOSContextImpl | undefined = undefined;
+        if (pctx) {
+          parentCtx = pctx.ctx as DBOSContextImpl
+        }
+        if (!parentCtx) {
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx.request = pctx?.request || {};
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
+          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+
+        }
         const wfParams: WorkflowParams = {
-          configuredInstance: inst
+          configuredInstance: inst,
+          parentCtx,
         };
 
         return await DBOS.executor.transaction(
@@ -885,9 +912,36 @@ export class DBOS {
             registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const pctx = getCurrentContextStore();
+        let span = pctx?.span;
+        if (!span) {
+          span = DBOS.executor.tracer.startSpan(
+            pctx?.operationCaller || "transactionCaller",
+            {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            },
+          );
+        }
+
+        let parentCtx: DBOSContextImpl | undefined = undefined;
+        if (pctx) {
+          parentCtx = pctx.ctx as DBOSContextImpl
+        }
+        if (!parentCtx) {
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx.request = pctx?.request || {};
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
+          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+        }
         const wfParams: WorkflowParams = {
-          configuredInstance: inst
+          configuredInstance: inst,
+          parentCtx,
         };
+
         return  await DBOS.executor.external(
           registration.registeredFunction as unknown as StepFunction<Args, Return>,
           wfParams, ...rawArgs
