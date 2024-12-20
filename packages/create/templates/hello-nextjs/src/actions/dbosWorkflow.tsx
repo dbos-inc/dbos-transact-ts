@@ -20,6 +20,24 @@ class dbosWorkflowClass {
         const greeting = `Hello! You have been greeted ${greet_count} times.`;
         return greeting;
     }
+
+    @DBOS.transaction()
+    static async backgroundTaskStep(i : number) {
+        DBOS.sleepSeconds(2);
+        DBOS.logger.info(`Completed step ${i}`);
+    }
+
+    @DBOS.workflow()
+    static async backgroundTask(i: number) {
+        DBOS.logger.info("Hello from background task!");
+        for (let j = 0; j < i; j++) {
+            await dbosWorkflowClass.backgroundTaskStep(j);
+            DBOS.setEvent("steps_event", j)
+        }
+        DBOS.logger.info("Background task complete!");
+    } 
+
+
 }
 
 // Launch the DBOS runtime 
