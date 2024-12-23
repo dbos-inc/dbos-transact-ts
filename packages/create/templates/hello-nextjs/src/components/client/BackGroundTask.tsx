@@ -106,7 +106,7 @@ function BackGroundTask() {
       console.error("Failed to fetch job progress", error);
       setIsRunning(false);
         setTaskid("");
-        setCurrentStep(0);
+        // setCurrentStep(0);
     }
   };
 

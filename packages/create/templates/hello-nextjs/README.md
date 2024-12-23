@@ -40,10 +40,20 @@ npm run start
 
 To see that it's working, visit this URL in your browser: [`http://localhost:3000/`](http://localhost:3000/).
 
-Click on the "Run DBOS Workflow" button.
+Click on the "Start Background Job" button.
 
-You should get this message: `Hello, dbos! You have been greeted 1 times.`
-Each time you refresh the page, the counter should go up by one!
+You should this message updated: `Your background task has completed step 0 of 9.`
+As the background job completes steps, the step counter should go up by one!
+
+Click on the "Crash the application".
+The step counter stops increasing.
+On the command line, you will see that the application has stopped.
+Start the application again.
+```bash
+npm run start
+```
+In the browser, you will see that the execution of steps, resumes where it left off and completes.
+
 
 Congratulations! You just launched a DBOS application.
 
@@ -57,9 +67,9 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
     await DBOS.launch();
 }
 ```
-- The workflow is called by the POST method in app/greetings/route.ts.
+- The workflow for the background job is called by the called the GET method in app/tasks/route.ts.
 
-- The POST is called by the component in src/components/callDBOSWorkflow.tsx. It calls the route /greetings.
+- The GET is called by the component in src/components/BackGroundTask.tsx. It calls the route /tasks.
 
 - The component is called from the main UI page.tsx.
 
