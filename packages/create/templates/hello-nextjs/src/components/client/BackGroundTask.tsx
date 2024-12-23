@@ -56,9 +56,10 @@ function BackGroundTask() {
       await fetch("/crash", { method: "GET" });
       //   await dbosBackgroundTask();
     } catch (error) {
-      console.error("Failed to start job", error);
-      setIsRunning(false);
+      console.error("Failed to crash job", error);
+      
     }
+    setIsRunning(false);
   };
 
    // Update the URL query parameter
@@ -89,6 +90,10 @@ function BackGroundTask() {
 
       const response = await fetch(`/step/${taskId}`, { method: "GET" });
       const data = await response.json();
+
+      if (!isRunning) {
+        setIsRunning(true);
+      }
 
       console.log(data);
       if (data.stepsCompleted) {
@@ -121,12 +126,15 @@ function BackGroundTask() {
       const interval = setInterval(fetchProgress, 2000);
       return () => clearInterval(interval);
     }
+    console.log("isRunning: ", isRunning);
   }, [isRunning, searchParams]);
 
   console.log(`isRunning: ${isRunning}, currentStep: ${currentStep}`);
 
   return (
     <div>
+
+
       <div className="flex flex-row gap-2">  
       <button onClick={startBackgroundJob} disabled={isRunning} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
         {isRunning ? "Job in Progress..." : "Start Background Job"}
