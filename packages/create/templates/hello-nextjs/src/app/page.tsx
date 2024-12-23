@@ -1,14 +1,18 @@
 import Image from "next/image";
-import CallDBOSWorkflow from "../components/client/callDBOSWorkflow";
 import BackGroundTask from "@/components/client/BackGroundTask";
 
 export default function Home() {
   return (
     <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
       <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-          <div>
-            <CallDBOSWorkflow wfResult=""/>
-          </div>
+
+
+          <h1 className="text-xl font-semibold mb-4">Welcome to DBOS!</h1>
+          
+    
+          <p className="mb-4">
+             DBOS helps you build applications that are <strong>resilient to any failure</strong>&mdash;no matter how many times you crash this app, your background task will always recover from its last completed step in about ten seconds.
+         </p>
           <div>
             <BackGroundTask />
           </div>
