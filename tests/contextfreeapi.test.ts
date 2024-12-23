@@ -182,6 +182,62 @@ export class AuthTestOps {
   }
 }
 
+export class TransitionTests {
+  @DBOS.transaction()
+  static async leafTransaction() {
+    return Promise.resolve('ok');
+  }
+
+  @DBOS.transaction()
+  static async oopsCallTransaction() {
+    return await TransitionTests.leafTransaction();
+  }
+
+  @DBOS.transaction()
+  static async oopsCallSleep() {
+    await DBOS.sleepms(100);
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async sleepStep() {
+    await DBOS.sleepms(100);
+  }
+
+  @DBOS.transaction()
+  static async oopsCallStep() {
+    await TransitionTests.sleepStep();
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallTransactionFromStep() {
+    return TransitionTests.leafTransaction();
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallStepFromStep() {
+    return TransitionTests.sleepStep();
+  }
+
+  @DBOS.transaction()
+  static async oopsCallSendFromTx() {
+    await DBOS.send('aaa', 'a', 'aa');
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallSendFromStep() {
+    await DBOS.send('aaa', 'a', 'aa');
+  }
+
+  @DBOS.transaction()
+  static async oopsCallGetFromTx() {
+    await DBOS.getEvent('aaa', 'a');
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallGetFromStep() {
+    await DBOS.getEvent('aaa', 'a');
+  }
+}
 
 async function main() {
   // First hurdle - configuration.
@@ -392,6 +448,28 @@ async function main8() {
   await DBOS.shutdown();
 }
 
+async function main9() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  await TransitionTests.leafTransaction();
+  await expect(()=>TransitionTests.oopsCallTransaction()).rejects.toThrow("Invalid call to a `transaction` function from within a `transaction`");
+  await expect(()=>TransitionTests.oopsCallSleep()).rejects.toThrow("Invalid call to `DBOS.sleep` inside a `transaction`");
+  await TransitionTests.sleepStep();
+  await expect(()=>TransitionTests.oopsCallStep()).rejects.toThrow("Invalid call to a `step` function from within a `transaction`");
+  await expect(()=>TransitionTests.oopsCallStepFromStep()).rejects.toThrow("Invalid call to a `step` function from within a `step`");
+  await expect(()=>TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow("Invalid call to a `transaction` function from within a `step`");
+
+  await expect(()=>TransitionTests.oopsCallSendFromTx()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallSendFromStep()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallGetFromTx()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallGetFromStep()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
+
+  await DBOS.shutdown();
+}
+
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
     await main();
@@ -423,5 +501,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("child-wf", async() => {
     await main8();
+  }, 15000);
+
+  test("transitions", async() => {
+    await main9();
   }, 15000);
 });
