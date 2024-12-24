@@ -214,7 +214,7 @@ export class TransitionTests {
   }
 
   @DBOS.step({retriesAllowed: false})
-  static async oopsCallStepFromStep() {
+  static async callStepFromStep() {
     return TransitionTests.sleepStep();
   }
 
@@ -459,7 +459,7 @@ async function main9() {
   await expect(()=>TransitionTests.oopsCallSleep()).rejects.toThrow("Invalid call to `DBOS.sleep` inside a `transaction`");
   await TransitionTests.sleepStep();
   await expect(()=>TransitionTests.oopsCallStep()).rejects.toThrow("Invalid call to a `step` function from within a `transaction`");
-  await expect(()=>TransitionTests.oopsCallStepFromStep()).rejects.toThrow("Invalid call to a `step` function from within a `step`");
+  await TransitionTests.callStepFromStep();
   await expect(()=>TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow("Invalid call to a `transaction` function from within a `step`");
 
   await expect(()=>TransitionTests.oopsCallSendFromTx()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");

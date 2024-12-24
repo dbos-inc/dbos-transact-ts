@@ -918,7 +918,8 @@ export class DBOS {
             throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `step` function from within a `transaction`");
           }
           if (DBOS.isInStep()) {
-            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `step` function from within a `step`");
+            // There should probably be checks here about the compatibility of the StepConfig...
+            return registration.registeredFunction!.call(this, ...rawArgs);
           }
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
