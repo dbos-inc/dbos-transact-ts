@@ -25,27 +25,25 @@ function BackGroundTask() {
 
 
       // Function to start the background job
-  const startBackgroundJob = async () => {
-    setIsRunning(true);
+    const startBackgroundJob = async () => {
+      setIsRunning(true);
   
-    setCurrentStep(0);
+      setCurrentStep(0);
 
-    let task = taskId
-    if (taskId === "") {
+      let task = taskId
+      if (taskId === "") {
         task = generateRandomString();
         setTaskid(task);
         updateQueryParam("id", task);
-    }
+      }
 
-
-    // Simulate calling a REST API to start the background job
-    try {
-      await fetch(`/tasks/${task}`, { method: "GET" });
-    } catch (error) {
-      console.error("Failed to start job", error);
-      setIsRunning(false);
-      
-    }
+      //  start the background job
+      try {
+        await fetch(`/tasks/${task}`, { method: "GET" });
+      } catch (error) {
+        console.error("Failed to start job", error);
+        setIsRunning(false);
+      }
   };
 
   const crashApp = async () => {
@@ -59,7 +57,7 @@ function BackGroundTask() {
     
     console.log("Crashing the application");
     
-    // Simulate calling a REST API to start the background job
+    // stop the background job
     try {
       await fetch("/crash", { method: "GET" });
     } catch (error) {
@@ -67,11 +65,10 @@ function BackGroundTask() {
       
     }
 
-
   };
 
-   // Update the URL query parameter
-   const updateQueryParam = (key: string, value: string) => {
+  // Update the URL query parameter
+  const updateQueryParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set(key, value);
     const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -86,8 +83,7 @@ function BackGroundTask() {
     router.replace(newUrl);
   };
 
-
-  // Function to fetch the current progress
+  // fetch the current progress
   const fetchProgress = async () => {
     try {
 
@@ -99,12 +95,11 @@ function BackGroundTask() {
       const response = await fetch(`/step/${taskId}`, { method: "GET" });
       const data = await response.json();
 
-      console.log(data);
       if (data.stepsCompleted) {
         setCurrentStep(data.stepsCompleted);
 
         if (data.stepsCompleted === 9) {
-            clearQueryParam("id");  
+          clearQueryParam("id");  
           setIsRunning(false);
           setTaskid("");
           setCurrentStep(0);
@@ -114,13 +109,12 @@ function BackGroundTask() {
     } catch (error) {
       console.error("Failed to fetch job progress", error);
       setIsRunning(false);
-        setTaskid("");
-        
+      setTaskid("");
     }
   };
 
    // Polling the progress every 2 seconds while the job is running
-   useEffect(() => {
+  useEffect(() => {
     const idFromUrl = searchParams.get("id");
     if (idFromUrl) {
       setTaskid(idFromUrl);
@@ -130,21 +124,18 @@ function BackGroundTask() {
       const interval = setInterval(fetchProgress, 2000);
       return () => clearInterval(interval);
     }
-
-    console.log("useEffect isRunning: ", isRunning);
   }, [isRunning, searchParams]);
 
-  console.log(`isRunning: ${isRunning}, currentStep: ${currentStep}`);
 
   return (
     <div>
       <div className="flex flex-row gap-2">  
-      <button onClick={startBackgroundJob} disabled={isRunning} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-        {isRunning ? "Job in Progress..." : "Start Background Job"}
-      </button>
-      <button onClick={crashApp} disabled={!isRunning} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+        <button onClick={startBackgroundJob} disabled={isRunning} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+          {isRunning ? "Job in Progress..." : "Start Background Job"}
+        </button>
+        <button onClick={crashApp} disabled={!isRunning} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
            { isRunning ? "Crash the application" : "Not Running"} 
-      </button>
+        </button>
       </div>
 
       <p>
@@ -164,4 +155,4 @@ const WrappedBackgroundJobComponent = () => (
     </Suspense>
   );
   
-  export default WrappedBackgroundJobComponent;
+export default WrappedBackgroundJobComponent;
