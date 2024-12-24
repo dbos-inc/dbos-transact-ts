@@ -335,7 +335,7 @@ export class DBOS {
 
   // sql session (various forms)
   static get sqlClient(): UserDatabaseClient {
-    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError();
+    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError("Invalid use of `DBOS.sqlClient` outside of a `transaction`");
     const ctx = assertCurrentDBOSContext() as TransactionContextImpl<UserDatabaseClient>;
     return ctx.client;
   }
@@ -400,9 +400,9 @@ export class DBOS {
   }
 
   static async sleepms(durationMS: number): Promise<void> {
-    if (DBOS.isWithinWorkflow()) {
-      if (DBOS.isInTransaction() || DBOS.isInStep()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      if (DBOS.isInTransaction()) {
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.sleep` inside a `transaction`");
       }
       return (getCurrentDBOSContext()! as WorkflowContext).sleepms(durationMS);
     }
@@ -648,7 +648,7 @@ export class DBOS {
   static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
     }
@@ -658,27 +658,27 @@ export class DBOS {
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).recv<T>(topic, timeoutSeconds);
     }
-    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can recv
+    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.recv` outside of a workflow"); // Only workflows can recv
   }
 
   static async setEvent<T>(key: string, value: T): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).setEvent(key, value);
     }
-    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can set event
+    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.setEvent` outside of a workflow"); // Only workflows can set event
   }
 
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
     }
@@ -728,7 +728,7 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
@@ -826,11 +826,18 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
+          if (DBOS.isInTransaction()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `transaction`");
+          }
+          if (DBOS.isInStep()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `step`");
+          }
+
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callTransactionFunction(
             registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
@@ -902,11 +909,18 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `step` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
+          if (DBOS.isInTransaction()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `step` function from within a `transaction`");
+          }
+          if (DBOS.isInStep()) {
+            // There should probably be checks here about the compatibility of the StepConfig...
+            return registration.registeredFunction!.call(this, ...rawArgs);
+          }
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
