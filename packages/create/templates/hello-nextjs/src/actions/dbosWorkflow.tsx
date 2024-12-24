@@ -29,7 +29,7 @@ class dbosWorkflowClass {
     @DBOS.workflow()
     static async backgroundTask(i: number) {
         DBOS.logger.info("Hello from background task!");
-        for (let j = 0; j < i; j++) {
+        for (let j = 1; j <= i; j++) {
             await dbosWorkflowClass.backgroundTaskStep(j);
             DBOS.logger.info("Sleeping for 2 seconds");
             await DBOS.sleepSeconds(2);

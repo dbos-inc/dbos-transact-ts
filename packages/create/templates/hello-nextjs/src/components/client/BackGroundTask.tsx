@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { dbosBackgroundTask } from "@/actions/dbosWorkflow";
 import { Suspense } from 'react'
 
+let intervalInitialized = false;
+
 function generateRandomString(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const array = new Uint8Array(6);
@@ -19,11 +21,14 @@ function BackGroundTask() {
     const [isRunning, setIsRunning] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
     const [taskId, setTaskid] = useState("");
+    const [isReconnecting, setIsReconnecting] = useState(false);
 
     const router = useRouter();
     const searchParams = useSearchParams();
 
+    console.log("mjjj rendering", isReconnecting);
 
+      // Function to start the background job
     const startBackgroundJob = async () => {
       setIsRunning(true);
   
@@ -92,10 +97,19 @@ function BackGroundTask() {
       }
 
       const response = await fetch(`/step/${taskId}`, { method: "GET" });
+      if (!response.ok) {
+        console.error("Failed to fetch job progress", response.statusText);
+        setIsReconnecting(true);
+        return;
+      }
+      setIsReconnecting(false);
+
       const data = await response.json();
 
       if (data.stepsCompleted) {
+        setIsRunning(true);
         setCurrentStep(data.stepsCompleted);
+
 
         if (data.stepsCompleted === 9) {
           clearQueryParam("id");  
@@ -109,6 +123,7 @@ function BackGroundTask() {
       console.error("Failed to fetch job progress", error);
       setIsRunning(false);
       setTaskid("");
+      setIsReconnecting(true);
     }
   };
 
@@ -119,11 +134,16 @@ function BackGroundTask() {
       setTaskid(idFromUrl);
       setIsRunning(true); // Assume the job is already running if there's an ID
     }
-    if (isRunning) {
+    
+    if (!intervalInitialized) {
       const interval = setInterval(fetchProgress, 2000);
-      return () => clearInterval(interval);
+      intervalInitialized = true;
+      return () => {
+        clearInterval(interval);
+        intervalInitialized = false;
+      };
     }
-  }, [isRunning, searchParams]);
+  }, [searchParams]);
 
 
   return (
@@ -139,9 +159,13 @@ function BackGroundTask() {
 
       <p>
         {currentStep < 10
-          ? `Your background task has completed step ${currentStep} of 9.`
+          ? `Your background task has completed step ${currentStep} of 10.`
           : "Background task completed successfully!"}
       </p>
+      <p>
+        {isReconnecting ? "Reconnecting..." : ""}
+      </p>
+
 
     </div>
   );
