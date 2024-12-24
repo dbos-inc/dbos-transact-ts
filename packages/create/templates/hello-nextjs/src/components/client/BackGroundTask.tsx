@@ -24,7 +24,6 @@ function BackGroundTask() {
     const searchParams = useSearchParams();
 
 
-      // Function to start the background job
     const startBackgroundJob = async () => {
       setIsRunning(true);
   
