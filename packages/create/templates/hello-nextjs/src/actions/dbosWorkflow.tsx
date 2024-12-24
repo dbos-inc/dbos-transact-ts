@@ -23,7 +23,6 @@ class dbosWorkflowClass {
 
     @DBOS.transaction()
     static async backgroundTaskStep(i : number) {
-        // DBOS.sleepSeconds(2);
         DBOS.logger.info(`Completed step ${i}`);
     }
 
@@ -56,8 +55,7 @@ export async function dbosWorkflow(userName: string) {
     return await dbosWorkflowClass.helloDBOS(userName);
 }
 
-export async function dbosBackgroundTask() {
+export async function dbosBackgroundTask(workflowID: string) {
     DBOS.logger.info("Hello from DBOS!");
-    // DBOS.withNextWorkflowID("my_workflow_id", await dbosWorkflowClass.backgroundTask(10));
-    return await dbosWorkflowClass.backgroundTask(10);
+    return DBOS.startWorkflow(dbosWorkflowClass, {workflowID: workflowID}).backgroundTask(10);
 }

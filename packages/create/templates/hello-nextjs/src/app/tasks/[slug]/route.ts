@@ -6,13 +6,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
 
     const taskId = (await params).slug;
 
-
     DBOS.logger.info(`Received request to start background task taskId: ${taskId}`);
 
-    // await dbosBackgroundTask();
-    DBOS.withNextWorkflowID(taskId, () => dbosBackgroundTask());
-
     DBOS.logger.info(`Started background task taskId: ${taskId}`);
+
+    await dbosBackgroundTask(taskId)
 
     return NextResponse.json({ message: "Background task started" });
 

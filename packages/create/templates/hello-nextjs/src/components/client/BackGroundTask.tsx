@@ -27,6 +27,7 @@ function BackGroundTask() {
       // Function to start the background job
   const startBackgroundJob = async () => {
     setIsRunning(true);
+  
     setCurrentStep(0);
 
     let task = taskId
@@ -40,26 +41,33 @@ function BackGroundTask() {
     // Simulate calling a REST API to start the background job
     try {
       await fetch(`/tasks/${task}`, { method: "GET" });
-      //   await dbosBackgroundTask();
     } catch (error) {
       console.error("Failed to start job", error);
       setIsRunning(false);
+      
     }
   };
 
   const crashApp = async () => {
 
+    if(!isRunning) {
+        console.log("Not running, nothing to crash");
+        return;
+    }
+    
+    setIsRunning(false);
+    
     console.log("Crashing the application");
     
     // Simulate calling a REST API to start the background job
     try {
       await fetch("/crash", { method: "GET" });
-      //   await dbosBackgroundTask();
     } catch (error) {
-      console.error("Failed to crash job", error);
+      console.error("Failed to start job", error);
       
     }
-    setIsRunning(false);
+
+
   };
 
    // Update the URL query parameter
@@ -91,10 +99,6 @@ function BackGroundTask() {
       const response = await fetch(`/step/${taskId}`, { method: "GET" });
       const data = await response.json();
 
-      if (!isRunning) {
-        setIsRunning(true);
-      }
-
       console.log(data);
       if (data.stepsCompleted) {
         setCurrentStep(data.stepsCompleted);
@@ -111,7 +115,7 @@ function BackGroundTask() {
       console.error("Failed to fetch job progress", error);
       setIsRunning(false);
         setTaskid("");
-        // setCurrentStep(0);
+        
     }
   };
 
@@ -126,23 +130,20 @@ function BackGroundTask() {
       const interval = setInterval(fetchProgress, 2000);
       return () => clearInterval(interval);
     }
-    console.log("isRunning: ", isRunning);
+
+    console.log("useEffect isRunning: ", isRunning);
   }, [isRunning, searchParams]);
 
   console.log(`isRunning: ${isRunning}, currentStep: ${currentStep}`);
 
   return (
     <div>
-
-
       <div className="flex flex-row gap-2">  
       <button onClick={startBackgroundJob} disabled={isRunning} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
         {isRunning ? "Job in Progress..." : "Start Background Job"}
       </button>
-      <button onClick={crashApp} disabled={!isRunning}
-            id="crash-button"
-            className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded shadow transition duration-150 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:bg-red-600"        >
-            Crash the application
+      <button onClick={crashApp} disabled={!isRunning} className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+           { isRunning ? "Crash the application" : "Not Running"} 
       </button>
       </div>
 
