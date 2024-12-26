@@ -103,12 +103,14 @@ function BackGroundTask() {
 
       const data = await response.json();
 
+      console.log("Step completed", data.stepsCompleted);
+
       if (data.stepsCompleted) {
         setIsRunning(true);
         setCurrentStep(data.stepsCompleted);
 
 
-        if (data.stepsCompleted === 9) {
+        if (data.stepsCompleted === 10) {
           clearQueryParam("id");  
           setIsRunning(false);
           setTaskid("");
