@@ -26,9 +26,6 @@ function BackGroundTask() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    console.log("mjjj rendering", isReconnecting);
-
-      // Function to start the background job
     const startBackgroundJob = async () => {
       setIsRunning(true);
   
