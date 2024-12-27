@@ -20,6 +20,25 @@ class dbosWorkflowClass {
         const greeting = `Hello! You have been greeted ${greet_count} times.`;
         return greeting;
     }
+
+    @DBOS.transaction()
+    static async backgroundTaskStep(i : number) {
+        DBOS.logger.info(`Completed step ${i}`);
+    }
+
+    @DBOS.workflow()
+    static async backgroundTask(i: number) {
+        DBOS.logger.info("Hello from background task!");
+        for (let j = 1; j <= i; j++) {
+            await dbosWorkflowClass.backgroundTaskStep(j);
+            DBOS.logger.info("Sleeping for 2 seconds");
+            await DBOS.sleepSeconds(2);
+            await DBOS.setEvent("steps_event", j)
+        }
+        DBOS.logger.info("Background task complete!");
+    } 
+
+
 }
 
 // Launch the DBOS runtime 
@@ -34,4 +53,9 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
 export async function dbosWorkflow(userName: string) {
     DBOS.logger.info("Hello from DBOS!");
     return await dbosWorkflowClass.helloDBOS(userName);
+}
+
+export async function dbosBackgroundTask(workflowID: string) {
+    DBOS.logger.info("Hello from DBOS!");
+    return DBOS.startWorkflow(dbosWorkflowClass, {workflowID: workflowID}).backgroundTask(10);
 }
