@@ -151,6 +151,8 @@ export class DBOS {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
+    console.log("Launching DBOS.launch()");
+
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();

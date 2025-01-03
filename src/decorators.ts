@@ -455,6 +455,7 @@ export function registerAndWrapContextFreeFunction<This, Args extends unknown[],
     throw Error("Use of decorator when original method is undefined");
   }
 
+  console.log("mjjjj We are in registerAndWrapContextFreeFunction", target.constructor.name, target, propertyKey);
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
 
   return { descriptor, registration };
@@ -464,6 +465,8 @@ type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
 
 export function getAllRegisteredClasses() {
+  console.log("We are in getAllRegisteredClasses");
+  console.trace();
   const ctors: AnyConstructor[] = [];
   for (const [_cn, creg] of classesByName) {
     ctors.push(creg.ctor);
@@ -474,9 +477,19 @@ export function getAllRegisteredClasses() {
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
   ctor: CT
 ) {
+
+  console.log("We are in getOrCreateClassRegistration", ctor.name);
+  console.log("before number of regis", classesByName.size);
+  console.trace();
+
   const name = ctor.name;
+  console.log("ctor",ctor)
   if (!classesByName.has(name)) {
+    
+    console.log("Inserting class registration", name);
     classesByName.set(name, new ClassRegistration<CT>(ctor));
+    console.log("Done Inserting class registration", name);
+
   }
   const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
 
@@ -590,12 +603,14 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]) : object
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
 {
+  console.log("We are in DefaultArgOptional", ctor.name);
    const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
 {
+  console.log("We are in configureInstance", cls.name, name);
   const inst = new cls(name, ...args);
   const creg = getOrCreateClassRegistration(cls as new(...args: unknown[])=>R);
   if (creg.configuredInstances.has(name)) {

@@ -184,6 +184,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   constructor(readonly config: DBOSConfig, systemDatabase?: SystemDatabase) {
     this.debugMode = config.debugMode ?? false;
     this.debugProxy = config.debugProxy;
+    console.log("start DBOSExecutor constructor")
 
     // Set configured environment variables
     if (config.env) {
@@ -241,6 +242,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;
+
+    console.log("exit DBOSExecutor constructor")
   }
 
   configureDbClient() {
@@ -313,6 +316,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerClass(cls: object) {
+
+    console.log("Registering class", cls)
+
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
@@ -343,6 +349,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async init(classes?: object[]): Promise<void> {
+    console.log("DbosExecutor init")
     if (this.initialized) {
       this.logger.error("Workflow executor already initialized!");
       return;
@@ -350,6 +357,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (!classes || !classes.length) {
       classes = getAllRegisteredClasses();
+      console.log("registered Classes", classes)
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
@@ -381,6 +389,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
 
       for (const cls of classes) {
+        console.log("Registering class", cls)
         this.#registerClass(cls);
       }
 
@@ -502,6 +511,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow(ro: MethodRegistrationBase) {
+
+    console.log("registering workflow")
+
     const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
@@ -520,6 +532,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerTransaction(ro: MethodRegistrationBase) {
+
+    console.log("registering transaction")
+
     const txf = ro.registeredFunction as Transaction<unknown[], unknown>;
     const tfn = ro.className + '.' + ro.name;
 
