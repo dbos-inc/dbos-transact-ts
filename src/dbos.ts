@@ -645,14 +645,17 @@ export class DBOS {
     }
   }
 
-  static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
+  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey ?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` inside a `step` or `transaction`");
       }
+      if (idempotencyKey) {
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` with an idempotency key from within a workflow");
+      }
       return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
     }
-    return DBOS.executor.send(destinationID, message, topic);
+    return DBOS.executor.send(destinationID, message, topic, idempotencyKey);
   }
 
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
