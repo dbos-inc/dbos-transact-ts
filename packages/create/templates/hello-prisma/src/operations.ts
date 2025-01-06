@@ -3,18 +3,18 @@
 // This is the Quickstart Prisma template app. It greets visitors, counting how many total greetings were made.
 // To learn how to run this app, visit the Prisma tutorial: https://docs.dbos.dev/tutorials/using-prisma
 
-import { HandlerContext, TransactionContext, Transaction, GetApi } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { PrismaClient } from "@prisma/client";
 
 export class Hello {
 
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'name' as a path parameter
-  @GetApi('/greeting/:name')
-  @Transaction()
-  static async helloTransaction(txnCtxt: TransactionContext<PrismaClient>, name: string)  {
+  @DBOS.getApi('/greeting/:name')
+  @DBOS.transaction()
+  static async helloTransaction(name: string)  {
     const greeting = `Hello, ${name}!`;
-    const res = await txnCtxt.client.dbosHello.create({
+    const res = await (DBOS.prismaClient as PrismaClient).dbosHello.create({
       data: {
         greeting: greeting,
       },
@@ -24,8 +24,8 @@ export class Hello {
   }
 
   // Serve a quick readme for the app at the / endpoint
-  @GetApi('/')
-  static async readme(_ctxt: HandlerContext) {
+  @DBOS.getApi('/')
+  static async readme() {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
       For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>
