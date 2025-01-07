@@ -575,9 +575,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   getWorkflowInfoByStatus(wf: WorkflowStatus) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
     const wfInfo = this.workflowInfoMap.get(wfname);
-    if (!wfInfo) {
-      throw new DBOSNotRegisteredError(`Workflow function name '${wfname}' is not registered.`);
-    }
+
+    // wfInfo may be undefined here, if this is a temp workflow
 
     return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
