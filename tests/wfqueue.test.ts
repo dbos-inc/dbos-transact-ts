@@ -211,8 +211,8 @@ describe("queued-wf-tests-simple", () => {
         testRuntime = await createInternalTestRuntime(undefined, config);
         const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
 
-        const wfh1b = testRuntime.retrieveWorkflow(wfh1.getWorkflowUUID());
-        const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
+        const wfh1b = testRuntime.retrieveWorkflow(wfh1.workflowID);
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
         expect (await wfh1b.getResult()).toBe('ab');
         expect (await wfh2b.getResult()).toBe('cd');
     }, 10000);
@@ -251,7 +251,7 @@ describe("queued-wf-tests-simple", () => {
         const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
 
         const wfh1b = testRuntime.retrieveWorkflow(wfid1);
-        const wfh2b = testRuntime.retrieveWorkflow(wfh2.getWorkflowUUID());
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
         console.log("Wait");
         expect (await wfh2b.getResult()).toBe('cd');
         // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
@@ -340,10 +340,10 @@ class TestChildWFs
         await ctx.sleepms(1000);
         expect((await wfh4.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
-        await ctx.send(wfh1.getWorkflowUUID(), 'go', 'release');
-        await ctx.send(wfh2.getWorkflowUUID(), 'go', 'release');
-        await ctx.send(wfh3.getWorkflowUUID(), 'go', 'release');
-        await ctx.send(wfh4.getWorkflowUUID(), 'go', 'release');
+        await ctx.send(wfh1.workflowID, 'go', 'release');
+        await ctx.send(wfh2.workflowID, 'go', 'release');
+        await ctx.send(wfh3.workflowID, 'go', 'release');
+        await ctx.send(wfh4.workflowID, 'go', 'release');
 
         return (await wfh1.getResult() + await wfh2.getResult() +
            await wfh3.getResult() + await wfh4.getResult())

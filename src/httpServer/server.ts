@@ -163,7 +163,7 @@ export class DBOSHttpServer {
       const recoverHandles = await dbosExec.recoverPendingWorkflows(executorIDs);
 
       // Return a list of workflowUUIDs being recovered.
-      koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.getWorkflowUUID())).then((results) =>
+      koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.workflowID)).then((results) =>
         results.filter((i) => i.status === "fulfilled").map((i) => (i as PromiseFulfilledResult<unknown>).value)
       );
       await koaNext();

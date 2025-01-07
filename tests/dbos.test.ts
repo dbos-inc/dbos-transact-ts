@@ -71,13 +71,13 @@ describe("dbos-tests", () => {
 
     const workflowUUID = uuidv1();
     const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID())).resolves.toBeFalsy(); // return void.
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test("simple-workflow-events", async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
-    const workflowUUID = handle.getWorkflowUUID();
+    const workflowUUID = handle.workflowID;
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
@@ -86,7 +86,7 @@ describe("dbos-tests", () => {
 
   test("simple-workflow-events-multiple", async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
-    const workflowUUID = handle.getWorkflowUUID();
+    const workflowUUID = handle.workflowID;
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1b");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
@@ -201,7 +201,7 @@ describe("dbos-tests", () => {
 
     const workflowHandle = await testRuntime.startWorkflow(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
 
-    expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
+    expect(workflowHandle.workflowID).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
@@ -223,7 +223,7 @@ describe("dbos-tests", () => {
     await dbosExec.flushWorkflowBuffers();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
-    expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);
+    expect(retrievedHandle.workflowID).toBe(workflowUUID);
     await expect(retrievedHandle.getResult()).resolves.toBe("hello");
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,

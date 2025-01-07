@@ -190,7 +190,7 @@ const wfHandle = await DBOS.startWorkflow(defaultS3)
     .writeFileViaURL(fileDBRec, 60/*expiration*/, {contentType: 'text/plain'} /*content restrictions*/);
 
 // Get the presigned post from the workflow
-const ppost = await DBOS.getEvent<PresignedPost>(wfHandle.getWorkflowUUID(), "uploadkey");
+const ppost = await DBOS.getEvent<PresignedPost>(wfHandle.workflowID, "uploadkey");
 
 // Return the ppost object to the client for use as in 'Presigned POSTs' section above
 // The workflow ID should also be known in some way
@@ -202,7 +202,7 @@ Upon a completion call from the client, the following should be performed to not
 const wfHandle = DBOS.retrieveWorkflow(wfid);
 
 // Notify workflow - truish means success, any falsy value indicates failure / cancel
-await DBOS.send<boolean>(wfHandle.getWorkflowUUID(), true, "uploadfinish");
+await DBOS.send<boolean>(wfHandle.workflowID(), true, "uploadfinish");
 
 // Optionally, await completion of the workflow; this ensures that the database record is written,
 //  or will throw an error if anything went wrong in the workflow

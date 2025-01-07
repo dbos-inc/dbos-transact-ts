@@ -249,7 +249,7 @@ describe("ses-tests", () => {
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
     const wfhandle = await DBOS.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, {contentType: 'text/plain'});
     //    Get the presigned post
-    const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.getWorkflowUUID(), "uploadkey");
+    const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.workflowID, "uploadkey");
     //    Upload to the URL
     try {
         const res = await uploadToS3(ppost!, './src/s3_utils.test.ts');
@@ -261,7 +261,7 @@ describe("ses-tests", () => {
         expect(e).toBeUndefined();
     }
     //    Notify WF
-    await DBOS.send<boolean>(wfhandle.getWorkflowUUID(), true, "uploadfinish");
+    await DBOS.send<boolean>(wfhandle.workflowID, true, "uploadfinish");
 
     //    Wait for WF complete
     const _myFileRecord = await wfhandle.getResult();
