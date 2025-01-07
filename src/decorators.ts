@@ -260,14 +260,20 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
+  console.log("We are in getRegisteredOperations")
+
+  const clname = (target as any).mjclassName  
+
   if (typeof target === 'function') { // Constructor case
-    const classReg = classesByName.get(target.name);
+    // const classReg = classesByName.get(target.name);
+    const classReg = classesByName.get(clname);
     classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
   }
   else {
     let current: object | undefined = target;
     while (current) {
-      const cname = current.constructor.name;
+      // const cname = current.constructor.name;
+      const cname = clname;
       if (classesByName.has(cname)) {
         registeredOperations.push(...getRegisteredOperations(current.constructor));
       }
@@ -334,7 +340,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     isInstance = true;
   }
 
-  const classReg = getOrCreateClassRegistration(regtarget);
+  const classReg = getOrCreateClassRegistration(regtarget, propertyKey);
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
@@ -455,7 +461,7 @@ export function registerAndWrapContextFreeFunction<This, Args extends unknown[],
     throw Error("Use of decorator when original method is undefined");
   }
 
-  console.log("mjjjj We are in registerAndWrapContextFreeFunction", target.constructor.name, target, propertyKey);
+  console.log("mjjjj We are in registerAndWrapContextFreeFunction", target.constructor.name, target, propertyKey, descriptor);
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
 
   return { descriptor, registration };
@@ -465,8 +471,6 @@ type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
 
 export function getAllRegisteredClasses() {
-  console.log("We are in getAllRegisteredClasses");
-  console.trace();
   const ctors: AnyConstructor[] = [];
   for (const [_cn, creg] of classesByName) {
     ctors.push(creg.ctor);
@@ -475,15 +479,17 @@ export function getAllRegisteredClasses() {
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
-  ctor: CT
+  ctor: CT, propertyKey?: string | symbol
 ) {
 
-  console.log("We are in getOrCreateClassRegistration", ctor.name);
-  console.log("before number of regis", classesByName.size);
-  console.trace();
+  console.log("We are in getOrCreateClassRegistration", ctor);
+  // console.log("before number of regis", classesByName.size);
+  // console.trace();
 
-  const name = ctor.name;
-  console.log("ctor",ctor)
+  // const name = ctor.name;
+  // const name = propertyKey ? propertyKey.toString() : ctor.name;
+  const name: string = (ctor as any).mjclassName
+  console.log("name we are using ",name)
   if (!classesByName.has(name)) {
     
     console.log("Inserting class registration", name);
@@ -491,6 +497,8 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
     console.log("Done Inserting class registration", name);
 
   }
+
+  console.log("after number of regis", classesByName.size);
   const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
 
   if (clsReg.needsInitialized) {
@@ -658,6 +666,8 @@ export function Transaction(config: TransactionConfig={}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
   {
+    const className = (target as any).constructor.mjclassName;
+    console.log("In Transaction decorator Class Name:", className, propertyKey);
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;

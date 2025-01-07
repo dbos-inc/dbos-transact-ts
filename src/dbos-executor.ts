@@ -319,7 +319,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     console.log("Registering class", cls)
 
+
     const registeredClassOperations = getRegisteredOperations(cls);
+    console.log("registeredClassOperations", registeredClassOperations)
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -351,7 +353,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async init(classes?: object[]): Promise<void> {
     console.log("DbosExecutor init")
     if (this.initialized) {
-      this.logger.error("Workflow executor already initialized!");
+      if (!classes || !classes.length) {
+        classes = getAllRegisteredClasses();
+        console.log("registered Classes", classes)
+      }
+      for (const cls of classes) {
+        console.log("Registering class", cls)
+        this.#registerClass(cls);
+      }
+      // this.logger.error("Workflow executor already initialized!");
       return;
     }
 
@@ -539,7 +549,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const tfn = ro.className + '.' + ro.name;
 
     if (this.transactionInfoMap.has(tfn)) {
-      throw new DBOSError(`Repeated Transaction name: ${tfn}`);
+      // throw new DBOSError(`Repeated Transaction name: ${tfn}`);
+      console.log(`Repeated Transaction name: ${tfn}`);
+      return;
     }
     const txnInfo: TransactionRegInfo = {
       transaction: txf,

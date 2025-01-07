@@ -149,7 +149,11 @@ export class DBOS {
 
   static async launch(httpApps?: DBOSHttpApps) {
     // Do nothing is DBOS is already initialized
-    if (DBOSExecutor.globalInstance) return;
+    if (DBOSExecutor.globalInstance) {
+      console.log("DBOS already initialized. But running init again");
+      DBOSExecutor.globalInstance.init();
+      return
+    }
 
     console.log("Launching DBOS.launch()");
 
