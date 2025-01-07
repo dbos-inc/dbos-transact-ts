@@ -1,6 +1,6 @@
 # DBOS Hello with Prisma
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Prisma](https://docs.dbos.dev/typescript/tutorials/programmingmodel/orms/using-prisma).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Prisma](https://docs.dbos.dev/typescript/tutorials/orms/using-prisma).
 
 ## Getting Started
 
@@ -22,7 +22,7 @@ npm run build
 
 Then, run a schema migration to create some tables.
 Prisma provides rich support for [schema migrations](https://www.prisma.io/docs/orm/prisma-migrate), including automatic generation of migration files from Prisma schema.
-Fore more information, see [our docs](https://docs.dbos.dev/typescript/tutorials/programmingmodel/orms/using-prisma).
+Fore more information, see [our docs](https://docs.dbos.dev/typescript/tutorials/orms/using-prisma).
 
 ```bash
 npx dbos migrate
@@ -44,7 +44,7 @@ Congratulations! You just launched a DBOS application.
 
 ## Next Steps
 
-- For more information on using Prisma with DBOS, check out [our docs](https://docs.dbos.dev/typescript/tutorials/programmingmodel/orms/using-prisma).
+- For more information on using Prisma with DBOS, check out [our docs](https://docs.dbos.dev/typescript/tutorials/orms/using-prisma).
 - To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it.  Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
 - For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/typescript/programming-guide).
 - To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/quickstart/)

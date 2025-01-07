@@ -6,7 +6,7 @@ import { makeTestTypescriptProgram } from "./makeProgram";
 
 const printer = ts.createPrinter();
 
-const entrypoint = path.join(__dirname, "../../create/templates/hello/src/operations.ts");
+const entrypoint = path.join(__dirname, "../../create/templates/hello-contexts/src/operations.ts");
 const program = ts.createProgram([entrypoint], {});
 
 describe("TypeParser", () => {

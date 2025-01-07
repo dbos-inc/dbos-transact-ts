@@ -1,6 +1,6 @@
 # DBOS Background Job
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/typescript/tutorials/programmingmodel/orms/using-knex) to interact with postgres.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/typescript/tutorials/orms/using-knex) to interact with postgres.
 
 ## Getting Started
 
