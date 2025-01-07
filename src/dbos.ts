@@ -645,7 +645,7 @@ export class DBOS {
     }
   }
 
-  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey ?: string): Promise<void> {
+  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` inside a `step` or `transaction`");
