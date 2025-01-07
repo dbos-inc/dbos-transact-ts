@@ -1,6 +1,6 @@
 # DBOS Hello with Drizzle
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Drizzle](https://docs.dbos.dev/typescript/tutorials/programmingmodel/orms/using-drizzle).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Drizzle](https://docs.dbos.dev/typescript/tutorials/orms/using-drizzle).
 
 ## Getting Started
 
