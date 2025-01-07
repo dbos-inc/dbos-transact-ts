@@ -1,6 +1,6 @@
-# DBOS `bcrypt` Step
+# DBOS `bcrypt` Steps
 
-This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for generating bcrypt hashes.
+This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/typescript/tutorials/step-tutorial) for generating bcrypt hashes.
 
 The reason that some `bcrypt` operations should be wrapped in a `@DBOS.step` is that they generate random numbers.  By using a step, replayed or restarted workflows will get the recorded value and therefore have the same behavior as the original.
 
@@ -24,6 +24,6 @@ const isValid = await BcryptStep.bcryptCompare(password, hashedPassword);
 ```
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
+- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
