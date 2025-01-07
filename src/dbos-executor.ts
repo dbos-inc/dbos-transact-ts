@@ -574,18 +574,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getWorkflowInfoByStatus(wf: WorkflowStatus) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
-    let wfInfo = this.workflowInfoMap.get(wfname);
-    if (!wfInfo && !wf.workflowClassName) {
-      for (const [_wfn, wfr] of this.workflowInfoMap) {
-        if (wf.workflowName === wfr.workflow.name) {
-          if (wfInfo) {
-            throw new DBOSError(`Recovered workflow function name '${wf.workflowName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            wfInfo = wfr;
-          }
-        }
-      }
+    const wfInfo = this.workflowInfoMap.get(wfname);
+    if (!wfInfo) {
+      throw new DBOSNotRegisteredError(`Workflow function name '${wfname}' is not registered.`);
     }
 
     return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
@@ -597,19 +588,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
     const tfname = className + '.' + functionName;
-    let txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
+    const txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
 
-    if (!txnInfo && !className) {
-      for (const [_wfn, tfr] of this.transactionInfoMap) {
-        if (functionName === tfr.transaction.name) {
-          if (txnInfo) {
-            throw new DBOSError(`Recovered transaction function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            txnInfo = tfr;
-          }
-        }
-      }
+    if (!txnInfo) {
+      throw new DBOSNotRegisteredError(`Transaction function name '${tfname}' is not registered.`);
     }
 
     return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -621,22 +603,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
-    let commInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
+    const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
 
-    if (!commInfo && !className) {
-      for (const [_wfn, cfr] of this.stepInfoMap) {
-        if (functionName === cfr.step.name) {
-          if (commInfo) {
-            throw new DBOSError(`Recovered step function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            commInfo = cfr;
-          }
-        }
-      }
+    if (!stepInfo) {
+      throw new DBOSNotRegisteredError(`Step function name '${cfname}' is not registered.`);
     }
 
-    return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return {commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
   getProcedureClassName(pf: StoredProcedure<unknown>) {
