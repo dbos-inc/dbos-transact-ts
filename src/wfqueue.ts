@@ -63,7 +63,7 @@ class WFQueueRunner
             for (const [_qn, q] of this.wfQueuesByName) {
                 let wfids: string[];
                 try {
-                    wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q);
+                    wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID);
                 }
                 catch (e) {
                     const err = e as Error;
