@@ -115,8 +115,8 @@ describe("kafka-tests", () => {
     }
 
     // Send messages
-    await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage});
-    await testRuntime?.invoke(wfKafkaCfg!).sendMessage({value: wfMessage});
+    await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage}); // v1 API
+    await wfKafkaCfg!.send({value: wfMessage}); // v2 API
 
     // Check that both messages are consumed
     await DBOSTestClass.txnPromise;

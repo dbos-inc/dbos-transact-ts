@@ -1,5 +1,8 @@
-import { DBOS, WorkflowQueue } from '../src';
+import { Authentication, DBOS, DBOSResponseError, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import jwt from "koa-jwt";
+
+DBOS.logger.info("This should not cause a kaboom.");
 
 class TestFunctions
 {
@@ -17,6 +20,7 @@ class TestFunctions
   @DBOS.workflow()
   static async doWorkflow() {
     await TestFunctions.doTransaction("");
+    expect(DBOS.getConfig('is_in_unit_test', false)).toBe(true);
     return 'done';
   }
 
@@ -133,11 +137,114 @@ class ChildWorkflows {
   }
 }
 
+const testJwt = jwt({
+  secret: 'your-secret-goes-here'
+});
+
+export async function testAuthMiddleware(ctx: MiddlewareContext) {
+  // Only extract user and roles if the operation specifies required roles.
+  if (ctx.requiredRole.length > 0) {
+    //console.log("required role: ", ctx.requiredRole);
+    if (!ctx.koaContext.state.user) {
+      throw new DBOSResponseError("No authenticated user!", 401);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const authenticatedUser: string = ctx.koaContext.state.user["preferred_username"] ?? "";
+    //console.log("current user: ", authenticatedUser);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const authenticatedRoles: string[] = ctx.koaContext.state.user["realm_access"]["roles"] ?? [];
+    //console.log("JWT claimed roles: ", authenticatedRoles);
+    if (authenticatedRoles.includes("appAdmin")) {
+      // appAdmin role has more priviledges than appUser.
+      authenticatedRoles.push("appUser");
+    }
+    //console.log("authenticated roles: ", authenticatedRoles);
+    return Promise.resolve({ authenticatedUser: authenticatedUser, authenticatedRoles: authenticatedRoles });
+  }
+}
+
+@DBOS.defaultRequiredRole(["appUser"])
+@Authentication(testAuthMiddleware)
+@KoaMiddleware(testJwt)
+export class AuthTestOps {
+  @DBOS.transaction()
+  @DBOS.getApi("/api/list_all")
+  static async listAccountsFunc() {
+    return Promise.resolve('ok');
+  }
+
+  @DBOS.transaction()
+  @DBOS.postApi("/api/create_account")
+  @DBOS.requiredRole(["appAdmin"]) // Only an admin can create a new account.
+  static async createAccountFunc() {
+    return Promise.resolve('ok');
+  }
+}
+
+export class TransitionTests {
+  @DBOS.transaction()
+  static async leafTransaction() {
+    return Promise.resolve('ok');
+  }
+
+  @DBOS.transaction()
+  static async oopsCallTransaction() {
+    return await TransitionTests.leafTransaction();
+  }
+
+  @DBOS.transaction()
+  static async oopsCallSleep() {
+    await DBOS.sleepms(100);
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async sleepStep() {
+    await DBOS.sleepms(100);
+  }
+
+  @DBOS.transaction()
+  static async oopsCallStep() {
+    await TransitionTests.sleepStep();
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallTransactionFromStep() {
+    return TransitionTests.leafTransaction();
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async callStepFromStep() {
+    return TransitionTests.sleepStep();
+  }
+
+  @DBOS.transaction()
+  static async oopsCallSendFromTx() {
+    await DBOS.send('aaa', 'a', 'aa');
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallSendFromStep() {
+    await DBOS.send('aaa', 'a', 'aa');
+  }
+
+  @DBOS.transaction()
+  static async oopsCallGetFromTx() {
+    await DBOS.getEvent('aaa', 'a');
+  }
+
+  @DBOS.step({retriesAllowed: false})
+  static async oopsCallGetFromStep() {
+    await DBOS.getEvent('aaa', 'a');
+  }
+}
+
 async function main() {
   // First hurdle - configuration.
   const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
+  DBOS.setAppConfig('is_in_unit_test', true);
   await DBOS.launch();
 
   const res = await TestFunctions.doWorkflow();
@@ -212,6 +319,7 @@ async function main5() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
+  DBOS.setAppConfig('is_in_unit_test', true);
   await DBOS.launch();
 
   const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
@@ -314,6 +422,10 @@ async function main7() {
   });
   expect (byejoe).toBe('bye user joe!');
 
+  await DBOS.withAuthedContext('admin', ['appAdmin'], async () => {
+    expect(await AuthTestOps.createAccountFunc()).toBe('ok');
+  });
+
   await DBOS.shutdown();
 }
 
@@ -332,6 +444,28 @@ async function main8() {
     return await ChildWorkflows.startSubWF();
   });
   expect (cres).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
+
+  await DBOS.shutdown();
+}
+
+async function main9() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  await TransitionTests.leafTransaction();
+  await expect(()=>TransitionTests.oopsCallTransaction()).rejects.toThrow("Invalid call to a `transaction` function from within a `transaction`");
+  await expect(()=>TransitionTests.oopsCallSleep()).rejects.toThrow("Invalid call to `DBOS.sleep` inside a `transaction`");
+  await TransitionTests.sleepStep();
+  await expect(()=>TransitionTests.oopsCallStep()).rejects.toThrow("Invalid call to a `step` function from within a `transaction`");
+  await TransitionTests.callStepFromStep();
+  await expect(()=>TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow("Invalid call to a `transaction` function from within a `step`");
+
+  await expect(()=>TransitionTests.oopsCallSendFromTx()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallSendFromStep()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallGetFromTx()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
+  await expect(()=>TransitionTests.oopsCallGetFromStep()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
 
   await DBOS.shutdown();
 }
@@ -367,5 +501,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("child-wf", async() => {
     await main8();
+  }, 15000);
+
+  test("transitions", async() => {
+    await main9();
   }, 15000);
 });

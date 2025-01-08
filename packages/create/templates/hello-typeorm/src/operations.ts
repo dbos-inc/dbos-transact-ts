@@ -3,27 +3,27 @@
 // This is the Quickstart TypeORM template app. It greets visitors, counting how many total greetings were made.
 // To learn how to run this app, visit the TypeORM tutorial: https://docs.dbos.dev/tutorials/using-typeorm
 
-import { HandlerContext, TransactionContext, Transaction, GetApi, OrmEntities } from '@dbos-inc/dbos-sdk';
+import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
 import { EntityManager } from "typeorm";
 import { DBOSHello } from '../entities/DBOSHello';
 
 @OrmEntities([DBOSHello])
 export class Hello {
 
-  @GetApi('/greeting/:name')
-  @Transaction()
-  static async helloTransaction(txnCtxt: TransactionContext<EntityManager>, name: string) {
+  @DBOS.getApi('/greeting/:name')
+  @DBOS.transaction()
+  static async helloTransaction(name: string) {
     const greeting = `Hello, ${name}!`;
     let entity = new DBOSHello();
     entity.greeting = greeting;
-    entity = await txnCtxt.client.save(entity);
+    entity = await (DBOS.typeORMClient as EntityManager).save(entity);
     const greeting_note =  `Greeting ${entity.greeting_id}: ${greeting}`;
     return Hello.makeHTML(greeting_note);
   }
 
   // Serve a quick readme for the app at the / endpoint
-  @GetApi('/')
-  static async readme(_ctxt: HandlerContext) {
+  @DBOS.getApi('/')
+  static async readme() {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
       For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>

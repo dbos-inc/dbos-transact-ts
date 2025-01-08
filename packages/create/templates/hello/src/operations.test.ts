@@ -1,27 +1,26 @@
-import { TestingRuntime, createTestingRuntime } from "@dbos-inc/dbos-sdk";
+import { DBOS } from "@dbos-inc/dbos-sdk";
 import { Hello, dbos_hello } from "./operations";
 import request from "supertest";
 
 describe("operations-test", () => {
-  let testRuntime: TestingRuntime;
-
   beforeAll(async () => {
-    testRuntime = await createTestingRuntime();
+    await DBOS.launch();
+    await DBOS.launchAppHTTPServer();
   });
 
   afterAll(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   /**
    * Test the transaction.
    */
   test("test-transaction", async () => {
-    const res = await testRuntime.invoke(Hello).helloTransaction("dbos");
+    const res = await Hello.helloTransaction("dbos");
     expect(res).toMatch("Hello, dbos! You have been greeted");
 
     // Check the greet count.
-    const rows = await testRuntime.queryUserDB<dbos_hello>("SELECT * FROM dbos_hello WHERE name=$1", "dbos");
+    const rows = await DBOS.executor.queryUserDB("SELECT * FROM dbos_hello WHERE name=$1", ["dbos"]) as dbos_hello[];
     expect(rows[0].greet_count).toBe(1);
   });
 
@@ -29,7 +28,7 @@ describe("operations-test", () => {
    * Test the HTTP endpoint.
    */
   test("test-endpoint", async () => {
-    const res = await request(testRuntime.getHandlersCallback()).get(
+    const res = await request(DBOS.getHTTPHandlersCallback()).get(
       "/greeting/dbos"
     );
     expect(res.statusCode).toBe(200);

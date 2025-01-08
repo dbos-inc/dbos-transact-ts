@@ -443,9 +443,13 @@ export interface WorkflowHandle<R> {
    */
   getResult(): Promise<R>;
   /**
-   * Return the workflow's UUID.
+   * Return the workflow's ID, which may be a UUID (but not necessarily).
    */
   getWorkflowUUID(): string;
+  /**
+   * Return the workflow's ID
+   */
+  get workflowID(): string;
   /**
    * Return the workflow's inputs
    */
@@ -460,6 +464,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     readonly callerUUID?: string, readonly callerFunctionID?: number) { }
 
   getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  get workflowID(): string {
     return this.workflowUUID;
   }
 
@@ -483,6 +491,10 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(readonly systemDatabase: SystemDatabase, readonly workflowUUID: string, readonly callerUUID?: string, readonly callerFunctionID?: number) { }
 
   getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  get workflowID(): string {
     return this.workflowUUID;
   }
 

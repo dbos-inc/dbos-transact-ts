@@ -69,6 +69,12 @@ async function dropHelloSystemDB() {
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_dbos_sys;`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm_dbos_sys;`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_drizzle_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_express_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_drizzle;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_express;`);
   await pgSystemClient.end();
 }
 
@@ -85,7 +91,7 @@ describe("runtime-entrypoint-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("packages/create/templates/hello");
+    process.chdir("packages/create/templates/hello-contexts");
     execSync("mv src/operations.ts src/entrypoint.ts");
     configureHelloExample();
   });
@@ -128,7 +134,7 @@ describe("runtime-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("packages/create/templates/hello");
+    process.chdir("packages/create/templates/hello-contexts");
     configureHelloExample();
   });
 
@@ -159,12 +165,12 @@ describe("runtime-tests", () => {
   test("runtime hello with appDir provided as CLI parameter", async () => {
     process.chdir("../../../..");
     try {
-      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello"], {
+      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello-contexts"], {
         env: process.env,
       });
       await waitForMessageTest(command, "3000");
     } finally {
-      process.chdir("packages/create/templates/hello");
+      process.chdir("packages/create/templates/hello-contexts");
     }
   });
 
@@ -266,6 +272,29 @@ describe("runtime-tests-drizzle", () => {
 
   // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-drizzle runtime", async () => {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "3000");
+  });
+});
+
+describe("runtime-tests-express", () => {
+  beforeAll(async () => {
+    await dropHelloSystemDB();
+    process.chdir("packages/create/templates/hello-express");
+    configureHelloExample();
+  });
+
+  afterAll(() => {
+    process.chdir("../../../..");
+  });
+
+  test("test hello-express tests", () => {
+    execSync("npm run test", { env: process.env }); // Make sure hello-express passes its own tests.
+  });
+
+  test("test hello-express runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
     });

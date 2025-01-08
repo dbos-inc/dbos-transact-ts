@@ -1,6 +1,6 @@
 # DBOS Hello with Drizzle
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Drizzle](https://docs.dbos.dev/tutorials/using-drizzle).
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create` and using [Drizzle](https://docs.dbos.dev/typescript/tutorials/orms/using-drizzle).
 
 ## Getting Started
 
@@ -23,7 +23,7 @@ npm run build
 Then, run a schema migration to create some tables:
 
 ```bash
-npx dbos-sdk migrate
+npx dbos migrate
 ```
 
 If successful, the migration should print `Migration successful!`.
@@ -31,7 +31,7 @@ If successful, the migration should print `Migration successful!`.
 Finally, run the app:
 
 ```bash
-npx dbos-sdk start
+npx dbos start
 ```
 
 To see that it's working, visit this URL in your browser: [`http://localhost:3000/greeting/dbos`](http://localhost:3000/greeting/dbos).
@@ -43,6 +43,6 @@ Congratulations! You just launched a DBOS application.
 ## Next Steps
 
 - To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it.  Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
-- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
-- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
+- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/typescript/programming-guide).
+- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/quickstart)
+- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc).

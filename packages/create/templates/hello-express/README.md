@@ -1,6 +1,6 @@
 # DBOS Hello
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/tutorials/using-knex) to interact with postgres.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/typescript/tutorials/orms/using-knex) to interact with postgres.
 
 ## Getting Started
 
@@ -37,7 +37,7 @@ npm run build
 Then, run a schema migration to create some tables:
 
 ```bash
-npx dbos-sdk migrate
+npx dbos migrate
 ```
 
 If successful, the migration should print `Migration successful!`.
@@ -45,15 +45,17 @@ If successful, the migration should print `Migration successful!`.
 Finally, run the app:
 
 ```bash
-npx dbos-sdk start
+npx dbos start
 ```
 
 ## The application
 
-- In `src/operations.ts`, the Express app object is created and configured to serve an "hello world" DBOS workflow on `/greetings/:user`. This file also hosts the code of said DBOS workflow: an `Hello` class with a single `helloTransaction` method.
-- `src/main.ts` declares the code to start a DBOS instance and an Express application. When you pass the Express app object as parameter to `DBOS.launch()`, DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+In `src/main.ts`, the Express app object is created and configured to serve an "hello world" DBOS workflow on `/greetings/:user`. This file also hosts the code of said DBOS workflow: an `Hello` class with a single `helloTransaction` method.
 
-To add more functionality to this application, modify `src/operations.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
+
+Then the `main()` function declares the code to start a DBOS instance and an Express application. When you pass the Express app object as parameter to `DBOS.launch()`, DBOS will wrap all routes with an [OpenTelemetry](https://opentelemetry.io/) tracing middleware and tie HTTP traces to DBOS workflow traces.
+
+To add more functionality to this application, modify `src/main.ts`. If you used `npm run dev`, it will automatically rebuild and restart.
 
 ## Running in DBOS Cloud
 
@@ -71,5 +73,5 @@ dbos-cloud app deploy
 
 ## Next Steps
 
-- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
+- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/typescript/programming-guide).
+- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc).

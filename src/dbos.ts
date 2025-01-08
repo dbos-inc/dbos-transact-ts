@@ -55,6 +55,7 @@ import { ConfiguredInstance } from ".";
 import { StoredProcedure, StoredProcedureConfig } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
+import { set } from "lodash";
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -137,6 +138,13 @@ export class DBOS {
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+  }
+
+  // For unit testing purposes only
+  static setAppConfig<T>(key: string, newValue: T): void {
+    const conf = DBOS.dbosConfig?.application;
+    if (!conf) throw new DBOSExecutorNotInitializedError();
+    set(conf, key, newValue);
   }
 
   static async launch(httpApps?: DBOSHttpApps) {
@@ -263,7 +271,7 @@ export class DBOS {
   static get logger(): DLogger {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.logger;
-    const executor = DBOS.executor;
+    const executor = DBOSExecutor.globalInstance;
     if (executor) return executor.logger;
     return new GlobalLogger();
   }
@@ -327,7 +335,7 @@ export class DBOS {
 
   // sql session (various forms)
   static get sqlClient(): UserDatabaseClient {
-    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError();
+    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError("Invalid use of `DBOS.sqlClient` outside of a `transaction`");
     const ctx = assertCurrentDBOSContext() as TransactionContextImpl<UserDatabaseClient>;
     return ctx.client;
   }
@@ -392,9 +400,9 @@ export class DBOS {
   }
 
   static async sleepms(durationMS: number): Promise<void> {
-    if (DBOS.isWithinWorkflow()) {
-      if (DBOS.isInTransaction() || DBOS.isInStep()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      if (DBOS.isInTransaction()) {
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.sleep` inside a `transaction`");
       }
       return (getCurrentDBOSContext()! as WorkflowContext).sleepms(durationMS);
     }
@@ -565,6 +573,42 @@ export class DBOS {
   static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
+    if (!DBOS.isWithinWorkflow()) {
+      // Run the temp workflow way...
+      if (typeof object === 'function') {
+        const ops = getRegisteredOperations(object);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+              op.registeredFunction as TransactionFunction<unknown[], unknown>, {}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {}, ...args)
+              : op.procConfig
+                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, {}, ...args)
+                : undefined;
+        }
+        return proxy as InvokeFuncs<T>;
+      }
+      else {
+        const targetInst = object as ConfiguredInstance;
+        const ops = getRegisteredOperations(targetInst);
+  
+        const proxy: Record<string, unknown> = {};
+        for (const op of ops) {
+          proxy[op.name] = op.txnConfig
+            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
+                op.registeredFunction as TransactionFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
+                op.registeredFunction as StepFunction<unknown[], unknown>, {configuredInstance: targetInst}, ...args)
+              : undefined;
+        }
+        return proxy as InvokeFuncsInst<T>;
+      }  
+    }
     const wfctx = assertCurrentWorkflowContext();
     if (typeof object === 'function') {
       const ops = getRegisteredOperations(object);
@@ -602,40 +646,43 @@ export class DBOS {
     }
   }
 
-  static async send<T>(destinationID: string, message: T, topic?: string): Promise<void> {
+  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+      }
+      if (idempotencyKey) {
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` with an idempotency key from within a workflow");
       }
       return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
     }
-    return DBOS.executor.send(destinationID, message, topic);
+    return DBOS.executor.send(destinationID, message, topic, idempotencyKey);
   }
 
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).recv<T>(topic, timeoutSeconds);
     }
-    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can recv
+    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.recv` outside of a workflow"); // Only workflows can recv
   }
 
   static async setEvent<T>(key: string, value: T): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).setEvent(key, value);
     }
-    throw new DBOSInvalidWorkflowTransitionError(); // Only workflows can set event
+    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.setEvent` outside of a workflow"); // Only workflows can set event
   }
 
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError();
+        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
       }
       return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
     }
@@ -685,7 +732,7 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
@@ -783,18 +830,52 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
+          if (DBOS.isInTransaction()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `transaction`");
+          }
+          if (DBOS.isInStep()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `step`");
+          }
+
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callTransactionFunction(
             registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const pctx = getCurrentContextStore();
+        let span = pctx?.span;
+        if (!span) {
+          span = DBOS.executor.tracer.startSpan(
+            pctx?.operationCaller || "transactionCaller",
+            {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            },
+          );
+        }
+
+        let parentCtx: DBOSContextImpl | undefined = undefined;
+        if (pctx) {
+          parentCtx = pctx.ctx as DBOSContextImpl
+        }
+        if (!parentCtx) {
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx.request = pctx?.request || {};
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
+          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+
+        }
         const wfParams: WorkflowParams = {
-          configuredInstance: inst
+          configuredInstance: inst,
+          parentCtx,
         };
 
         return await DBOS.executor.transaction(
@@ -883,19 +964,53 @@ export class DBOS {
         else {
           inst = this as ConfiguredInstance;
           if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError();
+            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `step` function on an object that is not a `ConfiguredInstance`");
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
+          if (DBOS.isInTransaction()) {
+            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `step` function from within a `transaction`");
+          }
+          if (DBOS.isInStep()) {
+            // There should probably be checks here about the compatibility of the StepConfig...
+            return registration.registeredFunction!.call(this, ...rawArgs);
+          }
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const pctx = getCurrentContextStore();
+        let span = pctx?.span;
+        if (!span) {
+          span = DBOS.executor.tracer.startSpan(
+            pctx?.operationCaller || "transactionCaller",
+            {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            },
+          );
+        }
+
+        let parentCtx: DBOSContextImpl | undefined = undefined;
+        if (pctx) {
+          parentCtx = pctx.ctx as DBOSContextImpl
+        }
+        if (!parentCtx) {
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx.request = pctx?.request || {};
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
+          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+        }
         const wfParams: WorkflowParams = {
-          configuredInstance: inst
+          configuredInstance: inst,
+          parentCtx,
         };
+
         return  await DBOS.executor.external(
           registration.registeredFunction as unknown as StepFunction<Args, Return>,
           wfParams, ...rawArgs

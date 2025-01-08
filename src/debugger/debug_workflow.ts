@@ -430,6 +430,10 @@ class RetrievedHandleDebug<R> implements WorkflowHandle<R> {
     return this.workflowUUID;
   }
 
+  get workflowID(): string {
+    return this.workflowUUID;
+  }
+
   async getStatus(): Promise<WorkflowStatus | null> {
     // Must use original result.
     const check: WorkflowStatus | null | DBOSNull = await this.systemDatabase.checkOperationOutput<WorkflowStatus | null>(this.callerUUID, this.callerFunctionID);

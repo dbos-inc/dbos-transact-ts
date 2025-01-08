@@ -2,7 +2,7 @@
 
 Message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in another programming environment.  Due to its flexibility, robustness, integration, and low cost, [Amazon Simple Queue Service](https://aws.amazon.com/sqs/) is the most popular message queuing service underpinning distributed systems in AWS.
 
-This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending messages using SQS, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
+This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/typescript/tutorials/step-tutorial) for sending messages using SQS, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
 
 ## Getting Started
 In order to send and receive messages with SQS, it is necessary to register with AWS, create a queue, and create access keys for the queue. (See [Send Messages Between Distributed Applications](https://aws.amazon.com/getting-started/hands-on/send-messages-distributed-applications/) in AWS documentation.)
@@ -13,7 +13,7 @@ First, ensure that the DBOS SQS package is installed into the application:
 npm install --save @dbos-inc/dbos-sqs
 ```
 
-Second, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
+Second, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
 ```yaml
 application:
   aws_sqs_configuration: aws_config # Optional if the section is called `aws_config`
@@ -30,19 +30,19 @@ If a different configuration file section should be used for SQS, the `aws_sqs_c
 ### Imports
 First, ensure that the communicator is imported:
 ```typescript
-import { SQSCommunicator } from "@dbos-inc/dbos-sqs";
+import { DBOS_SQS } from "@dbos-inc/dbos-sqs";
 ```
 
 ### Selecting A Configuration
-`SQSCommunicator` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`DBOS_SQS` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
-const sqsCfg = configureInstance(SQSCommunicator, 'default', {awscfgname: 'aws_config'});
+const sqsCfg = configureInstance(DBOS_SQS, 'default', {awscfgname: 'aws_config'});
 ```
 
 ### Sending With Standard Queues
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), invoke the `SQSCommunicator` function from the workflow context:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `DBOS_SQS` function from the workflow context:
 ```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
+    const sendRes = await sqsCfg.sendMessage(
         {
             MessageBody: "{/*app data goes here*/}",
         },
@@ -53,7 +53,7 @@ Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutor
 Sending to [SQS FIFO queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fifo-queues.html) is the same as with standard queues, except that FIFO queues need a `MessageDeduplicationId` (or content-based deduplication) and can be sharded by a `MessageGroupId`.
 
 ```typescript
-    const sendRes = await ctx.invoke(sqsCfg).sendMessage(
+    const sendRes = await sqsCfg.sendMessage(
         {
             MessageBody: "{/*app data goes here*/}",
             MessageDeduplicationId: "Message key goes here",
@@ -91,7 +91,7 @@ class SQSEventProcessor {
 }
 ```
 
-Then, within the class, one or more methods should be decorated to handle SQS messages:
+Then, within the class, one or more methods should be decorated with `SQSMessageConsumer` to handle SQS messages:
 ```typescript
 @SQSConfigure({awscfgname: 'sqs_receiver'})
 class SQSEventProcessor {
@@ -103,8 +103,10 @@ class SQSEventProcessor {
 }
 ```
 
+*NOTE:* The DBOS `@SQSMessageConsumer` decorator currently must decorate an old-style DBOS workflow, which is also decorated with `@Workflow` and requires a first argument of type `WorkflowContext`.
+
 ### Concurrency and Rate Limiting
-By default, `@SQSMessageConsumer` workflows are started immediately after message receipt.  If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/workflow-queues).
+By default, `@SQSMessageConsumer` workflows are started immediately after message receipt.  If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
 
 ### Once-And-Only-Once (OAOO) Semantics
 Typical application processing for standard SQS queues implements "at least once" processing of the message:
@@ -128,6 +130,6 @@ The `sqs.test.ts` file included in the source repository demonstrates sending an
 - `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
+- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
