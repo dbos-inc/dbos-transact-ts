@@ -57,10 +57,10 @@ const wf2Topic = 'dbos-test-wf-topic2';
 const wfMessage = 'dbos-wf'
 let wfCounter = 0;
 
-const patternTopic = new RegExp(/dbos-test-.*/);
+const patternTopic = new RegExp(/^dbos-test-.*/);
 let patternTopicCounter = 0;
 
-const arrayTopics = [new RegExp(/dbos-test-wf-topic/)];
+const arrayTopics = [new RegExp(/^dbos-test-wf-topic/)];
 let arrayTopicsCounter = 0;
 
 describe("kafka-tests", () => {
@@ -149,7 +149,7 @@ class DBOSTestClass {
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
     console.log(`got something 1 ${topic}`);
-    if (topic == wf1Topic && message.value?.toString() === wfMessage) {
+    if (topic === wf1Topic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
     }
@@ -160,8 +160,8 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
     console.log(`got something 2 ${topic}`);
-    const isWfMessage = topic == wf1Topic && message.value?.toString() === wfMessage;
-    const isWf2Message = topic == wf2Topic && message.value?.toString() === wfMessage;
+    const isWfMessage = topic === wf1Topic && message.value?.toString() === wfMessage;
+    const isWf2Message = topic === wf2Topic && message.value?.toString() === wfMessage;
     if ( isWfMessage || isWf2Message ) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
@@ -175,8 +175,8 @@ class DBOSTestClass {
   @Workflow()
   static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
     console.log(`got something 3 ${topic}`);
-    const isWfMessage = topic == wf1Topic && message.value?.toString() === wfMessage;
-    const isWf2Message = topic == wf2Topic && message.value?.toString() === wfMessage;
+    const isWfMessage = topic === wf1Topic && message.value?.toString() === wfMessage;
+    const isWf2Message = topic === wf2Topic && message.value?.toString() === wfMessage;
     if ( isWfMessage || isWf2Message) {
       arrayTopicsCounter = arrayTopicsCounter + 1;
       if (arrayTopicsCounter === 2) {
