@@ -19,7 +19,7 @@ export interface LoggerConfig {
 
 type ContextualMetadata = {
   includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
-  span: Span; // All context metadata should be attributes of the context's span
+  span?: Span; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {

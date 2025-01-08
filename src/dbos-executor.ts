@@ -707,14 +707,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
         }
         this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
-        wCtxt.span.setStatus({ code: SpanStatusCode.OK });
+        wCtxt.span!.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowUUID);
           result = await retrievedHandle.getResult();
-          wCtxt.span.setAttribute("cached", true);
-          wCtxt.span.setStatus({ code: SpanStatusCode.OK });
+          wCtxt.span!.setAttribute("cached", true);
+          wCtxt.span!.setStatus({ code: SpanStatusCode.OK });
         } else {
           // Record the error.
           const e = err as Error & { dbos_already_logged?: boolean };
@@ -730,11 +730,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
           await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
           // TODO: Log errors, but not in the tests when they're expected.
-          wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+          wCtxt.span!.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
         }
       } finally {
-        this.tracer.endSpan(wCtxt.span);
+        this.tracer.endSpan(wCtxt.span!);
         if (wCtxt.tempWfOperationType === TempWorkflowType.transaction
           || wCtxt.tempWfOperationType === TempWorkflowType.procedure
         ) {
@@ -879,9 +879,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const check: BufferedResult = await wfCtx.checkTxExecution<R>(client, funcId);
           txn_snapshot = check.txn_snapshot;
           if (check.output !== dbosNull) {
-            tCtxt.span.setAttribute("cached", true);
-            tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-            this.tracer.endSpan(tCtxt.span);
+            tCtxt.span!.setAttribute("cached", true);
+            tCtxt.span!.setStatus({ code: SpanStatusCode.OK });
+            this.tracer.endSpan(tCtxt.span!);
             return check.output as R;
           }
         } else {
@@ -922,7 +922,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           try {
             // Synchronously record the output of write transactions and obtain the transaction ID.
             const pg_txn_id = await wfCtx.recordOutputTx<R>(client, funcId, txn_snapshot, result);
-            tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
+            tCtxt.span!.setAttribute("pg_txn_id", pg_txn_id);
             wfCtx.resultBuffer.clear();
           } catch (error) {
             if (this.userDatabase.isFailedSqlTransactionError(error)) {
@@ -1058,9 +1058,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Check if this execution previously happened, returning its original result if it did.
     const check: R | DBOSNull = await this.systemDatabase.checkOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID);
     if (check !== dbosNull) {
-      ctxt.span.setAttribute("cached", true);
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.tracer.endSpan(ctxt.span);
+      ctxt.span!.setAttribute("cached", true);
+      ctxt.span!.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(ctxt.span!);
       return check as R;
     }
 
@@ -1127,14 +1127,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
       await this.systemDatabase.recordOperationError(wfCtx.workflowUUID, ctxt.functionID, err as Error);
-      ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      this.tracer.endSpan(ctxt.span);
+      ctxt.span!.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      this.tracer.endSpan(ctxt.span!);
       throw err as Error;
     } else {
       // Record the execution and return.
       await this.systemDatabase.recordOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID, result as R);
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.tracer.endSpan(ctxt.span);
+      ctxt.span!.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(ctxt.span!);
       return result as R;
     }
   }
@@ -1346,15 +1346,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(status.workflowName, {
-      operationUUID: workflowUUID,
-      operationType: OperationType.WORKFLOW,
-      status: status.status,
-      authenticatedUser: status.authenticatedUser,
-      assumedRole: status.assumedRole,
-      authenticatedRoles: status.authenticatedRoles,
-    });
-    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
+    const oc = new DBOSContextImpl(status.workflowName, undefined, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;

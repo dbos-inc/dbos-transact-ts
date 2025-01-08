@@ -375,7 +375,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       // Validate the user authentication and populate the role field
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
-        opCtx.span.setAttribute("requiredRoles", requiredRoles);
+        opCtx.span?.setAttribute("requiredRoles", requiredRoles);
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         const set = new Set(curRoles);
@@ -388,7 +388,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         }
         if (!authorized) {
           const err = new DBOSNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
-          opCtx.span.addEvent("DBOSNotAuthorizedError", { message: err.message });
+          opCtx.span?.addEvent("DBOSNotAuthorizedError", { message: err.message });
           throw err;
         }
       }
@@ -420,7 +420,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "DBOSSALT");
             }
           }
-          opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
+          opCtx?.span?.setAttribute(methReg.args[idx].name, loggedArgValue as string);
         }
       });
 
