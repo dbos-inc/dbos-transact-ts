@@ -45,7 +45,7 @@ services:
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
   brokers: [`${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`],
-  requestTimeout: 100, // FOR TESTING
+  //requestTimeout: 100, // FOR TESTING
   retry: { // FOR TESTING
     retries: 5
   },
@@ -60,7 +60,7 @@ let wfCounter = 0;
 const patternTopic = new RegExp(/^dbos-test-.*/);
 let patternTopicCounter = 0;
 
-const arrayTopics = [new RegExp(/^dbos-test-wf-topic/)];
+const arrayTopics = [wf1Topic, wf2Topic];
 let arrayTopicsCounter = 0;
 
 describe("kafka-tests", () => {
@@ -113,23 +113,24 @@ describe("kafka-tests", () => {
     console.log("Messages sent");
 
     // Check that both messages are consumed
-    await DBOSTestClass.txnPromise;
+    console.log("Waiting for regular topic");
     await DBOSTestClass.wfPromise;
     expect(wfCounter).toBe(1);
+
+    console.log("Waiting for pattern topic");
     await DBOSTestClass.patternTopicPromise;
     expect(patternTopicCounter).toBe(2);
+
+    console.log("Waiting for array topic");
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
+
+    console.log("Done");
   }, 30000);
 });
 
 @CKafka(kafkaConfig)
 class DBOSTestClass {
-  static txnResolve: () => void;
-  static txnPromise = new Promise<void>((r) => {
-    DBOSTestClass.txnResolve = r;
-  });
-
   static wfResolve: () => void;
   static wfPromise = new Promise<void>((r) => {
     DBOSTestClass.wfResolve = r;
@@ -148,10 +149,13 @@ class DBOSTestClass {
   @CKafkaConsume(wf1Topic)
   @Workflow()
   static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
-    console.log(`got something 1 ${topic}`);
+    console.log(`got something 1 ${topic} ${message.value?.toString()}`);
     if (topic === wf1Topic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
+    }
+    else {
+      console.warn(`Got strange message on wf1Topic: ${JSON.stringify(message)}`);
     }
     await DBOSTestClass.wfPromise;
   }
