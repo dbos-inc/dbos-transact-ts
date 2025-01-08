@@ -592,7 +592,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(`Step function name '${cfname}' is not registered.`);
     }
 
-    return {commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
   getProcedureClassName<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
@@ -1124,7 +1124,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     try {
       const result = executeLocally
-        ? await this.#callProcedureFunctionLocal(proc, args, wfCtx, span, procInfo.config, funcId)
+        ? await this.#callProcedureFunctionLocal(proc, args, wfCtx, span, procInfo, funcId)
         : await this.#callProcedureFunctionRemote(proc, args, wfCtx, span, procInfo.config, funcId);
       span.setStatus({ code: SpanStatusCode.OK });
       return result;
@@ -1137,11 +1137,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async #callProcedureFunctionLocal<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, wfCtx: WorkflowContextImpl, span: Span, config: StoredProcedureConfig, funcId: number): Promise<R> {
+  async #callProcedureFunctionLocal<T extends unknown[], R>(
+    proc: StoredProcedure<T, R>,
+    args: T,
+    wfCtx: WorkflowContextImpl,
+    span: Span,
+    procInfo: ProcedureRegInfo,
+    funcId: number
+  ): Promise<R> {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    const readOnly = config.readOnly ?? false;
+    const readOnly = procInfo.config.readOnly ?? false;
 
     while (true) {
       let txn_snapshot = "invalid";
@@ -1170,9 +1177,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         let cresult: R | undefined;
-        await runWithStoredProcContext(ctxt, async () => {
-          cresult = await proc(ctxt, ...args);
-        });
+        if (procInfo.registration.passContext) {
+          await runWithStoredProcContext(ctxt, async () => {
+            cresult = await proc(ctxt, ...args);
+          });
+        } else {
+          await runWithStoredProcContext(ctxt, async () => {
+            const pf = proc as unknown as (...args: T)=>Promise<R>;
+            cresult = await pf(...args);
+          });
+        }
         const result = cresult!
 
         if (readOnly) {
@@ -1197,7 +1211,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
 
       try {
-        const result = await this.invokeStoredProcFunction(wrappedProcedure, { isolationLevel: config.isolationLevel });
+        const result = await this.invokeStoredProcFunction(wrappedProcedure, { isolationLevel: procInfo.config.isolationLevel });
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
