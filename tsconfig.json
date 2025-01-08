@@ -16,4 +16,8 @@
     "skipLibCheck": true,                                /* Skip type checking all .d.ts files. */
     "composite": true,
   },
+  "include": [
+    "src/**/*",
+    "schemas/**/*",
+  ]
 }
