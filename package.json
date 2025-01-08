@@ -15,12 +15,9 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
-    "build-fdb": "tsc --project tsconfig.build-fdb.json && npm run --workspaces build",
-    "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern src/foundationdb/ --ignore-pattern tests/foundationdb/ --ignore-pattern **/coverage/ .",
-    "lint-fdb": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
+    "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --collectCoverageFrom='!src/foundationdb/**/*' --detectOpenHandles --testPathIgnorePatterns=examples/* --testPathIgnorePatterns=packages/* --testPathIgnorePatterns=tests/foundationdb/*",
-    "test-fdb": "npm run build-fdb && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --runInBand --coverage"
+    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*"
   },
   "bin": {
     "dbos": "./dist/src/dbos-runtime/cli.js",
@@ -88,8 +85,5 @@
   "peerDependencies": {
     "@types/koa": "^2.15.0",
     "koa": "^2.15.0"
-  },
-  "optionalDependencies": {
-    "foundationdb": "^2.0.1"
   }
 }
