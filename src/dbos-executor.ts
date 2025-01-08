@@ -38,7 +38,7 @@ import {
   DrizzleUserDatabase,
   UserDatabaseClient,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses,getRegisteredClassByName } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext } from './context';
@@ -315,13 +315,31 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
+  registerClass(className: string) {
+
+    console.log("DBOSExecutor Registering class", className)
+
+    const cls = getRegisteredClassByName(className);
+
+    if (cls === undefined) {
+      throw new DBOSError(`Class ${className} not found`);
+    }
+
+    // this.#registerClass(cls);
+    this.#registerClass(cls.ctor);
+
+
+    // cls.regComplete = true;
+  }
+  
+
   #registerClass(cls: object) {
 
-    console.log("Registering class", cls)
+    console.log("#Registering class", cls)
 
 
     const registeredClassOperations = getRegisteredOperations(cls);
-    console.log("registeredClassOperations", registeredClassOperations)
+    // console.log("registeredClassOperations", registeredClassOperations)
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -353,6 +371,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async init(classes?: object[]): Promise<void> {
     console.log("DbosExecutor init")
     if (this.initialized) {
+      /* this.logger.error("Workflow executor already initialized!");
       if (!classes || !classes.length) {
         classes = getAllRegisteredClasses();
         console.log("registered Classes", classes)
@@ -360,8 +379,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       for (const cls of classes) {
         console.log("Registering class", cls)
         this.#registerClass(cls);
-      }
-      // this.logger.error("Workflow executor already initialized!");
+      } */
+      this.logger.error("Workflow executor already initialized!");
       return;
     }
 

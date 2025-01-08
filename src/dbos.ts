@@ -147,11 +147,27 @@ export class DBOS {
     set(conf, key, newValue);
   }
 
+  static async register(cls: any) {
+
+    console.log("DBOS.register class: ", cls.mjclassName);
+
+    await this.launch();
+    
+    const executor = DBOSExecutor.globalInstance;
+
+    if (executor !== undefined) {
+      executor.registerClass(cls.mjclassName);
+    } else {
+      throw new DBOSExecutorNotInitializedError();
+    }
+
+  }
+
   static async launch(httpApps?: DBOSHttpApps) {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) {
-      console.log("DBOS already initialized. But running init again");
-      DBOSExecutor.globalInstance.init();
+      // console.log("DBOS already initialized. But running init again");
+      // DBOSExecutor.globalInstance.init();
       return
     }
 

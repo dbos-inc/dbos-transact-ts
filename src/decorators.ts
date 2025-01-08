@@ -260,13 +260,17 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
-  console.log("We are in getRegisteredOperations")
+  
 
   const clname = (target as any).mjclassName  
+
+  console.log("We are in getRegisteredOperations", clname)
+
 
   if (typeof target === 'function') { // Constructor case
     // const classReg = classesByName.get(target.name);
     const classReg = classesByName.get(clname);
+    console.log("function classReg", classReg)
     classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
   }
   else {
@@ -274,6 +278,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
     while (current) {
       // const cname = current.constructor.name;
       const cname = clname;
+      console.log("not a function classReg", cname, classesByName)
       if (classesByName.has(cname)) {
         registeredOperations.push(...getRegisteredOperations(current.constructor));
       }
@@ -469,6 +474,10 @@ export function registerAndWrapContextFreeFunction<This, Args extends unknown[],
 
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
+
+export function getRegisteredClassByName(name: string) {
+  return classesByName.get(name);
+}
 
 export function getAllRegisteredClasses() {
   const ctors: AnyConstructor[] = [];
