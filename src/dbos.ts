@@ -587,7 +587,7 @@ export class DBOS {
               ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
                 op.registeredFunction as StepFunction<unknown[], unknown>, {}, ...args)
               : op.procConfig
-                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown>(op.registeredFunction as StoredProcedureFunc<unknown>, {}, ...args)
+                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown[], unknown>(op.registeredFunction as StoredProcedure<unknown[], unknown>, {}, ...args)
                 : undefined;
         }
         return proxy as InvokeFuncs<T>;
