@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbosWorkflow } from "../../actions/dbosWorkflow";
+import { dbosWorkflow } from "../../operations";
 import { DBOS } from "@dbos-inc/dbos-sdk";
 
 export async function POST(request: Request) {

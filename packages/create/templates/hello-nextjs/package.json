@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsc && node dist/server.js",
     "build": "next build",
-    "start": "next start",
+    "start": "tsc && next build && NODE_ENV=production node dist/server.js",  
     "lint": "next lint"
   },
   "dependencies": {

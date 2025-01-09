@@ -1,29 +1,43 @@
-{
+/* Visit https://aka.ms/tsconfig to read more about this file */{
   "compilerOptions": {
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
+    "experimentalDecorators": true, /* Enable experimental support for legacy experimental decorators. */
+    "emitDecoratorMetadata": true, /* Emit design-type metadata for decorated declarations in source files. */
+    "target": "esnext", // Target modern JavaScript
+    "module": "Node16", // Use CommonJS for compatibility with Node.js
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2020"
+    ], // Include DOM and ES2020 APIs
+    "allowJs": true, // Allow JavaScript files
+    "skipLibCheck": true, // Skip type checks for library files
+    "strict": true, // Enable strict type checking
+    "esModuleInterop": true, // Ensure compatibility with CommonJS modules
+    "forceConsistentCasingInFileNames": true, // Enforce case-sensitive imports
+    "noEmit": false, // Allow emitting compiled JavaScript
+    "outDir": "./dist", // Output compiled files into "dist" directory
+    "rootDir": "./src", // Specify root directory for source files
+    "isolatedModules": true, // Required by Next.js for compilation
+    "resolveJsonModule": true // Allow importing JSON files
+    ,
     "incremental": true,
+    "moduleResolution": "node",
+    "jsx": "preserve",
     "plugins": [
       {
         "name": "next"
       }
-    ],
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src/**/*.ts" // Include all files in "src" directory
+    ,
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.tsx",
+    "node_modules", // Exclude dependencies
+    ".next", // Exclude Next.js build artifacts
+    "dist" // Exclude output directory
+  ]
 }

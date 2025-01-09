@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { dbosBackgroundTask } from "@/actions/dbosWorkflow";    
+import { dbosBackgroundTask } from "../../../operations";
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
 
