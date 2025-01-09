@@ -50,6 +50,14 @@ describe("more compiler", () => {
             testGetHandlerWorkflow_v2: "workflow",
             testGetHandlerTx_v2: "transaction",
             testGetHandlerStep_v2: "step",
+            testProcedure_v2: "storedProcedure",
+            testReadOnlyProcedure_v2: "storedProcedure",
+            testRepeatableReadProcedure_v2: "storedProcedure",
+            testConfiguredProcedure_v2: "storedProcedure",
+            testLocalProcedure_v2: "storedProcedure",
+            testLocalReadOnlyProcedure_v2: "storedProcedure",
+            testLocalRepeatableReadProcedure_v2: "storedProcedure",
+            testLocalConfiguredProcedure_v2: "storedProcedure",
 
             testStep_v2: "step",
             testTransaction_v2: "transaction",
@@ -76,6 +84,7 @@ describe("more compiler", () => {
     });
 
     describe("getDecoratorInfo", () => {
+
         it("testGetHandler", () => {
             const method = cls.getStaticMethodOrThrow("testGetHandler");
 
@@ -122,53 +131,31 @@ describe("more compiler", () => {
     })
 
     describe("getStoredProcConfig", () => {
-        it("testProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({});
-        });
+        const data = {
+            "testProcedure": {},
+            "testReadOnlyProcedure": { readOnly: true },
+            "testRepeatableReadProcedure": { isolationLevel: "REPEATABLE READ" },
+            "testConfiguredProcedure": { readOnly: true, isolationLevel: "READ COMMITTED" },
+            "testLocalProcedure": { executeLocally: true },
+            "testLocalReadOnlyProcedure": { readOnly: true, executeLocally: true },
+            "testLocalRepeatableReadProcedure": { isolationLevel: "REPEATABLE READ", executeLocally: true },
+            "testLocalConfiguredProcedure": { readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true }
+        }
 
-        it("testReadOnlyProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testReadOnlyProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true });
-        });
+        for (const [name, config] of Object.entries(data)) {
+            it(name, () => {
+                const method = cls.getStaticMethodOrThrow(name);
+                const actual = getStoredProcConfig(method);
+                expect(actual).toEqual(config);
+            });
 
-        it("testRepeatableReadProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testRepeatableReadProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ isolationLevel: "REPEATABLE READ" });
-        });
-
-        it("testConfiguredProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testConfiguredProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED" });
-        });
-
-        it("testLocalProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testLocalProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ executeLocally: true });
-        });
-
-        it("testLocalReadOnlyProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testLocalReadOnlyProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, executeLocally: true });
-        });
-
-        it("testLocalRepeatableReadProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testLocalRepeatableReadProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ isolationLevel: "REPEATABLE READ", executeLocally: true });
-        });
-
-        it("testLocalConfiguredProcedure", () => {
-            const method = cls.getStaticMethodOrThrow("testLocalConfiguredProcedure");
-            const config = getStoredProcConfig(method);
-            expect(config).toEqual({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true });
-        });
+            const v2name = `${name}_v2`;
+            it(v2name, () => {
+                const method = cls.getStaticMethodOrThrow(v2name);
+                const actual = getStoredProcConfig(method);
+                expect(actual).toEqual(config);
+            });
+        }
     })
 });
 
