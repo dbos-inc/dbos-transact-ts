@@ -1,5 +1,5 @@
 import next from 'next';
-import http from 'http';
+import http, { IncomingMessage, ServerResponse } from 'http';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
@@ -18,7 +18,7 @@ async function main() {
   const ENV = process.env.NODE_ENV || 'development';
 
   http.createServer((req, res) => {
-    handle(req, res);
+    handle(req, res as ServerResponse<IncomingMessage>);
   }).listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);
     console.log(`🌟 Environment: ${ENV}`);

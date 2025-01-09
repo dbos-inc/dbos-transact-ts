@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsc && node dist/server.js",
+    "dev": "npm run clean && tsc && node dist/server.js",
+    "clean": "del-cli dist .next node_modules/.cache tsconfig.tsbuildinfo",
     "build": "next build",
-    "start": "tsc && next build && NODE_ENV=production node dist/server.js",  
+    "start": "next build && tsc && NODE_ENV=production node dist/server.js",
     "lint": "next lint"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "del-cli": "^6.0.0",
     "eslint": "^8",
     "eslint-config-next": "15.0.3",
     "postcss": "^8",
