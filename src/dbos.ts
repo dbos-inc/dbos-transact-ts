@@ -831,7 +831,6 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
-
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;
 

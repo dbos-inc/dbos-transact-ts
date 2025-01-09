@@ -241,7 +241,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;
-
   }
 
   configureDbClient() {
@@ -325,10 +324,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   }
   
-
   #registerClass(cls: object) {
-
-
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
@@ -557,7 +553,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const comm = ro.registeredFunction as StepFunction<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
     if (this.stepInfoMap.has(cfn)) {
-      // throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
       return
     }
     const stepInfo: StepRegInfo = {
@@ -575,7 +570,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (this.procedureInfoMap.has(cfn)) {
       return
-      // throw new DBOSError(`Repeated Procedure name: ${cfn}`);
     }
     const procInfo: ProcedureRegInfo = {
       procedure: proc,

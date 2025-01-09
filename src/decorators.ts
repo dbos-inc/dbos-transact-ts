@@ -260,7 +260,6 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
-
   if (typeof target === 'function') { // Constructor case
     const classReg = classesByName.get(target.name);
     classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
@@ -335,7 +334,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     isInstance = true;
   }
 
-  const classReg = getOrCreateClassRegistration(regtarget, propertyKey);
+  const classReg = getOrCreateClassRegistration(regtarget);
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
@@ -446,9 +445,7 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
     throw Error("Use of decorator when original method is undefined");
   }
 
-  
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
-
   return { descriptor, registration };
 }
 
@@ -456,7 +453,6 @@ export function registerAndWrapContextFreeFunction<This, Args extends unknown[],
   if (!descriptor.value) {
     throw Error("Use of decorator when original method is undefined");
   }
-  
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
   return { descriptor, registration };
 }
@@ -477,17 +473,13 @@ export function getAllRegisteredClasses() {
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
-  ctor: CT, propertyKey?: string | symbol
+  ctor: CT
 ) {
-
   const name = ctor.name;
-
   if (!classesByName.has(name)) {
     classesByName.set(name, new ClassRegistration<CT>(ctor));
   }
-
   const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
-
   if (clsReg.needsInitialized) {
     clsReg.name = name;
     clsReg.needsInitialized = false;
