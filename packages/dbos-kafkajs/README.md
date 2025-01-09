@@ -7,7 +7,7 @@ This package includes a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.
 This package is based on [KafkaJS](https://kafka.js.org/).  We are working on other client libraries for Kafka, please reach out to [us](https://www.dbos.dev/) if you are interested in a different client library.
 
 ## Configuring a DBOS Application with Kafka
-Ensure that the DBOS SQS package is installed into the application:
+Ensure that the DBOS Kafka (KafkaJS version) package is installed into the application:
 ```
 npm install --save @dbos-inc/dbos-kafkajs
 ```
