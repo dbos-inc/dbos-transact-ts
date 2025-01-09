@@ -32,12 +32,12 @@
     ]
   },
   "include": [
-    "src/**/*.ts" // Include all files in "src" directory
-    ,
+    "src/**/*.ts", // Include all files in "src" directory
+    "src/**/*.tsx",
+    "next-env.d.ts",
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "**/*.tsx",
     "node_modules", // Exclude dependencies
     ".next", // Exclude Next.js build artifacts
     "dist" // Exclude output directory
