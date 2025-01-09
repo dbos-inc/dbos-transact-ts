@@ -178,6 +178,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   scheduler?: DBOSScheduler = undefined;
   wfqEnded?: Promise<void> = undefined;
 
+  readonly executorID: string = process.env.DBOS__VMID || "local";
+
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */

@@ -46,7 +46,7 @@ export interface SystemDatabase {
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
-  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]>;
+  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
   sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
 
@@ -988,7 +988,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async  findAndMarkStartableWorkflows(queue: WorkflowQueue): Promise<string[]> {
+  async  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]> {
     const startTimeMs = new Date().getTime();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
@@ -1035,10 +1035,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
           break;
         }
 
+        // Start the functions by marking them as pending and updating their executor IDs
         const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
           .where('workflow_uuid', id)
           .andWhere('status', StatusString.ENQUEUED)
-          .update('status', StatusString.PENDING);
+          .update('status', StatusString.PENDING)
+          .update('executor_id', executorID);
 
         if (res > 0) {
           claimedIDs.push(id);
