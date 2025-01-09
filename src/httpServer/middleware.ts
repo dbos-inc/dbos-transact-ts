@@ -12,9 +12,10 @@ import { HTTPRequest } from "../context";
 
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
-import { trace, defaultTextMapGetter, ROOT_CONTEXT } from "@opentelemetry/api";
+import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from "@opentelemetry/api";
 import { OpenAPIV3 as OpenApi3 } from "openapi-types";
 import { v4 as uuidv4 } from "uuid";
+import { DBOSJSON } from "../utils";
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
 export interface MiddlewareContext {
@@ -214,27 +215,19 @@ export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
   const httpTracer = new W3CTraceContextPropagator();
   const span = createHTTPSpan(request, httpTracer);
 
-  await DBOS.withTracedContext(request.url as string, span, request, next);
-
-  // Inject trace context into response headers.
-  // We cannot use the defaultTextMapSetter to set headers through Koa
-  // So we provide a custom setter that sets headers through Koa's context.
-  // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
-  interface Carrier {
-    context: Koa.Context;
-  }
-  httpTracer.inject(
-    trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
-    {
-      context: ctx,
-    },
-    {
-      set: (carrier: Carrier, key: string, value: string) => {
-        carrier.context.set(key, value);
-      },
+  try {
+    await DBOS.withTracedContext(request.url as string, span, request, next);
+    span.setStatus({ code: SpanStatusCode.OK});
+  } catch (e) {
+    if (e instanceof Error) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
     }
-  );
-  DBOS.executor.tracer.endSpan(span);
+    throw e;
+  } finally {
+    DBOS.executor.tracer.endSpan(span);
+  }
 }
 
 export async function expressTracingMiddleware(req: Request, res: Response, next: NextFunction) {
@@ -258,11 +251,21 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
   const httpTracer = new W3CTraceContextPropagator();
   const span = createHTTPSpan(request, httpTracer);
 
-  await DBOS.withTracedContext(request.url as string, span, request, next as () => Promise<void>);
-
-  // We could probably define a context type and type the parameters in the set closure (see Koa middleware above)
-  httpTracer.inject(trace.setSpanContext(ROOT_CONTEXT, span.spanContext()), res, {
-    set: (_, header: string, value: string) => res.setHeader(header, value),
-  });
-  DBOS.executor.tracer.endSpan(span);
+  try {
+    await DBOS.withTracedContext(request.url as string, span, request, next as () => Promise<void>);
+    if (res.statusCode >= 400) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: res.statusMessage });
+    } else {
+      span.setStatus({ code: SpanStatusCode.OK});
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+    }
+    throw e;
+  } finally {
+    DBOS.executor.tracer.endSpan(span);
+  }
 }
