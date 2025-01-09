@@ -117,6 +117,7 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
 
   async destroy() {
     for (const consumer of this.consumers) {
+      //await consumer.stop();
       await consumer.disconnect();
     }
   }
@@ -226,5 +227,9 @@ export class KafkaProduceCommunicator extends ConfiguredInstance
   @Communicator()
   async sendMessages(_ctx: CommunicatorContext, msg: KafkaJS.Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
+  }
+
+  async disconnect() {
+    await this.producer?.disconnect();
   }
 }

@@ -83,6 +83,11 @@ describe("kafka-tests", () => {
     return Promise.resolve();
   }, 30000);
 
+  afterAll(async() => {
+    await wfKafkaCfg?.disconnect();
+    await wf2KafkaCfg?.disconnect();
+  });
+
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       testRuntime = await createTestingRuntime(undefined, 'confluentkafka-test-dbos-config.yaml');
