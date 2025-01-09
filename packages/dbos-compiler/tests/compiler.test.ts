@@ -38,7 +38,7 @@ describe("compiler", () => {
     expect(procMethods.length).toBe(16);
     const testClass = file.getClassOrThrow("Test");
     const testProcMethod = testClass.getStaticMethodOrThrow("testProcedure");
-    expect(procMethods[0]).toEqual(testProcMethod);
+    expect(procMethods[0][0]).toEqual(testProcMethod);
   });
 
   it("removeDecorators", () => {
@@ -118,7 +118,7 @@ describe("compiler", () => {
       const procMethods = getProcMethods(file);
       expect(procMethods.length).toBe(1);
 
-      const diags = checkStoredProcNames(procMethods);
+      const diags = checkStoredProcNames(procMethods.map(([m, v]) => m));
       expect(diags.length).toBe(1);
       expect(diags[0].category === tsm.DiagnosticCategory.Error);
   });
@@ -133,7 +133,7 @@ describe("compiler", () => {
     }`;
     const { project } = makeTestProject(executeLocallyFile);
     const file = project.getSourceFileOrThrow("operations.ts");
-    const procMethods = getProcMethods(file).map(m => [m, getStoredProcConfig(m)] as const);
+    const procMethods = getProcMethods(file).map(([m, v]) => [m, getStoredProcConfig(m), v] as const);
     expect(procMethods.length).toBe(1);
     expect(procMethods[0][1].executeLocally).toBe(true);
 

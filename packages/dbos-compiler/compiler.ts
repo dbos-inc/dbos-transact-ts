@@ -1,8 +1,9 @@
 import tsm from 'ts-morph';
 
+type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig, DbosDecoratorVersion];
 export type CompileResult = {
   project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[];
+  methods: CompileMethodInfo[];
 };
 
 export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
@@ -44,7 +45,7 @@ export function compile(configFileOrProject: string | tsm.Project, suppressWarni
 
     const methods = project.getSourceFiles()
       .flatMap(getProcMethods)
-      .map(m => [m, getStoredProcConfig(m)] as const);
+      .map(([m, v]) => [m, getStoredProcConfig(m), v] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
     diags.push(...checkStoredProcConfig(methods, false));
@@ -121,7 +122,7 @@ export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]):
   return diags;
 }
 
-export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
+export function checkStoredProcConfig(methods: readonly CompileMethodInfo[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
   const category = error ? tsm.ts.DiagnosticCategory.Error : tsm.ts.DiagnosticCategory.Warning;
   const diags = new Array<tsm.ts.Diagnostic>();
   for (const [method, config] of methods) {
@@ -174,14 +175,14 @@ export function removeDbosMethods(file: tsm.SourceFile) {
 }
 
 export function getProcMethods(file: tsm.SourceFile) {
-  const methods = new Array<tsm.MethodDeclaration>();
+  const methods = new Array<[tsm.MethodDeclaration, DbosDecoratorVersion]>();
   file.forEachDescendant((node, traversal) => {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
         const info = getDbosMethodInfo(method);
         if (info?.kind === 'storedProcedure') {
-          methods.push(method);
+          methods.push([method, info.version]);
         }
       }
     }
@@ -192,7 +193,7 @@ export function getProcMethods(file: tsm.SourceFile) {
 function getProcMethodDeclarations(file: tsm.SourceFile) {
   // initialize set of declarations with all tx methods and their class declaration parents
   const declSet = new Set<tsm.Node>();
-  for (const method of getProcMethods(file)) {
+  for (const [method, _version] of getProcMethods(file)) {
     declSet.add(method);
     const parent = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
     if (parent) { declSet.add(parent); }
