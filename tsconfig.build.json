@@ -1,6 +1,8 @@
 {
-  "extends": "./tsconfig.build-fdb.json",
-  "exclude": [
-    "src/foundationdb/**/*",
-  ]
-}
+    "extends": "./tsconfig.json",
+    "include": [
+      "src/**/*",
+      "schemas/**/*",
+    ]
+  }
+  
