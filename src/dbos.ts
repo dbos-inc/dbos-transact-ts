@@ -25,7 +25,7 @@ import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransiti
 import { parseConfigFile } from "./dbos-runtime/config";
 import { DBOSRuntimeConfig } from "./dbos-runtime/runtime";
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { configureInstance, getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapContextFreeFunction, registerFunctionWrapper } from "./decorators";
+import { configureInstance, getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapDBOSFunction, registerFunctionWrapper } from "./decorators";
 import { sleepms } from "./utils";
 import { DBOSHttpServer } from "./httpServer/server";
 import { koaTracingMiddleware, expressTracingMiddleware } from "./httpServer/middleware";
@@ -114,7 +114,7 @@ function httpApiDec(verb: APITypes, url: string) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
   ) {
-    const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
@@ -697,7 +697,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>
     ) {
-      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       const schedRegistration = registration as unknown as SchedulerRegistrationBase;
       schedRegistration.schedulerConfig = schedulerConfig;
 
@@ -719,7 +719,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
     )
     {
-      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.workflowConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -818,7 +818,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
-      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -901,7 +901,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
-      const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.commConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1013,7 +1013,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
-      const {descriptor, registration} = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
+      const {descriptor, registration} = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.requiredRole = anyOf;
 
       return descriptor;
@@ -1030,13 +1030,13 @@ export class DBOS {
   }
 
   // Function registration
-  static registerAndWrapContextFreeFunction<This, Args extends unknown[], Return>(
+  static registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   )
   {
-    return registerAndWrapContextFreeFunction(target, propertyKey, descriptor);
+    return registerAndWrapDBOSFunction(target, propertyKey, descriptor);
   }
 
   static async executeWorkflowById(workflowId: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>>

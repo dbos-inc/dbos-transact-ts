@@ -1,7 +1,5 @@
 import {
   DBOS,
-  WorkflowContext,
-  Workflow,
   parseConfigFile,
 } from "@dbos-inc/dbos-sdk";
 
@@ -187,8 +185,8 @@ class DBOSTestClass {
   });
 
   @CKafkaConsume(wf1Topic)
-  @Workflow()
-  static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
+  @DBOS.workflow()
+  static async testWorkflow(topic: string, _partition: number, message: Message) {
     console.log(`got something 1 ${topic} ${message.value?.toString()}`);
     if (topic === wf1Topic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
@@ -200,9 +198,9 @@ class DBOSTestClass {
     await DBOSTestClass.wfPromise;
   }
 
+  @DBOS.workflow()
   @CKafkaConsume(patternTopic)
-  @Workflow()
-  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
+  static async testConsumeTopicsByPattern(topic: string, _partition: number, message: Message) {
     console.log(`got something 2 ${topic}`);
     const isWfMessage = topic === wf1Topic && message.value?.toString() === wfMessage;
     const isWf2Message = topic === wf2Topic && message.value?.toString() === wfMessage;
@@ -216,8 +214,8 @@ class DBOSTestClass {
   }
 
   @CKafkaConsume(arrayTopics)
-  @Workflow()
-  static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: Message) {
+  @DBOS.workflow()
+  static async testConsumeTopicsArray(topic: string, _partition: number, message: Message) {
     console.log(`got something 3 ${topic}`);
     const isWfMessage = topic === wf1Topic && message.value?.toString() === wfMessage;
     const isWf2Message = topic === wf2Topic && message.value?.toString() === wfMessage;

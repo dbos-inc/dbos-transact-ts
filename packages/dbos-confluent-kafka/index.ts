@@ -4,7 +4,6 @@ import {
   ConfiguredInstance,
   Error as DBOSError,
 
-  DBOSContext,
   DBOSEventReceiver,
   DBOSExecutorContext,
   WorkflowFunction,
@@ -49,10 +48,10 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
         const mname = method.name;
         console.log(`Registering ${cname}.${mname}:${JSON.stringify(ro.kafkaTopics)}`)
         if (!method.txnConfig && !method.workflowConfig) {
-          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: A Kafka decorator can only be assigned to a transaction or workflow!`)
+          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: A CKafka decorator can only be assigned to a transaction or workflow.`)
         }
         if (!defaults.kafkaConfig) {
-          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: Kafka configuration not found. Does class ${cname} have an @Kafka decorator?`)
+          throw new DBOSError.DBOSError(`Error registering method ${cname}.${mname}: Kafka configuration not found.  (Does class ${cname} have an @CKafka decorator?)`)
         }
         const topics: Array<string | RegExp> = [];
         if (Array.isArray(ro.kafkaTopics) ) {
@@ -163,10 +162,10 @@ export interface KafkaRegistrationInfo {
 }
 
 export function CKafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: KafkaConfig) {
-  function kafkadec<This, Ctx extends DBOSContext, Return>(
+  function kafkadec<This, Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: KafkaArgs) => Promise<Return>>
   )
   {
     if (!kafkaInst) kafkaInst = new DBOSConfluentKafka();
