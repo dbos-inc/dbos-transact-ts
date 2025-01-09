@@ -15,6 +15,11 @@ import {
 }
 from "./index";
 
+import {
+  KafkaJS
+}
+from "@confluentinc/kafka-javascript"
+
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
 // Here's a docker-compose script you can use to set up local Kafka:
@@ -51,6 +56,42 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.INFO,
 }
 
+const ensureTopicExists = async (topicName: string) => {
+  const admin = new KafkaJS.Kafka({"bootstrap.servers": `${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`}).admin();
+
+  try {
+    // Connect to the admin client
+    await admin.connect();
+
+    // Check existing topics
+    const topics = await admin.listTopics();
+    if (topics.includes(topicName)) {
+      console.log(`Topic "${topicName}" already exists.`);
+      return;
+    }
+
+    // Create the topic
+    console.log(`Creating topic "${topicName}"...`);
+    await admin.createTopics({
+      topics: [
+        {
+          topic: topicName,
+          numPartitions: 1,
+          replicationFactor: 1,
+        },
+      ],
+    });
+
+    console.log(`Topic "${topicName}" created successfully.`);
+  } catch (e) {
+    const error = e as Error;
+    console.error(`Failed to ensure topic exists: ${error.message}`);
+  } finally {
+    // Disconnect from the admin client
+    await admin.disconnect();
+  }
+};
+
 const wf1Topic = 'dbos-test-wf-topic';
 const wf2Topic = 'dbos-test-wf-topic2';
 const wfMessage = 'dbos-wf'
@@ -76,30 +117,22 @@ describe("kafka-tests", () => {
       return;
     }
 
+    await ensureTopicExists(wf1Topic);
+    await ensureTopicExists(wf2Topic);
+
     const [cfg, rtCfg] = parseConfigFile({configfile: 'confluentkafka-test-dbos-config.yaml'});
     DBOS.setConfig(cfg, rtCfg);
 
     // This would normally be a global or static or something
     wfKafkaCfg = DBOS.configureInstance(KafkaProducer, 'wfKafka', kafkaConfig, wf1Topic);
     wf2KafkaCfg = DBOS.configureInstance(KafkaProducer, 'wf2Kafka', kafkaConfig, wf2Topic);
-    return Promise.resolve();
+    await DBOS.launch();
   }, 30000);
 
   afterAll(async() => {
     await wfKafkaCfg?.disconnect();
     await wf2KafkaCfg?.disconnect();
-  });
-
-  beforeEach(async () => {
-    if (kafkaIsAvailable) {
-      await DBOS.launch();
-    }
-  }, 30000);
-
-  afterEach(async () => {
-    if (kafkaIsAvailable) {
-      await DBOS.shutdown();
-    }
+    await DBOS.shutdown();
   }, 30000);
 
   test("txn-kafka", async () => {
