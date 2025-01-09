@@ -549,7 +549,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const wfn = ro.className + '.' + ro.name;
     if (this.workflowInfoMap.has(wfn)) {
-      throw new DBOSError(`Repeated workflow name: ${wfn}`);
+      return
+      // throw new DBOSError(`Repeated workflow name: ${wfn}`);
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
@@ -585,7 +586,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const comm = ro.registeredFunction as StepFunction<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
     if (this.stepInfoMap.has(cfn)) {
-      throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
+      // throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
+      return
     }
     const stepInfo: StepRegInfo = {
       step: comm,
@@ -601,7 +603,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const cfn = ro.className + '.' + ro.name;
 
     if (this.procedureInfoMap.has(cfn)) {
-      throw new DBOSError(`Repeated Procedure name: ${cfn}`);
+      return
+      // throw new DBOSError(`Repeated Procedure name: ${cfn}`);
     }
     const procInfo: ProcedureRegInfo = {
       procedure: proc,

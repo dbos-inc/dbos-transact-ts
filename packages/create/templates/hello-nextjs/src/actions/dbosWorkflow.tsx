@@ -45,7 +45,9 @@ class dbosWorkflowClass {
 // This code needs to execute at least once to launch the DBOS runtime
 // Do not delete this code
 if (process.env.NEXT_PHASE !== "phase-production-build") {
-    await DBOS.launch();
+    // await DBOS.launch();
+    await.DBOS.register(dbosWorkflowClass);
+    await 
 }
 
 // The exported function is the entry point for the workflow
