@@ -1,13 +1,13 @@
 import {
+  DBOS,
   TestingRuntime,
   createTestingRuntime,
-  configureInstance,
   WorkflowContext,
   Workflow,
 } from "@dbos-inc/dbos-sdk";
 
 import {
-  KafkaProduceCommunicator,
+  KafkaProducer,
   CKafkaConsume,
   CKafka,
   KafkaConfig,
@@ -66,8 +66,8 @@ let arrayTopicsCounter = 0;
 describe("kafka-tests", () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
-  let wfKafkaCfg: KafkaProduceCommunicator | undefined = undefined;
-  let wf2KafkaCfg: KafkaProduceCommunicator | undefined = undefined;
+  let wfKafkaCfg: KafkaProducer | undefined = undefined;
+  let wf2KafkaCfg: KafkaProducer | undefined = undefined;
 
   beforeAll(async () => {
     // Check if Kafka is available, skip the test if it's not
@@ -78,8 +78,8 @@ describe("kafka-tests", () => {
     }
 
     // This would normally be a global or static or something
-    wfKafkaCfg = configureInstance(KafkaProduceCommunicator, 'wfKafka', kafkaConfig, wf1Topic);
-    wf2KafkaCfg = configureInstance(KafkaProduceCommunicator, 'wf2Kafka', kafkaConfig, wf2Topic);
+    wfKafkaCfg = DBOS.configureInstance(KafkaProducer, 'wfKafka', kafkaConfig, wf1Topic);
+    wf2KafkaCfg = DBOS.configureInstance(KafkaProducer, 'wf2Kafka', kafkaConfig, wf2Topic);
     return Promise.resolve();
   }, 30000);
 
@@ -109,10 +109,10 @@ describe("kafka-tests", () => {
       console.log("Kafka tests running...")
     }
     // Create a producer to send a message
-    await testRuntime?.invoke(wf2KafkaCfg!).sendMessage({
+    await wf2KafkaCfg!.sendMessage({
       value: wfMessage,
     });
-    await testRuntime?.invoke(wfKafkaCfg!).sendMessage({
+    await wfKafkaCfg!.sendMessage({
       value: wfMessage,
     });
     console.log("Messages sent");

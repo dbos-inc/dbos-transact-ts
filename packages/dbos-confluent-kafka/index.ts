@@ -1,6 +1,5 @@
 import {
-  Communicator,
-  CommunicatorContext,
+  DBOS,
   InitContext,
   ConfiguredInstance,
   Error as DBOSError,
@@ -200,9 +199,9 @@ export function CKafka(kafkaConfig: KafkaConfig) {
 }
 
 //////////////////////////////
-/* Producer Communicator    */
+/* Kafka Producer           */
 //////////////////////////////
-export class KafkaProduceCommunicator extends ConfiguredInstance
+export class KafkaProducer extends ConfiguredInstance
 {
   producer: KafkaJS.Producer | undefined = undefined;
   topic: string = "";
@@ -216,16 +215,15 @@ export class KafkaProduceCommunicator extends ConfiguredInstance
     const kafka = new KafkaJS.Kafka({});
     this.producer = kafka.producer({kafkaJS: this.cfg});
     await this.producer.connect();
-    return Promise.resolve();
   }
 
-  @Communicator()
-  async sendMessage(_ctx: CommunicatorContext, msg: KafkaJS.Message) {
+  @DBOS.step()
+  async sendMessage(msg: KafkaJS.Message) {
     return await this.producer?.send({topic: this.topic, messages:[msg]});
   }
 
-  @Communicator()
-  async sendMessages(_ctx: CommunicatorContext, msg: KafkaJS.Message[]) {
+  @DBOS.step()
+  async sendMessages(msg: KafkaJS.Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
   }
 
