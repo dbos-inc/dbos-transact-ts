@@ -147,6 +147,7 @@ export class DBOS {
     set(conf, key, newValue);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static async register(cls: any) {
 
     await this.launch();
@@ -154,6 +155,7 @@ export class DBOS {
     const executor = DBOSExecutor.globalInstance;
 
     if (executor !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       executor.registerClass(cls.name)
     } else {
       throw new DBOSExecutorNotInitializedError();
