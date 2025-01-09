@@ -1,9 +1,8 @@
 import {
   DBOS,
-  TestingRuntime,
-  createTestingRuntime,
   WorkflowContext,
   Workflow,
+  parseConfigFile,
 } from "@dbos-inc/dbos-sdk";
 
 import {
@@ -64,7 +63,6 @@ const arrayTopics = [wf1Topic, wf2Topic];
 let arrayTopicsCounter = 0;
 
 describe("kafka-tests", () => {
-  let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
   let wfKafkaCfg: KafkaProducer | undefined = undefined;
   let wf2KafkaCfg: KafkaProducer | undefined = undefined;
@@ -75,7 +73,11 @@ describe("kafka-tests", () => {
       kafkaIsAvailable = true;
     } else {
       kafkaIsAvailable = false;
+      return;
     }
+
+    const [cfg, rtCfg] = parseConfigFile({configfile: 'confluentkafka-test-dbos-config.yaml'});
+    DBOS.setConfig(cfg, rtCfg);
 
     // This would normally be a global or static or something
     wfKafkaCfg = DBOS.configureInstance(KafkaProducer, 'wfKafka', kafkaConfig, wf1Topic);
@@ -90,13 +92,13 @@ describe("kafka-tests", () => {
 
   beforeEach(async () => {
     if (kafkaIsAvailable) {
-      testRuntime = await createTestingRuntime(undefined, 'confluentkafka-test-dbos-config.yaml');
+      await DBOS.launch();
     }
   }, 30000);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
-      await testRuntime?.destroy();
+      await DBOS.shutdown();
     }
   }, 30000);
 
