@@ -1,70 +1,61 @@
 import * as tsm from "ts-morph";
-import { DecoratorArgument, getDbosMethodKind, getImportSpecifier, getStoredProcConfig, parseDecoratorArgument } from "../compiler.js";
+import { DecoratorArgument, getDbosMethodInfo, getImportSpecifier, getStoredProcConfig, parseDecoratorArgument } from "../compiler.js";
 import { sampleDbosClass, sampleDbosClassAliased } from "./test-code.js";
 import { makeTestProject } from "./test-utility.js";
 import { describe, it, expect } from 'vitest';
 
 describe("more compiler", () => {
     const { project } = makeTestProject(sampleDbosClass);
+    const { project: aliasProject } = makeTestProject(sampleDbosClassAliased);
     const file = project.getSourceFileOrThrow("operations.ts");
     const cls = file.getClassOrThrow("Test");
 
-    const { project: aliasProject } = makeTestProject(sampleDbosClassAliased);
+    function testProject(name: string, project: tsm.Project) {
+        it(`getDbosMethodKind ${name}`, () => {
+            const file = project.getSourceFileOrThrow("operations.ts");
+            const cls = file.getClassOrThrow("Test");
+            const entries = cls.getStaticMethods().map(m => [m.getName(), getDbosMethodInfo(m)]);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const actual = Object.fromEntries(entries);
 
-    it.each([project, aliasProject])("getDbosMethodKind", (project: tsm.Project) => {
-        const file = project.getSourceFileOrThrow("operations.ts");
-        const cls = file.getClassOrThrow("Test");
-        const entries = cls.getStaticMethods().map(m => [m.getName(), getDbosMethodKind(m)]);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const actual = Object.fromEntries(entries);
-        const expected = {
-            testGetHandler: "handler",
-            testPostHandler: "handler",
-            testDeleteHandler: "handler",
-            testPutHandler: "handler",
-            testPatchHandler: "handler",
-            testGetHandlerWorkflow: "workflow",
-            testGetHandlerTx: "transaction",
-            testGetHandlerComm: "step",
-            testGetHandlerStep: "step",
-            testWorkflow: "workflow",
-            testCommunicator: "step",
-            testStep: "step",
-            testTransaction: "transaction",
-            testProcedure: "storedProcedure",
-            testReadOnlyProcedure: "storedProcedure",
-            testRepeatableReadProcedure: "storedProcedure",
-            testConfiguredProcedure: "storedProcedure",
-            testLocalProcedure: "storedProcedure",
-            testLocalReadOnlyProcedure: "storedProcedure",
-            testLocalRepeatableReadProcedure: "storedProcedure",
-            testLocalConfiguredProcedure: "storedProcedure",
-            testDBOSInitializer: "initializer",
-            testDBOSDeploy: "initializer",
+            const raw_expected = {
+                testGetHandler: "handler",
+                testPostHandler: "handler",
+                testDeleteHandler: "handler",
+                testPutHandler: "handler",
+                testPatchHandler: "handler",
+                testGetHandlerWorkflow: "workflow",
+                testGetHandlerTx: "transaction",
+                testGetHandlerComm: "step",
+                testGetHandlerStep: "step",
+                testWorkflow: "workflow",
+                testCommunicator: "step",
+                testStep: "step",
+                testTransaction: "transaction",
+                testProcedure: "storedProcedure",
+                testReadOnlyProcedure: "storedProcedure",
+                testRepeatableReadProcedure: "storedProcedure",
+                testConfiguredProcedure: "storedProcedure",
+                testLocalProcedure: "storedProcedure",
+                testLocalReadOnlyProcedure: "storedProcedure",
+                testLocalRepeatableReadProcedure: "storedProcedure",
+                testLocalConfiguredProcedure: "storedProcedure",
+                testDBOSInitializer: "initializer",
+                testDBOSDeploy: "initializer",
+            };
 
-            testGetHandler_v2: "handler",
-            testPostHandler_v2: "handler",
-            testDeleteHandler_v2: "handler",
-            testPutHandler_v2: "handler",
-            testPatchHandler_v2: "handler",
-            testGetHandlerWorkflow_v2: "workflow",
-            testGetHandlerTx_v2: "transaction",
-            testGetHandlerStep_v2: "step",
-            testProcedure_v2: "storedProcedure",
-            testReadOnlyProcedure_v2: "storedProcedure",
-            testRepeatableReadProcedure_v2: "storedProcedure",
-            testConfiguredProcedure_v2: "storedProcedure",
-            testLocalProcedure_v2: "storedProcedure",
-            testLocalReadOnlyProcedure_v2: "storedProcedure",
-            testLocalRepeatableReadProcedure_v2: "storedProcedure",
-            testLocalConfiguredProcedure_v2: "storedProcedure",
+            const expected = Object.fromEntries(Object.entries(raw_expected).flatMap(([key, value]) => {
+                const v1 = [key, { kind: value, version: 1 }];
+                const v2 = [`${key}_v2`, { kind: value, version: 2 }];
+                return value === "initializer" ? [v1] : [v1, v2];
+            }));
 
-            testStep_v2: "step",
-            testTransaction_v2: "transaction",
-            testWorkflow_v2: "workflow",
-        };
-        expect(actual).toEqual(expected);
-    });
+            expect(actual).toEqual(expected);
+        })
+    }
+
+    testProject("project", project);
+    testProject("aliasProject", aliasProject);
 
     describe("aliased getDecoratorInfo", () => {
         it("testGetHandler", () => {
@@ -164,7 +155,7 @@ interface DecoratorInfo {
     alias?: string;
     module?: string;
     args: DecoratorArgument[];
-  }
+}
 
 
 function testDecorators(expected: DecoratorInfo[], actual: tsm.Decorator[]) {
@@ -178,7 +169,7 @@ function testDecorator(expected: DecoratorInfo, actual: tsm.Decorator) {
     const callExpr = actual.getCallExpressionOrThrow();
 
     const expr = callExpr.getExpression();
-    const idExpr = tsm.Node.isIdentifier(expr) 
+    const idExpr = tsm.Node.isIdentifier(expr)
         ? expr
         : expr.asKindOrThrow(tsm.SyntaxKind.PropertyAccessExpression).getExpressionIfKindOrThrow(tsm.SyntaxKind.Identifier);
 

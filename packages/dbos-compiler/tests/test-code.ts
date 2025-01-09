@@ -66,6 +66,10 @@ export class Test {
   @DBOS.transaction()
   static async testGetHandlerTx_v2(): Promise<void> {  }
 
+  @GetApi('/test')
+  @DBOS.step()
+  static async testGetHandlerComm_v2(ctxt: CommunicatorContext): Promise<void> {  }
+
   @DBOS.getApi('/test')
   @DBOS.step()
   static async testGetHandlerStep_v2(): Promise<void> {  }
@@ -87,6 +91,9 @@ export class Test {
 
   @DBOS.step()
   static async testStep_v2(message: string): Promise<void> {  }
+
+  @DBOS.step()
+  static async testCommunicator_v2(message: string): Promise<void> {  }
 
   @DBOS.transaction()
   static async testTransaction_v2(message: string): Promise<void> {  }
@@ -206,6 +213,10 @@ export class Test {
   static async testGetHandlerComm(ctxt: HandlerContext): Promise<void> {  }
 
   @TestGetApi('/test')
+  @TestDBOS.step()
+  static async testGetHandlerComm_v2(ctxt: CommunicatorContext): Promise<void> {  }
+
+  @TestGetApi('/test')
   @TestStep()
   static async testGetHandlerStep(ctxt: StepContext): Promise<void> {  }
 
@@ -238,6 +249,9 @@ export class Test {
 
   @TestDBOS.step()
   static async testStep_v2(message: string): Promise<void> {  }
+
+  @TestDBOS.step()
+  static async testCommunicator_v2(message: string): Promise<void> {  }
 
   @TestDBOS.transaction()
   static async testTransaction_v2(message: string): Promise<void> {  }
