@@ -149,14 +149,15 @@ export class DBOS {
 
   static async register(cls: any) {
 
-    console.log("DBOS.register class: ", cls.mjclassName);
+    console.log("DBOS.register class: ", cls.name);
 
     await this.launch();
     
     const executor = DBOSExecutor.globalInstance;
 
     if (executor !== undefined) {
-      executor.registerClass(cls.mjclassName);
+      // executor.registerClass(cls.mjclassName);
+      executor.registerClass(cls.name)
     } else {
       throw new DBOSExecutorNotInitializedError();
     }
@@ -837,6 +838,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
+
+      console.log("mjjjj Transaction decorator called");
+
+  
+
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;
 
