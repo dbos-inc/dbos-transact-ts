@@ -176,12 +176,15 @@ implements MethodRegistrationBase
   requiredRole: string[] | undefined = undefined;
 
   args: MethodParameter[] = [];
+  passContext: boolean = false;
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, readonly passContext: boolean)
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean)
   {
     this.origFunction = origFunc;
     this.isInstance = isInstance;
+    this.passContext = passContext;
   }
+
   needInitialized: boolean = true;
   isInstance: boolean;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
@@ -341,6 +344,13 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(fname)! as MethodRegistration<This, Args, Return>;
+  
+  // Note: We cannot tell if the method takes a context or not.
+  //  Our @Workflow, @Transaction, and @Step decorators are the only ones that would know to set passContext.
+  // So, if passContext is indicated, add it to the registration.
+  if (passContext && !methReg.passContext) {
+    methReg.passContext = true;
+  }
 
   if (methReg.needInitialized) {
     methReg.needInitialized = false;
@@ -440,7 +450,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of decorator when original method is undefined");
   }
@@ -450,7 +460,7 @@ export function registerAndWrapFunction<This, Args extends unknown[], Return>(ta
   return { descriptor, registration };
 }
 
-export function registerAndWrapContextFreeFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of decorator when original method is undefined");
   }
@@ -500,7 +510,7 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
 
 export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(rcvr: DBOSEventReceiver, target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
-  const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+  const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
   if (!registration.eventReceiverInfo.has(rcvr)) {
     registration.eventReceiverInfo.set(rcvr, {});
   }
@@ -615,7 +625,7 @@ export function RequiredRole(anyOf: string[]) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const {descriptor, registration} = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.requiredRole = anyOf;
 
     return descriptor;
@@ -629,7 +639,7 @@ export function Workflow(config: WorkflowConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
     return descriptor;
   }
@@ -643,7 +653,7 @@ export function Transaction(config: TransactionConfig={}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
   }
@@ -656,7 +666,7 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.procConfig = config;
     return descriptor;
   }
@@ -669,7 +679,7 @@ export function Step(config: StepConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.commConfig = config;
     return descriptor;
   }
@@ -693,7 +703,7 @@ export function DBOSInitializer() {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }
@@ -707,7 +717,7 @@ export function DBOSDeploy() {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }

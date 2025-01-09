@@ -1,4 +1,4 @@
-# DBOS Kafka Library (KafkaJS Version)
+# DBOS Kafka Client Library (Confluent Version)
 
 Publish/subscribe message queues are a common building block for distributed systems.  Message queues allow processing to occur at a different place or time, perhaps in multiple client programming environments.  Due to its performance, flexibility, and simple, scalable design, [Kafka](https://www.confluent.io/cloud-kafka) is a popular choice for publish/subscribe.
 
@@ -7,9 +7,9 @@ This package includes a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.
 This package is based on [KafkaJS](https://kafka.js.org/).  We are working on other client libraries for Kafka, please reach out to [us](https://www.dbos.dev/) if you are interested in a different client library.
 
 ## Configuring a DBOS Application with Kafka
-Ensure that the DBOS Kafka (KafkaJS version) package is installed into the application:
+Ensure that the DBOS Kafka (Confluent version) package is installed into the application:
 ```
-npm install --save @dbos-inc/dbos-kafkajs
+npm install --save @dbos-inc/dbos-confluent-kafka
 ```
 
 ## Sending Messages
@@ -18,15 +18,14 @@ npm install --save @dbos-inc/dbos-kafkajs
 First, ensure that the package classes are imported:
 ```typescript
 import {
+  KafkaProducer,
   KafkaConfig,
   logLevel,
-  KafkaProduceStep,
-  Partitioners,
-} from "@dbos-inc/dbos-kafkajs";
+} from "@dbos-inc/dbos-confluent-kafka";
 ```
 
 ### Selecting A Configuration
-`KafkaProduceStep` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
+`KafkaProducer` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 ```typescript
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
@@ -35,17 +34,15 @@ const kafkaConfig: KafkaConfig = {
   retry: { // FOR TESTING
     retries: 5
   },
-  logLevel: logLevel.NOTHING, // FOR TESTING
+  logLevel: logLevel.INFO, // FOR TESTING
 }
 
-kafkaCfg = DBOS.configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
-    createPartitioner: Partitioners.DefaultPartitioner
-});
+kafkaCfg = DBOS.configureInstance(KafkaProducer, 'defKafka', kafkaConfig, kafkaTopic);
 ```
 
 ### Sending
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `KafkaProduceStep` function from a workflow:
-```typescript   
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `KafkaProducer` function from a workflow:
+```typescript
 const sendRes = await kafkaCfg.send({value: ourMessage});
 ```
 
@@ -53,7 +50,7 @@ const sendRes = await kafkaCfg.send({value: ourMessage});
 A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/requestsandevents/kafka-integration).  This library provides an alternate implementation of the Kafka consumer that can be updated independently of the DBOS Transact core packages.
 
 ## Simple Testing
-The `kafkajs.test.ts` file included in the source repository demonstrates sending and processing Kafka messages.  Before running, set the following environment variables:
+The `confluent-kafkajs.test.ts` file included in the source repository demonstrates setting up topics, and sending and processing Kafka messages.  Before running, set the following environment variables:
 - `KAFKA_BROKER`: Broker URL
 
 ## Next Steps
