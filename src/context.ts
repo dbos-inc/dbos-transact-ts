@@ -181,7 +181,7 @@ export interface DBOSContext {
   readonly assumedRole: string;
 
   readonly logger: DBOSLogger;
-  readonly span?: Span;
+  readonly span: Span;
 
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;
@@ -198,7 +198,7 @@ export class DBOSContextImpl implements DBOSContext {
   applicationID: string = process.env.DBOS__APPID || "";		// Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger;						// Wrapper around the global logger for this context.
 
-  constructor(readonly operationName: string, readonly span: Span | undefined, logger: Logger, parentCtx?: DBOSContextImpl) {
+  constructor(readonly operationName: string, readonly span: Span, logger: Logger, parentCtx?: DBOSContextImpl) {
     if (parentCtx) {
       this.request = parentCtx.request;
       this.authenticatedUser = parentCtx.authenticatedUser;

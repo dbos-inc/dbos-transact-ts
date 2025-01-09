@@ -24,7 +24,7 @@ export interface MiddlewareContext {
   readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
 
   readonly logger: DBOSLogger; // Logger, for logging from middleware
-  readonly span?: Span; // Existing span
+  readonly span: Span; // Existing span
 
   getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
 

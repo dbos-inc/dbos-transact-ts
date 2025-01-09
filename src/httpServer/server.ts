@@ -366,14 +366,14 @@ export class DBOSHttpServer {
                 koaCtxt.body = retValue;
               }
             }
-            oc.span!.setStatus({ code: SpanStatusCode.OK });
+            oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             if (e instanceof Error) {
               const annotated_e = e as Error & {dbos_already_logged?: boolean};
               if (annotated_e.dbos_already_logged !== true) {
                 oc.logger.error(e);
               }
-              oc.span!.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = (e as DBOSResponseError)?.status || 500;
               const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
               if (dbosErrorCode && isClientError(dbosErrorCode)) {
@@ -390,7 +390,7 @@ export class DBOSHttpServer {
               // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
               // using stringify() will not produce a pretty output, because our format function uses stringify() too.
               oc.logger.error(DBOSJSON.stringify(e));
-              oc.span!.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
               koaCtxt.body = e;
               koaCtxt.status = 500;
             }
@@ -403,7 +403,7 @@ export class DBOSHttpServer {
               context: Koa.Context;
             }
             oc.W3CTraceContextPropagator.inject(
-              trace.setSpanContext(ROOT_CONTEXT, oc.span!.spanContext()),
+              trace.setSpanContext(ROOT_CONTEXT, oc.span.spanContext()),
               {
                 context: koaCtxt,
               },
@@ -413,7 +413,7 @@ export class DBOSHttpServer {
                 },
               }
             );
-            dbosExec.tracer.endSpan(oc.span!);
+            dbosExec.tracer.endSpan(oc.span);
             await koaNext();
           }
         };

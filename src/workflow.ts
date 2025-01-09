@@ -469,9 +469,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
           const check: BufferedResult = await this.checkProcExecution<R>(client, this.functionID);
           txn_snapshot = check.txn_snapshot;
           if (check.output !== dbosNull) {
-            ctxt.span!.setAttribute("cached", true);
-            ctxt.span!.setStatus({ code: SpanStatusCode.OK });
-            this.#dbosExec.tracer.endSpan(ctxt.span!);
+            ctxt.span.setAttribute("cached", true);
+            ctxt.span.setStatus({ code: SpanStatusCode.OK });
+            this.#dbosExec.tracer.endSpan(ctxt.span);
             return check.output as R;
           }
         } else {
@@ -501,7 +501,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
           const pg_txn_id = await this.recordOutputProc<R>(client, funcId, txn_snapshot, result);
-          ctxt.span!.setAttribute("pg_txn_id", pg_txn_id);
+          ctxt.span.setAttribute("pg_txn_id", pg_txn_id);
           this.resultBuffer.clear();
         }
 
