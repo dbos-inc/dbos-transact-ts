@@ -1,9 +1,9 @@
-const next = require('next');
-const http = require('http');
+import next from 'next';
+import http from 'http';
 
-const { DBOS } = require('@dbos-inc/dbos-sdk');
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
-const { DbosWorkflowClass } = require("./operations");
+import { DbosWorkflowClass } from "./operations";
 export { DbosWorkflowClass };
 
 const app = next({ dev: process.env.NODE_ENV !== 'production' });
@@ -17,7 +17,7 @@ async function main() {
   const PORT = DBOS.runtimeConfig?.port ?? 3000;
   const ENV = process.env.NODE_ENV || 'development';
 
-  http.createServer((req: unknown, res: unknown) => {
+  http.createServer((req, res) => {
     handle(req, res);
   }).listen(PORT, () => {
     console.log(`🚀 Server is running on http://localhost:${PORT}`);

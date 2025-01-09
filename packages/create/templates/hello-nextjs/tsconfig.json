@@ -18,10 +18,12 @@
     "outDir": "./dist", // Output compiled files into "dist" directory
     "rootDir": "./src", // Specify root directory for source files
     "isolatedModules": true, // Required by Next.js for compilation
-    "resolveJsonModule": true // Allow importing JSON files
-    ,
+    "resolveJsonModule": true, // Allow importing JSON files
+    "paths": {
+      "@/*": ["./src/*"] // Map "@/..." to "src/..."
+    },
     "incremental": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "jsx": "preserve",
     "plugins": [
       {
