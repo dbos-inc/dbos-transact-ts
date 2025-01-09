@@ -149,14 +149,11 @@ export class DBOS {
 
   static async register(cls: any) {
 
-    console.log("DBOS.register class: ", cls.name);
-
     await this.launch();
     
     const executor = DBOSExecutor.globalInstance;
 
     if (executor !== undefined) {
-      // executor.registerClass(cls.mjclassName);
       executor.registerClass(cls.name)
     } else {
       throw new DBOSExecutorNotInitializedError();
@@ -167,12 +164,8 @@ export class DBOS {
   static async launch(httpApps?: DBOSHttpApps) {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) {
-      // console.log("DBOS already initialized. But running init again");
-      // DBOSExecutor.globalInstance.init();
       return
     }
-
-    console.log("Launching DBOS.launch()");
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
@@ -838,10 +831,6 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
     {
-
-      console.log("mjjjj Transaction decorator called");
-
-  
 
       const { descriptor, registration } = registerAndWrapContextFreeFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;

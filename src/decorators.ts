@@ -260,25 +260,15 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
-  
-
-  // const clname = (target as any).mjclassName  
-
-  // console.log("We are in getRegisteredOperations", clname)
-
 
   if (typeof target === 'function') { // Constructor case
     const classReg = classesByName.get(target.name);
-    // const classReg = classesByName.get(clname);
-    console.log("function classReg", classReg)
     classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
   }
   else {
     let current: object | undefined = target;
     while (current) {
       const cname = current.constructor.name;
-      // const cname = clname;
-      console.log("not a function classReg", cname, classesByName)
       if (classesByName.has(cname)) {
         registeredOperations.push(...getRegisteredOperations(current.constructor));
       }
@@ -467,11 +457,7 @@ export function registerAndWrapContextFreeFunction<This, Args extends unknown[],
     throw Error("Use of decorator when original method is undefined");
   }
   
-  
-  console.log("mjjjj We are in registerAndWrapContextFreeFunction", target.constructor.name, target, propertyKey, descriptor);
-  console.log("generated class name", (target as any).mjclassName);
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
-
   return { descriptor, registration };
 }
 
@@ -494,23 +480,12 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   ctor: CT, propertyKey?: string | symbol
 ) {
 
-  console.log("We are in getOrCreateClassRegistration", ctor);
-  // console.log("before number of regis", classesByName.size);
-  // console.trace();
-
   const name = ctor.name;
-  // const name = propertyKey ? propertyKey.toString() : ctor.name;
-  // const name: string = (ctor as any).mjclassName
-  console.log("name we are using ",name)
-  if (!classesByName.has(name)) {
-    
-    console.log("Inserting class registration", name);
-    classesByName.set(name, new ClassRegistration<CT>(ctor));
-    console.log("Done Inserting class registration", name);
 
+  if (!classesByName.has(name)) {
+    classesByName.set(name, new ClassRegistration<CT>(ctor));
   }
 
-  console.log("after number of regis", classesByName.size);
   const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
 
   if (clsReg.needsInitialized) {
@@ -623,14 +598,12 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]) : object
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
 {
-  console.log("We are in DefaultArgOptional", ctor.name);
    const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
 {
-  console.log("We are in configureInstance", cls.name, name);
   const inst = new cls(name, ...args);
   const creg = getOrCreateClassRegistration(cls as new(...args: unknown[])=>R);
   if (creg.configuredInstances.has(name)) {
@@ -678,15 +651,6 @@ export function Transaction(config: TransactionConfig={}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
   {
-
-    console.log("mjjjj We are in Transaction decorator", target, propertyKey, inDescriptor);  
-    const xxxName = Reflect.getMetadata('design:type', target)?.name ?? 'UnknownClass';
-
-    console.log(`Transaction decorator applied to: ${xxxName}.${propertyKey}`);
-
-
-    const className = (target as any).constructor.mjclassName;
-    console.log("In Transaction decorator Class Name:", className, propertyKey);
     const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
