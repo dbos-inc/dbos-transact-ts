@@ -1,6 +1,6 @@
 import tsm from 'ts-morph';
 
-type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig, DbosDecoratorVersion];
+type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
   project: tsm.Project;
   methods: CompileMethodInfo[];
@@ -10,7 +10,8 @@ export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE
 export interface StoredProcedureConfig {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
-  executeLocally?: boolean
+  executeLocally?: boolean;
+  version: DbosDecoratorVersion;
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
@@ -45,7 +46,7 @@ export function compile(configFileOrProject: string | tsm.Project, suppressWarni
 
     const methods = project.getSourceFiles()
       .flatMap(getProcMethods)
-      .map(([m, v]) => [m, getStoredProcConfig(m), v] as const);
+      .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
     diags.push(...checkStoredProcConfig(methods, false));
@@ -498,7 +499,7 @@ export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   }
 }
 
-export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedureConfig {
+export function getStoredProcConfig(node: tsm.MethodDeclaration, version: DbosDecoratorVersion): StoredProcedureConfig {
   const decorators = node.getDecorators();
   const procDecorator = decorators.find(d => {
     const info = getDbosDecoratorInfo(d);
@@ -511,5 +512,5 @@ export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedur
   const readOnly = configArg?.readOnly;
   const executeLocally = configArg?.executeLocally;
   const isolationLevel = configArg?.isolationLevel;
-  return { isolationLevel, readOnly, executeLocally };
+  return { isolationLevel, readOnly, executeLocally, version };
 }

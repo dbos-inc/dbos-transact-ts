@@ -135,16 +135,18 @@ describe("more compiler", () => {
 
         for (const [name, config] of Object.entries(data)) {
             it(name, () => {
+                const expected = { ...config, version: 1 };
                 const method = cls.getStaticMethodOrThrow(name);
-                const actual = getStoredProcConfig(method);
-                expect(actual).toEqual(config);
+                const actual = getStoredProcConfig(method, 1);
+                expect(actual).toEqual(expected);
             });
 
             const v2name = `${name}_v2`;
             it(v2name, () => {
+                const expected = { ...config, version: 2 };
                 const method = cls.getStaticMethodOrThrow(v2name);
-                const actual = getStoredProcConfig(method);
-                expect(actual).toEqual(config);
+                const actual = getStoredProcConfig(method, 2);
+                expect(actual).toEqual(expected);
             });
         }
     })

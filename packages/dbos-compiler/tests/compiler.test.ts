@@ -133,7 +133,7 @@ describe("compiler", () => {
     }`;
     const { project } = makeTestProject(executeLocallyFile);
     const file = project.getSourceFileOrThrow("operations.ts");
-    const procMethods = getProcMethods(file).map(([m, v]) => [m, getStoredProcConfig(m), v] as const);
+    const procMethods = getProcMethods(file).map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
     expect(procMethods.length).toBe(1);
     expect(procMethods[0][1].executeLocally).toBe(true);
 
