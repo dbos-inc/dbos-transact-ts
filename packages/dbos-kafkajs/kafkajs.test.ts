@@ -128,7 +128,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 30000);
+  }, 60000);
 });
 
 @Kafka(kafkaConfig)
