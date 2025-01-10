@@ -14,5 +14,7 @@ database:
   migrate:
     - npx knex migrate:latest
 runtimeConfig:
+  entrypoints:
+    - "dist/operations.js"
   start: 
     - "npm run start"

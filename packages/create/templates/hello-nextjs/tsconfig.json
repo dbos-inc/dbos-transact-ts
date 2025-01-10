@@ -21,7 +21,9 @@
     "isolatedModules": true, // Required by Next.js for compilation
     "resolveJsonModule": true, // Allow importing JSON files
     "paths": {
-      "@/*": ["./src/*"] // Map "@/..." to "src/..."
+      "@/*": [
+        "./src/*"
+      ] // Map "@/..." to "src/..."
     },
     "incremental": true,
     "moduleResolution": "node16",
