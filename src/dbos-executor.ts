@@ -1687,18 +1687,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
-
-  // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(status.workflowName, {
-      operationUUID: workflowUUID,
-      operationType: OperationType.WORKFLOW,
-      status: status.status,
-      authenticatedUser: status.authenticatedUser,
-      assumedRole: status.assumedRole,
-      authenticatedRoles: status.authenticatedRoles,
-    });
-    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
+    // Note: this doesn't inherit the original parent context's span.
+    const oc = new DBOSContextImpl(status.workflowName, undefined as unknown as Span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;

@@ -1,4 +1,4 @@
-import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
+import { MethodParameter, registerAndWrapFunctionTakingContext, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
@@ -248,7 +248,7 @@ function generateApiDec(verb: APITypes, url: string) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
