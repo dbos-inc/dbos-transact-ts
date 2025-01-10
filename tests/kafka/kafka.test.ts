@@ -1,4 +1,4 @@
-import { KafkaConsume, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext } from "../../src";
+import { KafkaConsume, TestingRuntime, Transaction, TransactionContext, Workflow, WorkflowContext, DBOS } from "../../src";
 import { DBOSConfig } from "../../src/dbos-executor";
 import { Kafka } from "../../src/kafka/kafka";
 import { createInternalTestRuntime } from "../../src/testing/testing_runtime";
@@ -171,8 +171,8 @@ class DBOSTestClass {
   }
 
   @KafkaConsume(patternTopic)
-  @Workflow()
-  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+  @DBOS.workflow()
+  static async testConsumeTopicsByPattern(topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {
