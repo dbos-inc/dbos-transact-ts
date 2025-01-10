@@ -96,14 +96,14 @@ Then, within the class, one or more methods should be decorated with `SQSMessage
 @SQSConfigure({awscfgname: 'sqs_receiver'})
 class SQSEventProcessor {
   @SQSMessageConsumer({queueUrl: process.env['SQS_QUEUE_URL']})
-  @Workflow()
-  static async recvMessage(ctx: WorkflowContext, msg: Message) {
+  @DBOS.workflow()
+  static async recvMessage(msg: Message) {
     // Workflow code goes here...
   }
 }
 ```
 
-*NOTE:* The DBOS `@SQSMessageConsumer` decorator currently must decorate an old-style DBOS workflow, which is also decorated with `@Workflow` and requires a first argument of type `WorkflowContext`.
+*NOTE:* The DBOS `@SQSMessageConsumer` decorator should be applied to a method decorated with `@DBOS.workflow`.  It is also possible to decorate an old-style DBOS workflow, which is also decorated with `@Workflow` and requires a first argument of type `WorkflowContext`.
 
 ### Concurrency and Rate Limiting
 By default, `@SQSMessageConsumer` workflows are started immediately after message receipt.  If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
