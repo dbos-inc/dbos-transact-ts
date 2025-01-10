@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import fg from 'fast-glob';
 
 import { DBOS, parseConfigFile } from '@dbos-inc/dbos-sdk';
-import { DBOSRuntime } from '../../../../../dist/src/dbos-runtime/runtime';
+import { DBOSRuntime } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/runtime';
 
 // This doesn't work, really bad, we have to do something else with .jsx
 //   and some .ts files will cause problems...
