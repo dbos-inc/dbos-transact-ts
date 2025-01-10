@@ -5,12 +5,15 @@
   "scripts": {
     "dev": "npm run clean && tsc && node dist/server.js",
     "clean": "del-cli dist .next node_modules/.cache tsconfig.tsbuildinfo",
-    "build": "next build",
+    "nextbuild": "next build",
     "start": "next build && tsc && NODE_ENV=production node dist/server.js",
+    "build": "tsc",
+    "minstart": "node dist/server.js",
     "lint": "next lint"
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "^1.30.13",
+    "fast-glob": "^3.3.3",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

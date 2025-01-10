@@ -18,4 +18,4 @@ runtimeConfig:
     - "dist/actions/dbosGreeting.js"
     - "dist/actions/dbosBackground.js"
   start: 
-    - "npm run dev"
+    - "npm run minstart"
