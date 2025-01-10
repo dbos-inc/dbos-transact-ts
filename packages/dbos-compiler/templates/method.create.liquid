@@ -7,11 +7,14 @@ CREATE OR REPLACE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
     if (globalThis.${{appVersion}}run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
     if (globalThis.{{appVersion}}{{moduleName}} === undefined) plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
 
-    const $run = globalThis.{{appVersion}}$run;
     const { {{className}} } = globalThis.{{appVersion}}{{moduleName}};
-
+    {% if apiVersion == 1 %}
+    const $run = globalThis.{{appVersion}}$run;
     return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx, ..._params));
-
+    {% elsif apiVersion == 2 %}
+    const $run = globalThis.{{appVersion}}$run_v2;
+    return $run(_workflow_uuid, _context, () => {{className}}.{{methodName}}(..._params));
+    {% endif %}
 $$ LANGUAGE plv8;
 
 CREATE OR REPLACE PROCEDURE "{{appVersion}}{{className}}_{{methodName}}_p"(

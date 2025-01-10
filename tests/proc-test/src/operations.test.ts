@@ -26,11 +26,9 @@ describe("operations-test", () => {
     [config,] = parseConfigFile();
     testRuntime = await createInternalTestRuntime([StoredProcTest], config)
 
-    await testRuntime.queryUserDB(`
-      DROP ROUTINE IF EXISTS "StoredProcTest_getGreetCountLocal_p";
-      DROP ROUTINE IF EXISTS "StoredProcTest_getGreetCountLocal_f";
-      DROP ROUTINE IF EXISTS "StoredProcTest_helloProcedureLocal_p"; 
-      DROP ROUTINE IF EXISTS "StoredProcTest_helloProcedureLocal_f";`);
+    const localProcs = ["getGreetCountLocal", "helloProcedureLocal", "helloProcedure_v2_local"];
+    const sqlDropLocalProcs = localProcs.map((proc) => `DROP ROUTINE IF EXISTS "StoredProcTest_${proc}_p"; DROP ROUTINE IF EXISTS "StoredProcTest_${proc}_f";`).join("\n");
+    await testRuntime.queryUserDB(sqlDropLocalProcs);
   });
 
   afterAll(async () => {
@@ -130,7 +128,7 @@ describe("operations-test", () => {
 
   test("test-procLocalGreetingWorkflow", async () => {
     const wfUUID = uuidv1();
-    const user = `procLocalWF_${Date.now()}`;    
+    const user = `procLocalWF_${Date.now()}`;
     const res = await testRuntime.invokeWorkflow(StoredProcTest, wfUUID).procLocalGreetingWorkflow(user);
     expect(res.count).toBe(0);
     expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
@@ -175,24 +173,29 @@ describe("operations-test", () => {
     DBOS.setConfig(config);
     await DBOS.launch();
 
-    const wfUUID = uuidv1();
-    const user = `txAndProcWFv2_${Date.now()}`;
-    const res = await DBOS.withNextWorkflowID(wfUUID, async () => {
-      return await StoredProcTest.txAndProcGreetingWorkflow_v2(user);
-    })
+    try {
 
-    expect(res.count).toBe(0);
-    expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+      const wfUUID = uuidv1();
+      const user = `txAndProcWFv2_${Date.now()}`;
+      const res = await DBOS.withNextWorkflowID(wfUUID, async () => {
+        return await StoredProcTest.txAndProcGreetingWorkflow_v2(user);
+      })
 
-    const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
-    expect(txRows.length).toBe(2);
-    expect(txRows[0].function_id).toBe(0);
-    expect(txRows[0].output).toBe("0");
-    expectNullResult(txRows[0].error);
+      expect(res.count).toBe(0);
+      expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
 
-    expect(txRows[1].function_id).toBe(1);
-    expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
-    expectNullResult(txRows[1].error);
+      const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
+      expect(txRows.length).toBe(2);
+      expect(txRows[0].function_id).toBe(0);
+      expect(txRows[0].output).toBe("0");
+      expectNullResult(txRows[0].error);
+
+      expect(txRows[1].function_id).toBe(1);
+      expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+      expectNullResult(txRows[1].error);
+    } finally {
+      await DBOS.shutdown();
+    }
   });
 
 

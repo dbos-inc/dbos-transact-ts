@@ -80,7 +80,35 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         }
     }
 
+    function $run_v2(workflow_uuid, _context, $func) {
+        try {
+            const output = $func();
+            return { output };
+        } catch (e) {
+            // -- TODO: investigate using serialize-error
+            return { error: { name: e.name, message: e.message, stack: e.stack } };
+        }
+    }
+
+
+    function $require(module_name) {
+        if (module_name === "@dbos-inc/dbos-sdk") {
+            const DBOS = {
+                logger: {
+                    info: (msg) => { plv8.elog(INFO, msg); },
+                    debug: (msg) => { plv8.elog(DEBUG1, msg); },
+                    warn: (msg) => { plv8.elog(WARNING, msg); },
+                    error: (msg) => { plv8.elog(ERROR, msg); },
+                }
+            };
+
+            return { DBOS };
+        }
+    }
+
     globalThis.{{appVersion}}$run = $run;
+    globalThis.{{appVersion}}$run_v2 = $run_v2;
+    globalThis.require = $require;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;
 
