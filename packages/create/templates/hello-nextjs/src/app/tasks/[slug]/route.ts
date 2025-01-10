@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { dbosBackgroundTask } from "@/actions/dbosWorkflow";
+import { dbosBackgroundTask } from "@/actions/dbosBackground";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
 
@@ -13,6 +13,4 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
     await dbosBackgroundTask(taskId)
 
     return NextResponse.json({ message: "Background task started" });
-
 }
-

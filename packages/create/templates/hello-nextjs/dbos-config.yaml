@@ -15,6 +15,7 @@ database:
     - npx knex migrate:latest
 runtimeConfig:
   entrypoints:
-    - "dist/actions/dbosWorkflow.js"
+    - "dist/actions/dbosGreeting.js"
+    - "dist/actions/dbosBackground.js"
   start: 
     - "npm run start"
