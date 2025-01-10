@@ -1,3 +1,5 @@
+"use server";
+
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 // The schema of the database table used in this example.
@@ -6,8 +8,7 @@ export interface dbos_hello {
   greet_count: number;
 }
 
-// Order matters: DBOS decorators must be declared before being used
-export class DbosWorkflowClass {
+class DbosWorkflowClass {
   @DBOS.transaction()
   static async helloDBOS(userName: string) {
       DBOS.logger.info("Hello from DBOS Transaction!");

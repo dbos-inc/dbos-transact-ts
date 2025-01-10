@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { dbosBackgroundTask } from "../../../operations";
+import { dbosBackgroundTask } from "@/actions/dbosWorkflow";
 
-export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
 
     const taskId = (await params).slug;
 
