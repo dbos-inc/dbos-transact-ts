@@ -9,11 +9,6 @@ export interface dbos_hello {
 
 export class StoredProcTest {
 
-  // @GetApi('/greeting/:user') // Serve this function from HTTP GET requests to the /greeting endpoint with 'user' as a path parameter
-  // static async helloHandler(context: HandlerContext, @ArgSource(ArgSources.URL) user: string) {
-  //   return await context.invoke(Hello).helloProcedure(user);
-  // }
-
   @StoredProcedure({ readOnly: true })
   static async getGreetCount(ctxt: StoredProcedureContext, user: string): Promise<number> {
     const query = "SELECT greet_count FROM dbos_hello WHERE name = $1;";
