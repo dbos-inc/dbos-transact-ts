@@ -1,4 +1,5 @@
 import {
+  DBOS,
   TestingRuntime,
   Transaction,
   TransactionContext,
@@ -127,7 +128,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 30000);
+  }, 60000);
 });
 
 @Kafka(kafkaConfig)
@@ -174,8 +175,8 @@ class DBOSTestClass {
   }
 
   @KafkaConsume(patternTopic)
-  @Workflow()
-  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+  @DBOS.workflow()
+  static async testConsumeTopicsByPattern(topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {

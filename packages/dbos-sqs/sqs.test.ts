@@ -1,6 +1,6 @@
 import { Message } from "@aws-sdk/client-sqs";
 import { DBOS_SQS, SQSMessageConsumer } from "./index";
-import { DBOS, WorkflowContext, Workflow, parseConfigFile } from "@dbos-inc/dbos-sdk";
+import { DBOS, parseConfigFile } from "@dbos-inc/dbos-sdk";
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -13,8 +13,8 @@ class SQSReceiver
   static msgRcvCount: number = 0;
   static msgValueSum: number = 0;
   @SQSMessageConsumer({queueUrl: process.env['SQS_QUEUE_URL']})
-  @Workflow()
-  static async recvMessage(_ctx: WorkflowContext, msg: Message) {
+  @DBOS.workflow()
+  static async recvMessage(msg: Message) {
     const ms = msg.Body!;
     const res = JSON.parse(ms) as ValueObj;
     SQSReceiver.msgRcvCount++;
