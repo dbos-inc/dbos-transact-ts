@@ -19,7 +19,7 @@ import { DBOS_S3 } from "@dbos-inc/component-aws-s3";
 export { DBOS_S3 };
 ```
 
-Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
+Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
 ```yaml
 application:
   aws_s3_configuration: aws_config # Optional if the section is called `aws_config`
@@ -40,7 +40,7 @@ const defaultS3 = configureInstance(DBOS_S3, 'myS3Bucket', {awscfgname: 'aws_con
 ```
 
 ## Simple Operation Wrappers
-The `DBOS_S3` class provides several DBOS [step](https://docs.dbos.dev/tutorials/communicator-tutorial) wrappers for S3 functions.
+The `DBOS_S3` class provides several DBOS [step](https://docs.dbos.dev/typescript/tutorials/step-tutorial) wrappers for S3 functions.
 
 ### Reading and Writing S3 From DBOS Handlers and Workflows
 
@@ -115,7 +115,7 @@ The resulting `PresignedPost` object is slightly more involved than a regular UR
 ## Consistently Maintaining a Database Table of S3 Objects
 In many cases, an application wants to keep track of objects that have been stored in S3.  S3 is, as the name implies, simple storage, and it doesn't track file attributes, permissions, fine-grained ownership, dependencies, etc.
 
-Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem".  And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
+Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem".  And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
 
 The `DBOS_S3` class provides workflows that can be used to ensure that a table of file records is maintained for an S3 bucket.  This table can have any schema suitable to the application (an example table schema can be found in `s3_utils.test.ts`), because the application provides the code to maintain it as a set of callback functions that will be triggered from the workflow.
 
@@ -190,7 +190,7 @@ const wfHandle = await DBOS.startWorkflow(defaultS3)
     .writeFileViaURL(fileDBRec, 60/*expiration*/, {contentType: 'text/plain'} /*content restrictions*/);
 
 // Get the presigned post from the workflow
-const ppost = await DBOS.getEvent<PresignedPost>(wfHandle.getWorkflowUUID(), "uploadkey");
+const ppost = await DBOS.getEvent<PresignedPost>(wfHandle.workflowID, "uploadkey");
 
 // Return the ppost object to the client for use as in 'Presigned POSTs' section above
 // The workflow ID should also be known in some way
@@ -202,7 +202,7 @@ Upon a completion call from the client, the following should be performed to not
 const wfHandle = DBOS.retrieveWorkflow(wfid);
 
 // Notify workflow - truish means success, any falsy value indicates failure / cancel
-await DBOS.send<boolean>(wfHandle.getWorkflowUUID(), true, "uploadfinish");
+await DBOS.send<boolean>(wfHandle.workflowID(), true, "uploadfinish");
 
 // Optionally, await completion of the workflow; this ensures that the database record is written,
 //  or will throw an error if anything went wrong in the workflow
@@ -229,6 +229,6 @@ The `s3_utils.test.ts` file included in the source repository can be used to upl
 - `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
+- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

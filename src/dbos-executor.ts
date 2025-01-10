@@ -178,6 +178,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   scheduler?: DBOSScheduler = undefined;
   wfqEnded?: Promise<void> = undefined;
 
+  readonly executorID: string = process.env.DBOS__VMID || "local";
+
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
@@ -588,19 +590,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getWorkflowInfoByStatus(wf: WorkflowStatus) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
-    let wfInfo = this.workflowInfoMap.get(wfname);
-    if (!wfInfo && !wf.workflowClassName) {
-      for (const [_wfn, wfr] of this.workflowInfoMap) {
-        if (wf.workflowName === wfr.workflow.name) {
-          if (wfInfo) {
-            throw new DBOSError(`Recovered workflow function name '${wf.workflowName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            wfInfo = wfr;
-          }
-        }
-      }
-    }
+    const wfInfo = this.workflowInfoMap.get(wfname);
+
+    // wfInfo may be undefined here, if this is a temp workflow
 
     return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
@@ -611,19 +603,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
     const tfname = className + '.' + functionName;
-    let txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
+    const txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
 
-    if (!txnInfo && !className) {
-      for (const [_wfn, tfr] of this.transactionInfoMap) {
-        if (functionName === tfr.transaction.name) {
-          if (txnInfo) {
-            throw new DBOSError(`Recovered transaction function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            txnInfo = tfr;
-          }
-        }
-      }
+    if (!txnInfo) {
+      throw new DBOSNotRegisteredError(`Transaction function name '${tfname}' is not registered.`);
     }
 
     return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -635,22 +618,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
-    let commInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
+    const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
 
-    if (!commInfo && !className) {
-      for (const [_wfn, cfr] of this.stepInfoMap) {
-        if (functionName === cfr.step.name) {
-          if (commInfo) {
-            throw new DBOSError(`Recovered step function name '${functionName}' is ambiguous.  The ambiguous name was recently added; remove it and recover pending workflows before re-adding the new function.`);
-          }
-          else {
-            commInfo = cfr;
-          }
-        }
-      }
+    if (!stepInfo) {
+      throw new DBOSNotRegisteredError(`Step function name '${cfname}' is not registered.`);
     }
 
-    return {commInfo, clsInst: getConfiguredInstance(className, cfgName)};
+    return {commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName)};
   }
 
   getProcedureClassName(pf: StoredProcedure<unknown>) {
@@ -1383,18 +1357,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
-
-  // NOTE: this creates a new span, it does not inherit the span from the original workflow
   #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
-    const span = this.tracer.startSpan(status.workflowName, {
-      operationUUID: workflowUUID,
-      operationType: OperationType.WORKFLOW,
-      status: status.status,
-      authenticatedUser: status.authenticatedUser,
-      assumedRole: status.assumedRole,
-      authenticatedRoles: status.authenticatedRoles,
-    });
-    const oc = new DBOSContextImpl(status.workflowName, span, this.logger);
+    // Note: this doesn't inherit the original parent context's span.
+    const oc = new DBOSContextImpl(status.workflowName, undefined as unknown as Span, this.logger);
     oc.request = status.request;
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;

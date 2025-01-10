@@ -1,6 +1,6 @@
 # DBOS AWS Simple Email Service (SES) Library
 
-This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/tutorials/communicator-tutorial) for sending email using the [Amazon Web Services Simple Email Service](https://aws.amazon.com/ses/).
+This is a [DBOS](https://docs.dbos.dev/) [step](https://docs.dbos.dev/typescript/tutorials/step-tutorial) for sending email using the [Amazon Web Services Simple Email Service](https://aws.amazon.com/ses/).
 
 ## Getting Started
 In order to send emails with SES, it is necessary to:
@@ -15,10 +15,10 @@ npm install --save @dbos-inc/dbos-email-ses
 
 Second, ensure that the library is imported into the relevant source file(s):
 ```typescript
-import { DBOS_SES } from "@dbos-inc/communicator-email-ses";
+import { DBOS_SES } from "@dbos-inc/dbos-email-ses";
 ```
 
-Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
+Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
 ```yaml
 application:
   aws_ses_configuration: aws_config # Optional if the section is called `aws_config`
@@ -30,7 +30,7 @@ application:
 
 If a different configuration file section should be used for SES, the `aws_ses_configuration` can be changed to indicate a configuration section for use with SES.  If multiple configurations are to be used, the application code will have to name and configure them.
 
-For more information about configuring AWS services, see [AWS Configuration](https://docs.dbos.dev/api-reference/communicatorlib#aws-configuration).
+For more information about configuring AWS services, see [AWS Configuration](https://docs.dbos.dev/typescript/reference/libraries#aws-configuration).
 
 ## Selecting A Configuration
 `DBOS_SES` is a configured class.  This means that the configuration (or config file key name) must be provided when a class instance is created.  One instance per configuration should be created with `DBOS.configureInstance` when the application code starts.  For example:
@@ -44,7 +44,7 @@ const marketingSES = DBOS.configureInstance(DBOS_SES, 'marketing', {awscfgname: 
 ```
 
 ## Sending Messages
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/tutorials/workflow-tutorial), call `DBOS_SES` functions:
+Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call `DBOS_SES` functions:
 ```typescript
     const result = await defaultSES.sendEmail(
         {
@@ -86,6 +86,6 @@ The `ses.test.ts` file included in the source repository can be used to send an 
 While some email services allow setting of a [`Message-ID`](https://en.wikipedia.org/wiki/Message-ID), which would form the foundation of an idempotent email send, SES does not.  This communicator may send duplicate emails in the case of a poorly-timed network or server failure.
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
+- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

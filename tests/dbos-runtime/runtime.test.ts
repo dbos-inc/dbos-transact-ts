@@ -91,7 +91,7 @@ describe("runtime-entrypoint-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("packages/create/templates/hello");
+    process.chdir("packages/create/templates/hello-contexts");
     execSync("mv src/operations.ts src/entrypoint.ts");
     configureHelloExample();
   });
@@ -134,7 +134,7 @@ describe("runtime-tests", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
 
-    process.chdir("packages/create/templates/hello");
+    process.chdir("packages/create/templates/hello-contexts");
     configureHelloExample();
   });
 
@@ -165,12 +165,12 @@ describe("runtime-tests", () => {
   test("runtime hello with appDir provided as CLI parameter", async () => {
     process.chdir("../../../..");
     try {
-      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello"], {
+      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello-contexts"], {
         env: process.env,
       });
       await waitForMessageTest(command, "3000");
     } finally {
-      process.chdir("packages/create/templates/hello");
+      process.chdir("packages/create/templates/hello-contexts");
     }
   });
 

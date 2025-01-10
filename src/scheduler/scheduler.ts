@@ -1,6 +1,6 @@
 import { DBOSEventReceiverState, WorkflowContext } from "..";
 import { DBOSExecutor } from "../dbos-executor";
-import { MethodRegistrationBase, registerAndWrapFunction } from "../decorators";
+import { MethodRegistrationBase, registerAndWrapFunctionTakingContext } from "../decorators";
 import { TimeMatcher } from "./crontab";
 import { Workflow } from "../workflow";
 
@@ -37,7 +37,7 @@ export function Scheduled(schedulerConfig: SchedulerConfig) {
         propertyKey: string,
         inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: ScheduledArgs) => Promise<Return>>
     ) {
-        const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+        const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
         const schedRegistration = registration as unknown as SchedulerRegistrationBase;
         schedRegistration.schedulerConfig = schedulerConfig;
 

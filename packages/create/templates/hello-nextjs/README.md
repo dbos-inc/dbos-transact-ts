@@ -1,6 +1,6 @@
 # DBOS Background Job
 
-This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/tutorials/using-knex) to interact with postgres.
+This is a [DBOS app](https://docs.dbos.dev/) bootstrapped with `npx @dbos-inc/create`, using [Express.js](https://expressjs.com/) and [Knex](https://docs.dbos.dev/typescript/tutorials/orms/using-knex) to interact with postgres.
 
 ## Getting Started
 
@@ -96,5 +96,5 @@ dbos-cloud app deploy
 
 ## Next Steps
 
-- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
+- For a detailed tutorial, check out our [programming quickstart](https://docs.dbos.dev/typescript/programming-guide).
+- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc).

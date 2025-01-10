@@ -3,25 +3,25 @@
 // This is the Quickstart Drizzle template app. It greets visitors, counting how many total greetings were made.
 // To learn how to run this app, visit the Drizzle tutorial: https://docs.dbos.dev/tutorials/using-drizzle
 
-import { HandlerContext, TransactionContext, Transaction, GetApi } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 import { dbosHello } from './schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 export class Hello {
 
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'user' as a path parameter
-  @GetApi('/greeting/:user')
-  @Transaction()
-  static async helloTransaction(ctxt: TransactionContext<NodePgDatabase>, user: string) {
+  @DBOS.getApi('/greeting/:user')
+  @DBOS.transaction()
+  static async helloTransaction(user: string) {
     const greeting = `Hello, ${user}!`;
-    const greetings_output = await ctxt.client.insert(dbosHello).values({greeting}).returning({greet_count: dbosHello.greet_count});
+    const greetings_output = await (DBOS.drizzleClient as NodePgDatabase).insert(dbosHello).values({greeting}).returning({greet_count: dbosHello.greet_count});
     const greeting_message = `${greeting} We have made ${greetings_output[0].greet_count} greetings.`;
     return Hello.makeHTML(greeting_message);
   }
 
   // Serve a quick readme for the app at the / endpoint
-  @GetApi('/')
-  static async readme(_ctxt: HandlerContext) {
+  @DBOS.getApi('/')
+  static async readme() {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
       For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>
