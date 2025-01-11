@@ -165,13 +165,15 @@ export interface KafkaRegistrationInfo {
 }
 
 export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig, queueName ?: string) {
-  function kafkadec<This, Ctx extends DBOSContext, Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
-  ) {
+  function kafkadec<This, Ctx extends DBOSContext, Args extends (KafkaArgs | [Ctx, ...KafkaArgs]), Return>
+  (target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
     if (!kafkaInst) kafkaInst = new DBOSKafka();
-    const {descriptor, receiverInfo} = associateMethodWithEventReceiver(kafkaInst, target, propertyKey, inDescriptor);
+    const {descriptor, receiverInfo} =
+      associateMethodWithEventReceiver(
+        kafkaInst, target, propertyKey,
+        inDescriptor
+      );
 
     const kafkaRegistration = receiverInfo as KafkaRegistrationInfo;
     kafkaRegistration.kafkaTopics = topics;
