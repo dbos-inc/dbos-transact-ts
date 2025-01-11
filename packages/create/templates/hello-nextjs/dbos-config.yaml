@@ -14,8 +14,6 @@ database:
   migrate:
     - npx knex migrate:latest
 runtimeConfig:
-  entrypoints:
-    - "dist/actions/dbosGreeting.js"
-    - "dist/actions/dbosBackground.js"
+  entrypoints: []
   start: 
     - "npm run minstart"
