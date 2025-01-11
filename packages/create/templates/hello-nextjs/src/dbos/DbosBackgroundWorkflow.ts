@@ -1,4 +1,3 @@
-"use server";
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 // The schema of the database table used in this example.

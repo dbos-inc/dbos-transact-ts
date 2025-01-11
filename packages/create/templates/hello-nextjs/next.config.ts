@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
     ];
 
     if (isServer || dev) {
+      /*
+      // If the minimizer is causing problems with class / function names,
+      //  consider the following.
       const TerserPlugin = require('terser-webpack-plugin');
 
       config.optimization.minimizer = [
@@ -22,8 +25,10 @@ const nextConfig: NextConfig = {
           },
         }),
       ];
+
       // Or, more draconian:
       // config.optimization.minimize = false;
+      */
     }
 
     return config;
