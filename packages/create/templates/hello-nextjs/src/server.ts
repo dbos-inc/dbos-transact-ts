@@ -7,10 +7,9 @@ import fg from 'fast-glob';
 import { DBOS, parseConfigFile } from '@dbos-inc/dbos-sdk';
 import { DBOSRuntime } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/runtime';
 
-// This doesn't work, really bad, we have to do something else with .jsx
-//   and some .ts files will cause problems...
+// This is to handle files, in case entrypoints is not manually specified
 export async function loadAllServerFiles() {
-  const serverDir = path.resolve(__dirname);
+  const serverDir = path.resolve(__dirname, "dbos");
 
   const files = await fg(['**/*.ts', '**/*.js', '**/*.jsx', '**/*.tsx'], {
     cwd: serverDir,
@@ -46,8 +45,14 @@ const app = next({ dev: process.env.NODE_ENV !== 'production' });
 const handle = app.getRequestHandler();
 
 async function main() {
-  const [_cfg, rtcgfg] = parseConfigFile();
-  await DBOSRuntime.loadClasses(rtcgfg.entrypoints);
+  const [_cfg, rtcfg] = parseConfigFile();
+
+  if (rtcfg && rtcfg.entrypoints && rtcfg.entrypoints.length) {
+    await DBOSRuntime.loadClasses(rtcfg.entrypoints);
+  }
+  else {
+    await loadAllServerFiles();
+  }
   await DBOS.launch();
 
   await app.prepare();
@@ -63,14 +68,8 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('Error starting server:', err);
-});
-
-/*
 // Only start the server when this file is run directly from Node
 if (require.main === module) {
   main().catch(console.log);
 }
-*/
 
