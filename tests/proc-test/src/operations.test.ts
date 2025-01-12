@@ -183,9 +183,10 @@ describe("operations-test", () => {
 
       expect(res.count).toBe(0);
       expect(res.greeting).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
+      expect(res.local).toMatch(`Hello, ${user}_local! You have been greeted 1 times.`);
 
       const txRows = await testRuntime.queryUserDB<transaction_outputs>("SELECT * FROM dbos.transaction_outputs WHERE workflow_uuid=$1", wfUUID);
-      expect(txRows.length).toBe(2);
+      expect(txRows.length).toBe(3);
       expect(txRows[0].function_id).toBe(0);
       expect(txRows[0].output).toBe("0");
       expectNullResult(txRows[0].error);
@@ -193,6 +194,10 @@ describe("operations-test", () => {
       expect(txRows[1].function_id).toBe(1);
       expect(txRows[1].output).toMatch(`Hello, ${user}! You have been greeted 1 times.`);
       expectNullResult(txRows[1].error);
+
+      expect(txRows[2].function_id).toBe(2);
+      expect(txRows[2].output).toMatch(`Hello, ${user}_local! You have been greeted 1 times.`);
+      expectNullResult(txRows[2].error);
     } finally {
       await DBOS.shutdown();
     }

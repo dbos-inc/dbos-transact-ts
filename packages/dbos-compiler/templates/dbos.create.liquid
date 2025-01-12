@@ -46,6 +46,25 @@ $$ LANGUAGE plv8;
 
 CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
 
+    function $query(queryText, values) {
+        const result = plv8.execute(queryText, values ?? []);
+        plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result, (k, v) => typeof v === "bigint" ? v.toString() + "n" : v));
+        if (typeof result === 'number') {
+            return { rowCount: result };
+        } else if (Array.isArray(result)) {
+            return { rowCount: result.length, rows: result };
+        } else {
+            throw new Error(`unexpected result from plv8.execute ${typeof result}`);
+        }
+    };
+
+    const $logger = {
+        info: (msg) => { plv8.elog(INFO, msg); },
+        debug: (msg) => { plv8.elog(DEBUG1, msg); },
+        warn: (msg) => { plv8.elog(WARNING, msg); },
+        error: (msg) => { plv8.elog(ERROR, msg); },
+    }
+
     function $run(workflow_uuid, _context, $func) {
         try {
             const $ctx = {
@@ -54,23 +73,8 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
                 authenticatedUser: _context.authenticatedUser,
                 assumedRole: _context.assumedRole,
                 authenticatedRoles: _context.authenticatedRoles,
-                query: (queryText, values) => {
-                    const result = plv8.execute(queryText, values ?? []);
-                    plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result, (k, v) => typeof v === "bigint" ? v.toString() + "n" : v));
-                    if (typeof result === 'number') {
-                        return { rowCount: result };
-                    } else if (Array.isArray(result)) {
-                        return { rowCount: result.length, rows: result };
-                    } else {
-                        throw new Error(`unexpected result from plv8.execute ${typeof result}`);
-                    }
-                },
-                logger: {
-                    info: (msg) => { plv8.elog(INFO, msg); },
-                    debug: (msg) => { plv8.elog(DEBUG1, msg); },
-                    warn: (msg) => { plv8.elog(WARNING, msg); },
-                    error: (msg) => { plv8.elog(ERROR, msg); },
-                }
+                query: $query,
+                logger: $logger,
             };
             const output = $func($ctx);
             return { output };
@@ -80,9 +84,10 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         }
     }
 
-    function $run_v2(workflow_uuid, _context, $func) {
+    function $run_v2(workflow_uuid, context, func, args) {
         try {
-            const output = $func();
+            const that = new $Context(workflow_uuid, context);
+            const output = func.apply(that, args);
             return { output };
         } catch (e) {
             // -- TODO: investigate using serialize-error
@@ -90,24 +95,54 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         }
     }
 
-
     function $require(module_name) {
         if (module_name === "@dbos-inc/dbos-sdk") {
             const DBOS = {
-                logger: {
-                    info: (msg) => { plv8.elog(INFO, msg); },
-                    debug: (msg) => { plv8.elog(DEBUG1, msg); },
-                    warn: (msg) => { plv8.elog(WARNING, msg); },
-                    error: (msg) => { plv8.elog(ERROR, msg); },
-                }
+                getRequest: () => this.request,
+                get request() {
+                    const r = this.request;
+                    if (!r) { throw new Error("`DBOS.request` accessed from outside of HTTP requests"); }
+                    return r;
+                },
+                get workflowID() { return this.workflow_id; },
+                get authenticatedUser() { return this.authenticatedUser ?? ""; },
+                get assumedRole() { return this.assumedRole ?? ""; },
+                get authenticatedRoles() { return this.authenticatedRoles ?? []; },
+                logger: $logger,
+                pgClient: { query: $query, }
             };
 
             return { DBOS };
         }
+
+        return undefined;
+    }
+
+    const $Context = class {
+        #workflow_id;
+        #request;
+        #authenticatedUser;
+        #assumedRole;
+        #authenticatedRoles;
+
+        constructor(workflow_uuid, context) {
+            this.#workflow_id = workflow_uuid;
+            this.#request = context.request;
+            this.#authenticatedUser = context.authenticatedUser;
+            this.#assumedRole = context.assumedRole;
+            this.#authenticatedRoles = context.authenticatedRoles;
+        }
+
+        get workflow_id() { return this.#workflow_id; }
+        get request() { return this.#request; }
+        get authenticatedUser() { return this.#authenticatedUser; }
+        get assumedRole() { return this.#assumedRole; }
+        get authenticatedRoles() { return this.#authenticatedRoles; }
     }
 
     globalThis.{{appVersion}}$run = $run;
     globalThis.{{appVersion}}$run_v2 = $run_v2;
+    globalThis.$Context = $Context;
     globalThis.require = $require;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;

@@ -118,13 +118,13 @@ export class StoredProcTest {
   }
 
   @DBOS.workflow()
-  static async txAndProcGreetingWorkflow_v2(user: string): Promise<{ count: number; greeting: string; }> {
+  static async txAndProcGreetingWorkflow_v2(user: string): Promise<{ count: number; greeting: string; local: string }> {
     // Retrieve the number of times this user has been greeted.
     const count = await StoredProcTest.getGreetCountTx_v2(user);
-    // const greeting = await StoredProcTest.helloProcedure_v2_local(user);
     const greeting = await StoredProcTest.helloProcedure_v2(user);
+    const local = await StoredProcTest.helloProcedure_v2_local(`${user}_local`);
     
-    return { count, greeting };
+    return { count, greeting, local };
   }
 
   @DBOS.transaction({ readOnly: true })
@@ -147,10 +147,9 @@ export class StoredProcTest {
   @DBOS.storedProcedure()
   static async helloProcedure_v2(user: string): Promise<string> {
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
-    DBOS.logger.warn(`helloProcedure_v2: ${query}`);
-    // const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
-    // const greet_count = rows[0].greet_count;
-    const greet_count = 1;
+    const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
+    const greet_count = rows[0].greet_count;
+    // const greet_count = 1;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 }
