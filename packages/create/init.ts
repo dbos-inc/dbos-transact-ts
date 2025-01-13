@@ -45,11 +45,14 @@ export const copy = async (
   );
 }
 
-function isValidApplicationName(appName: string): boolean {
+export function isValidApplicationName(appName: string): boolean | string {
   if (appName.length < 3 || appName.length > 30) {
-    return false;
+    return "Application name must be between 3 and 30 characters long";
   }
-  return validator.matches(appName, "^[a-z0-9-_]+$");
+  if (!validator.matches(appName, "^[a-z0-9-_]+$")) {
+    return "Application name can only contain lowercase letters, numbers, hyphens and underscores";
+  }
+  return true;
 }
 
 const filesAllowedInEmpty = ['.gitignore', 'readme.md'];
@@ -108,7 +111,7 @@ function mergeGitignoreFiles(existingFilePath: string, templateFilePath: string,
 
 
 export async function init(appName: string, templateName: string) {
-  if (!isValidApplicationName(appName)) {
+  if (isValidApplicationName(appName) !== true) {
     throw new Error(`Invalid application name: ${appName}. Application name must be between 3 and 30 characters long and can only contain lowercase letters, numbers, hyphens and underscores. Exiting...`);
   }
 
@@ -135,4 +138,21 @@ export async function init(appName: string, templateName: string) {
   execSync("npm i --no-fund --loglevel=error", {cwd: appName, stdio: 'inherit'})
   execSync("npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest", {cwd: appName, stdio: 'inherit'})
   console.log("Application initialized successfully!")
+}
+
+// Templates that will be downloaded through the demo apps repository
+export const DEMO_TEMPLATES = ['dbos-node-starter']
+
+// Return a list of available templates
+export function listTemplates(): string[] {
+  const __dirname = fileURLToPath(new URL('.', import.meta.url));
+  const templatePath = path.resolve(__dirname, '..', 'templates');
+  const items = fs.readdirSync(templatePath, { withFileTypes: true });
+  const templates = items
+      .filter(item => item.isDirectory())
+      .map(folder => folder.name);
+
+  // Insert demo templates at the beginning of the list
+  templates.unshift(...DEMO_TEMPLATES);
+  return templates;
 }
