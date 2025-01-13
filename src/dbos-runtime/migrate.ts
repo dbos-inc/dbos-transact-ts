@@ -11,9 +11,9 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
-  if (!(await checkDatabaseExists(configFile, logger))) {
-    let postgresConfig: PoolConfig = constructPoolConfig(configFile)
-    postgresConfig = await db_wizard(postgresConfig);
+  let postgresConfig: PoolConfig = constructPoolConfig(configFile)
+  postgresConfig = await db_wizard(postgresConfig);
+  if (!(await checkDatabaseExists(postgresConfig, logger))) {
     const app_database = postgresConfig.database
     postgresConfig.database = "postgres"
     const postgresClient = new Client(postgresConfig);
@@ -67,9 +67,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   return 0;
 }
 
-export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
-  let pgUserConfig: PoolConfig = constructPoolConfig(configFile)
-  pgUserConfig = await db_wizard(pgUserConfig);
+export async function checkDatabaseExists(pgUserConfig: PoolConfig, logger: GlobalLogger) {
   const pgUserClient = new Client(pgUserConfig);
 
   try {
