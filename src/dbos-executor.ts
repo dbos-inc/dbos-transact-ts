@@ -38,7 +38,7 @@ import {
   DrizzleUserDatabase,
   UserDatabaseClient,
 } from './user_database';
-import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses,getRegisteredClassByName } from './decorators';
+import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses} from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext } from './context';
@@ -313,18 +313,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.logger.debug("Loaded Postgres user database");
     }
   }
-
-  registerClass(className: string) {
-
-    const cls = getRegisteredClassByName(className);
-
-    if (cls === undefined) {
-      throw new DBOSError(`Class ${className} not found`);
-    }
-
-    this.#registerClass(cls.ctor);
-
-  }
   
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
@@ -523,7 +511,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const wfn = ro.className + '.' + ro.name;
     if (this.workflowInfoMap.has(wfn)) {
-      return
+      throw new DBOSError(`Repeated workflow name: ${wfn}`);
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
@@ -540,7 +528,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const tfn = ro.className + '.' + ro.name;
 
     if (this.transactionInfoMap.has(tfn)) {
-      return;
+      throw new DBOSError(`Repeated Transaction name: ${tfn}`);
     }
     const txnInfo: TransactionRegInfo = {
       transaction: txf,
@@ -555,7 +543,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const comm = ro.registeredFunction as StepFunction<unknown[], unknown>;
     const cfn = ro.className + '.' + ro.name;
     if (this.stepInfoMap.has(cfn)) {
-      return
+      throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
     }
     const stepInfo: StepRegInfo = {
       step: comm,
@@ -571,7 +559,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const cfn = ro.className + '.' + ro.name;
 
     if (this.procedureInfoMap.has(cfn)) {
-      return
+      throw new DBOSError(`Repeated Procedure name: ${cfn}`);
     }
     const procInfo: ProcedureRegInfo = {
       procedure: proc,

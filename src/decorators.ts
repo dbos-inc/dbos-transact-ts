@@ -456,6 +456,7 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
+  
   return { descriptor, registration };
 }
 
@@ -463,16 +464,14 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
   if (!descriptor.value) {
     throw Error("Use of decorator when original method is undefined");
   }
+
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
+
   return { descriptor, registration };
 }
 
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
-
-export function getRegisteredClassByName(name: string) {
-  return classesByName.get(name);
-}
 
 export function getAllRegisteredClasses() {
   const ctors: AnyConstructor[] = [];
