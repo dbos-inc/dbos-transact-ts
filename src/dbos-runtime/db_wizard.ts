@@ -1,42 +1,11 @@
 import { Pool, PoolConfig } from "pg";
 import { DBOSInitializationError } from "../error";
-import { transports, createLogger, format, Logger } from "winston";
+import { Logger } from "winston";
 import Docker from 'dockerode';
 import { readFileSync, sleepms } from "../utils";
 import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
-
-export type CLILogger = ReturnType<typeof createLogger>;
-let curLogger: Logger | undefined = undefined;
-export function getLogger(verbose?: boolean): CLILogger {
-    if (curLogger) return curLogger;
-    const winstonTransports = [];
-    winstonTransports.push(
-        new transports.Console({
-            format: consoleFormat,
-            level: verbose ? "debug" : "info",
-        })
-    );
-    return (curLogger = createLogger({ transports: winstonTransports }));
-}
-
-const consoleFormat = format.combine(
-    format.errors({ stack: true }),
-    format.timestamp(),
-    format.colorize(),
-    format.printf((info) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const { timestamp, level, message, stack } = info;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const ts = timestamp.slice(0, 19).replace("T", " ");
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-        const formattedStack = stack?.split("\n").slice(1).join("\n");
-
-        const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
-
-        return `${ts} [${level}]: ${messageString} ${stack ? "\n" + formattedStack : ""}`;
-    })
-);
+import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -76,8 +45,9 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     }
 
     // 5. If no Docker, then prompt the user to log in to DBOS Cloud and provision a DB there. Wait for the remote DB to be ready, and then create a copy of the original config file, and then load the remote connection string to the local config file.
-
     if (!dockerStarted) {
+        const cred = await getCloudCredentials(DBOSCloudHost, logger)
+        logger.info(cred);
         throw new DBOSInitializationError("Cloud not done yet");
     }
 
