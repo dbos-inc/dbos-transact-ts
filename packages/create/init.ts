@@ -4,6 +4,8 @@ import fs from 'fs'
 import { execSync } from 'child_process'
 import validator from 'validator';
 import { fileURLToPath } from 'url';
+import { createTemplateFromGitHub } from './github-create.js';
+import chalk from 'chalk';
 
 interface CopyOption {
   rename?: (basename: string) => string;
@@ -117,18 +119,25 @@ export async function init(appName: string, templateName: string) {
 
   const __dirname = fileURLToPath(new URL('.', import.meta.url));
   const templatePath = path.resolve(__dirname, '..', 'templates', templateName);
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Template does not exist: ${templateName}. Exiting...`);
+  const allTemplates = listTemplates();
+  if (!allTemplates.includes(templateName)) {
+    throw new Error(`Template does not exist: ${chalk.yellow(templateName)}. Please choose from: ${chalk.bold(allTemplates.join(', '))}. Exiting...`);
   }
 
   if (dirHasStuffInIt(appName)) {
-    throw new Error(`Directory ${appName} already exists, exiting...`);
+    throw new Error(`Directory ${chalk.yellow(appName)} already exists, please choose another name. Exiting...`);
   }
 
-  const targets = ["**"]
-  await copy(templatePath, targets, appName);
-  mergeGitignoreFiles(path.join(appName, '.gitignore'), path.join(appName, 'gitignore.template'), path.join(appName, '.gitignore'));
-  fs.rmSync(path.resolve(appName, 'gitignore.template'));
+  if (DEMO_TEMPLATES.includes(templateName)) {
+    // Download the template from the demo apps repository
+    await createTemplateFromGitHub(appName, templateName);
+  } else {
+    // Copy the template from the local templates directory
+    const targets = ["**"]
+    await copy(templatePath, targets, appName);
+    mergeGitignoreFiles(path.join(appName, '.gitignore'), path.join(appName, 'gitignore.template'), path.join(appName, '.gitignore'));
+    fs.rmSync(path.resolve(appName, 'gitignore.template'));
+  }
 
   const packageJsonName = path.resolve(appName, 'package.json');
   const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };

@@ -32,6 +32,7 @@ program
     }
     else {
       const templates = listTemplates();
+      // TODO: add descriptions for each template.
       template = await select(
         {
           message: 'Choose a template to use:',
@@ -45,7 +46,12 @@ program
           validate: isValidApplicationName,
         });
     }
-    await init(appName, template);
+    try {
+      await init(appName, template);
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
   })
   .allowUnknownOption(false);
 
