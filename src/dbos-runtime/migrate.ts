@@ -5,13 +5,15 @@ import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
 import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery } from "../user_database";
+import { db_wizard } from "./db_wizard";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
   if (!(await checkDatabaseExists(configFile, logger))) {
-    const postgresConfig: PoolConfig = constructPoolConfig(configFile)
+    let postgresConfig: PoolConfig = constructPoolConfig(configFile)
+    postgresConfig = await db_wizard(postgresConfig);
     const app_database = postgresConfig.database
     postgresConfig.database = "postgres"
     const postgresClient = new Client(postgresConfig);

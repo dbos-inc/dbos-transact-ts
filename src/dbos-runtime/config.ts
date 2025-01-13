@@ -11,7 +11,6 @@ import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 import validator from "validator";
 import fs from "fs";
-import { db_wizard } from "./db_wizard";
 
 
 
@@ -121,6 +120,7 @@ export function constructPoolConfig(configFile: ConfigFile) {
       databaseName = "_" + databaseName; // Append an underscore if the name starts with a digit
     }
   }
+  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
@@ -148,11 +148,6 @@ export function constructPoolConfig(configFile: ConfigFile) {
     // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
     poolConfig.ssl = { rejectUnauthorized: false };
   }
-
-  db_wizard(poolConfig)
-
-  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
-
   return poolConfig;
 }
 
