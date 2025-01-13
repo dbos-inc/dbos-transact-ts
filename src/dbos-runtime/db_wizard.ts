@@ -1,6 +1,7 @@
 import { Pool, PoolConfig } from "pg";
 import { DBOSInitializationError } from "../error";
 import { transports, createLogger, format, Logger } from "winston";
+import Docker from 'dockerode';
 
 export type CLILogger = ReturnType<typeof createLogger>;
 let curLogger: Logger | undefined = undefined;
@@ -59,8 +60,11 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
 
     logger.warn('Postgres not detected locally');
 
-
     // 3. If the database config is the default one, check if the user has Docker properly installed.
+
+    logger.info("Attempting to start Postgres via Docker")
+    const hasDocker = await checkDockerInstalled()
+    console.log(hasDocker)
 
     // 4. If Docker is installed, prompt the user to start a local Docker based Postgres, and then set the PGPASSWORD to 'dbos' and try to connect to the database.
 
@@ -99,3 +103,14 @@ async function checkDbConnectivity(config: PoolConfig): Promise<Error | null> {
         await pool.end();
     }
 }
+
+
+async function checkDockerInstalled() {
+    try {
+      const docker = new Docker();
+      await docker.ping();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
