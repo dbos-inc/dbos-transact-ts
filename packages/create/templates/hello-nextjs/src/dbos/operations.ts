@@ -1,6 +1,6 @@
 import { DBOS } from "@dbos-inc/dbos-sdk";
 export  { dbosWorkflowClass } from "./background";
-export  { fooWorkflowClass } from "./foo";
+export  { helloWorkflowClass } from "./hello";
 
 console.log("Hello from operations.ts");
 
