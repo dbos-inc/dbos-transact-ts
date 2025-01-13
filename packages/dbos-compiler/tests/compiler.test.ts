@@ -118,7 +118,7 @@ describe("compiler", () => {
       const procMethods = getProcMethods(file);
       expect(procMethods.length).toBe(1);
 
-      const diags = checkStoredProcNames(procMethods.map(([m, v]) => m));
+      const diags = checkStoredProcNames(procMethods.map(([m, _v]) => m));
       expect(diags.length).toBe(1);
       expect(diags[0].category === tsm.DiagnosticCategory.Error);
   });

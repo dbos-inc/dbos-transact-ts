@@ -42,7 +42,7 @@ import {
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
-import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithDBOSContext, runWithStoredProcContext } from './context';
+import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithStoredProcContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { deserializeError, serializeError } from 'serialize-error';
@@ -1236,7 +1236,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }, { isolationLevel: IsolationLevel.ReadCommitted });
 
         await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
-          this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+          await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
           const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
           await DBOSExecutor.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) => this.userDatabase.isKeyConflictError(error));
         }, { isolationLevel: IsolationLevel.ReadCommitted });

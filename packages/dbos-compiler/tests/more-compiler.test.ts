@@ -44,6 +44,7 @@ describe("more compiler", () => {
                 testDBOSDeploy: "initializer",
             };
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const expected = Object.fromEntries(Object.entries(raw_expected).flatMap(([key, value]) => {
                 const v1 = [key, { kind: value, version: 1 }];
                 const v2 = [`${key}_v2`, { kind: value, version: 2 }];

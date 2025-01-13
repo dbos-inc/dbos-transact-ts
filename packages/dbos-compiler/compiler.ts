@@ -167,7 +167,7 @@ export function removeDbosMethods(file: tsm.SourceFile) {
           default: {
             const _never: never = info.kind;
             // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            throw new Error(`Unexpected DBOS method kind: ${info}`);
+            throw new Error(`Unexpected DBOS method kind: ${info.kind}`);
           }
         }
       }

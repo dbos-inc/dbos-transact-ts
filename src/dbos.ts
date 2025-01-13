@@ -901,16 +901,8 @@ export class DBOS {
       registration.procConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
-          // This is static
-        }
-        else {
+        if (typeof this !== 'function') {
           throw new Error("Stored procedures must be static");
-          // inst = this as ConfiguredInstance;
-          // if (!("name" in inst)) {
-          //   throw new DBOSInvalidWorkflowTransitionError();
-          // }
         }
 
         if (DBOS.isWithinWorkflow()) {
