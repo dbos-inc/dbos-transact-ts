@@ -456,7 +456,6 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
-  
   return { descriptor, registration };
 }
 
