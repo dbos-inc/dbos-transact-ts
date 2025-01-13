@@ -6,6 +6,7 @@ import { readFileSync, sleepms } from "../utils";
 import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
+import { chooseAppDBServer, getUserDBInfo } from "./cloudutils/databases";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -47,7 +48,9 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     // 5. If no Docker, then prompt the user to log in to DBOS Cloud and provision a DB there. Wait for the remote DB to be ready, and then create a copy of the original config file, and then load the remote connection string to the local config file.
     if (!dockerStarted) {
         const cred = await getCloudCredentials(DBOSCloudHost, logger)
-        logger.info(cred);
+        const dbName = await chooseAppDBServer(logger, DBOSCloudHost, cred);
+        const db = await getUserDBInfo(DBOSCloudHost, dbName, cred);
+        logger.info(db);
         throw new DBOSInitializationError("Cloud not done yet");
     }
 
