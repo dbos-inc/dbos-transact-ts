@@ -456,6 +456,7 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
+  
   return { descriptor, registration };
 }
 
@@ -488,6 +489,7 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
     classesByName.set(name, new ClassRegistration<CT>(ctor));
   }
   const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
+
   if (clsReg.needsInitialized) {
     clsReg.name = name;
     clsReg.needsInitialized = false;
