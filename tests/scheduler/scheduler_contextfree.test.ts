@@ -160,7 +160,7 @@ describe("cf-scheduled-wf-tests-oaoo", () => {
         finally {
             await testRuntime.destroy();
         }
-    }, 20000);
+    }, 15000);
 });
 
 describe("cf-scheduled-wf-tests-when-active", () => {
