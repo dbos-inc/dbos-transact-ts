@@ -115,7 +115,7 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
         } else {
             logger.error(`${errorLabel}: ${(e as Error).message}`);
         }
-        return "";
+        process.exit(1);
     }
 
     let userDBName = "";
@@ -129,7 +129,7 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
         const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
         const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
         if (res !== 0) {
-            return "";
+            process.exit(1);
         }
     } else if (userDBs.length > 1) {
         // If there is more than one database instances, prompt the user to select one.
@@ -146,4 +146,26 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
         logger.info(`Using database instance: ${userDBName}`);
     }
     return userDBName;
+}
+
+
+export async function createUserRole(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, dbName: string) {
+    const bearerToken = "Bearer " + userCredentials.token;
+    try {
+        await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/createuserdbrole`, {}, {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: bearerToken,
+            },
+        });
+    } catch (e) {
+        const errorLabel = `Failed to create the user role`;
+        const axiosError = e as AxiosError;
+        if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+            handleAPIErrors(errorLabel, axiosError);
+        } else {
+            logger.error(`${errorLabel}: ${(e as Error).message}`);
+        }
+        process.exit(1)
+    }
 }

@@ -6,7 +6,7 @@ import { readFileSync, sleepms } from "../utils";
 import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
-import { chooseAppDBServer, getUserDBInfo } from "./cloudutils/databases";
+import { chooseAppDBServer, createUserRole, getUserDBInfo } from "./cloudutils/databases";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -50,7 +50,9 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
         const cred = await getCloudCredentials(DBOSCloudHost, logger)
         const dbName = await chooseAppDBServer(logger, DBOSCloudHost, cred);
         const db = await getUserDBInfo(DBOSCloudHost, dbName, cred);
-        logger.info(db);
+        if (!db.IsLinked) {
+            await createUserRole(logger, DBOSCloudHost, cred, db.PostgresInstanceName);
+        }
         throw new DBOSInitializationError("Cloud not done yet");
     }
 
