@@ -1,12 +1,63 @@
-import { PoolConfig } from "pg";
+import { Pool, PoolConfig } from "pg";
+import { DBOSInitializationError } from "../error";
+import { transports, createLogger, format, Logger } from "winston";
+
+export type CLILogger = ReturnType<typeof createLogger>;
+let curLogger: Logger | undefined = undefined;
+export function getLogger(verbose?: boolean): CLILogger {
+    if (curLogger) return curLogger;
+    const winstonTransports = [];
+    winstonTransports.push(
+        new transports.Console({
+            format: consoleFormat,
+            level: verbose ? "debug" : "info",
+        })
+    );
+    return (curLogger = createLogger({ transports: winstonTransports }));
+}
+
+const consoleFormat = format.combine(
+    format.errors({ stack: true }),
+    format.timestamp(),
+    format.colorize(),
+    format.printf((info) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const { timestamp, level, message, stack } = info;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const ts = timestamp.slice(0, 19).replace("T", " ");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+        const formattedStack = stack?.split("\n").slice(1).join("\n");
+
+        const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
+
+        return `${ts} [${level}]: ${messageString} ${stack ? "\n" + formattedStack : ""}`;
+    })
+);
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
+    const logger = getLogger()
 
-    console.log("WIZARD");
     // 1. Check the connectivity to the database. Return if successful. If cannot connect, continue to the following steps.
-
+    const dbConnectionError = await checkDbConnectivity(poolConfig);
+    if (dbConnectionError === null) {
+        return poolConfig
+    }
 
     // 2. If the error is due to password authentication or the configuration is non-default, surface the error and exit.
+    const errorStr = dbConnectionError.toString();
+    if (errorStr.includes('password authentication failed') || errorStr.includes('28P01')) {
+        throw new DBOSInitializationError(
+            `Could not connect to Postgres: password authentication failed: ${errorStr}`
+        );
+    }
+
+    if (poolConfig.host !== 'localhost' || poolConfig.port !== 5432 || poolConfig.user !== 'postgres') {
+        throw new DBOSInitializationError(
+            `Could not connect to the database. Exception: ${errorStr}`
+        );
+    }
+
+    logger.warn('Postgres not detected locally');
 
 
     // 3. If the database config is the default one, check if the user has Docker properly installed.
@@ -21,41 +72,30 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     return poolConfig
 }
 
-// async function checkDbConnectivity(config: PoolConfig): Promise<Error | null> {
-//     // Add a default connection timeout if not specified
-//     const configWithTimeout: PoolConfig = {
-//         ...config,
-//         connectionTimeoutMillis: config.connectionTimeoutMillis ?? 2000 // 2 second timeout
-//     };
+async function checkDbConnectivity(config: PoolConfig): Promise<Error | null> {
+    // Add a default connection timeout if not specified
+    const configWithTimeout: PoolConfig = {
+        ...config,
+        connectionTimeoutMillis: config.connectionTimeoutMillis ?? 2000, // 2 second timeout
+        database: "postgres"
+    };
 
-//     // Create a new pool with the configuration
-//     const pool = new Pool(configWithTimeout);
+    const pool = new Pool(configWithTimeout);
 
-//     try {
-//         // Attempt to connect and execute a simple query
-//         const client = await pool.connect();
-//         try {
-//             const result = await client.query('SELECT 1 as value');
-            
-//             // Verify the returned value
-//             if (result.rows[0]?.value !== 1) {
-//                 console.error(
-//                     `Unexpected value returned from database: expected 1, received ${result.rows[0]?.value}`
-//                 );
-//                 return new Error('Unexpected database response');
-//             }
-            
-//             return null;
-//         } catch (error) {
-//             return error instanceof Error ? error : new Error('Unknown database error');
-//         } finally {
-//             // Release the client back to the pool
-//             client.release();
-//         }
-//     } catch (error) {
-//         return error instanceof Error ? error : new Error('Failed to connect to database');
-//     } finally {
-//         // End the pool
-//         await pool.end();
-//     }
-// }
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('SELECT 1;');
+            return null;
+        } catch (error) {
+            return error instanceof Error ? error : new Error('Unknown database error');
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        return error instanceof Error ? error : new Error('Failed to connect to database');
+    } finally {
+        // End the pool
+        await pool.end();
+    }
+}

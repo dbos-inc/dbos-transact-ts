@@ -68,7 +68,8 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 }
 
 export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
-  const pgUserConfig: PoolConfig = constructPoolConfig(configFile)
+  let pgUserConfig: PoolConfig = constructPoolConfig(configFile)
+  pgUserConfig = await db_wizard(pgUserConfig);
   const pgUserClient = new Client(pgUserConfig);
 
   try {
