@@ -2,7 +2,9 @@ import { Pool, PoolConfig } from "pg";
 import { DBOSInitializationError } from "../error";
 import { transports, createLogger, format, Logger } from "winston";
 import Docker from 'dockerode';
-import { sleepms } from "../utils";
+import { readFileSync, sleepms } from "../utils";
+import { dbosConfigFilePath, writeConfigFile } from "./config";
+import YAML from "yaml";
 
 export type CLILogger = ReturnType<typeof createLogger>;
 let curLogger: Logger | undefined = undefined;
@@ -80,7 +82,13 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     }
 
     // 6. Save the config to the config file and return the updated config.
-    // TODO: make the config file prettier
+    const configFileContent = readFileSync(dbosConfigFilePath);
+    const config = YAML.parseDocument(configFileContent);
+    config.setIn(['database', 'hostname'], poolConfig.host);
+    config.setIn(['database', 'port'], poolConfig.port);
+    config.setIn(['database', 'username'], poolConfig.user);
+    config.setIn(['database', 'password'], poolConfig.password);
+    writeConfigFile(config, dbosConfigFilePath);
 
     return poolConfig
 }
