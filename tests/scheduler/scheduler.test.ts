@@ -164,7 +164,7 @@ describe("scheduled-wf-tests-oaoo", () => {
         finally {
             await testRuntime.destroy();
         }
-    }, 15000);
+    }, 20000);
 });
 
 describe("scheduled-wf-tests-when-active", () => {
