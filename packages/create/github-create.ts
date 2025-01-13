@@ -1,3 +1,4 @@
+import { input } from "@inquirer/prompts";
 import chalk from "chalk";
 import fs from "fs";
 import path from "path";
@@ -7,7 +8,7 @@ const TS_DEMO_PATH = 'typescript/';
 const BRANCH = 'main';
 export const IGNORE_PATTERNS = ['.dbos/', 'node_modules/', 'dist/', '.git/', 'venv/', '.venv/', '.direnv/', '.devenv/'];
 export const IGNORE_REGEX = new RegExp(`^.*\\/(${IGNORE_PATTERNS.join('|')}).*$`);
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+let GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
 type GitHubTree = {
   sha: string;
@@ -36,6 +37,15 @@ type GitHubItem = {
 
 export async function createTemplateFromGitHub(appName: string, templateName: string) {
   console.log(`Creating a new application named ${chalk.bold(appName)} from the template ${chalk.bold(templateName)}`);
+  // Prompt user to pptionally provide a GitHub personal access token
+  if (!GITHUB_TOKEN) {
+    GITHUB_TOKEN = await input(
+      {
+        message: '(Optional) Enter your GitHub personal access token to increase the rate limit for downloading the template',
+        default: '',
+      });
+  }
+
   const tree = await fetchGitHubTree(BRANCH);
 
   const templatePath = `${TS_DEMO_PATH}${templateName}/`;
