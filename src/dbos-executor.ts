@@ -313,7 +313,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.logger.debug("Loaded Postgres user database");
     }
   }
-  
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
@@ -504,7 +503,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow(ro: MethodRegistrationBase) {
-
     const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
@@ -523,7 +521,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerTransaction(ro: MethodRegistrationBase) {
-
     const txf = ro.registeredFunction as Transaction<unknown[], unknown>;
     const tfn = ro.className + '.' + ro.name;
 
