@@ -320,10 +320,10 @@ function SQSConfigure(config: SQSConfig) {
 
 // Decorators - method  
 function SQSMessageConsumer(config?: SQSConfig) {
-    function mtddec<This, Ctx extends WorkflowContext, Return>(
+    function mtddec<This, Args extends ([Message] | [WorkflowContext, Message]), Return>(
         target: object,
         propertyKey: string,
-        inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: [Message]) => Promise<Return>>
+        inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
     ) {
         if (!sqsRcv) sqsRcv = new SQSReceiver();
 
