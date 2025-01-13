@@ -1,5 +1,6 @@
 import Image from "next/image";
 import BackGroundTask from "@/components/client/BackGroundTask";
+import CallDBOSWorkflow from "@/components/client/callDBOSWorkflow";
 
 export default function Home() {
   return (
@@ -13,6 +14,9 @@ export default function Home() {
           <p className="mb-4">
              DBOS helps you build applications that are <strong>resilient to any failure</strong>&mdash;no matter how many times you crash this app, your background task will always recover from its last completed step in about ten seconds.
          </p>
+         <div>
+            <CallDBOSWorkflow wfResult="" />
+          </div>
           <div>
             <BackGroundTask />
           </div>

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { dbosBackgroundTask } from "@/actions/dbosWorkflow";
 import { Suspense } from 'react'
 
 let intervalInitialized = false;
