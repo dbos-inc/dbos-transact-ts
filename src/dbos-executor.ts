@@ -313,7 +313,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.logger.debug("Loaded Postgres user database");
     }
   }
-  
+
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
