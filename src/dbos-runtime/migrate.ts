@@ -11,11 +11,11 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   const userDBName = configFile.database.app_db_name;
   logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
 
-  let postgresConfig: PoolConfig = constructPoolConfig(configFile)
-  postgresConfig = await db_wizard(postgresConfig);
-  if (!(await checkDatabaseExists(postgresConfig, logger))) {
-    const app_database = postgresConfig.database
-    postgresConfig.database = "postgres"
+  let poolConfig: PoolConfig = constructPoolConfig(configFile)
+  poolConfig = await db_wizard(poolConfig);
+  if (!(await checkDatabaseExists(poolConfig, logger))) {
+    const app_database = poolConfig.database
+    const postgresConfig = {...poolConfig, database: "postgres"}
     const postgresClient = new Client(postgresConfig);
     let connection_failed = true;
     try {
@@ -53,7 +53,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   logger.info("Creating DBOS tables and system database.");
   try {
-    await createDBOSTables(configFile, postgresConfig);
+    await createDBOSTables(configFile, poolConfig);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -105,7 +105,6 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
 }
 
 // Create DBOS system DB and tables.
-// TODO: replace this with knex to manage schema.
 async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConfig) {
   const logger = new GlobalLogger();
 
