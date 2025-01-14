@@ -85,6 +85,29 @@ function configureHelloExample() {
   execSync("npx dbos migrate", { env: process.env });
 }
 
+describe("runtime-tests-knex", () => {
+  beforeAll(async () => {
+    await dropHelloSystemDB();
+    process.chdir("packages/create/templates/hello-knex");
+    configureHelloExample();
+  });
+
+  afterAll(() => {
+    process.chdir("../../../..");
+  });
+
+  test("test hello-knex tests", () => {
+    execSync("npm run lint", { env: process.env }); // Pass linter rules.
+  });
+
+  test("test hello-knex runtime", async () => {
+    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "3000");
+  });
+});
+
 describe("runtime-tests-typeorm", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
@@ -101,7 +124,6 @@ describe("runtime-tests-typeorm", () => {
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-typeorm runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
@@ -126,7 +148,6 @@ describe("runtime-tests-prisma", () => {
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-prisma runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
@@ -147,12 +168,10 @@ describe("runtime-tests-drizzle", () => {
   });
 
   test("test hello-drizzle tests", () => {
-    execSync("npm run test", { env: process.env }); // Make sure hello-typeorm passes its own tests.
-    console.log("linting hello-drizzle");
+    execSync("npm run test", { env: process.env }); // Make sure hello-drizzle passes its own tests.
     execSync("npm run lint", { env: process.env, stdio: 'inherit' }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-drizzle runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
