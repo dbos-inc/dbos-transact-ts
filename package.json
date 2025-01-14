@@ -39,7 +39,7 @@
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^8.0.0-alpha.30",
     "@typescript-eslint/parser": "^8.0.0-alpha.30",
-    "axios": "^1.7.4",
+    "axios": "^1.7.9",
     "drizzle-orm": "^0.38.3",
     "eslint": "^9.4.0",
     "fastify": "^5.1.0",
