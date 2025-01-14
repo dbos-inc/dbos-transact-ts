@@ -1,9 +1,43 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow } from "pg";
+import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
 import { IsolationLevel, TransactionConfig } from "./transaction";
 import { ValuesOf } from "./utils";
 import { Knex } from "knex";
+import { GlobalLogger as Logger } from './telemetry/logs';
+
+export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Logger) {
+  const pgUserClient = new Client(poolConfig);
+  try {
+    await pgUserClient.connect(); // Try to establish a connection
+    await pgUserClient.end();
+    return true; // If successful, return true
+  } catch (error) {
+    logger.info(`Database ${poolConfig.database} does not exist, creating...`)
+  }
+  const app_database = poolConfig.database
+  const postgresConfig = { ...poolConfig, database: "postgres" }
+  const postgresClient = new Client(postgresConfig);
+  let connection_failed = true;
+  try {
+    await postgresClient.connect()
+    connection_failed = false;
+    await postgresClient.query(`CREATE DATABASE ${app_database}`);
+  } catch (e) {
+    if (e instanceof Error) {
+      if (connection_failed) {
+        logger.error(`Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`);
+      } else {
+        logger.error(`Error creating database ${app_database}: ${e.message}`);
+      }
+    } else {
+      logger.error(e);
+    }
+    throw e;
+  } finally {
+    await postgresClient.end()
+  }
+}
 
 export interface UserDatabase {
   init(debugMode?: boolean): Promise<void>;

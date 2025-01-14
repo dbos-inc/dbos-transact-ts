@@ -4,7 +4,7 @@ import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
-import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery } from "../user_database";
+import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery, createDBIfDoesNotExist } from "../user_database";
 import { db_wizard } from "./db_wizard";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
@@ -13,30 +13,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   let poolConfig: PoolConfig = constructPoolConfig(configFile)
   poolConfig = await db_wizard(poolConfig);
-  if (!(await checkDatabaseExists(poolConfig, logger))) {
-    const app_database = poolConfig.database
-    const postgresConfig = {...poolConfig, database: "postgres"}
-    const postgresClient = new Client(postgresConfig);
-    let connection_failed = true;
-    try {
-      await postgresClient.connect()
-      connection_failed = false;
-      await postgresClient.query(`CREATE DATABASE ${app_database}`);
-    } catch (e) {
-      if (e instanceof Error) {
-        if (connection_failed) {
-          logger.error(`Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`);
-        } else {
-          logger.error(`Error creating database ${app_database}: ${e.message}`);
-        }
-      } else {
-        logger.error(e);
-      }
-      return 1;
-    } finally {
-      await postgresClient.end()
-    }
-  }
+  await createDBIfDoesNotExist(poolConfig, logger);
 
   const migrationCommands = configFile.database.migrate;
 
@@ -65,20 +42,6 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   logger.info("Migration successful!")
   return 0;
-}
-
-export async function checkDatabaseExists(pgUserConfig: PoolConfig, logger: GlobalLogger) {
-  const pgUserClient = new Client(pgUserConfig);
-
-  try {
-    await pgUserClient.connect(); // Try to establish a connection
-    await pgUserClient.end();
-    logger.info(`Database ${pgUserConfig.database} exists!`)
-    return true; // If successful, return true
-  } catch (error) {
-    logger.info(`Database ${pgUserConfig.database} does not exist, creating...`)
-    return false; // If connection fails, return false
-  }
 }
 
 export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
