@@ -65,14 +65,14 @@ async function dropHelloSystemDB() {
     database: "hello",
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_drizzle_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_knex_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_drizzle;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_knex;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex;`);
   await pgSystemClient.end();
 }
 
