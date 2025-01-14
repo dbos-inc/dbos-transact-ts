@@ -11,7 +11,7 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
   try {
     await pgUserClient.connect(); // Try to establish a connection
     await pgUserClient.end();
-    return true; // If successful, return true
+    return; // If successful, return
   } catch (error) {
     logger.info(`Database ${poolConfig.database} does not exist, creating...`)
   }
