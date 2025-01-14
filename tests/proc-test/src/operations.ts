@@ -154,16 +154,15 @@ export class StoredProcTest {
   }
 
   @DBOS.workflow()
-  static async getWorkflowID_workflow(): Promise<string | undefined> {
-    DBOS.logger.info(`getWorkflowID_workflow ${DBOS.workflowID}`);
+  static async getWorkflowContext(): Promise<string | undefined> {
     return StoredProcTest.getWorkflowID();
   }
 
   @DBOS.storedProcedure()
   static async getWorkflowID(): Promise<string | undefined> {
-    DBOS.logger.info(`getWorkflowID ${DBOS.workflowID}`);
     return DBOS.workflowID;
   }
+
 
   @DBOS.storedProcedure()
   static async getAssumedRole(): Promise<string> {

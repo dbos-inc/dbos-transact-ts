@@ -173,12 +173,9 @@ describe("operations-test", () => {
     await DBOS.launch();
 
     try {
-
-
       const wfUUID = uuidv1();
-      console.log(`wfUUID ${wfUUID}`);
       const result = await DBOS.withNextWorkflowID(wfUUID, async () => {
-        return await StoredProcTest.getWorkflowID();
+        return await StoredProcTest.getWorkflowContext();
       });
 
       expect(result).toBe(wfUUID);
