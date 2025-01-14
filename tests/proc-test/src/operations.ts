@@ -152,6 +152,38 @@ export class StoredProcTest {
     // const greet_count = 1;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
+
+  @DBOS.workflow()
+  static async getWorkflowID_workflow(): Promise<string | undefined> {
+    DBOS.logger.info(`getWorkflowID_workflow ${DBOS.workflowID}`);
+    return StoredProcTest.getWorkflowID();
+  }
+
+  @DBOS.storedProcedure()
+  static async getWorkflowID(): Promise<string | undefined> {
+    DBOS.logger.info(`getWorkflowID ${DBOS.workflowID}`);
+    return DBOS.workflowID;
+  }
+
+  @DBOS.storedProcedure()
+  static async getAssumedRole(): Promise<string> {
+    return DBOS.assumedRole;
+  }
+
+  @DBOS.storedProcedure()
+  static async getAuthenticatedUser(): Promise<string> {
+    return DBOS.authenticatedUser;
+  }
+
+  @DBOS.storedProcedure()
+  static async getAuthenticatedRoles(): Promise<string[]> {
+    return DBOS.authenticatedRoles;
+  }
+
+
+
+  
+
 }
 
 

@@ -168,6 +168,26 @@ describe("operations-test", () => {
 
   });
 
+  test("test-v2proc-context", async () => {
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    try {
+
+
+      const wfUUID = uuidv1();
+      console.log(`wfUUID ${wfUUID}`);
+      const result = await DBOS.withNextWorkflowID(wfUUID, async () => {
+        return await StoredProcTest.getWorkflowID();
+      });
+
+      expect(result).toBe(wfUUID);
+    } finally {
+      await DBOS.shutdown();
+    }
+
+  });
+
   test("test-txAndProcGreetingWorkflow_v2", async () => {
 
     DBOS.setConfig(config);

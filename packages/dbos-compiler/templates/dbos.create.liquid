@@ -65,49 +65,51 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         error: (msg) => { plv8.elog(ERROR, msg); },
     }
 
-    function $run(workflow_uuid, _context, $func) {
+    function $serialize_error(e) {
+        // -- TODO: investigate using serialize-error package
+        return { error: { name: e.name, message: e.message, stack: e.stack } };
+    }
+
+    function $run(workflow_uuid, context, func) {
         try {
             const $ctx = {
-                request: _context.request,
+                request: context.request,
                 workflowUUID: workflow_uuid,
-                authenticatedUser: _context.authenticatedUser,
-                assumedRole: _context.assumedRole,
-                authenticatedRoles: _context.authenticatedRoles,
+                authenticatedUser: context.authenticatedUser,
+                assumedRole: context.assumedRole,
+                authenticatedRoles: context.authenticatedRoles,
                 query: $query,
                 logger: $logger,
             };
-            const output = $func($ctx);
+            const output = func($ctx);
             return { output };
         } catch (e) {
-            // -- TODO: investigate using serialize-error
-            return { error: { name: e.name, message: e.message, stack: e.stack } };
+            return $serialize_error(e);
         }
     }
 
-    function $run_v2(workflow_uuid, context, func, args) {
+    function $run_v2(func, args) {
         try {
-            const that = new $Context(workflow_uuid, context);
-            const output = func.apply(that, args);
+            const output = func(...args);
             return { output };
         } catch (e) {
-            // -- TODO: investigate using serialize-error
-            return { error: { name: e.name, message: e.message, stack: e.stack } };
+            return $serialize_error(e);
         }
     }
 
     function $require(module_name) {
         if (module_name === "@dbos-inc/dbos-sdk") {
             const DBOS = {
-                getRequest: () => this.request,
+                getRequest: () => plv8.$dbos_context.request,
                 get request() {
-                    const r = this.request;
+                    const r = plv8.$dbos_context.request;
                     if (!r) { throw new Error("`DBOS.request` accessed from outside of HTTP requests"); }
                     return r;
                 },
-                get workflowID() { return this.workflow_id; },
-                get authenticatedUser() { return this.authenticatedUser ?? ""; },
-                get assumedRole() { return this.assumedRole ?? ""; },
-                get authenticatedRoles() { return this.authenticatedRoles ?? []; },
+                get workflowID() { return plv8.$dbos_context.workflow_id; },
+                get authenticatedUser() { return plv8.$dbos_context.authenticatedUser ?? ""; },
+                get assumedRole() { return plv8.$dbos_context.assumedRole ?? ""; },
+                get authenticatedRoles() { return plv8.$dbos_context.authenticatedRoles ?? []; },
                 logger: $logger,
                 pgClient: { query: $query, }
             };
@@ -118,31 +120,8 @@ CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
         return undefined;
     }
 
-    const $Context = class {
-        #workflow_id;
-        #request;
-        #authenticatedUser;
-        #assumedRole;
-        #authenticatedRoles;
-
-        constructor(workflow_uuid, context) {
-            this.#workflow_id = workflow_uuid;
-            this.#request = context.request;
-            this.#authenticatedUser = context.authenticatedUser;
-            this.#assumedRole = context.assumedRole;
-            this.#authenticatedRoles = context.authenticatedRoles;
-        }
-
-        get workflow_id() { return this.#workflow_id; }
-        get request() { return this.#request; }
-        get authenticatedUser() { return this.#authenticatedUser; }
-        get assumedRole() { return this.#assumedRole; }
-        get authenticatedRoles() { return this.#authenticatedRoles; }
-    }
-
     globalThis.{{appVersion}}$run = $run;
     globalThis.{{appVersion}}$run_v2 = $run_v2;
-    globalThis.$Context = $Context;
     globalThis.require = $require;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;
