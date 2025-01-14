@@ -1,5 +1,5 @@
 {
-  "name": "dbos-hello-v2",
+  "name": "hello-knex",
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
