@@ -41,8 +41,7 @@ program
       appName = await input(
         {
           message: 'What is the application/directory name to create?',
-          // Providing a default value
-          default: 'dbos-hello-app',
+          default: template, // Default to the template name
           validate: isValidApplicationName,
         });
     }
