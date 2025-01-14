@@ -21,7 +21,6 @@ jobs:
           packages/create,
           packages/dbos-cloud,
           packages/dbos-compiler,
-          packages/dbos-openapi,
           packages/dbos-sqs,
           packages/dbos-kafkajs,
         ]
