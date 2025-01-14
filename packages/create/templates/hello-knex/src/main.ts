@@ -60,7 +60,7 @@ function makeHTML(message: string) {
 export const app = express();
 app.use(express.json());
 
-// Serve the README from the root path
+// Serve the Readme from the root path
 app.get('/', (req: Request, res: Response) => {
   res.send(readme());
 });
