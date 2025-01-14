@@ -13,6 +13,11 @@ export interface UserDBInstance {
     readonly SupabaseReference: string | null;
 }
 
+export interface UserDBCredentials {
+    readonly RoleName: string;
+    readonly Password: string;
+}
+
 
 function isValidPassword(logger: Logger, password: string): boolean {
     if (password.length < 8 || password.length > 128) {
@@ -167,5 +172,28 @@ export async function createUserRole(logger: Logger, host: string, userCredentia
             logger.error(`${errorLabel}: ${(e as Error).message}`);
         }
         process.exit(1)
+    }
+}
+
+export async function getUserDBCredentials(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, dbName: string): Promise<UserDBCredentials> {
+    // List existing database instances.
+    const bearerToken = "Bearer " + userCredentials.token;
+    try {
+        const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}/credentials`, {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: bearerToken,
+            },
+        });
+        return res.data as UserDBCredentials;
+    } catch (e) {
+        const errorLabel = `Failed to list databases`;
+        const axiosError = e as AxiosError;
+        if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+            handleAPIErrors(errorLabel, axiosError);
+        } else {
+            logger.error(`${errorLabel}: ${(e as Error).message}`);
+        }
+        process.exit(1);
     }
 }

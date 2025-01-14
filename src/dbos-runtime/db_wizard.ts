@@ -6,7 +6,7 @@ import { readFileSync, sleepms } from "../utils";
 import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
-import { chooseAppDBServer, createUserRole, getUserDBInfo } from "./cloudutils/databases";
+import { chooseAppDBServer, createUserRole, getUserDBCredentials, getUserDBInfo } from "./cloudutils/databases";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -46,6 +46,7 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     }
 
     // 5. If no Docker, then prompt the user to log in to DBOS Cloud and provision a DB there. Wait for the remote DB to be ready, and then create a copy of the original config file, and then load the remote connection string to the local config file.
+    let localSuffix = false;
     if (!dockerStarted) {
         const cred = await getCloudCredentials(DBOSCloudHost, logger)
         const dbName = await chooseAppDBServer(logger, DBOSCloudHost, cred);
@@ -53,7 +54,21 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
         if (!db.IsLinked) {
             await createUserRole(logger, DBOSCloudHost, cred, db.PostgresInstanceName);
         }
-        throw new DBOSInitializationError("Cloud not done yet");
+        poolConfig.host = db.HostName;
+        poolConfig.port = db.Port;
+        const dbCredentials = await getUserDBCredentials(logger, DBOSCloudHost, cred, db.PostgresInstanceName);
+        poolConfig.user = db.DatabaseUsername;
+        poolConfig.password = dbCredentials.Password;
+        poolConfig.database = `${poolConfig.database}_local`
+        poolConfig.ssl = { rejectUnauthorized: false }
+        localSuffix = true;
+
+        const checkError = await checkDbConnectivity(poolConfig);
+        if (checkError !== null) {
+            throw new DBOSInitializationError(
+                `Could not connect to the database. Exception: ${checkError.toString()}`
+            );
+        }
     }
 
     // 6. Save the config to the config file and return the updated config.
@@ -63,6 +78,7 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     config.setIn(['database', 'port'], poolConfig.port);
     config.setIn(['database', 'username'], poolConfig.user);
     config.setIn(['database', 'password'], poolConfig.password);
+    config.setIn(['database', 'local_suffix'], localSuffix);
     writeConfigFile(config, dbosConfigFilePath);
 
     return poolConfig
