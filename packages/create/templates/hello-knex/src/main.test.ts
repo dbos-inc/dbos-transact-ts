@@ -1,11 +1,10 @@
 import { DBOS } from "@dbos-inc/dbos-sdk";
-import { Hello, dbos_hello } from "./operations";
+import { app, dbos_hello, Hello } from "./main";
 import request from "supertest";
 
 describe("operations-test", () => {
   beforeAll(async () => {
-    await DBOS.launch();
-    await DBOS.launchAppHTTPServer();
+    await DBOS.launch({expressApp: app});
   });
 
   afterAll(async () => {
@@ -28,7 +27,7 @@ describe("operations-test", () => {
    * Test the HTTP endpoint.
    */
   test("test-endpoint", async () => {
-    const res = await request(DBOS.getHTTPHandlersCallback()).get(
+    const res = await request(app).get(
       "/greeting/dbos"
     );
     expect(res.statusCode).toBe(200);
