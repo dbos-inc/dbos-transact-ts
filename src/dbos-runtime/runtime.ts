@@ -9,6 +9,7 @@ import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { wfQueueRunner } from '../wfqueue';
 import { DBOS } from '../dbos';
+import { db_wizard } from './db_wizard';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +43,7 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
+      this.dbosConfig.poolConfig = await db_wizard(this.dbosConfig.poolConfig);
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
@@ -65,7 +67,10 @@ export class DBOSRuntime {
         evtRcvr.logRegisteredEndpoints();
       }
     } catch (error) {
-      this.dbosExec?.logger.error(error);
+      if (!this.dbosExec) {
+        throw error;
+      }
+      this.dbosExec.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
         console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
         process.exit(1);
