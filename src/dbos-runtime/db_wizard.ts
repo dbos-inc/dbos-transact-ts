@@ -49,6 +49,7 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     // 5. If no Docker, then prompt the user to log in to DBOS Cloud and provision a DB there. Wait for the remote DB to be ready, and then create a copy of the original config file, and then load the remote connection string to the local config file.
     let localSuffix = false;
     if (!dockerStarted) {
+        logger.info("Attempting to connect to Postgres via DBOS Cloud");
         const cred = await getCloudCredentials(DBOSCloudHost, logger)
         const dbName = await chooseAppDBServer(logger, DBOSCloudHost, cred);
         const db = await getUserDBInfo(DBOSCloudHost, dbName, cred);
