@@ -6,8 +6,8 @@ import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
 import { chooseAppDBServer, createUserRole, getUserDBCredentials, getUserDBInfo } from "./cloudutils/databases";
-import promptSync from "prompt-sync";
 import { promisify } from "util";
+import { password } from "@inquirer/prompts";
 import { exec } from "child_process";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
@@ -61,8 +61,10 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
         poolConfig.port = db.Port;
         if (db.SupabaseReference) {
             poolConfig.user = `postgres.${db.SupabaseReference}`;
-            const prompt = promptSync({ sigint: true });
-            poolConfig.password = prompt("Enter your Supabase database password: ", { echo: "*" });
+            poolConfig.password = await password({
+                message: "Enter your Supabase database password: ",
+                mask: "*"
+            });
         } else {
             const dbCredentials = await getUserDBCredentials(logger, DBOSCloudHost, cred, db.PostgresInstanceName);
             poolConfig.user = db.DatabaseUsername;
