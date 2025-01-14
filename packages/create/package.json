@@ -26,16 +26,10 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^5.3.8",
-    "axios": "^1.7.4",
     "chalk": "4.1.2",
     "commander": "^12.0.0",
-    "fast-glob": "^3.3.2",
-    "open": "^10.1.0",
-    "prompt-sync": "^4.2.0",
+    "fast-glob": "^3.3.3",
     "update-notifier": "^7.0.0",
-    "validator": "^13.11.0",
-    "winston": "^3.12.0",
-    "winston-transport": "^4.7.0",
-    "yaml": "^2.5.0"
+    "validator": "^13.12.0"
   }
 }
