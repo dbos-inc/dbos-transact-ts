@@ -66,9 +66,14 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Serve the transaction from the /greeting/:name path
-app.get('/greeting/:name', async (req: Request, res: Response): Promise<void> => {
+app.get('/greeting/:name', (req: Request, res: Response) => {
   const { name } = req.params;
-  res.send(await Hello.helloTransaction(name));
+  Hello.helloTransaction(name)
+    .then(result => res.send(result))
+    .catch(error => {
+      console.error(error);
+      res.status(500).send('Internal Server Error');
+    });
 });
 
 // Finally, launch DBOS and start the server

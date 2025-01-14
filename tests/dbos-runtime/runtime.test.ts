@@ -102,7 +102,7 @@ describe("runtime-tests-knex", () => {
   });
 
   test("test hello-knex runtime", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+    const command = spawn("node", ["dist/main.js"], {
       env: process.env,
     });
     await waitForMessageTest(command, "3000");
