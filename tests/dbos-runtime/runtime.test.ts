@@ -88,7 +88,7 @@ function configureHelloExample() {
 describe("runtime-tests-knex", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-knex");
+    process.chdir("packages/create/templates/dbos-knex");
     configureHelloExample();
   });
 
@@ -112,7 +112,7 @@ describe("runtime-tests-knex", () => {
 describe("runtime-tests-typeorm", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-typeorm");
+    process.chdir("packages/create/templates/dbos-typeorm");
     configureHelloExample();
   });
 
@@ -136,7 +136,7 @@ describe("runtime-tests-typeorm", () => {
 describe("runtime-tests-prisma", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-prisma");
+    process.chdir("packages/create/templates/dbos-prisma");
     configureHelloExample();
   });
 
@@ -160,7 +160,7 @@ describe("runtime-tests-prisma", () => {
 describe("runtime-tests-drizzle", () => {
   beforeAll(async () => {
     await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-drizzle");
+    process.chdir("packages/create/templates/dbos-drizzle");
     configureHelloExample();
   });
 
