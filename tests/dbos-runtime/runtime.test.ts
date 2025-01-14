@@ -97,6 +97,7 @@ describe("runtime-tests-knex", () => {
   });
 
   test("test hello-knex tests", () => {
+    execSync("npm run test", { env: process.env }); // Make sure hello-knex passes its own tests.
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
