@@ -56,6 +56,7 @@ import { StoredProcedure, StoredProcedureConfig } from "./procedure";
 import { APITypes } from "./httpServer/handlerTypes";
 import { HandlerRegistrationBase } from "./httpServer/handler";
 import { set } from "lodash";
+import { db_wizard } from "./dbos-runtime/db_wizard";
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -154,6 +155,7 @@ export class DBOS {
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
+      dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     }

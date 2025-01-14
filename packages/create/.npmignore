@@ -25,3 +25,12 @@ templates/hello-typeorm/node_modules
 templates/hello-drizzle/.dbos
 templates/hello-drizzle/dist
 templates/hello-drizzle/node_modules
+templates/hello-express/.dbos
+templates/hello-express/dist
+templates/hello-express/node_modules
+templates/hello-nextjs/.dbos
+templates/hello-nextjs/dist
+templates/hello-nextjs/node_modules
+templates/hello-contexts/.dbos
+templates/hello-contexts/dist
+templates/hello-contexts/node_modules
