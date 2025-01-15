@@ -200,8 +200,6 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
       const pgPassword: string | undefined = process.env.PGPASSWORD;
       if (pgPassword) {
         configFile.database.password = pgPassword;
-      } else {
-        throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database password`);
       }
     }
   }
