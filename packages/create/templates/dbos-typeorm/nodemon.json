@@ -1,0 +1,8 @@
+{
+    "watch": ["src/", "entities/"],
+    "ext": "ts,json",
+    "ignore": ["src/**/*.test.ts"],
+    "exec": "npm run build && npm run start"
+  }
+  
+  

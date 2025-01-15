@@ -13,24 +13,15 @@ tsconfig.json
 
 # Include the templates code, but not node_modules or dist
 !templates/**
-templates/hello/.dbos
-templates/hello/dist
-templates/hello/node_modules
-templates/hello-prisma/.dbos
-templates/hello-prisma/dist
-templates/hello-prisma/node_modules
-templates/hello-typeorm/.dbos
-templates/hello-typeorm/dist
-templates/hello-typeorm/node_modules
-templates/hello-drizzle/.dbos
-templates/hello-drizzle/dist
-templates/hello-drizzle/node_modules
-templates/hello-express/.dbos
-templates/hello-express/dist
-templates/hello-express/node_modules
-templates/hello-nextjs/.dbos
-templates/hello-nextjs/dist
-templates/hello-nextjs/node_modules
-templates/hello-contexts/.dbos
-templates/hello-contexts/dist
-templates/hello-contexts/node_modules
+templates/dbos-knex/.dbos
+templates/dbos-knex/dist
+templates/dbos-knex/node_modules
+templates/dbos-prisma/.dbos
+templates/dbos-prisma/dist
+templates/dbos-prisma/node_modules
+templates/dbos-typeorm/.dbos
+templates/dbos-typeorm/dist
+templates/dbos-typeorm/node_modules
+templates/dbos-drizzle/.dbos
+templates/dbos-drizzle/dist
+templates/dbos-drizzle/node_modules

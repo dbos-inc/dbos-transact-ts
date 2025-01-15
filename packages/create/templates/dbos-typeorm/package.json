@@ -1,0 +1,29 @@
+{
+  "name": "dbos-typeorm",
+  "version": "0.0.1",
+  "scripts": {
+    "build": "tsc",
+    "test": "npx dbos rollback && npx dbos migrate && jest",
+    "lint": "eslint src",
+    "lint-fix": "eslint --fix src",
+    "dev": "nodemon",
+    "start": "npx dbos start"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@dbos-inc/eslint-plugin": "^3.3.4",
+    "@types/jest": "^29.5.12",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "file:../../../..",
+    "typeorm": "^0.3.20"
+  }
+}
