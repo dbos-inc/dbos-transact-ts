@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# DBOS Transact: Lightweight Durable Execution Built on Postgres
+# DBOS Transact: Ultra-Lightweight Durable Execution
 
 #### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp;  [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
 </div>
@@ -71,7 +71,7 @@ npm run build
 npm run start
 ```
 
-Visit the application in your browser at [`localhost:3000`](http://localhost:3000) to see durable execution in action!
+Visit your app in your browser at [`localhost:3000`](http://localhost:3000) to see durable execution in action!
 
 To learn how to build more complex workflows, check out the [programming guide](https://docs.dbos.dev/typescript/programming-guide) or [docs](https://docs.dbos.dev/).
 
