@@ -13,6 +13,7 @@ import { HTTPRequest } from "../context";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from "@opentelemetry/api";
+import { OpenAPIV3 as OpenApi3 } from "openapi-types";
 import { v4 as uuidv4 } from "uuid";
 import { DBOSJSON } from "../utils";
 
@@ -144,9 +145,17 @@ export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
 /* OPEN API DECORATORS */
 /////////////////////////////////
 
+// Note, OAuth2 is not supported yet.
+type SecurityScheme = Exclude<OpenApi3.SecuritySchemeObject, OpenApi3.OAuth2SecurityScheme>;
+
+/**
+ * Declare an OpenApi Security Scheme (https://spec.openapis.org/oas/v3.0.3#security-scheme-object
+ * for the methods of a class. Note, this decorator is only used in OpenApi generation and does not
+ * affect runtime behavior of the app.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function OpenApiSecurityScheme(securityScheme: unknown) {
-  throw new Error("DBOS no longer supports OpenAPI generation as of DBOSv2.0.")
+export function OpenApiSecurityScheme(securityScheme: SecurityScheme) {
+  return function <T extends { new (...args: unknown[]): object }>(_ctor: T) {};
 }
 
 /////////////////////////////////
