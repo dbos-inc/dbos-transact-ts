@@ -1,14 +1,15 @@
 
 <div align="center">
 
-# DBOS Transact: Lightweight Durable Execution Built on Postgres
+# DBOS Transact:
+## Lightweight Durable Execution Built on Postgres
 
 #### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp;  [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
 </div>
 
 ---
 
-DBOS Transact is a TypeScript library for **lightweight durable execution**.
+DBOS Transact is a TypeScript library for **ultra-lightweight durable execution**.
 For example:
 
 ```javascript
