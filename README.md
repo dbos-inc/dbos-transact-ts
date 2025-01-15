@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# DBOS Transact: Ultra-Lightweight Durable Execution
+# DBOS Transact: Lightweight Durable Execution Built on Postgres
 
 #### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp;  [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
 </div>
