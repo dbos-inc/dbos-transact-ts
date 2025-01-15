@@ -267,7 +267,7 @@ describe("dbos-config", () => {
     test("local_suffix works", async () => {
       const localMockDBOSConfigYamlString = `
         database:
-          hostname: 'localhost'
+          hostname: 'remote.com'
           port: 1234
           username: 'some user'
           password: \${PGPASSWORD}
@@ -279,7 +279,7 @@ describe("dbos-config", () => {
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const poolConfig = dbosConfig.poolConfig;
-      expect(poolConfig.host).toBe("localhost");
+      expect(poolConfig.host).toBe("remote.com");
       expect(poolConfig.port).toBe(1234);
       expect(poolConfig.user).toBe("some user");
       expect(poolConfig.password).toBe(process.env.PGPASSWORD);
@@ -292,7 +292,7 @@ describe("dbos-config", () => {
       const localMockDBOSConfigYamlString = `
         name: some-app
         database:
-          hostname: 'localhost'
+          hostname: 'remote.com'
           port: 1234
           username: 'some user'
           password: \${PGPASSWORD}
@@ -303,6 +303,21 @@ describe("dbos-config", () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const poolConfig = dbosConfig.poolConfig;
       expect(poolConfig.database).toBe("some_app_local");
+    });
+
+    test("local_suffix cannot be used with localhost", () => {
+      const localMockDBOSConfigYamlString = `
+        name: some-app
+        database:
+          hostname: 'localhost'
+          port: 1234
+          username: 'some user'
+          password: \${PGPASSWORD}
+          local_suffix: true
+      `;
+      jest.restoreAllMocks();
+      jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
+      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
     test("ssl defaults off for localhost", async () => {
