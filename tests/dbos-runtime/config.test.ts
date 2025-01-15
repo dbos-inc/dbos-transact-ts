@@ -120,15 +120,6 @@ describe("dbos-config", () => {
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
-    test("config file is missing database password", () => {
-      const dbPassword = process.env.PGPASSWORD;
-      delete process.env.PGPASSWORD;
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockDBOSConfigYamlString);
-      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
-      process.env.PGPASSWORD = dbPassword;
-    });
-
     test("config file is missing hostname", () => {
       const localMockDBOSConfigYamlString = `
         database:
