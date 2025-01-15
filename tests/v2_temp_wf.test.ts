@@ -1,5 +1,5 @@
 import { DBOS, DBOSConfig } from "../src";
-import { DBOSLocalCtx, HTTPRequest, runWithTopContext } from "../src/context";
+import { DBOSLocalCtx, runWithTopContext } from "../src/context";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 
 class TempWorkflowTest {
@@ -31,12 +31,12 @@ class TempWorkflowTest {
 
   @DBOS.transaction()
   static async tx_GetRequest() {
-    return DBOS.request;
+    return Promise.resolve(DBOS.request);
   }
 
   @DBOS.step()
   static async st_GetRequest() {
-    return DBOS.request;
+    return Promise.resolve(DBOS.request);
   }
 }
 
