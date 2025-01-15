@@ -21,7 +21,8 @@ export class Hello {
   static async helloTransaction(@ArgSource(ArgSources.URL) user: string) {
     // Retrieve and increment the number of times this user has been greeted.
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
-    const { rows } = (await DBOS.knexClient.raw(query, [user]));
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+    const { rows } = (await DBOS.knexClient.raw(query, [user])) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
     return Hello.makeHTML(greeting);
