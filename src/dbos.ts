@@ -240,13 +240,19 @@ export class DBOS {
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
   }
 
-  static async launchAppHTTPServer() {
+  static setUpHandlerCallback() {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
     }
     // Create the DBOS HTTP server
     //  This may be a no-op if there are no registered endpoints
     const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
+
+    return server;
+  }
+
+  static async launchAppHTTPServer() {
+    const server = this.setUpHandlerCallback();
     if (DBOS.runtimeConfig) {
       // This will not listen if there's no decorated endpoint
       DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
