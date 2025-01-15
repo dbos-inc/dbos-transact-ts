@@ -33,9 +33,8 @@ describe("stored-proc-v2-test", () => {
     const testRuntime = await createInternalTestRuntime([StoredProcTest], config)
     try {
       await dropLocalProcs(testRuntime);
-      await testRuntime.destroy();
     } finally {
-      testRuntime.destroy();
+      await testRuntime.destroy();
     }
   });
 

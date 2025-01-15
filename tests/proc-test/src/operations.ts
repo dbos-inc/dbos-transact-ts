@@ -144,7 +144,6 @@ export class StoredProcTest {
     const query = "INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
     const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
     const greet_count = rows[0].greet_count;
-    // const greet_count = 1;
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 
@@ -152,6 +151,8 @@ export class StoredProcTest {
   static async wf_GetWorkflowID() {
     return StoredProcTest.sp_GetWorkflowID();
   }
+
+  /* eslint-disable @typescript-eslint/require-await */
 
   @DBOS.storedProcedure()
   static async sp_GetWorkflowID() {
@@ -170,4 +171,6 @@ export class StoredProcTest {
   static async sp_GetRequest() {
     return DBOS.request;
   }
+
+  /* eslint-enable @typescript-eslint/require-await */
 }
