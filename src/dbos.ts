@@ -859,6 +859,8 @@ export class DBOS {
             registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const wfId = getNextWFID(undefined);
+
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
@@ -888,6 +890,7 @@ export class DBOS {
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
           parentCtx,
+          workflowUUID: wfId,
         };
 
         return await DBOS.executor.transaction(
@@ -942,6 +945,8 @@ export class DBOS {
             registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
         }
 
+        const wfId = getNextWFID(undefined);
+
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
@@ -970,6 +975,7 @@ export class DBOS {
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
           parentCtx,
+          workflowUUID: wfId,
         };
 
         return  await DBOS.executor.external(
