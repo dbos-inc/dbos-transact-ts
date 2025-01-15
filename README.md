@@ -1,47 +1,74 @@
-# DBOS Transact
 
-DBOS Transact is a **modern TypeScript framework** for backend applications.
+<div align="center">
 
-You want to build your next application with DBOS Transact because you need:
+# DBOS Transact: Lightweight Durable Execution Built on Postgres
 
-- **Durable execution**.  If your app is interrupted for any reason, it [automatically resumes from where it left off](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial).  Reliable message delivery is [built in](https://docs.dbos.dev/typescript/tutorials/workflow-communication-tutorial). Idempotency is [built in](https://docs.dbos.dev/typescript/tutorials/idempotency-tutorial).
-- **Built-in observability**. Automatically emit [OpenTelemetry](https://opentelemetry.io/)-compatible [logs and traces](https://docs.dbos.dev/typescript/tutorials/logging) from any application. Query your app's history from the [command line](https://docs.dbos.dev/typescript/reference/cli#workflow-management-commands) or [with SQL](https://docs.dbos.dev/explanations/system-tables).
-- **A framework built for the tools you love**. Build with TypeScript and **any** PostgreSQL-compatible database. Use raw SQL or your favorite query builder or ORM&mdash;we support [Drizzle](https://docs.dbos.dev/typescript/tutorials/using-drizzle), [Knex](https://docs.dbos.dev/typescript/tutorials/using-knex), [TypeORM](https://docs.dbos.dev/typescript/tutorials/using-typeorm), and [Prisma](https://docs.dbos.dev/typescript/tutorials/using-prisma) out of the box.
-- **Blazing-fast, developer-friendly serverless**.  Develop your project locally and run it anywhere. When you're ready, [deploy it for free to DBOS Cloud](https://docs.dbos.dev/quickstart) and we'll host it for you, [25x faster](https://www.dbos.dev/blog/dbos-vs-aws-step-functions-benchmark) and [15x cheaper](https://www.dbos.dev/blog/dbos-vs-lambda-cost) than AWS Lambda.
+#### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp;  [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
+</div>
+
+---
+
+DBOS Transact is a TypeScript library for **lightweight durable execution**.
+For example:
+
+```javascript
+export class Example {
+  @DBOS.step()
+  static async step_one() {
+    ...
+  }
+
+  @DBOS.step()
+  static async step_two() {
+    ...
+  }
+
+  @DBOS.workflow()
+  static async workflow() {
+    Example.step_one()
+    Example.step_two()
+  }
+}
+```
+
+Durable execution means persisting the execution state of your program while it executes, so if your program is ever interrupted or crashes, it automatically resumes from where it left off.
+Durable execution is useful for a lot of things:
+
+- Orchestrating long-running or business-critical workflows so they seamlessly recover from any failure.
+- Running reliable background jobs with no timeouts.
+- Processing incoming events (e.g. from Kafka) exactly once
+- Running a fault-tolerant distributed task queue
+- Running a reliable cron scheduler
+
+What’s unique about DBOS’s take on durable execution is that it’s implemented in a lightweight library that’s totally backed by Postgres.
+All you have to do to use DBOS is “npm install” it and annotate your program with decorators.
+The decorators store your program’s execution state in Postgres as it runs and recover it if it crashes.
+There are no other dependencies you have to manage, no separate workflow server–just your program and Postgres.
+
+One big advantage of this approach is that you can add DBOS to **any** TypeScript application&mdash;it’s just a library.
+For example, you can use DBOS to add reliable background jobs or cron scheduling or queues to your Next.js app with no external dependencies except Postgres.
 
 ## Getting Started
 
-The fastest way to get started is by following the [quickstart](https://docs.dbos.dev/getting-started/quickstart), where you'll learn how to get a DBOS Transact application running in less than five minutes.
+Initialize a starter app with:
+
+```shell
+npx @dbos-inc/create -t dbos-node-starter
+```
+
+Then launch it with:
+
+```shell
+npm run start
+```
+
+Visit the application in your browser at [`localhost:3000`](http://localhost:3000) to see durable execution in action!
+
+To learn how to build more complex workflows, check out the [programming guide](https://docs.dbos.dev/typescript/programming-guide) or [docs](https://docs.dbos.dev/).
 
 ## Documentation
 
-Check out the full documentation at [https://docs.dbos.dev/](https://docs.dbos.dev/).
-
-## Main Features
-
-Here are some of the core features of DBOS Transact:
-
-| Feature                                                                       | Description
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [Transactions](https://docs.dbos.dev/typescript/tutorials/transaction-tutorial)                              | Easily and safely query your application database using [Drizzle](https://docs.dbos.dev/typescript/tutorials/using-drizzle), [Knex](https://docs.dbos.dev/typescript/tutorials/using-knex), [TypeORM](https://docs.dbos.dev/typescript/tutorials/using-typeorm), [Prisma](https://docs.dbos.dev/typescript/tutorials/using-prisma), or raw SQL.
-| [Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial)                                    | Reliable workflow orchestration&#8212;resume your program after any failure.
-| [HTTP Serving](https://docs.dbos.dev/typescript/tutorials/http-serving-tutorial)                             | Set up endpoints to serve requests from your application.
-| [Idempotency](https://docs.dbos.dev/typescript/tutorials/idempotency-tutorial)                               | Automatically make any request idempotent, so your requests happen exactly once.
-| [Authentication and Authorization](https://docs.dbos.dev/typescript/tutorials/authentication-authorization)  | Secure your HTTP endpoints so only authorized users can access them.
-| [Kafka Integration](https://docs.dbos.dev/typescript/tutorials/kafka-integration)                            | Consume Kafka messages exactly-once with transactions or workflows.
-| [Scheduled Workflows](https://docs.dbos.dev/typescript/tutorials/scheduled-workflows)                        | Schedule your workflows to run exactly-once per time interval with cron-like syntax.
-| [Testing and Debugging](https://docs.dbos.dev/typescript/tutorials/testing-tutorial)                         | Easily write unit tests for your applications, compatible with Jest and other popular testing frameworks.
-| [Self-Hosting](https://docs.dbos.dev/typescript/tutorials/self-hosting)                                      | Host your applications anywhere, as long as they have a Postgres database to connect to.
-
-And DBOS Cloud:
-
-| Feature                                                                       | Description
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [Serverless App Deployment](https://docs.dbos.dev/cloud-tutorials/application-management)      | Deploy apps to DBOS Cloud in minutes.
-| [Interactive Time Travel](https://docs.dbos.dev/cloud-tutorials/interactive-timetravel)        | Query your application database as of any past point in time.
-| [Time Travel Debugging](https://docs.dbos.dev/cloud-tutorials/timetravel-debugging)            | Replay any DBOS Cloud trace locally on your computer.
-| [Cloud Database Management](https://docs.dbos.dev/cloud-tutorials/database-management)         | Provision cloud Postgres instances for your applications. Alternatively, [bring your own database](https://docs.dbos.dev/cloud-tutorials/byod-management).
-| [Built-in Observability](https://docs.dbos.dev/cloud-tutorials/monitoring-dashboard)           | Built-in log capture, request tracing, and dashboards.
+[https://docs.dbos.dev](https://docs.dbos.dev)
 
 ## Community
 
