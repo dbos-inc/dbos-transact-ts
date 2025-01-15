@@ -21,8 +21,6 @@ CREATE OR REPLACE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
     const $run = globalThis.{{appVersion}}$run;
     return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx, ..._params));
     {% elsif apiVersion == 2 %}
-    plv8.elog(WARNING, "$run_v2 {{className}}.{{methodName}}");
-
     const $run = globalThis.{{appVersion}}$run_v2;
     plv8.$dbos_context = {..._context, workflow_id: _workflow_uuid };
     return $run({{className}}.{{methodName}}, _params);

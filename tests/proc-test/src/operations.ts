@@ -53,8 +53,6 @@ export class StoredProcTest {
     return greeting;
   }
 
-
-
   @StoredProcedure({ readOnly: true, executeLocally: true })
   static async getGreetCountLocal(ctxt: StoredProcedureContext, user: string): Promise<number> {
     const query = "SELECT greet_count FROM dbos_hello WHERE name = $1;";
@@ -78,7 +76,6 @@ export class StoredProcTest {
     return parseInt(rows[0].count);
   }
 
-
   @Workflow()
   static async procLocalGreetingWorkflow(ctxt: WorkflowContext, user: string): Promise<{ count: number; greeting: string; rowCount: number }> {
     const count = await ctxt.invoke(StoredProcTest).getGreetCountLocal(user);
@@ -86,8 +83,6 @@ export class StoredProcTest {
     const rowCount = await ctxt.invoke(StoredProcTest).getHelloRowCountLocal();
     return { count, greeting, rowCount };
   }
-
-
 
   @Transaction({ readOnly: true })
   static async getGreetCountTx(ctxt: TransactionContext<Knex>, user: string): Promise<number> {
@@ -154,35 +149,25 @@ export class StoredProcTest {
   }
 
   @DBOS.workflow()
-  static async getWorkflowContext(): Promise<string | undefined> {
-    return StoredProcTest.getWorkflowID();
+  static async wf_GetWorkflowID() {
+    return StoredProcTest.sp_GetWorkflowID();
   }
 
   @DBOS.storedProcedure()
-  static async getWorkflowID(): Promise<string | undefined> {
+  static async sp_GetWorkflowID() {
     return DBOS.workflowID;
   }
 
-
   @DBOS.storedProcedure()
-  static async getAssumedRole(): Promise<string> {
-    return DBOS.assumedRole;
+  static async sp_GetAuth() {
+    return {
+      user: DBOS.authenticatedUser,
+      roles: DBOS.authenticatedRoles,
+    };
   }
 
   @DBOS.storedProcedure()
-  static async getAuthenticatedUser(): Promise<string> {
-    return DBOS.authenticatedUser;
+  static async sp_GetRequest() {
+    return DBOS.request;
   }
-
-  @DBOS.storedProcedure()
-  static async getAuthenticatedRoles(): Promise<string[]> {
-    return DBOS.authenticatedRoles;
-  }
-
-
-
-  
-
 }
-
-
