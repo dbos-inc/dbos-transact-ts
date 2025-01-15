@@ -4,17 +4,17 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 class TempWorkflowTest {
     @DBOS.transaction()
     static async tx_GetWorkflowID() {
-        return DBOS.workflowID;
+        return Promise.resolve(DBOS.workflowID);
     }
 
     @DBOS.step()
     static async st_GetWorkflowID() {
-        return DBOS.workflowID;
+        return Promise.resolve(DBOS.workflowID);
     }
 
     @DBOS.workflow()
     static async wf_GetWorkflowID() {
-        return DBOS.workflowID;
+        return Promise.resolve(DBOS.workflowID);
     }
 
     @DBOS.workflow()
