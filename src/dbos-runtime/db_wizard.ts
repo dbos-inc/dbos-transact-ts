@@ -1,13 +1,14 @@
 import { Pool, PoolConfig } from "pg";
 import { DBOSInitializationError } from "../error";
 import { Logger } from "winston";
-import Docker from 'dockerode';
 import { readFileSync, sleepms } from "../utils";
 import { dbosConfigFilePath, writeConfigFile } from "./config";
 import YAML from "yaml";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
 import { chooseAppDBServer, createUserRole, getUserDBCredentials, getUserDBInfo } from "./cloudutils/databases";
-import promptSync from "prompt-sync";
+import { promisify } from "util";
+import { password } from "@inquirer/prompts";
+import { exec } from "child_process";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -60,8 +61,10 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
         poolConfig.port = db.Port;
         if (db.SupabaseReference) {
             poolConfig.user = `postgres.${db.SupabaseReference}`;
-            const prompt = promptSync({ sigint: true });
-            poolConfig.password = prompt("Enter your Supabase database password: ", { echo: "*" });
+            poolConfig.password = await password({
+                message: "Enter your Supabase database password: ",
+                mask: "*"
+            });
         } else {
             const dbCredentials = await getUserDBCredentials(logger, DBOSCloudHost, cred, db.PostgresInstanceName);
             poolConfig.user = db.DatabaseUsername;
@@ -120,34 +123,27 @@ async function checkDbConnectivity(config: PoolConfig): Promise<Error | null> {
     }
 }
 
+const execAsync = promisify(exec);
 
-async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig) {
+
+async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Promise<boolean> {
     logger.info("Starting a Postgres Docker container...");
-
-    const docker = new Docker();
-    poolConfig.password = "dbos"
+    poolConfig.password = "dbos";
     const containerName = "dbos-db";
     const pgData = "/var/lib/postgresql/data";
 
     try {
         // Create and start the container
-        const container = await docker.createContainer({
-            Image: "pgvector/pgvector:pg16",
-            name: containerName,
-            Env: [
-                `POSTGRES_PASSWORD=${poolConfig.password}`,
-                `PGDATA=${pgData}`
-            ],
-            HostConfig: {
-                PortBindings: {
-                    "5432/tcp": [{ HostPort: poolConfig.port!.toString() }]
-                },
-                Binds: [`${pgData}:${pgData}:rw`],
-                AutoRemove: true
-            }
-        });
+        const dockerCmd = `docker run -d \
+            --name ${containerName} \
+            -e POSTGRES_PASSWORD=${poolConfig.password} \
+            -e PGDATA=${pgData} \
+            -p ${poolConfig.port}:5432 \
+            -v ${pgData}:${pgData}:rw \
+            --rm \
+            pgvector/pgvector:pg16`;
 
-        await container.start();
+        await execAsync(dockerCmd);
 
         // Wait for PostgreSQL to be ready
         let attempts = 30;
@@ -155,27 +151,26 @@ async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig) {
             if (attempts % 5 === 0) {
                 logger.info("Waiting for Postgres Docker container to start...");
             }
+            
             if (await checkDbConnectivity(poolConfig) === null) {
-                return true
+                return true;
             }
+            
             attempts--;
             await sleepms(1000);
         }
 
-        logger.error("Failed to start Postgres Docker container.")
+        logger.error("Failed to start Postgres Docker container.");
         return false;
-
     } catch (error) {
         logger.error("Error starting container:", error);
         return false;
     }
 }
 
-
-async function checkDockerInstalled() {
+async function checkDockerInstalled(): Promise<boolean> {
     try {
-        const docker = new Docker();
-        await docker.ping();
+        await execAsync('docker --version');
         return true;
     } catch (error) {
         return false;
