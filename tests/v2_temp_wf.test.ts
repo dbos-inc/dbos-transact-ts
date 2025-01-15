@@ -19,36 +19,36 @@ class TempWorkflowTest {
 
   @DBOS.workflow()
   static async wrap_tx_GetWorkflowID() {
-    return TempWorkflowTest.tx_GetWorkflowID();
+    return Promise.resolve(TempWorkflowTest.tx_GetWorkflowID());
   }
 
   @DBOS.workflow()
   static async wrap_st_GetWorkflowID() {
-    return TempWorkflowTest.st_GetWorkflowID();
+    return Promise.resolve(TempWorkflowTest.st_GetWorkflowID());
   }
 
   @DBOS.workflow()
   static async wf_GetAuth() {
-    return {
+    return Promise.resolve({
       user: DBOS.authenticatedUser,
       roles: DBOS.authenticatedRoles,
-    }
+    });
   }
 
   @DBOS.transaction()
   static async tx_GetAuth() {
-    return {
+    return Promise.resolve({
       user: DBOS.authenticatedUser,
       roles: DBOS.authenticatedRoles,
-    }
+    });
   }
 
   @DBOS.step()
   static async st_GetAuth() {
-    return {
+    return Promise.resolve({
       user: DBOS.authenticatedUser,
       roles: DBOS.authenticatedRoles,
-    }
+    });
   }
 
   @DBOS.workflow()
