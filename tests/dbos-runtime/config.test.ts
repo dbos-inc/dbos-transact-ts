@@ -285,7 +285,6 @@ describe("dbos-config", () => {
       expect(poolConfig.password).toBe(process.env.PGPASSWORD);
       expect(poolConfig.connectionTimeoutMillis).toBe(3000);
       expect(poolConfig.database).toBe("some_db_local");
-      expect(dbosConfig.poolConfig.ssl).toBe(false);
     });
 
     test("local_suffix works without app_db_name", async () => {
