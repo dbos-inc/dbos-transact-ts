@@ -64,11 +64,11 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   const ignorePatterns = parseIgnoreFile(dbosIgnoreFilePath);
   const globIgnorePatterns = ignorePatterns.map((pattern) => {
-    let convertedPattern = convertPathForGlob(path.join(process.cwd(), pattern));
-    if (convertedPattern.endsWith('/')) {
-      convertedPattern = path.join(pattern, "**"); // Recursively ignore directories
+    pattern = convertPathForGlob(path.join(process.cwd(), pattern));
+    if (pattern.endsWith('/')) {
+      pattern = path.join(pattern, "**"); // Recursively ignore directories
     }
-    return convertedPattern;
+    return pattern;
   });
   const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**", "**/.python-version"];
 
