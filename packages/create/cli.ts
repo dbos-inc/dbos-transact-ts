@@ -26,9 +26,8 @@ program
       throw new Error(`Unexpected arguments: ${command.args.join(',')}; Did you forget '--'?`);
     }
     let {appName, template} = options;
-    if (appName || template) {
-      appName = appName || 'dbos-hello-app';
-      template = template || 'hello';
+    if (template) {
+      appName = template;
     }
     else {
       const templates = listTemplates();
@@ -41,7 +40,7 @@ program
       appName = await input(
         {
           message: 'What is the application/directory name to create?',
-          default: template, // Default to the template name
+          default: appName || template,
           validate: isValidApplicationName,
         });
     }
