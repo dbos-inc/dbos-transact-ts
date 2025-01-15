@@ -27,7 +27,7 @@ program
     }
     let {appName, template} = options;
     if (template) {
-      appName = template;
+      appName = appName || template;
     }
     else {
       const templates = listTemplates();
