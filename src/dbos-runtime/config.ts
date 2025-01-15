@@ -207,7 +207,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   }
 
   if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
-    throw new DBOSInitializationError(`Invalid configuration: local_suffix may only be true when connecting to remote databases, not to localhost`)
+    throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)
   }
 
   const schemaValidator = ajv.compile(dbosConfigSchema);
