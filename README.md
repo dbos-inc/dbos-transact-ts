@@ -12,7 +12,7 @@ DBOS Transact is a TypeScript library for **lightweight durable execution**.
 For example:
 
 ```javascript
-export class Example {
+class Example {
   @DBOS.step()
   static async step_one() {
     ...
@@ -31,7 +31,7 @@ export class Example {
 }
 ```
 
-Durable execution means persisting the execution state of your program while it executes, so if your program is ever interrupted or crashes, it automatically resumes from where it left off.
+Durable execution means persisting the execution state of your program while it runs, so if it is ever interrupted or crashes, it automatically resumes from where it left off.
 Durable execution is useful for a lot of things:
 
 - Orchestrating long-running or business-critical workflows so they seamlessly recover from any failure.
@@ -39,13 +39,14 @@ Durable execution is useful for a lot of things:
 - Processing incoming events (e.g. from Kafka) exactly once
 - Running a fault-tolerant distributed task queue
 - Running a reliable cron scheduler
+- Operating an AI agent, or anything that connects to an unreliable or non-deterministic API.
 
-What’s unique about DBOS’s take on durable execution is that it’s implemented in a lightweight library that’s totally backed by Postgres.
-All you have to do to use DBOS is “npm install” it and annotate your program with decorators.
+What’s unique about DBOS's implementation of durable execution is that it’s implemented in a **lightweight library** that’s **totally backed by Postgres**.
+All you have to do to use DBOS is `npm install` it and annotate your program with decorators.
 The decorators store your program’s execution state in Postgres as it runs and recover it if it crashes.
-There are no other dependencies you have to manage, no separate workflow server–just your program and Postgres.
+There are no other dependencies you have to manage, no separate workflow server&mdash;just your program and Postgres.
 
-One big advantage of this approach is that you can add DBOS to **any** TypeScript application&mdash;it’s just a library.
+One big advantage of this approach is that you can add DBOS to **any** TypeScript application&mdash;**it’s just a library**.
 For example, you can use DBOS to add reliable background jobs or cron scheduling or queues to your Next.js app with no external dependencies except Postgres.
 
 ## Getting Started
@@ -56,9 +57,17 @@ Initialize a starter app with:
 npx @dbos-inc/create -t dbos-node-starter
 ```
 
-Then launch it with:
+Or, if you want to use the integration with Next.js:
 
 ```shell
+npx @dbos-inc/create -t dbos-next-starter
+```
+
+Then build and run your app with:
+
+```shell
+npm install
+npm run build
 npm run start
 ```
 
