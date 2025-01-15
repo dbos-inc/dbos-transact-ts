@@ -208,7 +208,7 @@ describe("dbos-v2api-tests-http", () => {
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();
-    await DBOS.launchAppHTTPServer();
+    DBOS.setUpHandlerCallback();
   });
 
   beforeEach(async () => {

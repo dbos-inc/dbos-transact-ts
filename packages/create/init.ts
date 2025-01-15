@@ -150,7 +150,7 @@ export async function init(appName: string, templateName: string) {
 }
 
 // Templates that will be downloaded through the demo apps repository
-export const DEMO_TEMPLATES = ['dbos-node-starter']
+const DEMO_TEMPLATES = ['dbos-node-starter', 'dbos-nextjs-starter'];
 
 // Return a list of available templates
 export function listTemplates(): string[] {
