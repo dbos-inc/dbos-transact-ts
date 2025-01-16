@@ -42,9 +42,10 @@ Durable execution helps solve many common problems:
 - Operating an AI agent, or anything that connects to an unreliable or non-deterministic API.
 
 What’s unique about DBOS's implementation of durable execution is that it’s implemented in a **lightweight library** that’s **totally backed by Postgres**.
-All you have to do to use DBOS is `npm install` it and annotate your program with decorators.
-The decorators store your program’s execution state in Postgres as it runs and recover it if it crashes.
-There are no other dependencies you have to manage, no separate workflow server&mdash;just your program and Postgres.
+To use DBOS, just `npm install` it and annotate your program with DBOS decorators.
+Under the hood, those decorators store your program's execution state (which workflows are currently executing and which steps they've completed) in a Postgres database.
+If your program crashes or is interrupted, they automatically recover its workflows from their stored state.
+So all you need to use DBOS is Postgres&mdash;there are no other dependencies you have to manage, no separate workflow server.
 
 One big advantage of this approach is that you can add DBOS to **any** TypeScript application&mdash;**it’s just a library**.
 For example, you can use DBOS to add reliable background jobs or cron scheduling or queues to your Next.js app with no external dependencies except Postgres.
