@@ -141,12 +141,16 @@ export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
 
 
 /////////////////////////////////
-/* OPEN API DECORATORS */
+/* OPEN API DECORATORS (Moved) */
 /////////////////////////////////
 
+/**
+ * @deprecated The `@OpenApiSecurityScheme` decorator function has moved to an extension package.
+ * Please install @dbos-inc/dbos-openapi, and update your import.
+ */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function OpenApiSecurityScheme(securityScheme: unknown) {
-  throw new Error("DBOS no longer supports OpenAPI generation as of DBOSv2.0.")
+  throw new Error("@OpenApiSecurityScheme has been moved to the @dbos-inc/dbos-openapi package as of v2.0");
 }
 
 /////////////////////////////////
