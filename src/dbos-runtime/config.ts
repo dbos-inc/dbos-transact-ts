@@ -200,10 +200,12 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
       const pgPassword: string | undefined = process.env.PGPASSWORD;
       if (pgPassword) {
         configFile.database.password = pgPassword;
-      } else {
-        throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database password`);
       }
     }
+  }
+
+  if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
+    throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)
   }
 
   const schemaValidator = ajv.compile(dbosConfigSchema);
