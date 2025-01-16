@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# DBOS Transact: Lightweight Durable Execution Built on Postgres
+# DBOS Transact: A Lightweight Durable Execution Library Built on Postgres
 
 #### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp;  [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
 </div>
@@ -32,13 +32,13 @@ class Example {
 ```
 
 Durable execution means persisting the execution state of your program while it runs, so if it is ever interrupted or crashes, it automatically resumes from where it left off.
-Durable execution is useful for a lot of things:
+Durable execution helps solve many common problems:
 
 - Orchestrating long-running or business-critical workflows so they seamlessly recover from any failure.
 - Running reliable background jobs with no timeouts.
-- Processing incoming events (e.g. from Kafka) exactly once
-- Running a fault-tolerant distributed task queue
-- Running a reliable cron scheduler
+- Processing incoming events (e.g. from Kafka) exactly once.
+- Running a fault-tolerant distributed task queue.
+- Running a reliable cron scheduler.
 - Operating an AI agent, or anything that connects to an unreliable or non-deterministic API.
 
 What’s unique about DBOS's implementation of durable execution is that it’s implemented in a **lightweight library** that’s **totally backed by Postgres**.
@@ -60,7 +60,7 @@ npx @dbos-inc/create -t dbos-node-starter
 Or, if you want to use the integration with Next.js:
 
 ```shell
-npx @dbos-inc/create -t dbos-next-starter
+npx @dbos-inc/create -t dbos-nextjs-starter
 ```
 
 Then build and run your app with:
