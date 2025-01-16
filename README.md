@@ -25,8 +25,8 @@ class Example {
 
   @DBOS.workflow()
   static async workflow() {
-    Example.step_one()
-    Example.step_two()
+    await Example.step_one()
+    await Example.step_two()
   }
 }
 ```
