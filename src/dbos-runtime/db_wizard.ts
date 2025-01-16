@@ -21,7 +21,10 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
 
     // 2. If the error is due to password authentication or the configuration is non-default, surface the error and exit.
     const errorStr = dbConnectionError.toString();
-    if (errorStr.includes('password authentication failed') || errorStr.includes('28P01')) {
+    if (errorStr.includes('password authentication failed')
+        || errorStr.includes('28P01')
+        || errorStr.includes("no password supplied")
+        || errorStr.includes("client password must be a string")) {
         throw new DBOSInitializationError(
             `Could not connect to Postgres: password authentication failed: ${errorStr}`
         );
