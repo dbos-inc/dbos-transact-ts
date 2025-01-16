@@ -1,4 +1,4 @@
-import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext, DBOS } from "../src/";
+import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
