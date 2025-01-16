@@ -827,7 +827,8 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+    ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;
 
@@ -912,7 +913,8 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+    ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.procConfig = config;
 
@@ -983,7 +985,8 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+    ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.commConfig = config;
 

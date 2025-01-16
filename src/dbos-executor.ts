@@ -38,7 +38,6 @@ import {
   DrizzleUserDatabase,
   UserDatabaseClient,
   pgNodeIsKeyConflictError,
-  createDBIfDoesNotExist,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -380,7 +379,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
-      await(createDBIfDoesNotExist(this.config.poolConfig, this.logger))
       this.configureDbClient();
 
       if (!this.userDatabase) {
@@ -660,7 +658,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if ((wCtxt.tempWfOperationType !== TempWorkflowType.transaction
-      && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
+         && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
       || params.queueName !== undefined
     ) {
       // TODO: Make this transactional (and with the queue step below)
