@@ -21,8 +21,9 @@ jobs:
           packages/create,
           packages/dbos-cloud,
           packages/dbos-compiler,
-          packages/dbos-sqs,
+          packages/dbos-confluent-kafka,
           packages/dbos-kafkajs,
+          packages/dbos-sqs,
         ]
     steps:
       - name: Checkout
