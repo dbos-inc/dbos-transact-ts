@@ -1,8 +1,8 @@
-import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext } from "../src/";
+import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext, DBOS } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { DBOSConfig } from "../src/dbos-executor";
+import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
 import { PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { transaction_outputs } from "../schemas/user_db_schema";
@@ -136,7 +136,8 @@ describe("dbos-tests", () => {
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
-    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
+    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID,).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });

@@ -66,7 +66,7 @@ describe("queued-wf-tests-simple", () => {
         expect((await wfh.getStatus())?.queueName).toBe('testQ');
 
         expect(await testRuntime.invokeWorkflow(TestWFs, wfid).testWorkflow('abc', '123')).toBe('abcd123');
-        expect(TestWFs.wfCounter).toBe(2);
+        expect(TestWFs.wfCounter).toBe(1);
         expect(TestWFs.stepCounter).toBe(1);
 
         expect((await wfh.getStatus())?.queueName).toBe('testQ');

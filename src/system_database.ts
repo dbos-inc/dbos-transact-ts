@@ -27,7 +27,7 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
-  initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<T>;
+  initWorkflowStatus<T extends any[]>(bufferedStatus: WorkflowStatusInternal, args: T): Promise<{args: T, status: string}>
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
@@ -201,8 +201,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<T> {
-    const result = await this.pool.query<{recovery_attempts: number}>(
+  async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<{args: T, status: string}> {
+    const result = await this.pool.query<{recovery_attempts: number, status: string}>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
         workflow_uuid,
         status,
@@ -223,7 +223,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE WHEN $16 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
-        RETURNING recovery_attempts`,
+        RETURNING recovery_attempts, status`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -248,12 +248,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING]);
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
+    const status = result.rows[0].status;
 
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, DBOSJSON.stringify(args)]
     );
-    return DBOSJSON.parse(rows[0].inputs) as T;
+    return {args: DBOSJSON.parse(rows[0].inputs) as T, status};
   }
 
   bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {

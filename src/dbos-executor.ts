@@ -673,6 +673,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       internalStatus.className = params.tempWfClass ?? "";
     }
 
+    let status: string | undefined = undefined;
+
     // Synchronously set the workflow's status to PENDING and record workflow inputs (for non single-transaction workflows).
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if ((wCtxt.tempWfOperationType !== TempWorkflowType.transaction
@@ -680,7 +682,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       || params.queueName !== undefined
     ) {
       // TODO: Make this transactional (and with the queue step below)
-      args = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      args = ires.args;
+      status = ires.status;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
 
@@ -752,7 +756,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return result;
     };
 
-    if (params.queueName === undefined || params.executeWorkflow) {
+    if (status !=='SUCCESS' && status !=='ERROR' && (params.queueName === undefined || params.executeWorkflow)) {
       const workflowPromise: Promise<R> = runWorkflow();
 
       // Need to await for the workflow and capture errors.
@@ -770,7 +774,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
     }
     else {
-      await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
+      if (params.queueName && status === 'ENQUEUED') {
+        await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
+      }
       return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
     }
   }
