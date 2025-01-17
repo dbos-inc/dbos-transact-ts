@@ -1245,11 +1245,30 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async deactivateEventReceivers() {
     this.logger.info("Deactivating event receivers");
     for (const evtRcvr of this.eventReceivers || []) {
-      await evtRcvr.destroy();
+      try {
+        await evtRcvr.destroy();
+      }
+      catch (err) {
+        const e = err as Error;
+        this.logger.warn(`Error destroying event receiver: ${e.message}`);
+      }
     }
-    await this.scheduler?.destroyScheduler();
-    wfQueueRunner.stop();
-    await this.wfqEnded;
+    try {
+      await this.scheduler?.destroyScheduler();
+    }
+    catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Error destroying scheduler: ${e.message}`);
+    }
+
+    try {
+      wfQueueRunner.stop();
+      await this.wfqEnded;
+    }
+    catch (err) {
+      const e = err as Error;
+      this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
+    }
   }
 
   async executeWorkflowUUID(workflowUUID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {

@@ -199,7 +199,6 @@ describe("queued-wf-tests-simple", () => {
         expect(await queueEntriesAreCleanedUp()).toBe(true);
     }, 10000);
 
-    /*
     test("test_one_at_a_time_with_crash", async() => {
         let wfqRes: () => void = () => { };
         const wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
@@ -213,9 +212,11 @@ describe("queued-wf-tests-simple", () => {
 
         const wfh1 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('a','b');
         await wfqPromise;
+
         await DBOS.shutdown();
         clearDebugTriggers();
         await DBOS.launch();
+
         const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
 
         const wfh1b = DBOS.retrieveWorkflow(wfh1.workflowID);
@@ -223,7 +224,6 @@ describe("queued-wf-tests-simple", () => {
         expect (await wfh1b.getResult()).toBe('ab');
         expect (await wfh2b.getResult()).toBe('cd');
     }, 10000);
-    */
 
     /*
     // Current result: WF1 does get created in system DB, but never starts running.
@@ -242,7 +242,7 @@ describe("queued-wf-tests-simple", () => {
         const wfid1 = 'thisworkflowgetshit';
         console.log("Start WF1");
         try {
-            const _wfh1 = await testRuntime.startWorkflow(TestWFs, wfid1, undefined, serialqueue).testWorkflowSimple('a','b');
+            const _wfh1 = await testRuntime.startWorkflow(TestWFs, {workflowID: wfid1, queueName: serialqueue.name}).testWorkflowSimple('a','b');
         }
         catch(e) {
             // Expected
@@ -256,7 +256,7 @@ describe("queued-wf-tests-simple", () => {
         console.log("New runtime");
         testRuntime = await createInternalTestRuntime(undefined, config);
         console.log("Start WF2");
-        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
+        const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
 
         const wfh1b = testRuntime.retrieveWorkflow(wfid1);
         const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
@@ -269,8 +269,10 @@ describe("queued-wf-tests-simple", () => {
     */
 
     test("queue workflow in recovered workflow", async() => {
+        console.log('shutdown');
         await DBOS.shutdown(); // DO not want to take queued jobs from here
 
+        console.log('run side process');
         // We crash a workflow on purpose; this has queued some things up and awaited them...
         const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
             cwd: process.cwd(),
@@ -283,6 +285,7 @@ describe("queued-wf-tests-simple", () => {
         expect(stderr).toBeDefined();
         expect(stdout).toBeDefined();
 
+        console.log('start again');
         await DBOS.launch();
         const wfh = DBOS.retrieveWorkflow('testqueuedwfcrash');
         expect((await wfh.getStatus())?.status).toBe('PENDING');
@@ -294,6 +297,7 @@ describe("queued-wf-tests-simple", () => {
         await DBOS.withNextWorkflowID('testqueuedwfcrash', async () => {
             await WF.enqueue5Tasks();
         });
+        expect(wfh.getResult()).toBe(5);
 
         expect((await wfh.getStatus())?.status).toBe('SUCCESS');
         expect(await queueEntriesAreCleanedUp()).toBe(true);
