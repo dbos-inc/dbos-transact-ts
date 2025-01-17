@@ -1,10 +1,16 @@
-import { StatusString, Step, StepContext, TestingRuntime, Workflow, WorkflowContext, WorkflowHandle } from "../src";
+import { StatusString, WorkflowHandle, DBOS } from "../src";
 import { DBOSConfig } from "../src/dbos-executor";
-import { createInternalTestRuntime, TestingRuntimeImpl } from "../src/testing/testing_runtime";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { WorkflowQueue } from "../src";
 import { v4 as uuidv4 } from "uuid";
 import { sleepms } from "../src/utils";
+
+import { WF } from './wfqtestprocess';
+
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 import {
     clearDebugTriggers,
@@ -23,11 +29,11 @@ const qlimit = 5;
 const qperiod = 2
 const rlqueue = new WorkflowQueue("limited_queue", undefined, {limitPerPeriod: qlimit, periodSec: qperiod});
 
-async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
+async function queueEntriesAreCleanedUp() {
     let maxTries = 10;
     let success = false;
     while (maxTries > 0) {
-        const r = await dbos.getDBOSExec().systemDatabase.getWorkflowQueue({});
+        const r = await DBOS.getWorkflowQueue({});
         if (r.workflows.length === 0) {
             success = true;
             break;
@@ -40,32 +46,34 @@ async function queueEntriesAreCleanedUp(dbos: TestingRuntimeImpl) {
 
 describe("queued-wf-tests-simple", () => {
     let config: DBOSConfig;
-    let testRuntime: TestingRuntime;
   
     beforeAll(async () => {
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
+        DBOS.setConfig(config);
     });
 
     beforeEach(async () => {
         TestWFs.reset();
         TestWFs2.reset();
-        testRuntime = await createInternalTestRuntime(undefined, config);
+        await DBOS.launch();
     });
 
     afterEach(async () => {
-        await testRuntime.destroy();
+        await DBOS.shutdown();
     }, 10000);
   
     test("simple-queue", async () => {
         const wfid = uuidv4();
         TestWFs.wfid = wfid;
 
-        const wfh = await testRuntime.startWorkflow(TestWFs, wfid, {}, queue).testWorkflow('abc', '123');
+        const wfh = await DBOS.startWorkflow(TestWFs, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc', '123');
         expect(await wfh.getResult()).toBe('abcd123');
         expect((await wfh.getStatus())?.queueName).toBe('testQ');
 
-        expect(await testRuntime.invokeWorkflow(TestWFs, wfid).testWorkflow('abc', '123')).toBe('abcd123');
+        await DBOS.withNextWorkflowID(wfid, async () => {
+            expect(await TestWFs.testWorkflow('abc', '123')).toBe('abcd123');
+        });
         expect(TestWFs.wfCounter).toBe(1);
         expect(TestWFs.stepCounter).toBe(1);
 
@@ -73,15 +81,15 @@ describe("queued-wf-tests-simple", () => {
     });
 
     test("one-at-a-time", async() => {
-        await runOneAtATime(testRuntime, serialqueue);
+        await runOneAtATime(serialqueue);
     }, 10000);
 
     test("child-wfs-queue", async() => {
-        expect (await testRuntime.invokeWorkflow(TestChildWFs).testWorkflow('a','b')).toBe('adbdadbd');
+        expect (await TestChildWFs.testWorkflow('a','b')).toBe('adbdadbd');
     }, 10000);
 
     test("test_one_at_a_time_with_limiter", async() => {
-        await runOneAtATime(testRuntime, serialqueueLimited);
+        await runOneAtATime(serialqueueLimited);
     }, 10000);
 
     test("test-queue_rate_limit", async() => {
@@ -95,7 +103,7 @@ describe("queued-wf-tests-simple", () => {
         const numWaves = 3;
 
         for (let i = 0; i< qlimit * numWaves; ++i) {
-            const h = await testRuntime.startWorkflow(TestWFs, undefined, undefined, rlqueue).testWorkflowTime("abc", "123");
+            const h = await DBOS.startWorkflow(TestWFs, {queueName: rlqueue.name}).testWorkflowTime("abc", "123");
             handles.push(h);
         }
         for (const h of handles) {
@@ -103,11 +111,10 @@ describe("queued-wf-tests-simple", () => {
         }
 
         // Verify all queue entries eventually get cleaned up.
-        expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
+        expect(await queueEntriesAreCleanedUp()).toBe(true);
 
         // Verify all workflows get the SUCCESS status eventually
-        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-        await dbosExec.flushWorkflowBuffers();
+        await DBOS.executor.flushWorkflowBuffers();
 
         // Verify that each "wave" of tasks started at the ~same time.
         for (let wave = 0; wave < numWaves; ++wave) {
@@ -132,9 +139,9 @@ describe("queued-wf-tests-simple", () => {
         TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => { wfRes = resolve; });
         const mainPromise = new Promise<void>((resolve, _rj) => { TestWFs2.mainResolve = resolve; });
 
-        const wfh1 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, serialqueue).workflowOne();
+        const wfh1 = await DBOS.startWorkflow(TestWFs2, {queueName: serialqueue.name}).workflowOne();
         expect((await wfh1.getStatus())?.queueName).toBe(serialqueue.name);
-        const wfh2 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, serialqueue).workflowTwo();
+        const wfh2 = await DBOS.startWorkflow(TestWFs2, {queueName: serialqueue.name}).workflowTwo();
         expect((await wfh2.getStatus())?.queueName).toBe(serialqueue.name);
         // At this point Wf2 is stuck.
 
@@ -148,7 +155,7 @@ describe("queued-wf-tests-simple", () => {
         const numWaves = 3;
 
         for (let i = 0; i< qlimit * numWaves; ++i) {
-            const h = await testRuntime.startWorkflow(TestWFs, undefined, undefined, rlqueue).testWorkflowTime("abc", "123");
+            const h = await DBOS.startWorkflow(TestWFs, {queueName: rlqueue.name}).testWorkflowTime("abc", "123");
             handles.push(h);
         }
         for (const h of handles) {
@@ -156,8 +163,7 @@ describe("queued-wf-tests-simple", () => {
         }
 
         // Verify all workflows get the SUCCESS status eventually
-        const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-        await dbosExec.flushWorkflowBuffers();
+        await DBOS.executor.flushWorkflowBuffers();
 
         // Verify that each "wave" of tasks started at the ~same time.
         for (let wave = 0; wave < numWaves; ++wave) {
@@ -190,7 +196,7 @@ describe("queued-wf-tests-simple", () => {
         expect(TestWFs2.wfCounter).toBe(1);
 
         // Verify all queue entries eventually get cleaned up.
-        expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
+        expect(await queueEntriesAreCleanedUp()).toBe(true);
     }, 10000);
 
     test("test_one_at_a_time_with_crash", async() => {
@@ -204,15 +210,17 @@ describe("queued-wf-tests-simple", () => {
             }
         });
 
-        const wfh1 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('a','b');
+        const wfh1 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('a','b');
         await wfqPromise;
-        await testRuntime.destroy();
-        clearDebugTriggers();
-        testRuntime = await createInternalTestRuntime(undefined, config);
-        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
 
-        const wfh1b = testRuntime.retrieveWorkflow(wfh1.workflowID);
-        const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
+        await DBOS.shutdown();
+        clearDebugTriggers();
+        await DBOS.launch();
+
+        const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
+
+        const wfh1b = DBOS.retrieveWorkflow(wfh1.workflowID);
+        const wfh2b = DBOS.retrieveWorkflow(wfh2.workflowID);
         expect (await wfh1b.getResult()).toBe('ab');
         expect (await wfh2b.getResult()).toBe('cd');
     }, 10000);
@@ -234,7 +242,7 @@ describe("queued-wf-tests-simple", () => {
         const wfid1 = 'thisworkflowgetshit';
         console.log("Start WF1");
         try {
-            const _wfh1 = await testRuntime.startWorkflow(TestWFs, wfid1, undefined, serialqueue).testWorkflowSimple('a','b');
+            const _wfh1 = await testRuntime.startWorkflow(TestWFs, {workflowID: wfid1, queueName: serialqueue.name}).testWorkflowSimple('a','b');
         }
         catch(e) {
             // Expected
@@ -248,7 +256,7 @@ describe("queued-wf-tests-simple", () => {
         console.log("New runtime");
         testRuntime = await createInternalTestRuntime(undefined, config);
         console.log("Start WF2");
-        const wfh2 = await testRuntime.startWorkflow(TestWFs, undefined, undefined, serialqueue).testWorkflowSimple('c','d');
+        const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
 
         const wfh1b = testRuntime.retrieveWorkflow(wfid1);
         const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
@@ -259,6 +267,38 @@ describe("queued-wf-tests-simple", () => {
         expect (await wfh1b.getResult()).toBe('ab'); 
     }, 10000);
     */
+
+    test("queue workflow in recovered workflow", async() => {
+        expect(WF.x).toBe(5);
+        console.log('shutdown');
+        await DBOS.shutdown(); // DO not want to take queued jobs from here
+
+        console.log('run side process');
+        // We crash a workflow on purpose; this has queued some things up and awaited them...
+        const { stdout, stderr } = await execFileAsync('npx', ['ts-node', './tests/wfqtestprocess.ts'], {
+            cwd: process.cwd(),
+            env: {
+                ...process.env,
+                'DIE_ON_PURPOSE': 'true',
+            }
+        });
+    
+        expect(stderr).toBeDefined();
+        expect(stdout).toBeDefined();
+
+        console.log('start again');
+        await DBOS.launch();
+        const wfh = DBOS.retrieveWorkflow('testqueuedwfcrash');
+        expect((await wfh.getStatus())?.status).toBe('PENDING');
+
+        // It should proceed.  And should not take too long, either...
+        //  We could also recover the workflow
+        console.log("Waiting for recovered WF to complete...");
+        expect(await wfh.getResult()).toBe(5);
+
+        expect((await wfh.getStatus())?.status).toBe('SUCCESS');
+        expect(await queueEntriesAreCleanedUp()).toBe(true);
+    }, 60000);
 });
 
 class TestWFs
@@ -272,28 +312,28 @@ class TestWFs
         TestWFs.stepCounter = 0;
     }
 
-    @Workflow()
-    static async testWorkflow(ctx: WorkflowContext, var1: string, var2: string) {
-        expect(ctx.workflowUUID).toBe(TestWFs.wfid);
+    @DBOS.workflow()
+    static async testWorkflow(var1: string, var2: string) {
+        expect(DBOS.workflowID).toBe(TestWFs.wfid);
         ++TestWFs.wfCounter;
-        var1 = await ctx.invoke(TestWFs).testStep(var1);
+        var1 = await TestWFs.testStep(var1);
         return Promise.resolve(var1 + var2);
     }
 
-    @Workflow()
-    static async testWorkflowSimple(_ctx: WorkflowContext, var1: string, var2: string) {
+    @DBOS.workflow()
+    static async testWorkflowSimple(var1: string, var2: string) {
         ++TestWFs.wfCounter;
         return Promise.resolve(var1 + var2);
     }
 
-    @Step()
-    static async testStep(_ctx: StepContext, str: string) {
+    @DBOS.step()
+    static async testStep(str: string) {
         ++TestWFs.stepCounter;
         return Promise.resolve(str + 'd');
     }
 
-    @Workflow()
-    static async testWorkflowTime(_ctx: WorkflowContext, var1: string, var2: string): Promise<number> {
+    @DBOS.workflow()
+    static async testWorkflowTime(var1: string, var2: string): Promise<number> {
         expect (var1).toBe("abc");
         expect (var2).toBe("123");
         return Promise.resolve(new Date().getTime());
@@ -313,16 +353,16 @@ class TestWFs2
         TestWFs2.flag = false;
     }
 
-    @Workflow()
-    static async workflowOne(_ctx: WorkflowContext) {
+    @DBOS.workflow()
+    static async workflowOne() {
         ++TestWFs2.wfCounter;
         TestWFs2.mainResolve?.();
         await TestWFs2.wfPromise;
         return Promise.resolve();
     }
 
-    @Workflow()
-    static async workflowTwo(_ctx: WorkflowContext) {
+    @DBOS.workflow()
+    static async workflowTwo() {
         TestWFs2.flag = true; // Tell if this ran yet
         return Promise.resolve();
     }
@@ -330,39 +370,39 @@ class TestWFs2
 
 class TestChildWFs
 {
-    @Workflow()
-    static async testWorkflow(ctx: WorkflowContext, var1: string, var2: string) {
-        const wfh1 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var1);
-        const wfh2 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var2);
-        const wfh3 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var1);
-        const wfh4 = await ctx.startWorkflow(TestChildWFs, undefined, childqueue).testChildWF(var2);
+    @DBOS.workflow()
+    static async testWorkflow(var1: string, var2: string) {
+        const wfh1 = await DBOS.startWorkflow(TestChildWFs, {queueName: childqueue.name}).testChildWF(var1);
+        const wfh2 = await DBOS.startWorkflow(TestChildWFs, {queueName: childqueue.name}).testChildWF(var2);
+        const wfh3 = await DBOS.startWorkflow(TestChildWFs, {queueName: childqueue.name}).testChildWF(var1);
+        const wfh4 = await DBOS.startWorkflow(TestChildWFs, {queueName: childqueue.name}).testChildWF(var2);
 
-        await ctx.sleepms(1000);
+        await DBOS.sleepms(1000);
         expect((await wfh4.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
-        await ctx.send(wfh1.workflowID, 'go', 'release');
-        await ctx.send(wfh2.workflowID, 'go', 'release');
-        await ctx.send(wfh3.workflowID, 'go', 'release');
-        await ctx.send(wfh4.workflowID, 'go', 'release');
+        await DBOS.send(wfh1.workflowID, 'go', 'release');
+        await DBOS.send(wfh2.workflowID, 'go', 'release');
+        await DBOS.send(wfh3.workflowID, 'go', 'release');
+        await DBOS.send(wfh4.workflowID, 'go', 'release');
 
         return (await wfh1.getResult() + await wfh2.getResult() +
            await wfh3.getResult() + await wfh4.getResult())
     }
 
-    @Workflow()
-    static async testChildWF(ctx: WorkflowContext, str: string) {
-        await ctx.recv('release', 30);
+    @DBOS.workflow()
+    static async testChildWF(str: string) {
+        await DBOS.recv('release', 30);
         return Promise.resolve(str + 'd');
     }
 }
 
-async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) {
+async function runOneAtATime(queue: WorkflowQueue) {
     let wfRes: () => void = () => { };
     TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => { wfRes = resolve; });
     const mainPromise = new Promise<void>((resolve, _rj) => { TestWFs2.mainResolve = resolve; });
-    const wfh1 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, queue).workflowOne();
+    const wfh1 = await DBOS.startWorkflow(TestWFs2, {queueName: queue.name}).workflowOne();
     expect((await wfh1.getStatus())?.queueName).toBe(queue.name);
-    const wfh2 = await testRuntime.startWorkflow(TestWFs2, undefined, undefined, queue).workflowTwo();
+    const wfh2 = await DBOS.startWorkflow(TestWFs2, {queueName: queue.name}).workflowTwo();
     expect((await wfh2.getStatus())?.queueName).toBe(queue.name);
     await mainPromise;
     await sleepms(2000);
@@ -372,5 +412,5 @@ async function runOneAtATime(testRuntime: TestingRuntime, queue: WorkflowQueue) 
     await wfh2.getResult();
     expect(TestWFs2.flag).toBeTruthy();
     expect(TestWFs2.wfCounter).toBe(1);
-    expect(await queueEntriesAreCleanedUp(testRuntime as TestingRuntimeImpl)).toBe(true);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
 }
