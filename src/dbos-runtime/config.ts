@@ -11,6 +11,7 @@ import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 import validator from "validator";
 import fs from "fs";
+import { loadDatabaseConnection } from "./db_connection";
 
 
 
@@ -23,19 +24,19 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   database: {
-    hostname: string;
-    port: number;
-    username: string;
+    hostname?: string;
+    port?: number;
+    username?: string;
     password?: string;
     connectionTimeoutMillis?: number;
-    app_db_name: string;
+    app_db_name?: string;
     sys_db_name?: string;
     ssl?: boolean;
     ssl_ca?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];
-    local_suffix: boolean;
+    local_suffix?: boolean;
   };
   http?: {
     cors_middleware?: boolean;
@@ -187,22 +188,23 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
-  // Database field must exist
+  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database config`);
+    configFile.database = {}
   }
-
-  // Check for the database password
-  if (!configFile.database.password) {
-    if (useProxy) {
-      configFile.database.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      const pgPassword: string | undefined = process.env.PGPASSWORD;
-      if (pgPassword) {
-        configFile.database.password = pgPassword;
-      }
-    }
+  const databaseConnection = loadDatabaseConnection()
+  if (configFile["database"]["hostname"]) {
+    console.log("Loading database connection parameters from dbos-config.yaml")
+  } else if (databaseConnection["hostname"]) {
+    console.log("Loading database connection paraeters from .dbos/db_connection")
+  } else {
+    console.log("Using default database connection parameters")
   }
+  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
+  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
+  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
+  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
+  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
 
   if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
     throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)

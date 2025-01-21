@@ -408,7 +408,7 @@ describe("dbos-config", () => {
       expect(poolConfig.host).toBe("some host");
       expect(poolConfig.port).toBe(1234);
       expect(poolConfig.user).toBe("some user");
-      expect(poolConfig.password).toBe("PROXY-MODE"); // Should be set to "PROXY-MODE"
+      expect(poolConfig.password).toBe("dbos");
       expect(poolConfig.database).toBe("some_db");
       process.env.PGPASSWORD = dbPassword;
     });
