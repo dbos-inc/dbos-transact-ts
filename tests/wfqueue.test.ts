@@ -356,8 +356,9 @@ describe("queued-wf-tests-simple", () => {
         const myObj = DBOS.configureInstance(TestDuplicateIDins, 'myname');
         await expect(DBOS.startWorkflow(myObj, {workflowID: wfid}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
 
-        // Call the same function in a different queue is not allowed.
-        await expect(DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
+        // Call the same function in a different queue would generate a warning, but is allowed.
+        const handleQ = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc');
+        await expect(handleQ.getResult()).resolves.toBe('abc');
 
         // Call with a different input would generate a warning, but still use the recorded input.
         const handle3 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('def');

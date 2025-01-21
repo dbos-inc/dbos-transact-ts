@@ -256,7 +256,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else if (resRow.config_name !== initStatus.configName) {
       msg = `Workflow already exists with a different config name: ${resRow.config_name}, but the provided config name is: ${initStatus.configName}`;
     } else if (resRow.queue_name !== initStatus.queueName) {
-      msg = `Workflow already exists with a different queue name: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}`;
+      // This is a warning because a different queue name is not necessarily an error.
+      this.logger.warn(`Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`);
     }
     if (msg !== "") {
       throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
