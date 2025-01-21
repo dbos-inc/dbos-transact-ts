@@ -401,7 +401,7 @@ describe("dbos-config", () => {
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, "readFileSync").mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions, true); // Use proxy
+      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
 
       // Test pool config options
       const poolConfig: PoolConfig = dbosConfig.poolConfig;
