@@ -23,7 +23,7 @@ export function loadDatabaseConnection(): DatabaseConnection {
             password: data.password ?? null,
             local_suffix: data.local_suffix ?? null,
         };
-    } catch {
+    } catch (e) {
         return {
             hostname: null,
             port: null,

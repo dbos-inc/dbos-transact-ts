@@ -112,6 +112,21 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
 }
 
 export function constructPoolConfig(configFile: ConfigFile) {
+  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
+  const databaseConnection = loadDatabaseConnection()
+  if (configFile["database"]["hostname"]) {
+    console.log("Loading database connection parameters from dbos-config.yaml")
+  } else if (databaseConnection["hostname"]) {
+    console.log("Loading database connection paraeters from .dbos/db_connection")
+  } else {
+    console.log("Using default database connection parameters")
+  }
+  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
+  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
+  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
+  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
+  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
+
   let databaseName: string | undefined = configFile.database.app_db_name;
   if (databaseName === undefined) {
     const appName = retrieveApplicationName(configFile);
@@ -187,23 +202,9 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
-  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   if (!configFile.database) {
     configFile.database = {}
   }
-  const databaseConnection = loadDatabaseConnection()
-  if (configFile["database"]["hostname"]) {
-    console.log("Loading database connection parameters from dbos-config.yaml")
-  } else if (databaseConnection["hostname"]) {
-    console.log("Loading database connection paraeters from .dbos/db_connection")
-  } else {
-    console.log("Using default database connection parameters")
-  }
-  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
-  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
-  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
-  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
-  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
 
   if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
     throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)

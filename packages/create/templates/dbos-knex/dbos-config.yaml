@@ -5,13 +5,7 @@
 
 language: node
 database:
-  hostname: localhost
-  port: 5432
-  username: postgres
-  password: ${PGPASSWORD}
-  connectionTimeoutMillis: 3000
   app_db_client: knex
-  local_suffix: false
   migrate:
     - npx knex migrate:latest
   rollback:
