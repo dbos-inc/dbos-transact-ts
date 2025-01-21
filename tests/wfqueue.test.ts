@@ -69,12 +69,11 @@ describe("queued-wf-tests-simple", () => {
         TestWFs.wfid = wfid;
 
         const wfh = await DBOS.startWorkflow(TestWFs, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc', '123');
-        expect(await wfh.getResult()).toBe('abcd123');
+        await expect(wfh.getResult()).resolves.toBe('abcd123');
         expect((await wfh.getStatus())?.queueName).toBe('testQ');
 
-        await DBOS.withNextWorkflowID(wfid, async () => {
-            expect(await TestWFs.testWorkflow('abc', '123')).toBe('abcd123');
-        });
+        const wfh2 = await DBOS.startWorkflow(TestWFs, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc', '123');
+        await expect(wfh2.getResult()).resolves.toBe('abcd123');
         expect(TestWFs.wfCounter).toBe(1);
         expect(TestWFs.stepCounter).toBe(1);
 
