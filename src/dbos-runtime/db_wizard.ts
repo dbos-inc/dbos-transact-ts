@@ -1,14 +1,13 @@
 import { Pool, PoolConfig } from "pg";
 import { DBOSInitializationError } from "../error";
 import { Logger } from "winston";
-import { readFileSync, sleepms } from "../utils";
-import { dbosConfigFilePath, writeConfigFile } from "./config";
-import YAML from "yaml";
+import { sleepms } from "../utils";
 import { DBOSCloudHost, getCloudCredentials, getLogger } from "./cloudutils/cloudutils"
 import { chooseAppDBServer, createUserRole, getUserDBCredentials, getUserDBInfo } from "./cloudutils/databases";
 import { promisify } from "util";
 import { password } from "@inquirer/prompts";
 import { exec } from "child_process";
+import { DatabaseConnection, saveDatabaseConnection } from "./db_connection";
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     const logger = getLogger()
@@ -85,15 +84,15 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
         }
     }
 
-    // 6. Save the config to the config file and return the updated config.
-    const configFileContent = readFileSync(dbosConfigFilePath);
-    const config = YAML.parseDocument(configFileContent);
-    config.setIn(['database', 'hostname'], poolConfig.host);
-    config.setIn(['database', 'port'], poolConfig.port);
-    config.setIn(['database', 'username'], poolConfig.user);
-    config.setIn(['database', 'password'], poolConfig.password);
-    config.setIn(['database', 'local_suffix'], localSuffix);
-    writeConfigFile(config, dbosConfigFilePath);
+    // 6. Save the config to the database connection file and return the updated config.
+    const databaseConnection: DatabaseConnection = {
+        hostname: poolConfig.host,
+        port: poolConfig.port,
+        username: poolConfig.user,
+        password: poolConfig.password as string,
+        local_suffix: localSuffix,
+    }
+    saveDatabaseConnection(databaseConnection);
 
     return poolConfig
 }

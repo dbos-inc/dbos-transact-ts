@@ -4,7 +4,7 @@ import { readFileSync } from "../utils";
 
 const DB_CONNECTION_PATH = path.join(".dbos", "db_connection");
 
-interface DatabaseConnection {
+export interface DatabaseConnection {
     hostname: string | null;
     port: number | null;
     username: string | null;
