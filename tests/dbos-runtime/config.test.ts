@@ -134,6 +134,22 @@ describe("dbos-config", () => {
       expect(dbosConfig.poolConfig.database).toEqual("some_app");
     });
 
+    test("config file loads mixed params", () => {
+      const localMockDBOSConfigYamlString = `
+        name: some-app
+        database:
+          hostname: 'some host'
+      `;
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.host).toEqual("some host");
+      expect(dbosConfig.poolConfig.port).toEqual(5432);
+      expect(dbosConfig.poolConfig.user).toEqual("postgres");
+      expect(dbosConfig.poolConfig.password).toEqual(process.env.PGPASSWORD);
+      expect(dbosConfig.poolConfig.database).toEqual("some_app");
+    });
+
     test("config file specifies the wrong language", () => {
       const localMockDBOSConfigYamlString = `
       language: 'python'
