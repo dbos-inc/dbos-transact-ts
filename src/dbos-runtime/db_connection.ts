@@ -1,5 +1,6 @@
 import * as path from 'path';
-import * as fs from 'fs';
+import * as fs from 'fs'
+import { readFileSync } from "../utils";
 
 const DB_CONNECTION_PATH = path.join(".dbos", "db_connection");
 
@@ -13,7 +14,7 @@ interface DatabaseConnection {
 
 export function loadDatabaseConnection(): DatabaseConnection {
     try {
-        const rawData = fs.readFileSync(DB_CONNECTION_PATH, 'utf8');
+        const rawData = readFileSync(DB_CONNECTION_PATH, 'utf8');
         const data = JSON.parse(rawData) as DatabaseConnection;
         return {
             hostname: data.hostname ?? null,

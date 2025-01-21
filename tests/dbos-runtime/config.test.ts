@@ -150,6 +150,24 @@ describe("dbos-config", () => {
       expect(dbosConfig.poolConfig.database).toEqual("some_app");
     });
 
+    test("using dbconnection file", () => {
+      const localMockDBOSConfigYamlString = `
+        name: some-app
+      `;
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
+      const mockDatabaseConnectionFile = `
+        {"hostname": "example.com", "port": 2345, "username": "example", "password": "password", "local_suffix": true}
+      `
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce(mockDatabaseConnectionFile);
+      jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.host).toEqual("example.com");
+      expect(dbosConfig.poolConfig.port).toEqual(2345);
+      expect(dbosConfig.poolConfig.user).toEqual("example");
+      expect(dbosConfig.poolConfig.password).toEqual("password");
+      expect(dbosConfig.poolConfig.database).toEqual("some_app_local");
+    });
+
     test("config file specifies the wrong language", () => {
       const localMockDBOSConfigYamlString = `
       language: 'python'
