@@ -114,23 +114,24 @@ describe("dbos-config", () => {
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
-    test("config file is missing database config", () => {
+    test("config file has unexpected fields", () => {
       const mockConfigFile = { someOtherConfig: "some other config" };
       jest.spyOn(utils, "readFileSync").mockReturnValue(JSON.stringify(mockConfigFile));
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
-    test("config file is missing hostname", () => {
+    test("config file loads default without database section", () => {
       const localMockDBOSConfigYamlString = `
-        database:
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
+        name: some-app
       `;
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce(localMockDBOSConfigYamlString);
       jest.spyOn(utils, "readFileSync").mockReturnValueOnce("SQL STATEMENTS");
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig.host).toEqual("localhost");
+      expect(dbosConfig.poolConfig.port).toEqual(5432);
+      expect(dbosConfig.poolConfig.user).toEqual("postgres");
+      expect(dbosConfig.poolConfig.password).toEqual(process.env.PGPASSWORD);
+      expect(dbosConfig.poolConfig.database).toEqual("some_app");
     });
 
     test("config file specifies the wrong language", () => {
