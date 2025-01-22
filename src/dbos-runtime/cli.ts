@@ -13,6 +13,8 @@ import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from ".
 import { GetWorkflowsInput, StatusString } from "..";
 import { exit } from "node:process";
 import { runCommand } from "./commands";
+import { reset} from "./reset";
+import { run } from "node:test";
 
 const program = new Command();
 
@@ -117,6 +119,14 @@ program
   .command('migrate')
   .description("Perform a database migration")
   .action(async () => { await runAndLog(migrate); });
+
+program
+  .command('reset')
+  .description("reset the system database")
+  .action(async () => { 
+    // const [dbosConfig, runtimeConfig] = parseConfigFile();
+    await runAndLog(reset); 
+  });
 
 program
   .command('rollback')
