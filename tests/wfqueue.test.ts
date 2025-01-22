@@ -25,6 +25,7 @@ const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
 const serialqueueLimited = new WorkflowQueue("serialQL", 1, {limitPerPeriod: 10, periodSec: 1});
 const childqueue = new WorkflowQueue("childQ", 3);
+const workerConcurrencyQueue = new WorkflowQueue("workerQ", undefined, undefined, 1);
 
 const qlimit = 5;
 const qperiod = 2
@@ -47,7 +48,7 @@ async function queueEntriesAreCleanedUp() {
 
 describe("queued-wf-tests-simple", () => {
     let config: DBOSConfig;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
         await setUpDBOSTestDb(config);
@@ -63,7 +64,7 @@ describe("queued-wf-tests-simple", () => {
     afterEach(async () => {
         await DBOS.shutdown();
     }, 10000);
-  
+
     test("simple-queue", async () => {
         const wfid = uuidv4();
         TestWFs.wfid = wfid;
@@ -91,6 +92,10 @@ describe("queued-wf-tests-simple", () => {
 
     test("test_one_at_a_time_with_limiter", async() => {
         await runOneAtATime(serialqueueLimited);
+    }, 10000);
+
+    test.only("test_one_at_a_time_with_worker_concurrency", async () => {
+        await runOneAtATime(workerConcurrencyQueue);
     }, 10000);
 
     test("test-queue_rate_limit", async() => {
