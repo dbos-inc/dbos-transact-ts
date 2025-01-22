@@ -255,7 +255,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else if (resRow.class_name !== initStatus.className) {
       msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.className}`;
     } else if (resRow.config_name !== initStatus.configName) {
-      msg = `Workflow already exists with a different config name: ${resRow.config_name}, but the provided config name is: ${initStatus.configName}`;
+      msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.configName}`;
     } else if (resRow.queue_name !== initStatus.queueName) {
       // This is a warning because a different queue name is not necessarily an error.
       this.logger.warn(`Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`);
