@@ -8,7 +8,7 @@ import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery
 import { db_wizard } from "./db_wizard";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  let poolConfig: PoolConfig = constructPoolConfig(configFile, logger)
+  let poolConfig: PoolConfig = constructPoolConfig(configFile)
   poolConfig = await db_wizard(poolConfig);
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);

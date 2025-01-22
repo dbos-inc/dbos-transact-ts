@@ -112,15 +112,18 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
-export function constructPoolConfig(configFile: ConfigFile, logger: GlobalLogger = new GlobalLogger()) {
+export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions) {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   const databaseConnection = loadDatabaseConnection()
-  if (configFile["database"]["hostname"]) {
-    logger.info("Loading database connection parameters from dbos-config.yaml")
-  } else if (databaseConnection["hostname"]) {
-    logger.info("Loading database connection parameters from .dbos/db_connection")
-  } else {
-    logger.info("Using default database connection parameters")
+  if (cliOptions?.logWhileParsing !== false) {
+    const logger = new GlobalLogger()
+    if (configFile["database"]["hostname"]) {
+      logger.info("Loading database connection parameters from dbos-config.yaml")
+    } else if (databaseConnection["hostname"]) {
+      logger.info("Loading database connection parameters from .dbos/db_connection")
+    } else {
+      logger.info("Using default database connection parameters")
+    }
   }
   configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
   configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
@@ -187,6 +190,7 @@ export interface ParseOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
+  logWhileParsing?: boolean;
 }
 
 /*
@@ -225,7 +229,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile);
+  const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
     throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
