@@ -14,7 +14,6 @@ import { GetWorkflowsInput, StatusString } from "..";
 import { exit } from "node:process";
 import { runCommand } from "./commands";
 import { reset} from "./reset";
-import { run } from "node:test";
 
 const program = new Command();
 

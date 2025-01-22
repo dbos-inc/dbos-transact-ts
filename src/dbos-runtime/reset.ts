@@ -22,7 +22,7 @@ export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: b
 
   let sysDbName = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
  
-  logger.info(`Resetting ${sysDbName} if it does not exist`);
+  logger.info(`Resetting ${sysDbName} if it exists`);
 
   const pgClient  = new Client({
     user: userPoolConfig.user,
