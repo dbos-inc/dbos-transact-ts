@@ -246,8 +246,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Check the started workflow matches the expected name, class_name, config_name, and queue_name
     // A mismatch indicates a workflow starting with the same UUID but different functions, which should not be allowed.
     const resRow = result.rows[0];
+    initStatus.configName = initStatus.configName || "";
     resRow.config_name = resRow.config_name || "";
-    resRow.queue_name = resRow.queue_name || undefined;
+    resRow.queue_name = resRow.queue_name === null ? undefined : resRow.queue_name; // Convert null in SQL to undefined
     let msg = "";
     if (resRow.name !== initStatus.name) {
       msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.name}`;
