@@ -26,7 +26,7 @@ export interface DBOSCLIStartOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
-  logWhileParsing?: boolean; // Not a real option--a workaround to prevent the parser's log lines from printing twice
+  skipLoggingInParse?: boolean; // Not a real option--a workaround to prevent the parser's log lines from printing twice
 }
 
 export interface DBOSConfigureOptions {
@@ -60,7 +60,7 @@ program
     if (options?.configfile) {
       console.warn("\x1b[33m%s\x1b[0m", "The --configfile option is deprecated. Please use --appDir instead.");
     }
-    options.logWhileParsing = false;
+    options.skipLoggingInParse = true;
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
