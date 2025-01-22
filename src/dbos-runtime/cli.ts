@@ -26,7 +26,7 @@ export interface DBOSCLIStartOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
-  logWhileParsing?: boolean;
+  logWhileParsing?: boolean; // Not a real option--a workaround to prevent the parser's log lines from printing twice
 }
 
 export interface DBOSConfigureOptions {
