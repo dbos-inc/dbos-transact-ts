@@ -260,9 +260,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // This is a warning because a different queue name is not necessarily an error.
       this.logger.warn(`Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`);
     }
-    if (msg !== "") {
-      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-    }
+    // if (msg !== "") {
+    //   throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    // }
 
     const recovery_attempts = resRow.recovery_attempts;
     if (recovery_attempts >= initStatus.maxRetries && initStatus.recovery) {
