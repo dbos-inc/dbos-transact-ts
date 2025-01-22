@@ -1,15 +1,17 @@
 import tsm from 'ts-morph';
 
+type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
   project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[];
+  methods: CompileMethodInfo[];
 };
 
 export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
 export interface StoredProcedureConfig {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
-  executeLocally?: boolean
+  executeLocally?: boolean;
+  version: DbosDecoratorVersion;
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
@@ -44,7 +46,7 @@ export function compile(configFileOrProject: string | tsm.Project, suppressWarni
 
     const methods = project.getSourceFiles()
       .flatMap(getProcMethods)
-      .map(m => [m, getStoredProcConfig(m)] as const);
+      .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
     diags.push(...checkStoredProcConfig(methods, false));
@@ -121,7 +123,7 @@ export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]):
   return diags;
 }
 
-export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
+export function checkStoredProcConfig(methods: readonly CompileMethodInfo[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
   const category = error ? tsm.ts.DiagnosticCategory.Error : tsm.ts.DiagnosticCategory.Warning;
   const diags = new Array<tsm.ts.Diagnostic>();
   for (const [method, config] of methods) {
@@ -136,8 +138,10 @@ export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDec
 
   function getStoredProcDecorator(method: tsm.MethodDeclaration) {
     for (const decorator of method.getDecorators()) {
-      const kind = getDbosDecoratorKind(decorator);
-      if (kind === "storedProcedure") { return decorator; }
+      const info = getDbosDecoratorInfo(decorator);
+      if (info?.kind === "storedProcedure") {
+        return decorator;
+      }
     }
   }
 }
@@ -147,8 +151,9 @@ export function removeDbosMethods(file: tsm.SourceFile) {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
-        const kind = getDbosMethodKind(method);
-        switch (kind) {
+        const info = getDbosMethodInfo(method);
+        if (!info) { continue; }
+        switch (info.kind) {
           case 'workflow':
           case 'step':
           case 'initializer':
@@ -158,12 +163,11 @@ export function removeDbosMethods(file: tsm.SourceFile) {
             break;
           }
           case 'storedProcedure':
-          case undefined:
             break;
           default: {
-            const _: never = kind;
+            const _never: never = info.kind;
             // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            throw new Error(`Unexpected DBOS method kind: ${kind}`);
+            throw new Error(`Unexpected DBOS method kind: ${info.kind}`);
           }
         }
       }
@@ -172,14 +176,14 @@ export function removeDbosMethods(file: tsm.SourceFile) {
 }
 
 export function getProcMethods(file: tsm.SourceFile) {
-  const methods = new Array<tsm.MethodDeclaration>();
+  const methods = new Array<[tsm.MethodDeclaration, DbosDecoratorVersion]>();
   file.forEachDescendant((node, traversal) => {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
-        const kind = getDbosMethodKind(method);
-        if (kind === 'storedProcedure') {
-          methods.push(method);
+        const info = getDbosMethodInfo(method);
+        if (info?.kind === 'storedProcedure') {
+          methods.push([method, info.version]);
         }
       }
     }
@@ -190,7 +194,7 @@ export function getProcMethods(file: tsm.SourceFile) {
 function getProcMethodDeclarations(file: tsm.SourceFile) {
   // initialize set of declarations with all tx methods and their class declaration parents
   const declSet = new Set<tsm.Node>();
-  for (const method of getProcMethods(file)) {
+  for (const [method, _version] of getProcMethods(file)) {
     declSet.add(method);
     const parent = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
     if (parent) { declSet.add(parent); }
@@ -310,7 +314,8 @@ function deAsync(project: tsm.Project) {
     sourceFile.forEachChild(node => {
       if (tsm.Node.isClassDeclaration(node)) {
         for (const method of node.getStaticMethods()) {
-          if (getDbosMethodKind(method) === 'storedProcedure') {
+          const info = getDbosMethodInfo(method)
+          if (info?.kind === 'storedProcedure') {
             method.setIsAsync(false);
             method.getBody()?.transform(traversal => {
               const node = traversal.visitChildren();
@@ -328,6 +333,12 @@ function deAsync(project: tsm.Project) {
 function isValid<T>(value: T | null | undefined): value is T { return !!value; }
 
 type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "step" | "initializer";
+type DbosDecoratorVersion = 1 | 2;
+
+interface DbosDecoratorInfo {
+  kind: DbosDecoratorKind;
+  version: DbosDecoratorVersion;
+}
 
 export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
   const symbol = node?.getSymbol();
@@ -343,12 +354,12 @@ export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.Import
   return undefined;
 }
 
-function isDbosImport(node: tsm.ImportSpecifier ): boolean {
+function isDbosImport(node: tsm.ImportSpecifier): boolean {
   const modSpec = node.getImportDeclaration().getModuleSpecifier();
   return modSpec.getLiteralText() === "@dbos-inc/dbos-sdk";
 }
 
-function getDbosDecoratorKind(node: tsm.Decorator): DbosDecoratorKind | undefined {
+function getDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefined {
   if (!node.isDecoratorFactory()) { return undefined; }
 
   const expr = node.getCallExpressionOrThrow().getExpression();
@@ -357,24 +368,8 @@ function getDbosDecoratorKind(node: tsm.Decorator): DbosDecoratorKind | undefine
   if (tsm.Node.isIdentifier(expr)) {
     const impSpec = getImportSpecifier(expr);
     if (impSpec && isDbosImport(impSpec)) {
-      const { name } = impSpec.getStructure();
-      switch (name) {
-        case "GetApi":
-        case "PostApi":
-        case "PutApi":
-        case "PatchApi":
-        case "DeleteApi":
-          return "handler";
-        case "StoredProcedure": return "storedProcedure";
-        case "Transaction": return "transaction";
-        case "Workflow": return "workflow";
-        case "Communicator":
-        case "Step": 
-          return "step";
-        case "DBOSInitializer":
-        case "DBOSDeploy":
-          return "initializer";
-      }
+      const kind = getImportSpecifierStructureKind(impSpec.getStructure());
+      if (kind) { return { kind, version: 1 }; }
     }
   }
 
@@ -383,55 +378,90 @@ function getDbosDecoratorKind(node: tsm.Decorator): DbosDecoratorKind | undefine
     const impSpec = getImportSpecifier(expr.getExpressionIfKind(tsm.SyntaxKind.Identifier));
     if (impSpec && isDbosImport(impSpec)) {
       const { name } = impSpec.getStructure();
-      if (name === "DBOS") { 
-        switch (expr.getName()) {
-          case "getApi":
-          case "postApi":
-          case "putApi":
-          case "patchApi":
-          case "deleteApi":
-            return "handler";
-          case "workflow": return "workflow";
-          case "transaction": return "transaction";
-          case "step": return "step";
-          case "storedProcedure": return "storedProcedure";
-        }
+      if (name === "DBOS") {
+        const kind = getPropertyAccessExpressionKind(expr);
+        if (kind) { return { kind, version: 2 }; }
       }
     }
   }
 
   return undefined;
+
+  function getImportSpecifierStructureKind(
+    { name }: tsm.ImportSpecifierStructure
+  ): DbosDecoratorKind | undefined {
+    switch (name) {
+      case "GetApi":
+      case "PostApi":
+      case "PutApi":
+      case "PatchApi":
+      case "DeleteApi":
+        return "handler";
+      case "StoredProcedure": return "storedProcedure";
+      case "Transaction": return "transaction";
+      case "Workflow": return "workflow";
+      case "Communicator":
+      case "Step":
+        return "step";
+      case "DBOSInitializer":
+      case "DBOSDeploy":
+        return "initializer";
+      default: return undefined;
+    }
+  }
+
+  function getPropertyAccessExpressionKind(
+    node: tsm.PropertyAccessExpression
+  ): DbosDecoratorKind | undefined {
+    switch (node.getName()) {
+      case "getApi":
+      case "postApi":
+      case "putApi":
+      case "patchApi":
+      case "deleteApi":
+        return "handler";
+      case "workflow": return "workflow";
+      case "transaction": return "transaction";
+      case "step": return "step";
+      case "storedProcedure": return "storedProcedure";
+      default: return undefined;
+    }
+  }
 }
 
 // helper function to determine the kind of DBOS method
-export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKind | undefined {
+export function getDbosMethodInfo(node: tsm.MethodDeclaration): DbosDecoratorInfo | undefined {
   // Note, other DBOS method decorators (Scheduled, KafkaConsume, RequiredRole) modify runtime behavior
   //       of DBOS methods, but are not their own unique kind.
   //       Get/PostApi decorators are atypical in that they can be used on @Step/@Transaction/@Workflow
   //       methods as well as on their own.
-  let isHandler = false;
+  let handlerVersion: DbosDecoratorVersion | undefined = undefined;
   for (const decorator of node.getDecorators()) {
-    const kind = getDbosDecoratorKind(decorator);
-    switch (kind) {
+    const info = getDbosDecoratorInfo(decorator);
+    if (!info) { continue; }
+    switch (info.kind) {
       case "storedProcedure":
       case "transaction":
       case "workflow":
       case "step":
       case "initializer":
-        return kind;
+        return info;
       case "handler":
-        isHandler = true;
-        break;
-      case undefined:
+        if (handlerVersion !== undefined) {
+          throw new Error("Multiple handler decorators");
+        }
+        handlerVersion = info.version;
         break;
       default: {
-        const _never: never = kind;
+        const _never: never = info.kind;
         // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-        throw new Error(`Unexpected DBOS method kind: ${kind}`);
+        throw new Error(`Unexpected DBOS method kind: ${info.kind}`);
       }
     }
   }
-  return isHandler ? "handler" : undefined;
+  return handlerVersion
+    ? { kind: "handler", version: handlerVersion }
+    : undefined;
 }
 
 export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
@@ -469,9 +499,12 @@ export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   }
 }
 
-export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedureConfig {
+export function getStoredProcConfig(node: tsm.MethodDeclaration, version: DbosDecoratorVersion): StoredProcedureConfig {
   const decorators = node.getDecorators();
-  const procDecorator = decorators.find(d => getDbosDecoratorKind(d) === "storedProcedure");
+  const procDecorator = decorators.find(d => {
+    const info = getDbosDecoratorInfo(d);
+    return info?.kind === "storedProcedure";
+  });
   if (!procDecorator) { throw new Error("Missing StoredProcedure decorator"); }
 
   const arg0 = procDecorator.getCallExpression()?.getArguments()[0] ?? undefined;
@@ -479,5 +512,5 @@ export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedur
   const readOnly = configArg?.readOnly;
   const executeLocally = configArg?.executeLocally;
   const isolationLevel = configArg?.isolationLevel;
-  return { isolationLevel, readOnly, executeLocally };
+  return { isolationLevel, readOnly, executeLocally, version };
 }

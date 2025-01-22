@@ -207,7 +207,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
             : op.commConfig
               ? (...args: unknown[]) => dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig
-                ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown>, wfParams, ...args)
+                ? (...args: unknown[]) => dbosExec.procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, wfParams, ...args)
                 : undefined;
       } else {
         proxy[op.name] = op.workflowConfig

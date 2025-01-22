@@ -65,7 +65,7 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
         const kafka = new KafkaJS.Kafka({kafkaJS: {...defaults.kafkaConfig, clientId: clientId }});
         const consumerConfig = ro.consumerConfig
           ? {...ro.consumerConfig, 'auto.offset.reset': 'earliest'}
-          : { "group.id": `${this.safeGroupName(topics)}`, 'auto.offset.reset': 'earliest' };
+          : { "group.id": `${this.safeGroupName(cname, mname, topics)}`, 'auto.offset.reset': 'earliest' };
         const consumer = kafka.consumer(consumerConfig);
         await consumer.connect();
         // Unclear if we need this:
@@ -93,18 +93,25 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
         }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
-            // This combination uniquely identifies a message for a given Kafka cluster
-            const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null };
-            // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message];
-            // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-            if (method.txnConfig) {
-              // Execute the transaction
-              await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
-            } else if (method.workflowConfig) {
-              // Safely start the workflow
-              await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+            const logger = this.executor!.logger;
+            try {
+              // This combination uniquely identifies a message for a given Kafka cluster (and should ID the workflow also)
+              const workflowID = `kafka-unique-id-${topic}-${partition}-${consumerConfig["group.id"]}-${message.offset}`
+              const wfParams = { workflowUUID: workflowID, configuredInstance: null, queueName: ro.queueName };
+              // All operations annotated with Kafka decorators must take in these three arguments
+              const args: KafkaArgs = [topic, partition, message];
+              // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+              if (method.txnConfig) {
+                // Execute the transaction
+                await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
+              } else if (method.workflowConfig) {
+                // Safely start the workflow
+                await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+              }
+            } catch (e) {
+              const error = e as Error;
+              logger.error(`Error processing Kafka message: ${error.message}`);
+              throw error;
             }
           },
         })
@@ -120,8 +127,8 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
     }
   }
 
-  safeGroupName(topics: Array<string | RegExp>) {
-    const safeGroupIdPart =  topics
+  safeGroupName(cls: string, func: string, topics: Array<string | RegExp>) {
+    const safeGroupIdPart =  [cls, func, ...topics]
       .map(r => r.toString())
       .map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, ''))
       .join('-');
@@ -159,9 +166,10 @@ let kafkaInst: DBOSConfluentKafka | undefined = undefined;
 export interface KafkaRegistrationInfo {
   kafkaTopics?: string | RegExp | Array<string | RegExp>;
   consumerConfig?: KafkaConfig;
+  queueName?: string;
 }
 
-export function CKafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: KafkaConfig) {
+export function CKafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: KafkaConfig, queueName ?: string) {
   function kafkadec<This, Return>(
     target: object,
     propertyKey: string,
@@ -174,6 +182,7 @@ export function CKafkaConsume(topics: string | RegExp | Array<string | RegExp>, 
     const kafkaRegistration = receiverInfo as KafkaRegistrationInfo;
     kafkaRegistration.kafkaTopics = topics;
     kafkaRegistration.consumerConfig = consumerConfig;
+    kafkaRegistration.queueName = queueName;
 
     return descriptor;
   }

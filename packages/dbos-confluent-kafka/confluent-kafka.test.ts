@@ -1,6 +1,7 @@
 import {
   DBOS,
   parseConfigFile,
+  WorkflowQueue,
 } from "@dbos-inc/dbos-sdk";
 
 import {
@@ -100,6 +101,8 @@ let patternTopicCounter = 0;
 
 const arrayTopics = [wf1Topic, wf2Topic];
 let arrayTopicsCounter = 0;
+
+const wfq = new WorkflowQueue("kafkaq", 2);
 
 describe("kafka-tests", () => {
   let kafkaIsAvailable = true;
@@ -213,7 +216,7 @@ class DBOSTestClass {
     await DBOSTestClass.patternTopicPromise;
   }
 
-  @CKafkaConsume(arrayTopics)
+  @CKafkaConsume(arrayTopics, undefined, wfq.name)
   @DBOS.workflow()
   static async testConsumeTopicsArray(topic: string, _partition: number, message: Message) {
     console.log(`got something 3 ${topic}`);

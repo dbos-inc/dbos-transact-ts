@@ -155,7 +155,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
           : op.procConfig
 
-          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
+          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
 
@@ -218,7 +218,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.external(stepFn, params, ...args);
   }
 
-  async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async #procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.procedure(proc, params, ...args);
   }
 }

@@ -66,9 +66,10 @@ async function generateDbosDrop(appVersion: string | undefined) {
 }
 
 function getMethodContext(method: tsm.MethodDeclaration, config: StoredProcedureConfig, appVersion: string | undefined) {
-  const readOnly = config?.readOnly ?? false;
-  const executeLocally = config?.executeLocally ?? false;
-  const isolationLevel = config?.isolationLevel ?? "SERIALIZABLE";
+  const readOnly = config.readOnly ?? false;
+  const executeLocally = config.executeLocally ?? false;
+  const isolationLevel = config.isolationLevel ?? "SERIALIZABLE";
+  const apiVersion = config.version;
 
   const methodName = method.getName();
   const className = method.getParentIfKindOrThrow(tsm.SyntaxKind.ClassDeclaration).getName();
@@ -82,7 +83,8 @@ function getMethodContext(method: tsm.MethodDeclaration, config: StoredProcedure
     methodName, 
     className, 
     moduleName, 
-    appVersion 
+    appVersion, 
+    apiVersion,
   };
 }
 

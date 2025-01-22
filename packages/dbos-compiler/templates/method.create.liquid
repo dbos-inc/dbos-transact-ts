@@ -4,14 +4,28 @@ CREATE OR REPLACE FUNCTION "{{appVersion}}{{className}}_{{methodName}}_f"(
     _params JSONB
 ) RETURNS JSONB AS $$ 
 
-    if (globalThis.${{appVersion}}run === undefined) plv8.execute('SELECT dbos.{{appVersion}}run_init();');
-    if (globalThis.{{appVersion}}{{moduleName}} === undefined) plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
+    if (
+        globalThis.${{appVersion}}run === undefined || 
+        globalThis.${{appVersion}}run_v2 === undefined || 
+        globalThis.require === undefined
+    ) {
+        plv8.execute('SELECT dbos.{{appVersion}}run_init();');
+    }
 
-    const $run = globalThis.{{appVersion}}$run;
+    if (globalThis.{{appVersion}}{{moduleName}} === undefined) {
+        plv8.execute('SELECT "{{appVersion}}{{moduleName}}_init"();');
+    }
+
     const { {{className}} } = globalThis.{{appVersion}}{{moduleName}};
-
+    {% if apiVersion == 1 %}
+    const $run = globalThis.{{appVersion}}$run;
     return $run(_workflow_uuid, _context, (ctx) => {{className}}.{{methodName}}(ctx, ..._params));
-
+    {% elsif apiVersion == 2 %}
+    const $run = globalThis.{{appVersion}}$run_v2;
+    plv8.$dbos_context = {..._context, workflow_id: _workflow_uuid };
+    return $run({{className}}.{{methodName}}, _params);
+    delete plv8.$dbos_context;
+    {% endif %}
 $$ LANGUAGE plv8;
 
 CREATE OR REPLACE PROCEDURE "{{appVersion}}{{className}}_{{methodName}}_p"(

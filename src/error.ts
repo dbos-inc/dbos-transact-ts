@@ -57,7 +57,8 @@ export function isClientError(dbosErrorCode: number) {
     dbosErrorCode === WorkflowPermissionDeniedError ||
     dbosErrorCode === TopicPermissionDeniedError ||
     dbosErrorCode === ConflictingUUIDError ||
-    dbosErrorCode === NotRegisteredError
+    dbosErrorCode === NotRegisteredError ||
+    dbosErrorCode === ConflictingWorkflowError
   );
 }
 
@@ -199,5 +200,12 @@ const InvalidWorkflowTransition = 21;
 export class DBOSInvalidWorkflowTransitionError extends DBOSError {
   constructor(msg?: string) {
     super(msg ?? "Invalid workflow state", InvalidWorkflowTransition);
+  }
+}
+
+const ConflictingWorkflowError = 22;
+export class DBOSConflictingWorkflowError extends DBOSError {
+  constructor(workflowID: string, msg: string) {
+    super(`Conflicting workflow invocation with the same ID (${workflowID}): ${msg}`, ConflictingWorkflowError);
   }
 }

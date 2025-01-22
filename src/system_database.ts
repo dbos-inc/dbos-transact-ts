@@ -3,7 +3,7 @@
 import { deserializeError, serializeError } from "serialize-error";
 import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError } from "./error";
+import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError, DBOSConflictingWorkflowError } from "./error";
 import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import {
   notifications,
@@ -202,7 +202,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async initWorkflowStatus<T extends any[]>(initStatus: WorkflowStatusInternal, args: T): Promise<{args: T, status: string}> {
-    const result = await this.pool.query<{recovery_attempts: number, status: string}>(
+    const result = await this.pool.query<{recovery_attempts: number, status: string, name: string, class_name: string, config_name: string, queue_name?: string}>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
         workflow_uuid,
         status,
@@ -223,7 +223,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE WHEN $16 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
-        RETURNING recovery_attempts, status`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -243,17 +243,42 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.recovery,
       ]
     );
-    const recovery_attempts = result.rows[0].recovery_attempts;
+    // Check the started workflow matches the expected name, class_name, config_name, and queue_name
+    // A mismatch indicates a workflow starting with the same UUID but different functions, which should not be allowed.
+    const resRow = result.rows[0];
+    initStatus.configName = initStatus.configName || "";
+    resRow.config_name = resRow.config_name || "";
+    resRow.queue_name = resRow.queue_name === null ? undefined : resRow.queue_name; // Convert null in SQL to undefined
+    let msg = "";
+    if (resRow.name !== initStatus.name) {
+      msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.name}`;
+    } else if (resRow.class_name !== initStatus.className) {
+      msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.className}`;
+    } else if (resRow.config_name !== initStatus.configName) {
+      msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.configName}`;
+    } else if (resRow.queue_name !== initStatus.queueName) {
+      // This is a warning because a different queue name is not necessarily an error.
+      this.logger.warn(`Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`);
+    }
+    if (msg !== "") {
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+    }
+
+    const recovery_attempts = resRow.recovery_attempts;
     if (recovery_attempts >= initStatus.maxRetries && initStatus.recovery) {
       await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING]);
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
-    const status = result.rows[0].status;
+    const status = resRow.status;
 
+    const serializedInputs = DBOSJSON.stringify(args);
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
-      [initStatus.workflowUUID, DBOSJSON.stringify(args)]
+      [initStatus.workflowUUID, serializedInputs]
     );
+    if (serializedInputs !== rows[0].inputs) {
+      this.logger.warn(`Workflow inputs for ${initStatus.workflowUUID} changed since the first call! Use the original inputs.`);
+    }
     return {args: DBOSJSON.parse(rows[0].inputs) as T, status};
   }
 
