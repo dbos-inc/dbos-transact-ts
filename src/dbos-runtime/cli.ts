@@ -123,9 +123,12 @@ program
 program
   .command('reset')
   .description("reset the system database")
-  .action(async () => { 
-    // const [dbosConfig, runtimeConfig] = parseConfigFile();
-    await runAndLog(reset); 
+  .option('-y, --yes <boolean>', 'Skip confirmation prompt')
+  .action(async (options: {confirm: boolean}) => { 
+    let logger = new GlobalLogger();
+    const _ = parseConfigFile(); // Validate config file
+    const configFile = loadConfigFile(dbosConfigFilePath);
+    await reset(configFile, logger, options.confirm);
   });
 
 program

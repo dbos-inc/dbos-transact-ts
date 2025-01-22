@@ -1,9 +1,22 @@
 import { GlobalLogger } from "../telemetry/logs";
 import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
+import { confirm } from '@inquirer/prompts';
 
+export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: boolean) {
 
-export async function reset(configFile: ConfigFile, logger: GlobalLogger) {
+  if (!cnf) {
+    const userConfirmed = await confirm({
+      message:
+        'This command resets your DBOS system database, deleting metadata about past workflows and steps. Are you sure you want to proceed?',
+      default: false, // Default value for confirmation
+    });
+  
+    if (!userConfirmed) {
+      console.log('Operation cancelled.');
+      process.exit(0); // Exit the process if the user cancels
+    }
+  }
   
   let userPoolConfig: PoolConfig = constructPoolConfig(configFile)
 
@@ -29,10 +42,6 @@ export async function reset(configFile: ConfigFile, logger: GlobalLogger) {
                 WHERE pg_stat_activity.datname = $1
                 AND pid <> pg_backend_pid()`, [sysDbName]);
 
-
-  // let query = `DROP DATABASE IF EXISTS ${systemPoolConfig.database};`              
-  // console.log("Dropping system database");
-  // console.log(query);
 
   await pgClient.query(`DROP DATABASE IF EXISTS ${sysDbName};`);        
   
