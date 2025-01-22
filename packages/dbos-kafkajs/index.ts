@@ -70,7 +70,7 @@ export class DBOSKafka implements DBOSEventReceiver {
         if (!this.kafka) {
           this.kafka = new KafkaJS(defaults.kafkaConfig);
         }
-        const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(topics)}` };
+        const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(cname, mname, topics)}` };
         const consumer = this.kafka.consumer(consumerConfig);
         await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -116,7 +116,6 @@ export class DBOSKafka implements DBOSEventReceiver {
               logger.error(`Error processing Kafka message: ${error.message}`);
               throw error;
             }
-
           },
         })
         this.consumers.push(consumer);
@@ -130,8 +129,8 @@ export class DBOSKafka implements DBOSEventReceiver {
     }
   }
 
-  safeGroupName(topics: Array<string | RegExp>) {
-    const safeGroupIdPart =  topics
+  safeGroupName(cls: string, func: string, topics: Array<string | RegExp>) {
+    const safeGroupIdPart = [cls, func, ...topics]
       .map(r => r.toString())
       .map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, ''))
       .join('-');
