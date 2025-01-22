@@ -12,6 +12,7 @@ import path from "path";
 import validator from "validator";
 import fs from "fs";
 import { loadDatabaseConnection } from "./db_connection";
+import { GlobalLogger } from "../telemetry/logs";
 
 
 export const dbosConfigFilePath = "dbos-config.yaml";
@@ -111,15 +112,15 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
-export function constructPoolConfig(configFile: ConfigFile) {
+export function constructPoolConfig(configFile: ConfigFile, logger: GlobalLogger = new GlobalLogger()) {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   const databaseConnection = loadDatabaseConnection()
   if (configFile["database"]["hostname"]) {
-    console.log("Loading database connection parameters from dbos-config.yaml")
+    logger.info("Loading database connection parameters from dbos-config.yaml")
   } else if (databaseConnection["hostname"]) {
-    console.log("Loading database connection paraeters from .dbos/db_connection")
+    logger.info("Loading database connection parameters from .dbos/db_connection")
   } else {
-    console.log("Using default database connection parameters")
+    logger.info("Using default database connection parameters")
   }
   configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
   configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;

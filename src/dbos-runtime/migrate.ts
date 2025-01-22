@@ -8,7 +8,7 @@ import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery
 import { db_wizard } from "./db_wizard";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  let poolConfig: PoolConfig = constructPoolConfig(configFile)
+  let poolConfig: PoolConfig = constructPoolConfig(configFile, logger)
   poolConfig = await db_wizard(poolConfig);
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
@@ -19,7 +19,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
       const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
-      logger.info(migrateCommandOutput.trimEnd());
+      console.log(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
     logMigrationError(e, logger, "Error running migration")

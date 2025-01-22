@@ -218,7 +218,6 @@ if (!process.argv.slice(2).length) {
 //Finally, terminates the program with the exit code.
 export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
   let logger = new GlobalLogger();
-  const _ = parseConfigFile(); // Validate config file
   const configFile = loadConfigFile(dbosConfigFilePath);
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
