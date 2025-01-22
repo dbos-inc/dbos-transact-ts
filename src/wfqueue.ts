@@ -14,7 +14,7 @@ interface QueueRateLimit {
 }
 
 export class WorkflowQueue {
-    constructor(readonly name: string, readonly concurrency?: number, readonly rateLimit?: QueueRateLimit) {
+    constructor(readonly name: string, readonly concurrency?: number, readonly rateLimit?: QueueRateLimit, readonly worker_concurrency?: number) {
         if (wfQueueRunner.wfQueuesByName.has(name)) {
             throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
         }
