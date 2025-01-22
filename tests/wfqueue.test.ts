@@ -301,69 +301,69 @@ describe("queued-wf-tests-simple", () => {
         expect(await queueEntriesAreCleanedUp()).toBe(true);
     }, 60000);
 
-    // class TestDuplicateID {
-    //     @DBOS.workflow()
-    //     static async testWorkflow(var1: string) {
-    //         await DBOS.sleepms(10);
-    //         return var1;
-    //     }
+    class TestDuplicateID {
+        @DBOS.workflow()
+        static async testWorkflow(var1: string) {
+            await DBOS.sleepms(10);
+            return var1;
+        }
 
-    //     @DBOS.workflow()
-    //     static async testDupWorkflow() {
-    //         await DBOS.sleepms(10);
-    //         return;
-    //     }
-    // }
+        @DBOS.workflow()
+        static async testDupWorkflow() {
+            await DBOS.sleepms(10);
+            return;
+        }
+    }
 
-    // class TestDuplicateIDdup {
-    //     @DBOS.workflow()
-    //     static async testWorkflow(var1: string) {
-    //         await DBOS.sleepms(10);
-    //         return var1;
-    //     }
-    // }
+    class TestDuplicateIDdup {
+        @DBOS.workflow()
+        static async testWorkflow(var1: string) {
+            await DBOS.sleepms(10);
+            return var1;
+        }
+    }
 
-    // class TestDuplicateIDins extends ConfiguredInstance {
-    //     constructor(name: string) {
-    //         super(name);
-    //     }
+    class TestDuplicateIDins extends ConfiguredInstance {
+        constructor(name: string) {
+            super(name);
+        }
 
-    //     async initialize() {
-    //         return Promise.resolve();
-    //     }
+        async initialize() {
+            return Promise.resolve();
+        }
 
-    //     @DBOS.workflow()
-    //     async testWorkflow(var1: string) {
-    //         await DBOS.sleepms(10);
-    //         return var1;
-    //     }
-    // }
+        @DBOS.workflow()
+        async testWorkflow(var1: string) {
+            await DBOS.sleepms(10);
+            return var1;
+        }
+    }
 
-    // test("duplicate-workflow-id", async() => {
-    //     const wfid = uuidv4();
-    //     const handle1 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('abc');
-    //     // Call with a different function name within the same class is not allowed.
-    //     await expect(DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testDupWorkflow()).rejects.toThrow(DBOSConflictingWorkflowError);
-    //     // Call the same function name in a different class is not allowed.
-    //     await expect(DBOS.startWorkflow(TestDuplicateIDdup, {workflowID: wfid}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
-    //     await expect(handle1.getResult()).resolves.toBe('abc');
+    test("duplicate-workflow-id", async() => {
+        const wfid = uuidv4();
+        const handle1 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('abc');
+        // Call with a different function name within the same class is not allowed.
+        await expect(DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testDupWorkflow()).rejects.toThrow(DBOSConflictingWorkflowError);
+        // Call the same function name in a different class is not allowed.
+        await expect(DBOS.startWorkflow(TestDuplicateIDdup, {workflowID: wfid}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
+        await expect(handle1.getResult()).resolves.toBe('abc');
 
-    //     // Calling itself again should be fine
-    //     const handle2 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('abc');
-    //     await expect(handle2.getResult()).resolves.toBe('abc');
+        // Calling itself again should be fine
+        const handle2 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('abc');
+        await expect(handle2.getResult()).resolves.toBe('abc');
 
-    //     // Call the same function in a different configured class is not allowed.
-    //     const myObj = DBOS.configureInstance(TestDuplicateIDins, 'myname');
-    //     await expect(DBOS.startWorkflow(myObj, {workflowID: wfid}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
+        // Call the same function in a different configured class is not allowed.
+        const myObj = DBOS.configureInstance(TestDuplicateIDins, 'myname');
+        await expect(DBOS.startWorkflow(myObj, {workflowID: wfid}).testWorkflow('abc')).rejects.toThrow(DBOSConflictingWorkflowError);
 
-    //     // Call the same function in a different queue would generate a warning, but is allowed.
-    //     const handleQ = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc');
-    //     await expect(handleQ.getResult()).resolves.toBe('abc');
+        // Call the same function in a different queue would generate a warning, but is allowed.
+        const handleQ = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid, queueName: queue.name}).testWorkflow('abc');
+        await expect(handleQ.getResult()).resolves.toBe('abc');
 
-    //     // Call with a different input would generate a warning, but still use the recorded input.
-    //     const handle3 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('def');
-    //     await expect(handle3.getResult()).resolves.toBe('abc');
-    // });
+        // Call with a different input would generate a warning, but still use the recorded input.
+        const handle3 = await DBOS.startWorkflow(TestDuplicateID, {workflowID: wfid}).testWorkflow('def');
+        await expect(handle3.getResult()).resolves.toBe('abc');
+    });
 });
 
 class TestWFs

@@ -261,8 +261,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.logger.warn(`Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`);
     }
     if (msg !== "") {
-      this.logger.error(`Workflow (${initStatus.workflowUUID}) already exists with a different function: ${msg}`);
-      // throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
+      throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
     }
 
     const recovery_attempts = resRow.recovery_attempts;

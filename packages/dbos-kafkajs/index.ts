@@ -96,19 +96,27 @@ export class DBOSKafka implements DBOSEventReceiver {
         }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
-            // This combination uniquely identifies a message for a given Kafka cluster
-            const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: ro.queueName };
-            // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message];
-            // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-            if (method.txnConfig) {
-              // Execute the transaction
-              await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
-            } else if (method.workflowConfig) {
-              // Safely start the workflow
-              await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+            const logger = this.executor!.logger;
+            try {
+              // This combination uniquely identifies a message for a given Kafka cluster
+              const workflowUUID = `kafka-unique-id-${topic}-${partition}-${consumerConfig.groupId}-${message.offset}`
+              const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: ro.queueName };
+              // All operations annotated with Kafka decorators must take in these three arguments
+              const args: KafkaArgs = [topic, partition, message];
+              // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+              if (method.txnConfig) {
+                // Execute the transaction
+                await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
+              } else if (method.workflowConfig) {
+                // Safely start the workflow
+                await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+              }
+            } catch (e) {
+              const error = e as Error;
+              logger.error(`Error processing Kafka message: ${error.message}`);
+              throw error;
             }
+
           },
         })
         this.consumers.push(consumer);
