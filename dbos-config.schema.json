@@ -82,13 +82,7 @@
           "type": "array",
           "description": "Specify a list of user DB rollback commands to run"
         }
-      },
-      "required": [
-        "hostname",
-        "port",
-        "username",
-        "password"
-      ]
+      }
     },
     "telemetry": {
       "type": "object",
@@ -186,8 +180,5 @@
       "type": "string",
       "deprecated": true
     }
-  },
-  "required": [
-    "database"
-  ]
+  }
 }

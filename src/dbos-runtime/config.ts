@@ -11,7 +11,8 @@ import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 import validator from "validator";
 import fs from "fs";
-
+import { loadDatabaseConnection } from "./db_connection";
+import { GlobalLogger } from "../telemetry/logs";
 
 
 export const dbosConfigFilePath = "dbos-config.yaml";
@@ -23,19 +24,19 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   database: {
-    hostname: string;
-    port: number;
-    username: string;
+    hostname?: string;
+    port?: number;
+    username?: string;
     password?: string;
     connectionTimeoutMillis?: number;
-    app_db_name: string;
+    app_db_name?: string;
     sys_db_name?: string;
     ssl?: boolean;
     ssl_ca?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];
-    local_suffix: boolean;
+    local_suffix?: boolean;
   };
   http?: {
     cors_middleware?: boolean;
@@ -111,7 +112,25 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
-export function constructPoolConfig(configFile: ConfigFile) {
+export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions) {
+  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
+  const databaseConnection = loadDatabaseConnection();
+  if (!cliOptions?.skipLoggingInParse) {
+    const logger = new GlobalLogger();
+    if (configFile["database"]["hostname"]) {
+      logger.info("Loading database connection parameters from dbos-config.yaml");
+    } else if (databaseConnection["hostname"]) {
+      logger.info("Loading database connection parameters from .dbos/db_connection");
+    } else {
+      logger.info("Using default database connection parameters");
+    }
+  }
+  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
+  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
+  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
+  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
+  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
+
   let databaseName: string | undefined = configFile.database.app_db_name;
   if (databaseName === undefined) {
     const appName = retrieveApplicationName(configFile);
@@ -171,13 +190,14 @@ export interface ParseOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
+  skipLoggingInParse?: boolean;
 }
 
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
     process.chdir(cliOptions.appDir);
   }
@@ -187,21 +207,8 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
-  // Database field must exist
   if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database config`);
-  }
-
-  // Check for the database password
-  if (!configFile.database.password) {
-    if (useProxy) {
-      configFile.database.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      const pgPassword: string | undefined = process.env.PGPASSWORD;
-      if (pgPassword) {
-        configFile.database.password = pgPassword;
-      }
-    }
+    configFile.database = {}
   }
 
   if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
@@ -222,7 +229,7 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile);
+  const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
     throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);

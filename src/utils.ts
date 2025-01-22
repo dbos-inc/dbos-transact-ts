@@ -2,22 +2,9 @@ import fs from "fs";
 import path from "path";
 
 /*
- * Use the node.js `fs` module to read the content of a file
- * Handles cases where:
- * - the file does not exist
- * - the file is not a valid file
+ * A wrapper of readFileSync used for mocking in tests
  **/
 export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string {
-  // First, check the file
-  fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
-    if (error) {
-      throw new Error(`checking on ${path}. ${error.code}: ${error.errno}`);
-    } else if (!stats.isFile()) {
-      throw new Error(`config file ${path} is not a file`);
-    }
-  });
-
-  // Then, read its content
   return fs.readFileSync(path, { encoding } );
 }
 
