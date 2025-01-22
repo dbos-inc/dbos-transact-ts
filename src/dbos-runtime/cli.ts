@@ -13,6 +13,7 @@ import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from ".
 import { GetWorkflowsInput, StatusString } from "..";
 import { exit } from "node:process";
 import { runCommand } from "./commands";
+import { reset} from "./reset";
 
 const program = new Command();
 
@@ -117,6 +118,17 @@ program
   .command('migrate')
   .description("Perform a database migration")
   .action(async () => { await runAndLog(migrate); });
+
+program
+  .command('reset')
+  .description("reset the system database")
+  .option('-y, --yes', 'Skip confirmation prompt', false)
+  .action(async (options: {yes: boolean}) => { 
+    const logger = new GlobalLogger();
+    const _ = parseConfigFile(); // Validate config file
+    const configFile = loadConfigFile(dbosConfigFilePath);
+    await reset(configFile, logger, options.yes);
+  });
 
 program
   .command('rollback')
