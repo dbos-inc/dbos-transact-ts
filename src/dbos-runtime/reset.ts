@@ -18,9 +18,9 @@ export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: b
     }
   }
   
-  let userPoolConfig: PoolConfig = constructPoolConfig(configFile)
+  const userPoolConfig: PoolConfig = constructPoolConfig(configFile)
 
-  let sysDbName = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
+  const sysDbName = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
  
   logger.info(`Resetting ${sysDbName} if it exists`);
 

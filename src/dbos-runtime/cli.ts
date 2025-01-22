@@ -124,7 +124,7 @@ program
   .description("reset the system database")
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .action(async (options: {yes: boolean}) => { 
-    let logger = new GlobalLogger();
+    const logger = new GlobalLogger();
     const _ = parseConfigFile(); // Validate config file
     const configFile = loadConfigFile(dbosConfigFilePath);
     await reset(configFile, logger, options.yes);
