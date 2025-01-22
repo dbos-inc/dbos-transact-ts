@@ -46,41 +46,83 @@ $$ LANGUAGE plv8;
 
 CREATE OR REPLACE FUNCTION dbos.{{appVersion}}run_init() RETURNS VOID AS $$
 
-    function $run(workflow_uuid, _context, $func) {
+    function $query(queryText, values) {
+        const result = plv8.execute(queryText, values ?? []);
+        plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result, (k, v) => typeof v === "bigint" ? v.toString() + "n" : v));
+        if (typeof result === 'number') {
+            return { rowCount: result };
+        } else if (Array.isArray(result)) {
+            return { rowCount: result.length, rows: result };
+        } else {
+            throw new Error(`unexpected result from plv8.execute ${typeof result}`);
+        }
+    };
+
+    const $logger = {
+        info: (msg) => { plv8.elog(INFO, msg); },
+        debug: (msg) => { plv8.elog(DEBUG1, msg); },
+        warn: (msg) => { plv8.elog(WARNING, msg); },
+        error: (msg) => { plv8.elog(ERROR, msg); },
+    }
+
+    function $serialize_error(e) {
+        // -- TODO: investigate using serialize-error package
+        return { error: { name: e.name, message: e.message, stack: e.stack } };
+    }
+
+    function $run(workflow_uuid, context, func) {
         try {
             const $ctx = {
-                request: _context.request,
+                request: context.request,
                 workflowUUID: workflow_uuid,
-                authenticatedUser: _context.authenticatedUser,
-                assumedRole: _context.assumedRole,
-                authenticatedRoles: _context.authenticatedRoles,
-                query: (queryText, values) => {
-                    const result = plv8.execute(queryText, values ?? []);
-                    plv8.elog(DEBUG1, "DBOSQuery.query", "result", JSON.stringify(result, (k, v) => typeof v === "bigint" ? v.toString() + "n" : v));
-                    if (typeof result === 'number') {
-                        return { rowCount: result };
-                    } else if (Array.isArray(result)) {
-                        return { rowCount: result.length, rows: result };
-                    } else {
-                        throw new Error(`unexpected result from plv8.execute ${typeof result}`);
-                    }
-                },
-                logger: {
-                    info: (msg) => { plv8.elog(INFO, msg); },
-                    debug: (msg) => { plv8.elog(DEBUG1, msg); },
-                    warn: (msg) => { plv8.elog(WARNING, msg); },
-                    error: (msg) => { plv8.elog(ERROR, msg); },
-                }
+                authenticatedUser: context.authenticatedUser,
+                assumedRole: context.assumedRole,
+                authenticatedRoles: context.authenticatedRoles,
+                query: $query,
+                logger: $logger,
             };
-            const output = $func($ctx);
+            const output = func($ctx);
             return { output };
         } catch (e) {
-            // -- TODO: investigate using serialize-error
-            return { error: { name: e.name, message: e.message, stack: e.stack } };
+            return $serialize_error(e);
         }
     }
 
+    function $run_v2(func, args) {
+        try {
+            const output = func(...args);
+            return { output };
+        } catch (e) {
+            return $serialize_error(e);
+        }
+    }
+
+    function $require(module_name) {
+        if (module_name === "@dbos-inc/dbos-sdk") {
+            const DBOS = {
+                getRequest: () => plv8.$dbos_context.request,
+                get request() {
+                    const r = plv8.$dbos_context.request;
+                    if (!r) { throw new Error("`DBOS.request` accessed from outside of HTTP requests"); }
+                    return r;
+                },
+                get workflowID() { return plv8.$dbos_context.workflow_id; },
+                get authenticatedUser() { return plv8.$dbos_context.authenticatedUser ?? ""; },
+                get assumedRole() { return plv8.$dbos_context.assumedRole ?? ""; },
+                get authenticatedRoles() { return plv8.$dbos_context.authenticatedRoles ?? []; },
+                logger: $logger,
+                pgClient: { query: $query, }
+            };
+
+            return { DBOS };
+        }
+
+        return undefined;
+    }
+
     globalThis.{{appVersion}}$run = $run;
+    globalThis.{{appVersion}}$run_v2 = $run_v2;
+    globalThis.require = $require;
 
 $$ LANGUAGE plv8 IMMUTABLE STRICT;
 

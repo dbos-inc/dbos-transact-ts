@@ -70,7 +70,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
           : op.commConfig
             ? (...args: unknown[]) => this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
-              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown>, ...args)
+              ? (...args: unknown[]) => this.procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, ...args)
               : undefined;
       }
       return proxy as WFInvokeFuncs<T>;
@@ -207,7 +207,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     return check.output; // Always return the recorded result.
   }
 
-  async procedure<R>(proc: StoredProcedure<R>, ...args: unknown[]): Promise<R> {
+  async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, ...args: T): Promise<R> {
     const procInfo = this.#dbosExec.getProcedureInfo(proc);
     if (procInfo === undefined) { throw new DBOSDebuggerError(proc.name); }
     const funcId = this.functionIDGetIncrement();
@@ -229,7 +229,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
     let check: RecordedResult<R> | Error;
     const wrappedProcedure = async (client: PoolClient): Promise<R> => {
       check = await this.checkProcExecution<R>(client, funcId);
-      const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, proc.name);
+      const procCtxt = new StoredProcedureContextImpl(client, this, span, this.#dbosExec.logger, funcId, proc.name);
 
       if (check instanceof Error) {
         if (this.#dbosExec.debugProxy) {
@@ -250,7 +250,7 @@ export class WorkflowContextDebug extends DBOSContextImpl implements WorkflowCon
 
     let result: Awaited<R> | Error;
     try {
-      result = await this.#dbosExec.executeProcedure(wrappedProcedure, procInfo.config);
+      result = await this.#dbosExec.invokeStoredProcFunction(wrappedProcedure, procInfo.config);
     } catch (e) {
       result = e as Error;
     }

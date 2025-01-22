@@ -23,8 +23,7 @@ export interface QueryResult<R extends QueryResultRow> extends QueryResultBase {
   rows: R[];
 }
 
-export type StoredProcedure<R> = (ctxt: StoredProcedureContext, ...args: unknown[]) => Promise<R>;
-export type StoredProcedureFunc<R> = StoredProcedure<R>;
+export type StoredProcedure<T extends unknown[], R> = (ctxt: StoredProcedureContext, ...args: T) => Promise<R>;
 
 export interface StoredProcedureContext extends Pick<DBOSContext, 'request' | 'workflowUUID' | 'authenticatedUser' | 'assumedRole' | 'authenticatedRoles' | 'logger'> {
   query<R extends QueryResultRow>(sql: string, ...params: unknown[]): Promise<QueryResult<R>>;
@@ -36,6 +35,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
     workflowContext: WorkflowContextImpl | WorkflowContextDebug,
     span: Span,
     logger: Logger,
+    readonly functionID: number,
     operationName: string
   ) {
     super(operationName, span, logger, workflowContext);

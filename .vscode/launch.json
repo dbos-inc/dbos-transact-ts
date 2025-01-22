@@ -34,5 +34,12 @@
             "type": "node-terminal",
             "cwd": "${workspaceFolder}/examples/hello",
         },
+        {
+            "command": "npx jest --testTimeout 1000000",
+            "name": "Launch Proc Test",
+            "request": "launch",
+            "type": "node-terminal",
+            "cwd": "${workspaceFolder}/tests/proc-test",
+        },
     ]
 }

@@ -66,6 +66,10 @@ export class Test {
   @DBOS.transaction()
   static async testGetHandlerTx_v2(): Promise<void> {  }
 
+  @GetApi('/test')
+  @DBOS.step()
+  static async testGetHandlerComm_v2(ctxt: CommunicatorContext): Promise<void> {  }
+
   @DBOS.getApi('/test')
   @DBOS.step()
   static async testGetHandlerStep_v2(): Promise<void> {  }
@@ -87,6 +91,9 @@ export class Test {
 
   @DBOS.step()
   static async testStep_v2(message: string): Promise<void> {  }
+
+  @DBOS.step()
+  static async testCommunicator_v2(message: string): Promise<void> {  }
 
   @DBOS.transaction()
   static async testTransaction_v2(message: string): Promise<void> {  }
@@ -114,6 +121,30 @@ export class Test {
 
   @StoredProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
   static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure()
+  static async testProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ readOnly: true })
+  static async testReadOnlyProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ isolationLevel: "REPEATABLE READ" })
+  static async testRepeatableReadProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED" })
+  static async testConfiguredProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ executeLocally: true})
+  static async testLocalProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ readOnly: true, executeLocally: true })
+  static async testLocalReadOnlyProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
+  static async testLocalRepeatableReadProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @DBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
+  static async testLocalConfiguredProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
 
   @DBOSInitializer()
   static async testDBOSInitializer(ctxt: InitContext): Promise<void> {  }
@@ -182,6 +213,10 @@ export class Test {
   static async testGetHandlerComm(ctxt: HandlerContext): Promise<void> {  }
 
   @TestGetApi('/test')
+  @TestDBOS.step()
+  static async testGetHandlerComm_v2(ctxt: CommunicatorContext): Promise<void> {  }
+
+  @TestGetApi('/test')
   @TestStep()
   static async testGetHandlerStep(ctxt: StepContext): Promise<void> {  }
 
@@ -215,6 +250,9 @@ export class Test {
   @TestDBOS.step()
   static async testStep_v2(message: string): Promise<void> {  }
 
+  @TestDBOS.step()
+  static async testCommunicator_v2(message: string): Promise<void> {  }
+
   @TestDBOS.transaction()
   static async testTransaction_v2(message: string): Promise<void> {  }
 
@@ -241,6 +279,30 @@ export class Test {
 
   @TestStoredProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
   static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure()
+  static async testProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ readOnly: true })
+  static async testReadOnlyProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ isolationLevel: "REPEATABLE READ" })
+  static async testRepeatableReadProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED" })
+  static async testConfiguredProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ executeLocally: true})
+  static async testLocalProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ readOnly: true, executeLocally: true })
+  static async testLocalReadOnlyProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
+  static async testLocalRepeatableReadProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+
+  @TestDBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
+  static async testLocalConfiguredProcedure_v2(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
 
   @TestInitializer()
   static async testDBOSInitializer(ctxt: InitContext): Promise<void> {  }

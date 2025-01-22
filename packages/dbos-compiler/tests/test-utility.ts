@@ -101,6 +101,7 @@ declare module "@dbos-inc/dbos-sdk" {
     static workflow(config?: WorkflowConfig);
     static transaction(config?: TransactionConfig);
     static step(config?: StepConfig);
+    static storedProcedure(config?: StoredProcedureConfig);
     static getApi(url: string);
     static postApi(url: string);
     static putApi(url: string);

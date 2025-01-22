@@ -11,6 +11,7 @@ import { WorkflowContext, WorkflowContextImpl } from "./workflow";
 import { TransactionContextImpl } from "./transaction";
 import { StepContextImpl } from "./step";
 import { DBOSInvalidWorkflowTransitionError } from "./error";
+import { StoredProcedureContextImpl } from "./procedure";
 import { HandlerContextImpl } from "./httpServer/handler";
 
 export interface DBOSLocalCtx {
@@ -122,6 +123,20 @@ export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: ()=>Prom
 }
 
 export async function runWithTransactionContext<Client extends UserDatabaseClient, R>(ctx: TransactionContextImpl<Client>, callback: ()=>Promise<R>) {
+  // Check we are in a workflow context and not in a step / transaction already
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
+  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
+  return await asyncLocalCtx.run({
+    ctx,
+    workflowId: ctx.workflowUUID,
+    curTxFunctionId: ctx.functionID,
+    parentCtx: pctx,
+  },
+  callback);
+}
+
+export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImpl, callback: ()=>Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore();
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
