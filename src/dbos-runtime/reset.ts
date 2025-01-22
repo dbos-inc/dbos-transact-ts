@@ -5,7 +5,7 @@ import { confirm } from '@inquirer/prompts';
 
 export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: boolean) {
 
-  if (!cnf) {
+  if (cnf) {
     const userConfirmed = await confirm({
       message:
         'This command resets your DBOS system database, deleting metadata about past workflows and steps. Are you sure you want to proceed?',
