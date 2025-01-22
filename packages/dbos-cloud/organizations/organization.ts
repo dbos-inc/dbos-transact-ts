@@ -142,3 +142,33 @@ export async function joinOrganization(host: string, orgname: string, secret: st
     return 1;
   }
 }
+
+export async function removeUserFromOrg(host: string, usernameToDelete: string) {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = "Bearer " + userCredentials.token;
+
+  try {
+    await axios.delete(
+      `https://${host}/v1alpha1/${userCredentials.organization}/${usernameToDelete}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: bearerToken,
+        },
+      }
+    );
+
+    logger.info(`Successfully removed ${usernameToDelete} from organization ${userCredentials.organization}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to remove ${usernameToDelete} from organization ${userCredentials.organization}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
