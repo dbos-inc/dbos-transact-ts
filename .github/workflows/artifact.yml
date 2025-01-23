@@ -41,10 +41,3 @@ jobs:
         with:
           name: packages
           path: out/dbos-inc-*.tgz
-      - name: Publish Packages
-        run: npm publish --workspaces --include-workspace-root
-        # boolean properties from NBGV step appears to be converted into *capitalized* strings
-        # so explicitly string compare PublicRelease output value
-        if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
