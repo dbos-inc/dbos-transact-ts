@@ -25,7 +25,7 @@ const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
 const serialqueueLimited = new WorkflowQueue("serialQL", 1, {limitPerPeriod: 10, periodSec: 1});
 const childqueue = new WorkflowQueue("childQ", 3);
-const workerConcurrencyQueue = new WorkflowQueue("workerQ", undefined, undefined, 1);
+const workerConcurrencyQueue = new WorkflowQueue("workerQ", { worker_concurrency: 1 });
 
 const qlimit = 5;
 const qperiod = 2
