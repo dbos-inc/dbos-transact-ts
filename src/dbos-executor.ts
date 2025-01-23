@@ -663,12 +663,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
         const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowUUID);
         if (!wfStatus || !wfInputs) {
-          throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${workflowUUID}`);
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowUUID}`);
         }
         
         // Make sure we use the same input.
         if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
-          throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`);
+          throw new DBOSDebuggerError(`Detected different inputs for workflow UUID ${workflowUUID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`);
         }
         status = wfStatus.status;
       } else {
@@ -996,7 +996,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${workflowUUID}`);
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowUUID}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1173,7 +1173,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${wfCtx.workflowUUID}`);
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${wfCtx.workflowUUID}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1415,7 +1415,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.debugMode) {
-      throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${wfCtx.workflowUUID}`);
+      throw new DBOSDebuggerError(`Failed to find recorded output for workflow UUID: ${wfCtx.workflowUUID}`);
     }
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
@@ -1573,7 +1573,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
     if (this.debugMode) {
-      throw new DBOSDebuggerError("cannot recover pending workflows in debug mode.");
+      throw new DBOSDebuggerError("Cannot recover pending workflows in debug mode.");
     }
 
     const pendingWorkflows: string[] = [];
