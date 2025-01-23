@@ -2,7 +2,6 @@ import { DBOSContext, DBOSContextImpl } from "./context";
 import { Span } from "@opentelemetry/sdk-trace-base";
 import { GlobalLogger as Logger } from "./telemetry/logs";
 import { WorkflowContextImpl } from "./workflow";
-import { WorkflowContextDebug } from "./debugger/debug_workflow";
 import { PoolClient } from "pg";
 import { TransactionConfig } from "./transaction";
 
@@ -32,7 +31,7 @@ export interface StoredProcedureContext extends Pick<DBOSContext, 'request' | 'w
 export class StoredProcedureContextImpl extends DBOSContextImpl implements StoredProcedureContext {
   constructor(
     readonly client: PoolClient,
-    workflowContext: WorkflowContextImpl | WorkflowContextDebug,
+    workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,
     readonly functionID: number,
