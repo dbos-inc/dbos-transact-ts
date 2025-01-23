@@ -665,8 +665,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         if (!wfStatus || !wfInputs) {
           throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${workflowUUID}`);
         }
+        
+        // Make sure we use the same input.
+        if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
+          throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`);
+        }
         status = wfStatus.status;
-        args = wfInputs;
       } else {
         // TODO: Make this transactional (and with the queue step below)
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
@@ -681,14 +685,22 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        let callResult: R | undefined;
-        await runWithWorkflowContext(wCtxt, async () => {
+        const callResult = await runWithWorkflowContext(wCtxt, async () => {
           const callPromise = passContext
             ? wf.call(params.configuredInstance, wCtxt, ...args)
             : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
-          callResult = await callPromise;
+          return await callPromise;
         });
-        result = callResult!
+        
+        if (this.debugMode) {
+          const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
+          if (DBOSJSON.stringify(callResult) !== DBOSJSON.stringify(recordedResult)) {
+            this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(callResult)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
+          }
+          result = recordedResult;
+        } else {
+          result = callResult!
+        }
 
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
@@ -984,7 +996,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError("Previous execution not found in debug mode.");
+          throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${workflowUUID}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1042,6 +1054,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.tracer.endSpan(span);
         return result;
       } catch (err) {
+        if (this.debugMode) {
+          throw err;
+        }
+
         if (this.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
@@ -1157,7 +1173,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError("Previous execution not found in debug mode.");
+          throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${wfCtx.workflowUUID}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1399,7 +1415,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.debugMode) {
-      throw new DBOSDebuggerError("Previous execution not found in debug mode.");
+      throw new DBOSDebuggerError(`Failed to debug workflow UUID: ${wfCtx.workflowUUID}`);
     }
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
@@ -1729,7 +1745,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async flushWorkflowResultBuffer(): Promise<void> {
     if (this.debugMode) {
-      throw new DBOSDebuggerError("Previous execution not found in debug mode.");
+      throw new DBOSDebuggerError(`Cannot flush workflow result buffer in debug mode.`);
     }
 
     const localBuffer = new Map(this.workflowResultBuffer);
