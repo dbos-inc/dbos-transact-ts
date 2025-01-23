@@ -94,7 +94,7 @@ describe("queued-wf-tests-simple", () => {
         await runOneAtATime(serialqueueLimited);
     }, 10000);
 
-    test.only("test_one_at_a_time_with_worker_concurrency", async () => {
+    test("test_one_at_a_time_with_worker_concurrency", async () => {
         await runOneAtATime(workerConcurrencyQueue);
     }, 10000);
 
@@ -288,7 +288,7 @@ describe("queued-wf-tests-simple", () => {
                 'DIE_ON_PURPOSE': 'true',
             }
         });
-    
+
         expect(stderr).toBeDefined();
         expect(stdout).toBeDefined();
 
