@@ -164,7 +164,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow(`DEBUGGER: Failed to debug workflow UUID: ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
@@ -236,7 +236,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("DEBUGGER: Cannot record error in debug mode.");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow("Workflow UUID not found!");
@@ -259,7 +259,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("DEBUGGER: Cannot record error in debug mode.");
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow("Workflow UUID not found!");
@@ -281,7 +281,7 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow(`DEBUGGER: Failed to debug workflow UUID: ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow("Workflow UUID not found!");
