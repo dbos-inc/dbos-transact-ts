@@ -2,6 +2,8 @@ import { DBOS } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 import { sleepms } from "../src/utils";
 
+// This declaration is just for registration in DBOS internal operations registry
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class TestWFs
 {
       @DBOS.workflow()
