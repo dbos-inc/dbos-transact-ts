@@ -17,7 +17,7 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
-import { orgInvite, orgListUsers, renameOrganization, joinOrganization } from "./organizations/organization.js";
+import { orgInvite, orgListUsers, renameOrganization, joinOrganization, removeUserFromOrg } from "./organizations/organization.js";
 import { ListWorkflowsInput, listWorkflows } from "./applications/manage-workflows.js";
 import { importSecrets } from "./applications/secrets.js";
 
@@ -435,6 +435,15 @@ orgCommands
   .argument("<secret>", "Organization secret")
   .action(async (organization: string, secret: string) => {
     const exitCode = await joinOrganization(DBOSCloudHost, organization, secret);
+    process.exit(exitCode);
+  });
+
+  orgCommands
+  .command("remove")
+  .description("Remove a user from an organization")
+  .argument("<username>", "User to remove")
+  .action(async (username: string) => {
+    const exitCode = await removeUserFromOrg(DBOSCloudHost, username);
     process.exit(exitCode);
   });
 
