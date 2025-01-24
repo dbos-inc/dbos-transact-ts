@@ -44,7 +44,6 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import { DBOSContextImpl, InitContext, runWithWorkflowContext, runWithTransactionContext, runWithStepContext, runWithStoredProcContext } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { WorkflowContextDebug } from './debugger/debug_workflow';
 import { deserializeError, serializeError } from 'serialize-error';
 import { DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
@@ -609,9 +608,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
 
   async workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: InternalWorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
-    if (this.debugMode) {
-      return this.debugWorkflow(wf, params, undefined, undefined, ...args);
-    }
     return this.internalWorkflow(wf, params, undefined, undefined, ...args);
   }
 
@@ -663,11 +659,25 @@ export class DBOSExecutor implements DBOSExecutorContext {
          && wCtxt.tempWfOperationType !== TempWorkflowType.procedure)
       || params.queueName !== undefined
     ) {
-      // TODO: Make this transactional (and with the queue step below)
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
-      args = ires.args;
-      status = ires.status;
-      await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
+      if (this.debugMode) {
+        const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
+        const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowUUID);
+        if (!wfStatus || !wfInputs) {
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowUUID}`);
+        }
+        
+        // Make sure we use the same input.
+        if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
+          throw new DBOSDebuggerError(`Detected different inputs for workflow UUID ${workflowUUID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`);
+        }
+        status = wfStatus.status;
+      } else {
+        // TODO: Make this transactional (and with the queue step below)
+        const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+        args = ires.args;
+        status = ires.status;
+        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
+      }
     }
 
     const runWorkflow = async () => {
@@ -675,26 +685,34 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        let cresult: R | undefined;
-        await runWithWorkflowContext(wCtxt, async () => {
-          if (passContext) {
-            cresult = await wf.call(params.configuredInstance, wCtxt, ...args);
-          }
-          else {
-            cresult = await (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
-          }
+        const callResult = await runWithWorkflowContext(wCtxt, async () => {
+          const callPromise = passContext
+            ? wf.call(params.configuredInstance, wCtxt, ...args)
+            : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
+          return await callPromise;
         });
-        result = cresult!
+        
+        if (this.debugMode) {
+          const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
+          if (DBOSJSON.stringify(callResult) !== DBOSJSON.stringify(recordedResult)) {
+            this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(callResult)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
+          }
+          result = recordedResult;
+        } else {
+          result = callResult!
+        }
 
         internalStatus.output = result;
         internalStatus.status = StatusString.SUCCESS;
-        if (internalStatus.queueName) {
+        if (internalStatus.queueName && !this.debugMode) {
           // Now... the workflow isn't certainly done.
           //  But waiting this long is for concurrency control anyway,
           //   so it is probably done enough.
           await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
         }
-        this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
+        if (!this.debugMode) {
+          this.systemDatabase.bufferWorkflowOutput(workflowUUID, internalStatus);
+        }
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictUUIDError) {
@@ -713,10 +731,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
           internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;
-          if (internalStatus.queueName) {
+          if (internalStatus.queueName && !this.debugMode) {
             await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
           }
-          await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
+          if (!this.debugMode) {
+            await this.systemDatabase.recordWorkflowError(workflowUUID, internalStatus);
+          }
           // TODO: Log errors, but not in the tests when they're expected.
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
           throw err;
@@ -728,7 +748,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         ) {
           // For single-transaction workflows, asynchronously record inputs.
           // We must buffer inputs after workflow status is buffered/flushed because workflow_inputs table has a foreign key reference to the workflow_status table.
-          this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
+          if (!this.debugMode) {
+            this.systemDatabase.bufferWorkflowInputs(workflowUUID, args);
+          }
         }
       }
       // Asynchronously flush the result buffer.
@@ -738,7 +760,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return result;
     };
 
-    if (status !=='SUCCESS' && status !=='ERROR' && (params.queueName === undefined || params.executeWorkflow)) {
+    if (this.debugMode || (status !== 'SUCCESS' && status !== 'ERROR' && (params.queueName === undefined || params.executeWorkflow))) {
       const workflowPromise: Promise<R> = runWorkflow();
 
       // Need to await for the workflow and capture errors.
@@ -756,7 +778,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
     }
     else {
-      if (params.queueName && status === 'ENQUEUED') {
+      if (params.queueName && status === 'ENQUEUED' && !this.debugMode) {
         await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
       }
       return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
@@ -767,52 +789,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const q = wfQueueRunner.wfQueuesByName.get(name);
     if (!q) throw new DBOSNotRegisteredError(`Workflow queue '${name}' does is not defined.`);
     return q;
-  }
-
-  /**
-   * DEBUG MODE workflow execution, skipping all the recording
-   */
-  async debugWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, callerUUID?: string, callerFunctionID?: number, ...args: T): Promise<WorkflowHandle<R>> {
-    // In debug mode, we must have a specific workflow UUID.
-    if (!params.workflowUUID) {
-      throw new DBOSDebuggerError("Workflow UUID not found!");
-    }
-    const workflowUUID = params.workflowUUID;
-    const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
-    if (wInfo === undefined) {
-      throw new DBOSDebuggerError("Workflow unregistered! " + wf.name);
-    }
-    const wConfig = wInfo.config;
-
-    const wCtxt = new WorkflowContextDebug(this, params.parentCtx, workflowUUID, wConfig, wf.name);
-
-    // A workflow must have run before.
-    const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowUUID);
-    const recordedInputs = await this.systemDatabase.getWorkflowInputs(workflowUUID);
-    if (!wfStatus || !recordedInputs) {
-      throw new DBOSDebuggerError("Workflow status or inputs not found! UUID: " + workflowUUID);
-    }
-
-    // Make sure we use the same input.
-    if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(recordedInputs)) {
-      throw new DBOSDebuggerError(`Detect different input for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(recordedInputs)}`);
-    }
-
-    const workflowPromise: Promise<R> = runWithWorkflowContext(wCtxt, async () => {
-      return await wf.call(params.configuredInstance, wCtxt, ...args)
-        .then(async (result) => {
-          // Check if the result is the same.
-          const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
-          if (result === undefined && !recordedResult) {
-            return result;
-          }
-          if (DBOSJSON.stringify(result) !== DBOSJSON.stringify(recordedResult)) {
-            this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
-          }
-          return recordedResult; // Always return the recorded result.
-        });
-    });
-    return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerUUID, callerFunctionID);
   }
 
   /**
@@ -861,7 +837,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /**
    * Write a operation's output to the database.
    */
-  static async #recordOutput<R>(query: QueryFunction, workflowUUID: string, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown) => boolean): Promise<string> {
+  async #recordOutput<R>(query: QueryFunction, workflowUUID: string, funcID: number, txnSnapshot: string, output: R, isKeyConflict: (error: unknown) => boolean): Promise<string> {
+    if (this.debugMode) {
+      throw new DBOSDebuggerError("Cannot record output in debug mode.");
+    }
     try {
       const serialOutput = DBOSJSON.stringify(output);
       const rows = await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;",
@@ -880,7 +859,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /**
    * Record an error in an operation to the database.
    */
-  static async #recordError(query: QueryFunction, workflowUUID: string, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown) => boolean): Promise<void> {
+  async #recordError(query: QueryFunction, workflowUUID: string, funcID: number, txnSnapshot: string, err: Error, isKeyConflict: (error: unknown) => boolean): Promise<void> {
+    if (this.debugMode) {
+      throw new DBOSDebuggerError("Cannot record error in debug mode.");
+    }
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
       await query<transaction_outputs>("INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;",
@@ -903,6 +885,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const funcIDs = Array.from(resultBuffer.keys());
     if (funcIDs.length === 0) {
       return;
+    }
+    if (this.debugMode) {
+      throw new DBOSDebuggerError("Cannot flush result buffer in debug mode.");
     }
     funcIDs.sort();
     try {
@@ -1010,6 +995,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
         }
 
+        if (this.debugMode) {
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowUUID}`);
+        }
+
         // For non-read-only transactions, flush the result buffer.
         if (!readOnly) {
           await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
@@ -1043,7 +1032,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           try {
             // Synchronously record the output of write transactions and obtain the transaction ID.
             const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-            const pg_txn_id = await DBOSExecutor.#recordOutput(func, wfCtx.workflowUUID, funcId, txn_snapshot, result, (error) => this.userDatabase.isKeyConflictError(error));
+            const pg_txn_id = await this.#recordOutput(func, wfCtx.workflowUUID, funcId, txn_snapshot, result, (error) => this.userDatabase.isKeyConflictError(error));
             tCtxt.span.setAttribute("pg_txn_id", pg_txn_id);
             wfCtx.resultBuffer.clear();
           } catch (error) {
@@ -1065,6 +1054,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.tracer.endSpan(span);
         return result;
       } catch (err) {
+        if (this.debugMode) {
+          throw err;
+        }
+
         if (this.userDatabase.isRetriableTransactionError(err)) {
           // serialization_failure in PostgreSQL
           span.addEvent("TXN SERIALIZATION FAILURE", { "retryWaitMillis": retryWaitMillis }, performance.now());
@@ -1080,7 +1073,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
           const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-          await DBOSExecutor.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) => this.userDatabase.isKeyConflictError(error));
+          await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) => this.userDatabase.isKeyConflictError(error));
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         wfCtx.resultBuffer.clear();
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -1113,7 +1106,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(proc.name);
     }
 
-    const executeLocally = procInfo.config.executeLocally ?? false;
+    const executeLocally = this.debugMode || (procInfo.config.executeLocally ?? false);
     const funcId = wfCtx.functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       proc.name,
@@ -1179,6 +1172,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
         }
 
+        if (this.debugMode) {
+          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${wfCtx.workflowUUID}`);
+        }
+
         // For non-read-only transactions, flush the result buffer.
         if (!readOnly) {
           await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
@@ -1208,7 +1205,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         } else {
           // Synchronously record the output of write transactions and obtain the transaction ID.
           const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-          const pg_txn_id = await DBOSExecutor.#recordOutput(func, wfCtx.workflowUUID, funcId, txn_snapshot, result, pgNodeIsKeyConflictError);
+          const pg_txn_id = await this.#recordOutput(func, wfCtx.workflowUUID, funcId, txn_snapshot, result, pgNodeIsKeyConflictError);
 
           // const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
           ctxt.span.setAttribute("pg_txn_id", pg_txn_id);
@@ -1238,13 +1235,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.invokeStoredProcFunction(async (client: PoolClient) => {
           await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
           const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then(v => v.rows as T[]);
-          await DBOSExecutor.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, pgNodeIsKeyConflictError);
+          await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, pgNodeIsKeyConflictError);
         }, { isolationLevel: IsolationLevel.ReadCommitted });
 
         await this.userDatabase.transaction(async (client: UserDatabaseClient) => {
           await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
           const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-          await DBOSExecutor.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) => this.userDatabase.isKeyConflictError(error));
+          await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) => this.userDatabase.isKeyConflictError(error));
         }, { isolationLevel: IsolationLevel.ReadCommitted });
         wfCtx.resultBuffer.clear();
         throw err;
@@ -1253,6 +1250,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async #callProcedureFunctionRemote<T extends unknown[], R>(proc: StoredProcedure<T, R>, args: T, wfCtx: WorkflowContextImpl, span: Span, config: StoredProcedureConfig, funcId: number): Promise<R> {
+    if (this.debugMode) {
+      throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
+    }
     const readOnly = config.readOnly ?? false;
 
     const $jsonCtx = {
@@ -1414,6 +1414,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return check as R;
     }
 
+    if (this.debugMode) {
+      throw new DBOSDebuggerError(`Failed to find recorded output for workflow UUID: ${wfCtx.workflowUUID}`);
+    }
+
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an DBOSError.
     let result: R | DBOSNull = dbosNull;
@@ -1568,6 +1572,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
+    if (this.debugMode) {
+      throw new DBOSDebuggerError("Cannot recover pending workflows in debug mode.");
+    }
+
     const pendingWorkflows: string[] = [];
     for (const execID of executorIDs) {
       if (execID === "local" && process.env.DBOS__VMID) {
@@ -1728,7 +1736,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * Periodically flush the workflow output buffer to the system database.
    */
   async flushWorkflowBuffers() {
-    if (this.initialized) {
+    if (this.initialized && !this.debugMode) {
       await this.flushWorkflowResultBuffer();
       await this.systemDatabase.flushWorkflowSystemBuffers();
     }
@@ -1736,6 +1744,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async flushWorkflowResultBuffer(): Promise<void> {
+    if (this.debugMode) {
+      throw new DBOSDebuggerError(`Cannot flush workflow result buffer in debug mode.`);
+    }
+
     const localBuffer = new Map(this.workflowResultBuffer);
     this.workflowResultBuffer.clear();
     const totalSize = localBuffer.size;
