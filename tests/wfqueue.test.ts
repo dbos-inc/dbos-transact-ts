@@ -434,15 +434,18 @@ describe("queued-wf-tests-concurrent-workers", () => {
           // Wait for all workers to complete
           await Promise.all(workers.map((w) => w.promise));
         } finally {
-          // Kill all worker processes
+          // Kill all worker processes, regardless of whether they exited successfully
           for (const { process } of workers) {
             process.kill();
           }
         }
 
-        await DBOS.launch();
-        expect(await queueEntriesAreCleanedUp()).toBe(true);
-        await DBOS.shutdown();
+        try {
+          await DBOS.launch();
+          expect(await queueEntriesAreCleanedUp()).toBe(true);
+        } finally {
+          await DBOS.shutdown();
+        }
     }, 60000);
 });
 
