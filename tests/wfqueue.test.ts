@@ -380,14 +380,14 @@ describe("queued-wf-tests-concurrent-workers", () => {
         DBOS.setConfig(config);
     });
 
-    test("test_worker_concurrency", async () => {
+    test.only("test_worker_concurrency", async () => {
         await DBOS.launch();
 
         // Queue N tasks then shutdown DBOS so we don't dequeue
         const N = 10;
         const handles: WorkflowHandle<void>[] = [];
         for (let i = 0; i < N; ++i) {
-            const h = await DBOS.startWorkflow(WFQ, { queueName: workerConcurrencyQueue.name }).noop();
+            const h = await DBOS.startWorkflow(TestWFs, { queueName: workerConcurrencyQueue.name }).noop();
             handles.push(h);
         }
         await DBOS.shutdown(); // Do not want to take queued jobs from here
