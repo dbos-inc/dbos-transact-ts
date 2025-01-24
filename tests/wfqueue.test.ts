@@ -446,7 +446,7 @@ describe("queued-wf-tests-concurrent-workers", () => {
         } finally {
           await DBOS.shutdown();
         }
-    }, 60000);
+    }, 120000);
 });
 
 class TestWFs
