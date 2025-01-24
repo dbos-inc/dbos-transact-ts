@@ -14,7 +14,7 @@ interface QueueRateLimit {
 }
 
 interface QueueParameters {
-    worker_concurrency?: number;
+    workerConcurrency?: number;
     concurrency?: number;
     rateLimit?: QueueRateLimit;
 }
@@ -23,7 +23,7 @@ export class WorkflowQueue {
     readonly name: string;
     readonly concurrency?: number;
     readonly rateLimit?: QueueRateLimit;
-    readonly worker_concurrency?: number;
+    readonly workerConcurrency?: number;
 
     constructor(name: string, queueParameters: QueueParameters);
     constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
@@ -39,7 +39,7 @@ export class WorkflowQueue {
             // Handle the case where the second argument is QueueParameters
             this.concurrency = arg2.concurrency;
             this.rateLimit = arg2.rateLimit;
-            this.worker_concurrency = arg2.worker_concurrency;
+            this.workerConcurrency = arg2.workerConcurrency;
         } else {
             // Handle the case where the second argument is a number
             this.concurrency = arg2;

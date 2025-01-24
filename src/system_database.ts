@@ -1046,8 +1046,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         })
         .select();
       query = query.orderBy('created_at_epoch_ms', 'asc');
-      if (queue.worker_concurrency !== undefined) {
-        query = query.limit(queue.worker_concurrency);
+      if (queue.workerConcurrency !== undefined) {
+        query = query.limit(queue.workerConcurrency);
       } else if (queue.concurrency !== undefined) {
         query = query.limit(queue.concurrency);
       }
