@@ -270,7 +270,7 @@ describe("queued-wf-tests-simple", () => {
         expect (await wfh2b.getResult()).toBe('cd');
         // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
         expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
-        expect (await wfh1b.getResult()).toBe('ab'); 
+        expect (await wfh1b.getResult()).toBe('ab');
     }, 10000);
     */
 
@@ -371,6 +371,81 @@ describe("queued-wf-tests-simple", () => {
     });
 });
 
+describe("queued-wf-tests-concurrent-workers", () => {
+    let config: DBOSConfig;
+
+    beforeAll(async () => {
+        config = generateDBOSTestConfig();
+        await setUpDBOSTestDb(config);
+        DBOS.setConfig(config);
+    });
+
+    test("test_worker_concurrency", async () => {
+        await DBOS.launch();
+
+        // Queue N tasks then shutdown DBOS so we don't dequeue
+        const N = 10;
+        const handles: WorkflowHandle<void>[] = [];
+        for (let i = 0; i < N; ++i) {
+            const h = await DBOS.startWorkflow(TestWFs, { queueName: workerConcurrencyQueue.name }).noop();
+            handles.push(h);
+        }
+        await DBOS.shutdown(); // Do not want to take queued jobs from here
+
+        // Start M worker threads that will run wfqueueworker.ts
+        const M = 10;
+        const workers: { process: ReturnType<typeof execFile>; promise: Promise<void> }[] = [];
+        try {
+          for (let i = 0; i < M; i++) {
+              const workerProcess = execFile('npx', ['ts-node', './tests/wfqueueworker.ts'], {
+                  cwd: process.cwd(),
+                  env: {
+                      ...process.env,
+                      'DBOS__VMID': `test-worker-${i}`,
+                  }
+              });
+
+              // Wrap worker in a promise
+              const workerPromise = new Promise<void>((resolve, reject) => {
+                  workerProcess.stdout?.on('data', (data) => {
+                      console.log(`Worker ${i} stdout: ${data}`);
+                  });
+
+                  workerProcess.stderr?.on('data', (data) => {
+                      console.error(`Worker ${i} stderr: ${data}`);
+                  });
+
+                  workerProcess.on('close', (code) => {
+                      if (code === 0) {
+                          resolve(); // Worker completed successfully
+                      } else {
+                          reject(new Error(`Worker ${i} exited with code ${code}`));
+                      }
+                  });
+
+                  workerProcess.on('error', (err) => {
+                      reject(new Error(`Worker ${i} encountered an error: ${err.message}`));
+                  });
+              });
+
+              workers.push({ process: workerProcess, promise: workerPromise });
+          }
+
+          // Wait for all workers to complete
+          await Promise.all(workers.map((w) => w.promise));
+        } finally {
+          // Kill all worker processes
+          for (const { process } of workers) {
+            process.kill();
+          }
+        }
+
+        await DBOS.launch();
+        expect(await queueEntriesAreCleanedUp()).toBe(true);
+        await DBOS.shutdown();
+    }, 60000);
+});
+
 class TestWFs
 {
     static wfCounter = 0;
@@ -407,6 +482,11 @@ class TestWFs
         expect (var1).toBe("abc");
         expect (var2).toBe("123");
         return Promise.resolve(new Date().getTime());
+    }
+
+    @DBOS.workflow()
+    static async noop() {
+        return Promise.resolve();
     }
 }
 
