@@ -1,8 +1,6 @@
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 import { sleepms } from "../src/utils";
-
-const workerConcurrencyQueue = new WorkflowQueue("workerQ", { worker_concurrency: 1 });
 
 class TestWFs
 {
@@ -21,8 +19,17 @@ async function main() {
   await sleepms(5000);
 
   await DBOS.shutdown();
+
+  process.exit(0);
 }
 
 if (require.main === module) {
-  main().then(()=>{}).catch((e)=>{console.log(e)});
+  main()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
 }
