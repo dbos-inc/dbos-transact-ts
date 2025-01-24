@@ -387,58 +387,44 @@ describe("queued-wf-tests-concurrent-workers", () => {
         const N = 10;
         const handles: WorkflowHandle<void>[] = [];
         for (let i = 0; i < N; ++i) {
-            const h = await DBOS.startWorkflow(TestWFs, { queueName: workerConcurrencyQueue.name }).noop();
+            const h = await DBOS.startWorkflow(WFQ, { queueName: workerConcurrencyQueue.name }).noop();
             handles.push(h);
         }
         await DBOS.shutdown(); // Do not want to take queued jobs from here
 
-        // Start M worker threads that will run wfqueueworker.ts
-        const M = 10;
-        const workers: { process: ReturnType<typeof execFile>; promise: Promise<void> }[] = [];
-        try {
-          for (let i = 0; i < M; i++) {
-              const workerProcess = execFile('npx', ['ts-node', './tests/wfqueueworker.ts'], {
-                  cwd: process.cwd(),
-                  env: {
-                      ...process.env,
-                      'DBOS__VMID': `test-worker-${i}`,
-                  }
+        async function runWorkers() {
+          const M = 10;
+          const workerPromises: Promise<void>[] = [];
+
+          try {
+            for (let i = 0; i < M; i++) {
+              const workerPromise = execFileAsync('npx', ['ts-node', './tests/wfqueueworker.ts'], {
+                cwd: process.cwd(),
+                env: {
+                  ...process.env,
+                  DBOS__VMID: `test-worker-${i}`,
+                },
+              })
+              .then(({ stdout, stderr }) => {
+                if (stdout) console.log(`Worker ${i} stdout: ${stdout}`);
+                if (stderr) console.error(`Worker ${i} stderr: ${stderr}`);
+              })
+              .catch((error) => {
+                console.error(`Worker ${i} failed: ${error.message}`);
+                throw error;
               });
 
-              // Wrap worker in a promise
-              const workerPromise = new Promise<void>((resolve, reject) => {
-                  workerProcess.stdout?.on('data', (data) => {
-                      console.log(`Worker ${i} stdout: ${data}`);
-                  });
+              workerPromises.push(workerPromise);
+            }
 
-                  workerProcess.stderr?.on('data', (data) => {
-                      console.error(`Worker ${i} stderr: ${data}`);
-                  });
-
-                  workerProcess.on('close', (code) => {
-                      if (code === 0) {
-                          resolve(); // Worker completed successfully
-                      } else {
-                          reject(new Error(`Worker ${i} exited with code ${code}`));
-                      }
-                  });
-
-                  workerProcess.on('error', (err) => {
-                      reject(new Error(`Worker ${i} encountered an error: ${err.message}`));
-                  });
-              });
-
-              workers.push({ process: workerProcess, promise: workerPromise });
-          }
-
-          // Wait for all workers to complete
-          await Promise.all(workers.map((w) => w.promise));
-        } finally {
-          // Kill all worker processes, regardless of whether they exited successfully
-          for (const { process } of workers) {
-            process.kill();
+            // Wait for all workers to complete
+            await Promise.all(workerPromises);
+          } catch (error) {
+            console.error('One or more workers failed:', error);
           }
         }
+
+        await runWorkers().catch((error) => console.error('Unexpected error:', error));
 
         try {
           await DBOS.launch();
