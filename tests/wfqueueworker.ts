@@ -1,15 +1,31 @@
-import { DBOS } from '../src';
+import { DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 import { sleepms } from "../src/utils";
 
+const workerConcurrencyQueue = new WorkflowQueue("workerQ", { workerConcurrency: 1 });
+
 // This declaration is just for registration in DBOS internal operations registry
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-class TestWFs
-{
-      @DBOS.workflow()
-    static async noop() {
-        return Promise.resolve();
-    }
+class TestWFs {
+  @DBOS.workflow()
+  static async noop() {
+    return Promise.resolve();
+  }
+}
+
+async function queueEntriesAreCleanedUp() {
+  let maxTries = 10;
+  let success = false;
+  while (maxTries > 0) {
+      const r = await DBOS.getWorkflowQueue({});
+      if (r.workflows.length === 0) {
+          success = true;
+          break;
+      }
+      await sleepms(1000);
+      --maxTries;
+  }
+  return success;
 }
 
 async function main() {
@@ -17,8 +33,10 @@ async function main() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  // Sleep for several poll intervals
-  await sleepms(5000);
+  const success = await queueEntriesAreCleanedUp();
+  if (!success) {
+    throw new Error(`${process.env['DBOS__VMID']} worker detected unhandled workflow queue entries`);
+  }
 
   await DBOS.shutdown();
 
