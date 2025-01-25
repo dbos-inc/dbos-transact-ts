@@ -410,8 +410,13 @@ describe("queued-wf-tests-concurrent-workers", () => {
                 if (stderr) console.error(`Worker ${i} stderr: ${stderr}`);
               })
               .catch((error) => {
-                console.error(`Worker ${i} failed: ${error.message}`);
-                throw error;
+                if (error instanceof Error) {
+                  console.error(`Worker ${i} failed: ${error.message}`);
+                  throw error;
+                } else {
+                  console.error(`Worker ${i} failed with an unknown error: ${String(error)}`);
+                  throw new Error(`Worker ${i} failed with an unknown error`);
+                }
               });
 
               workerPromises.push(workerPromise);
