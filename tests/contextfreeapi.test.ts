@@ -77,6 +77,11 @@ class TestFunctions
   static async awaitAPromise() {
     await TestFunctions.awaitThis;
   }
+
+  @DBOS.workflow()
+  static async argOptionalWorkflow(arg?:string) {
+    return Promise.resolve(arg);
+  }
 }
 
 const testTableName = "dbos_test_kv";
@@ -470,6 +475,19 @@ async function main9() {
   await DBOS.shutdown();
 }
 
+async function main10() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  // Shouldn't throw a validation error
+  await TestFunctions.argOptionalWorkflow('a');
+  await TestFunctions.argOptionalWorkflow();
+
+  await DBOS.shutdown();
+}
+
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
     await main();
@@ -505,5 +523,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("transitions", async() => {
     await main9();
+  }, 15000);
+
+  test("argvalidate", async() => {
+    await main10();
   }, 15000);
 });
