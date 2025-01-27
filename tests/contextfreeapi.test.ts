@@ -1,4 +1,4 @@
-import { ArgOptional, Authentication, DBOS, DBOSResponseError, DefaultArgRequired, DefaultArgValidate, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
+import { ArgOptional, ArgRequired, Authentication, DBOS, DBOSResponseError, DefaultArgValidate, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import jwt from "koa-jwt";
 
@@ -80,6 +80,11 @@ class TestFunctions
 
   @DBOS.workflow()
   static async argOptionalWorkflow(arg?:string) {
+    return Promise.resolve(arg);
+  }
+
+  @DBOS.workflow()
+  static async argRequiredWorkflow(@ArgRequired arg:string) {
     return Promise.resolve(arg);
   }
 }
@@ -503,6 +508,9 @@ async function main10() {
   // Shouldn't throw a validation error
   await TestFunctions.argOptionalWorkflow('a');
   await TestFunctions.argOptionalWorkflow();
+  await expect(async()=>{
+    await TestFunctions.argRequiredWorkflow((undefined as string | undefined)!);
+  }).rejects.toThrow();
 
   await OptionalArgs.argOptionalWorkflow('a');
   await OptionalArgs.argOptionalWorkflow();
