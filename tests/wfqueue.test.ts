@@ -23,8 +23,9 @@ import { DBOSConflictingWorkflowError } from "../src/error";
 
 const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
-const serialqueueLimited = new WorkflowQueue("serialQL", 1, {limitPerPeriod: 10, periodSec: 1});
+const serialqueueLimited = new WorkflowQueue("serialQL", { concurrency: 1, rateLimit: { limitPerPeriod: 10, periodSec: 1 } });
 const childqueue = new WorkflowQueue("childQ", 3);
+const workerConcurrencyQueue = new WorkflowQueue("workerQ", { workerConcurrency: 1 });
 
 const qlimit = 5;
 const qperiod = 2
@@ -47,7 +48,7 @@ async function queueEntriesAreCleanedUp() {
 
 describe("queued-wf-tests-simple", () => {
     let config: DBOSConfig;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
         await setUpDBOSTestDb(config);
@@ -63,7 +64,7 @@ describe("queued-wf-tests-simple", () => {
     afterEach(async () => {
         await DBOS.shutdown();
     }, 10000);
-  
+
     test("simple-queue", async () => {
         const wfid = uuidv4();
         TestWFs.wfid = wfid;
@@ -91,6 +92,10 @@ describe("queued-wf-tests-simple", () => {
 
     test("test_one_at_a_time_with_limiter", async() => {
         await runOneAtATime(serialqueueLimited);
+    }, 10000);
+
+    test("test_one_at_a_time_with_worker_concurrency", async () => {
+        await runOneAtATime(workerConcurrencyQueue);
     }, 10000);
 
     test("test-queue_rate_limit", async() => {
@@ -265,7 +270,7 @@ describe("queued-wf-tests-simple", () => {
         expect (await wfh2b.getResult()).toBe('cd');
         // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
         expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
-        expect (await wfh1b.getResult()).toBe('ab'); 
+        expect (await wfh1b.getResult()).toBe('ab');
     }, 10000);
     */
 
@@ -283,7 +288,7 @@ describe("queued-wf-tests-simple", () => {
                 'DIE_ON_PURPOSE': 'true',
             }
         });
-    
+
         expect(stderr).toBeDefined();
         expect(stdout).toBeDefined();
 
@@ -366,6 +371,75 @@ describe("queued-wf-tests-simple", () => {
     });
 });
 
+describe("queued-wf-tests-concurrent-workers", () => {
+    let config: DBOSConfig;
+
+    beforeAll(async () => {
+        config = generateDBOSTestConfig();
+        await setUpDBOSTestDb(config);
+        DBOS.setConfig(config);
+    });
+
+    test("test_worker_concurrency", async () => {
+        await DBOS.launch();
+
+        // Queue N tasks then shutdown DBOS so we don't dequeue
+        const N = 10;
+        const handles: WorkflowHandle<void>[] = [];
+        for (let i = 0; i < N; ++i) {
+            const h = await DBOS.startWorkflow(TestWFs, { queueName: workerConcurrencyQueue.name }).noop();
+            handles.push(h);
+        }
+        await DBOS.shutdown(); // Do not want to take queued jobs from here
+
+        async function runWorkers() {
+          const M = 10;
+          const workerPromises: Promise<void>[] = [];
+
+          try {
+            for (let i = 0; i < M; i++) {
+              const workerPromise = execFileAsync('npx', ['ts-node', './tests/wfqueueworker.ts'], {
+                cwd: process.cwd(),
+                env: {
+                  ...process.env,
+                  DBOS__VMID: `test-worker-${i}`,
+                },
+              })
+              .then(({ stdout, stderr }) => {
+                if (stdout) console.log(`Worker ${i} stdout: ${stdout}`);
+                if (stderr) console.error(`Worker ${i} stderr: ${stderr}`);
+              })
+              .catch((error) => {
+                if (error instanceof Error) {
+                  console.error(`Worker ${i} failed: ${error.message}`);
+                  throw error;
+                } else {
+                  console.error(`Worker ${i} failed with an unknown error: ${String(error)}`);
+                  throw new Error(`Worker ${i} failed with an unknown error`);
+                }
+              });
+
+              workerPromises.push(workerPromise);
+            }
+
+            // Wait for all workers to complete
+            await Promise.all(workerPromises);
+          } catch (error) {
+            console.error('One or more workers failed:', error);
+          }
+        }
+
+        await runWorkers().catch((error) => console.error('Unexpected error:', error));
+
+        try {
+          await DBOS.launch();
+          expect(await queueEntriesAreCleanedUp()).toBe(true);
+        } finally {
+          await DBOS.shutdown();
+        }
+    }, 120000);
+});
+
 class TestWFs
 {
     static wfCounter = 0;
@@ -402,6 +476,11 @@ class TestWFs
         expect (var1).toBe("abc");
         expect (var2).toBe("123");
         return Promise.resolve(new Date().getTime());
+    }
+
+    @DBOS.workflow()
+    static async noop() {
+        return Promise.resolve();
     }
 }
 

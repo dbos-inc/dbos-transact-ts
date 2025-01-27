@@ -13,8 +13,39 @@ interface QueueRateLimit {
     periodSec: number;
 }
 
+interface QueueParameters {
+    workerConcurrency?: number;
+    concurrency?: number;
+    rateLimit?: QueueRateLimit;
+}
+
 export class WorkflowQueue {
-    constructor(readonly name: string, readonly concurrency?: number, readonly rateLimit?: QueueRateLimit) {
+    readonly name: string;
+    readonly concurrency?: number;
+    readonly rateLimit?: QueueRateLimit;
+    readonly workerConcurrency?: number;
+
+    constructor(name: string, queueParameters: QueueParameters);
+    constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
+
+    constructor(
+        name: string,
+        arg2?: QueueParameters | number,
+        rateLimit?: QueueRateLimit,
+    ) {
+        this.name = name;
+
+        if (typeof arg2 === "object" && arg2 !== null) {
+            // Handle the case where the second argument is QueueParameters
+            this.concurrency = arg2.concurrency;
+            this.rateLimit = arg2.rateLimit;
+            this.workerConcurrency = arg2.workerConcurrency;
+        } else {
+            // Handle the case where the second argument is a number
+            this.concurrency = arg2;
+            this.rateLimit = rateLimit;
+        }
+
         if (wfQueueRunner.wfQueuesByName.has(name)) {
             throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
         }
