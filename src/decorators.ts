@@ -132,6 +132,7 @@ export interface RegistrationDefaults
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
+  defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 }
 
@@ -140,6 +141,7 @@ export interface MethodRegistrationBase {
   className: string;
 
   args: MethodParameter[];
+  performArgValidation: boolean;
 
   defaults?: RegistrationDefaults;
 
@@ -175,6 +177,7 @@ implements MethodRegistrationBase
 
   requiredRole: string[] | undefined = undefined;
 
+  performArgValidation:boolean = false;
   args: MethodParameter[] = [];
   passContext: boolean = false;
 
@@ -223,6 +226,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   name: string = "";
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
+  defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -596,6 +600,12 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]) : object
 {
    const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+}
+
+export function DefaultArgValidate<T extends { new (...args: unknown[]) : object }>(ctor: T)
+{
+   const clsreg = getOrCreateClassRegistration(ctor);
+   clsreg.defaultArgValidate = true;
 }
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
