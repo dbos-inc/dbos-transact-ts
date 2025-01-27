@@ -23,7 +23,7 @@ import { DBOSConflictingWorkflowError } from "../src/error";
 
 const queue = new WorkflowQueue("testQ");
 const serialqueue = new WorkflowQueue("serialQ", 1);
-const serialqueueLimited = new WorkflowQueue("serialQL", {concurrency: 1, rateLimit: {limitPerPeriod: 10, periodSec: 1}});
+const serialqueueLimited = new WorkflowQueue("serialQL", { concurrency: 1, rateLimit: { limitPerPeriod: 10, periodSec: 1 } });
 const childqueue = new WorkflowQueue("childQ", 3);
 const workerConcurrencyQueue = new WorkflowQueue("workerQ", { workerConcurrency: 1 });
 
@@ -380,7 +380,7 @@ describe("queued-wf-tests-concurrent-workers", () => {
         DBOS.setConfig(config);
     });
 
-    test.only("test_worker_concurrency", async () => {
+    test("test_worker_concurrency", async () => {
         await DBOS.launch();
 
         // Queue N tasks then shutdown DBOS so we don't dequeue
