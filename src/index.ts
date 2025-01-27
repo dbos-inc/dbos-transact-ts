@@ -60,6 +60,7 @@ export {
   DefaultRequiredRole,
   DefaultArgRequired,
   DefaultArgOptional,
+  DefaultArgValidate,
   // Typeorm Class Decorators
   OrmEntities,
 

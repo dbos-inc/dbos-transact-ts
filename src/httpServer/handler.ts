@@ -252,6 +252,7 @@ function generateApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
+    registration.performArgValidation = true;
 
     return descriptor;
   }

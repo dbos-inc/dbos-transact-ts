@@ -24,6 +24,10 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
           return;
         }
 
+        if (!methReg.performArgValidation && !methReg.defaults?.defaultArgValidate && argDescriptor.required !== ArgRequiredOptions.REQUIRED) {
+          return;
+        }
+
         // Do we have an arg at all
         if (idx >= args.length) {
           if (argDescriptor.required === ArgRequiredOptions.REQUIRED ||

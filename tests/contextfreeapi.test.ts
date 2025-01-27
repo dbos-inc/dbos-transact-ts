@@ -1,4 +1,4 @@
-import { Authentication, DBOS, DBOSResponseError, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
+import { ArgOptional, ArgRequired, Authentication, DBOS, DBOSResponseError, DefaultArgValidate, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import jwt from "koa-jwt";
 
@@ -76,6 +76,35 @@ class TestFunctions
   @DBOS.workflow()
   static async awaitAPromise() {
     await TestFunctions.awaitThis;
+  }
+
+  @DBOS.workflow()
+  static async argOptionalWorkflow(arg?:string) {
+    return Promise.resolve(arg);
+  }
+
+  @DBOS.workflow()
+  static async argRequiredWorkflow(@ArgRequired arg:string) {
+    return Promise.resolve(arg);
+  }
+}
+
+@DefaultArgValidate
+class OptionalArgs
+{
+  @DBOS.workflow()
+  static async argOptionalWorkflow(@ArgOptional arg?:string) {
+    return Promise.resolve(arg);
+  }
+
+  @DBOS.workflow()
+  static async argRequiredWorkflow(arg: string) {
+    return Promise.resolve(arg);
+  }
+
+  @DBOS.workflow()
+  static async argOptionalOops(@ArgOptional arg?:string) {
+    return OptionalArgs.argRequiredWorkflow(arg!);
   }
 }
 
@@ -470,6 +499,33 @@ async function main9() {
   await DBOS.shutdown();
 }
 
+async function main10() {
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestDb(config);
+  DBOS.setConfig(config);
+  await DBOS.launch();
+
+  // Shouldn't throw a validation error
+  await TestFunctions.argOptionalWorkflow('a');
+  await TestFunctions.argOptionalWorkflow();
+  await expect(async()=>{
+    await TestFunctions.argRequiredWorkflow((undefined as string | undefined)!);
+  }).rejects.toThrow();
+
+  await OptionalArgs.argOptionalWorkflow('a');
+  await OptionalArgs.argOptionalWorkflow();
+
+  // await OptionalArgs.argRequiredWorkflow(); // Using the compiler for what it is good at
+  await OptionalArgs.argRequiredWorkflow('a');
+
+  await OptionalArgs.argOptionalOops('a');
+  await expect(async()=>{
+    await OptionalArgs.argOptionalOops();
+  }).rejects.toThrow();
+
+  await DBOS.shutdown();
+}
+
 describe("dbos-v2api-tests-main", () => {
   test("simple-functions", async () => {
     await main();
@@ -505,5 +561,9 @@ describe("dbos-v2api-tests-main", () => {
 
   test("transitions", async() => {
     await main9();
+  }, 15000);
+
+  test("argvalidate", async() => {
+    await main10();
   }, 15000);
 });
