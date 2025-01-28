@@ -214,7 +214,8 @@ const MaximumRetriesError = 23;
 export class DBOSMaxStepRetriesError extends DBOSError {
   readonly errors;
   constructor(stepName: string, maxRetries: number, errors: Error[]) {
-    super(`Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${errors.map(e => e.message).join(', ')}`, MaximumRetriesError);
+    const formattedErrors = errors.map((error, index) => `Error ${index + 1}: ${error.message}`).join('. ')
+    super(`Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${formattedErrors}`, MaximumRetriesError);
     this.errors = errors;
   }
 }
