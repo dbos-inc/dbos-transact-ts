@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError, DBOSFailedSqlTransactionError } from "./error";
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError, DBOSFailedSqlTransactionError, DBOSMaxStepRetriesError } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -1424,6 +1424,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // After reaching the maximum number of retries, throw an DBOSError.
     let result: R | DBOSNull = dbosNull;
     let err: Error | DBOSNull = dbosNull;
+    const errors: Error[] = []
     if (ctxt.retriesAllowed) {
       let numAttempts = 0;
       let intervalSeconds: number = ctxt.intervalSeconds;
@@ -1447,6 +1448,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           result = cresult!
         } catch (error) {
           const e = error as Error
+          errors.push(e);
           this.logger.warn(`Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`);
           span.addEvent(`Step attempt ${numAttempts + 1} failed`, { "retryIntervalSeconds": intervalSeconds, "error": (error as Error).message }, performance.now());
           if (numAttempts < ctxt.maxAttempts) {
@@ -1481,7 +1483,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSError("Step reached maximum retries.", 1) : err;
+      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationError(wfCtx.workflowUUID, ctxt.functionID, err as Error);
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
