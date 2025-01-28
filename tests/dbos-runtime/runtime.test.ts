@@ -5,7 +5,7 @@ import { Client } from "pg";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
 import { HealthUrl } from "../../src/httpServer/server";
 
-async function waitForMessageTest(command: ChildProcess, port: string, adminPort?: string) {
+async function waitForMessageTest(command: ChildProcess, port: string, adminPort?: string, checkResponse: boolean = true) {
   const stdout = command.stdout as unknown as Writable;
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
@@ -36,8 +36,10 @@ async function waitForMessageTest(command: ChildProcess, port: string, adminPort
     // Axios will throw an exception if the return status is 500
     // Trying and catching is the only way to debug issues in this test
     try {
-      const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
-      expect(response.status).toBe(200);
+      if (checkResponse) {
+        const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
+        expect(response.status).toBe(200);
+      }
       const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
       expect(healthRes.status).toBe(200);
     } catch (error) {
@@ -53,7 +55,7 @@ async function waitForMessageTest(command: ChildProcess, port: string, adminPort
   }
 }
 
-async function dropHelloSystemDB() {
+async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
   config.poolConfig.database = "hello";
   await setUpDBOSTestDb(config);
@@ -62,7 +64,7 @@ async function dropHelloSystemDB() {
     port: config.poolConfig.port,
     host: config.poolConfig.host,
     password: config.poolConfig.password,
-    database: "hello",
+    database: "postgres",
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm_dbos_sys;`);
@@ -76,7 +78,7 @@ async function dropHelloSystemDB() {
   await pgSystemClient.end();
 }
 
-function configureHelloExample() {
+function configureTemplate() {
   execSync("npm i");
   execSync("npm run build");
   if (process.env.PGPASSWORD === undefined) {
@@ -87,9 +89,9 @@ function configureHelloExample() {
 
 describe("runtime-tests-knex", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
+    await dropTemplateDatabases();
     process.chdir("packages/create/templates/dbos-knex");
-    configureHelloExample();
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -107,13 +109,21 @@ describe("runtime-tests-knex", () => {
     });
     await waitForMessageTest(command, "3000");
   });
+
+  test("test hello-knex creates database if does not exist", async () => {
+    await dropTemplateDatabases();
+    const command = spawn("node", ["dist/main.js"], {
+      env: process.env,
+    });
+    await waitForMessageTest(command, "3000", "3001", false);
+  });
 });
 
 describe("runtime-tests-typeorm", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
+    await dropTemplateDatabases();
     process.chdir("packages/create/templates/dbos-typeorm");
-    configureHelloExample();
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -135,9 +145,9 @@ describe("runtime-tests-typeorm", () => {
 
 describe("runtime-tests-prisma", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
+    await dropTemplateDatabases();
     process.chdir("packages/create/templates/dbos-prisma");
-    configureHelloExample();
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -159,9 +169,9 @@ describe("runtime-tests-prisma", () => {
 
 describe("runtime-tests-drizzle", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
+    await dropTemplateDatabases();
     process.chdir("packages/create/templates/dbos-drizzle");
-    configureHelloExample();
+    configureTemplate();
   });
 
   afterAll(() => {
