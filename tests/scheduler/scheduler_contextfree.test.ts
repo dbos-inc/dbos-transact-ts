@@ -65,7 +65,10 @@ class DBOSSchedTestClass {
     @DBOS.workflow()
     static async scheduledDefault(schedTime: Date, startTime: Date) {
         await DBOSSchedTestClass.scheduledTxn();
-        if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
+        if (schedTime.getTime() > startTime.getTime()) {
+            DBOS.logger.warn(`Scheduled 'scheduledDefault' function running early: ${DBOS.workflowID}; at ${startTime.toISOString()} vs ${schedTime.toISOString()}`);
+            DBOSSchedTestClass.nTooEarly++;
+        }
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
         if (DBOSSchedTestClass.doSleep) {
