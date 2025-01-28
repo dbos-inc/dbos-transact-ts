@@ -38,6 +38,7 @@ import {
   DrizzleUserDatabase,
   UserDatabaseClient,
   pgNodeIsKeyConflictError,
+  createDBIfDoesNotExist,
 } from './user_database';
 import { MethodRegistrationBase, getRegisteredOperations, getOrCreateClassRegistration, MethodRegistration, getRegisteredMethodClassName, getRegisteredMethodName, getConfiguredInstance, ConfiguredInstance, getAllRegisteredClasses } from './decorators';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -378,6 +379,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
+      await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
       this.configureDbClient();
 
       if (!this.userDatabase) {
