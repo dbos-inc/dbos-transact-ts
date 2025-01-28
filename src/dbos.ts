@@ -158,16 +158,34 @@ export class DBOS {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
+    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
+    const debugMode = debugWorkflowId !== undefined;
+    const debugProxy = process.env.DBOS_DEBUG_PROXY;
+  
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
-      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile();
-      dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
-      DBOS.dbosConfig = dbosConfig;
+      const [dbosConfig, runtimeConfig] = parseConfigFile();
+      if (!debugProxy) {
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
+      }
+      DBOS.dbosConfig = { ...dbosConfig, debugMode, debugProxy };
       DBOS.runtimeConfig = runtimeConfig;
+    } else {
+      DBOS.dbosConfig = { ...DBOS.dbosConfig, debugMode, debugProxy };
     }
+
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
+
+    if (debugWorkflowId) {
+      // const logger = new GlobalLogger();
+      DBOS.logger.info(`Debugging workflow ${debugWorkflowId}`);
+      const handle = await executor.executeWorkflowUUID(debugWorkflowId);
+      await handle.getResult();
+      await executor.destroy();
+      process.exit(0);
+    }
 
     DBOSExecutor.globalInstance.scheduler = new DBOSScheduler(DBOSExecutor.globalInstance);
     DBOSExecutor.globalInstance.scheduler.initScheduler();
