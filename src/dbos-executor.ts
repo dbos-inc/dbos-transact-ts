@@ -1803,7 +1803,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Recovering workflow: ${wID}. Workflow status: ${JSON.stringify(workflowStatus)}`);
         if (workflowStatus?.queueName) {
           try {
-            await this.systemDatabase.reEnqueueWorkflow(wID, this.#getQueueByName(workflowStatus.queueName));
+            await this.systemDatabase.reEnqueueWorkflow(wID);
           } catch (e) {
             // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
             if (this.userDatabase.isRetriableTransactionError(e)) {
