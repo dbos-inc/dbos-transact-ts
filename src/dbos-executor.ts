@@ -694,12 +694,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
         
         if (this.debugMode) {
           const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
-          if (DBOSJSON.stringify(callResult) !== DBOSJSON.stringify(recordedResult)) {
+          if (!resultsMatch(recordedResult, callResult)) {
             this.logger.error(`Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(callResult)}\n Original: ${DBOSJSON.stringify(recordedResult)}`);
           }
           result = recordedResult;
         } else {
           result = callResult!
+        }
+
+        function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
+          if (recordedResult === null) {
+            return callResult === undefined || callResult == null;
+          }
+          return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
         }
 
         internalStatus.output = result;
