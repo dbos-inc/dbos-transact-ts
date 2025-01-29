@@ -179,10 +179,10 @@ export class DBOS {
     await executor.init();
 
     if (debugWorkflowId) {
-      // const logger = new GlobalLogger();
-      DBOS.logger.info(`Debugging workflow ${debugWorkflowId}`);
+      DBOS.logger.info(`Debugging workflow "${debugWorkflowId}"`);
       const handle = await executor.executeWorkflowUUID(debugWorkflowId);
       await handle.getResult();
+      DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
       process.exit(0);
     }
