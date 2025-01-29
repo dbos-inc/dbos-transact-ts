@@ -1,6 +1,6 @@
 import { DBOS } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import { expect, jest, test } from '@jest/globals';
+import { expect, jest } from '@jest/globals';
 
 export class TestApp {
 
@@ -42,8 +42,8 @@ describe("dbos-debug-v2-library", () => {
         await DBOS.shutdown();
 
         process.env.DBOS_DEBUG_WORKFLOW_ID = wfUUID;
-        const mockExit = jest.spyOn(process, 'exit')
-            .mockImplementation((() => {}) as any);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+        const mockExit = jest.spyOn(process, 'exit').mockImplementation((() => {}) as any);
         try {
             TestApp.bgTaskValue = 0;
             TestApp.stepCount = 0;
