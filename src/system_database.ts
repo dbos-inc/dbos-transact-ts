@@ -1173,22 +1173,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'desc',
     );
     if (input.workflowName) {
-      query = query.where("name", input.workflowName);
+      query = query.where('name', input.workflowName);
     }
     if (input.authenticatedUser) {
-      query = query.where("authenticated_user", input.authenticatedUser);
+      query = query.where('authenticated_user', input.authenticatedUser);
     }
     if (input.startTime) {
-      query = query.where("created_at", ">=", new Date(input.startTime).getTime());
+      query = query.where('created_at', '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where("created_at", "<=", new Date(input.endTime).getTime());
+      query = query.where('created_at', '<=', new Date(input.endTime).getTime());
     }
     if (input.status) {
-      query = query.where("status", input.status);
+      query = query.where('status', input.status);
     }
     if (input.applicationVersion) {
-      query = query.where("application_version", input.applicationVersion);
+      query = query.where('application_version', input.applicationVersion);
     }
     if (input.limit) {
       query = query.limit(input.limit);
@@ -1196,7 +1196,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map((row) => row.workflow_uuid);
     return {
-      workflowUUIDs: workflowUUIDs,
+      workflowUUIDs: workflowUUIDs
     };
   }
 
@@ -1206,13 +1206,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'desc',
     );
     if (input.queueName) {
-      query = query.where("queue_name", input.queueName);
+      query = query.where('queue_name', input.queueName);
     }
     if (input.startTime) {
-      query = query.where("created_at_epoch_ms", ">=", new Date(input.startTime).getTime());
+      query = query.where('created_at_epoch_ms', '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where("created_at_at_epoch_ms", "<=", new Date(input.endTime).getTime());
+      query = query.where('created_at_at_epoch_ms', '<=', new Date(input.endTime).getTime());
     }
     if (input.limit) {
       query = query.limit(input.limit);
