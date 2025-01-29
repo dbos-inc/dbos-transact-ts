@@ -1797,7 +1797,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       this.logger.debug(`Recovering workflows of executor: ${execID}`);
       const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
-      pendingWorkflows.push(...wIDs);
+      // Re-enqueue workflows member of a queue
+      for (const wID of wIDs) {
+        const workflowStatus = await this.systemDatabase.getWorkflowStatus(wID); // This really sucks and we should be able to get more than an ID from getPendingWorkflows
+        if (workflowStatus?.queueName) {
+          await this.systemDatabase.reEnqueueWorkflow(wID, this.#getQueueByName(workflowStatus.queueName));
+          continue;
+        } else {
+          pendingWorkflows.push(wID);
+        }
+      }
     }
 
     const handlerArray: WorkflowHandle<unknown>[] = [];

@@ -66,6 +66,7 @@ export interface SystemDatabase {
   resumeWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  reEnqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
@@ -1238,6 +1239,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
       DO NOTHING;
     `,
       [workflowId, queue.name],
+    );
+  }
+
+  async reEnqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
+    const _res = await this.pool.query<workflow_queue>(
+      `
+          UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+          SET started_at_epoch_ms = NULL, executor_id = NULL
+          WHERE workflow_uuid = $1;
+        `,
+      [workflowId]
     );
   }
 
