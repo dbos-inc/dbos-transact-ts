@@ -625,47 +625,103 @@ describe('queued-wf-tests-concurrent-workers', () => {
   }, 120000);
 });
 
-class TestWFs {
-  static wfCounter = 0;
-  static stepCounter = 0;
-  static wfid: string;
+// Test that queued worfklows to recover are re-enqueued
+describe("queued-wf-tests-recovery", () => {
+    let config: DBOSConfig;
 
-  static reset() {
-    TestWFs.wfCounter = 0;
-    TestWFs.stepCounter = 0;
-  }
+    beforeAll(async () => {
+        config = generateDBOSTestConfig();
+        await setUpDBOSTestDb(config);
+        DBOS.setConfig(config);
+    });
 
-  @DBOS.workflow()
-  static async testWorkflow(var1: string, var2: string) {
-    expect(DBOS.workflowID).toBe(TestWFs.wfid);
-    ++TestWFs.wfCounter;
-    var1 = await TestWFs.testStep(var1);
-    return Promise.resolve(var1 + var2);
-  }
+    beforeEach(async () => {
+        TestWFs.reset();
+        await DBOS.launch();
+    });
 
-  @DBOS.workflow()
-  static async testWorkflowSimple(var1: string, var2: string) {
-    ++TestWFs.wfCounter;
-    return Promise.resolve(var1 + var2);
-  }
+    afterEach(async () => {
+        await DBOS.shutdown();
+    }, 10000);
 
-  @DBOS.step()
-  static async testStep(str: string) {
-    ++TestWFs.stepCounter;
-    return Promise.resolve(str + 'd');
-  }
+    test("queued-wf-recovery", async () => {
+        // Rate limit the queue so we have the time to perform our checks
+        const recoveryQueue = new WorkflowQueue("recoveryQ", { rateLimit: { limitPerPeriod: 1, periodSec: 100 } });
+        const wfid = uuidv4();
+        const wfh = await DBOS.startWorkflow(TestWFs, {
+            workflowID: wfid,
+            queueName: recoveryQueue.name,
+        }).sleepingWorkflow(10000);
 
-  @DBOS.workflow()
-  static async testWorkflowTime(var1: string, var2: string): Promise<number> {
-    expect(var1).toBe('abc');
-    expect(var2).toBe('123');
-    return Promise.resolve(new Date().getTime());
-  }
+        // Wait for a couple queue polling interval and verify the workflow is being executed
+        await sleepms(2000);
+        expect((await wfh.getStatus())?.status).toBe(StatusString.PENDING);
 
-  @DBOS.workflow()
-  static async noop() {
-    return Promise.resolve();
-  }
+        // Trigger workflow recovery
+        await DBOS.recoverPendingWorkflows();
+
+        // Check the workflow is now enqueued (executor_id == null and created_at_epoch_ms == null)
+        const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
+        DBOS.logger.debug(workflows);
+        expect(workflows.workflows.length).toBe(1);
+        expect(workflows.workflows[0].workflowID).toBe(wfid);
+        expect(workflows.workflows[0].executorID).toBe(null);
+        expect(workflows.workflows[0].startedAt).toBe(null);
+
+        // Ensure it completes
+        expect(await wfh.getResult()).toBe(null);
+        expect((await wfh.getStatus())?.status).toBe(StatusString.SUCCESS);
+    }, 20000);
+});
+
+class TestWFs
+{
+    static wfCounter = 0;
+    static stepCounter = 0;
+    static wfid: string;
+
+    static reset() {
+        TestWFs.wfCounter = 0;
+        TestWFs.stepCounter = 0;
+    }
+
+    @DBOS.workflow()
+    static async testWorkflow(var1: string, var2: string) {
+        expect(DBOS.workflowID).toBe(TestWFs.wfid);
+        ++TestWFs.wfCounter;
+        var1 = await TestWFs.testStep(var1);
+        return Promise.resolve(var1 + var2);
+    }
+
+    @DBOS.workflow()
+    static async testWorkflowSimple(var1: string, var2: string) {
+        ++TestWFs.wfCounter;
+        return Promise.resolve(var1 + var2);
+    }
+
+    @DBOS.step()
+    static async testStep(str: string) {
+        ++TestWFs.stepCounter;
+        return Promise.resolve(str + 'd');
+    }
+
+    @DBOS.workflow()
+    static async testWorkflowTime(var1: string, var2: string): Promise<number> {
+        expect (var1).toBe("abc");
+        expect (var2).toBe("123");
+        return Promise.resolve(new Date().getTime());
+    }
+
+    @DBOS.workflow()
+    static async sleepingWorkflow(time: number): Promise<void> {
+        await DBOS.sleepms(time);
+        return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async noop() {
+        return Promise.resolve();
+    }
 }
 
 class TestWFs2 {
