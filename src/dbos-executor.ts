@@ -706,7 +706,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
           if (recordedResult === null) {
-            return callResult === undefined || callResult == null;
+            return callResult === undefined || callResult === null;
           }
           return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
         }
