@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers"
 import { DatabaseError, PoolClient } from "pg";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { DBOSError } from "../src/error";
+import { DBOSError, DBOSMaxStepRetriesError } from "../src/error";
 import { DBOSConfig } from "../src/dbos-executor";
 import { createInternalTestRuntime } from "../src/testing/testing_runtime";
 
@@ -107,7 +107,16 @@ describe("failures-tests", () => {
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
-    await expect(testRuntime.invoke(FailureTestClass).testFailStep()).rejects.toThrow(new DBOSError("Step reached maximum retries.", 1));
+    try {
+      await testRuntime.invoke(FailureTestClass).testFailStep()
+      expect(true).toBe(false); // An exception should be thrown first
+    } catch (error) {
+      const e = error as DBOSMaxStepRetriesError;
+      expect(e.message).toContain("Step testFailStep has exceeded its maximum of 2 retries.");
+      expect(e.errors.length).toBe(2);
+      expect(e.errors[0].message).toBe("bad number");
+      expect(e.errors[1].message).toBe("bad number");
+    }
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
   });
 

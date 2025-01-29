@@ -209,3 +209,13 @@ export class DBOSConflictingWorkflowError extends DBOSError {
     super(`Conflicting workflow invocation with the same ID (${workflowID}): ${msg}`, ConflictingWorkflowError);
   }
 }
+
+const MaximumRetriesError = 23;
+export class DBOSMaxStepRetriesError extends DBOSError {
+  readonly errors;
+  constructor(stepName: string, maxRetries: number, errors: Error[]) {
+    const formattedErrors = errors.map((error, index) => `Error ${index + 1}: ${error.message}`).join('. ')
+    super(`Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${formattedErrors}`, MaximumRetriesError);
+    this.errors = errors;
+  }
+}
