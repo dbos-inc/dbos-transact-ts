@@ -5,7 +5,7 @@ import cors from "@koa/cors";
 import { HandlerContextImpl, HandlerRegistrationBase } from "./handler";
 import { ArgSources, APITypes } from "./handlerTypes";
 import { Transaction } from "../transaction";
-import { Workflow } from "../workflow";
+import { Workflow, StatusString } from "../workflow";
 import {
   DBOSDataValidationError,
   DBOSError,
@@ -205,6 +205,70 @@ export class DBOSHttpServer {
     router.get(DeactivateUrl, deactivateHandler);
     dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
   }
+
+  /**
+   * 
+   * Register Cancel Workflow endpoint.
+   * Cancels a workflow by setting its status to CANCELLED.
+   */
+
+
+  static registerCancelWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowCancelUrl = "/dbos-workflows/:workflow_id/cancel";
+    const workflowCancelHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      const workflowId = koaCtxt.params.workflow_id;
+      console.log(`Cancelling workflow with ID: ${workflowId}`);
+      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.CANCELLED, false);
+      await koaNext();
+    };
+    router.post(workflowCancelUrl, workflowCancelHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowCancelUrl}`);  
+  }
+
+  /**
+   * 
+   * Register Resume Workflow endpoint.
+   * Resume a workflow.
+   */
+
+
+  static registerResumeWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowResumeUrl = "/dbos-workflows/:workflow_id/resume";
+    const workflowResumeHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      const workflowId = koaCtxt.params.workflow_id;
+      console.log(`Resuming workflow with ID: ${workflowId}`);
+      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
+
+      await dbosExec.executeWorkflowUUID(workflowId, false);
+
+      await koaNext();
+    };
+    router.post(workflowResumeUrl, workflowResumeHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
+  }
+
+  /**
+   * 
+   * Register Restart Workflow endpoint.
+   * Restart a workflow.
+   */
+
+
+  static registerRestartWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowResumeUrl = "/dbos-workflows/:workflow_id/restart";
+    const workflowResumeHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      const workflowId = koaCtxt.params.workflow_id;
+      console.log(`Restarting workflow: ${workflowId} with a new id`);
+      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
+
+      await dbosExec.executeWorkflowUUID(workflowId, true);
+
+      await koaNext();
+    };
+    router.post(workflowResumeUrl, workflowResumeHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
+  }
+
 
   /**
    * Register decorated functions as HTTP endpoints.
