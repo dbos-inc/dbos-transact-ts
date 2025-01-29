@@ -89,6 +89,7 @@ export interface GetWorkflowQueueInput {
 export interface GetWorkflowQueueOutput {
   workflows: {
     workflowID: string; // Workflow ID
+    executorID?: string; // Workflow executor ID
     queueName: string; // Workflow queue name
     createdAt: number; // Time that queue entry was created
     startedAt?: number; // Time that workflow was started, if started
