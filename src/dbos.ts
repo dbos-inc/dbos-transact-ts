@@ -185,6 +185,7 @@ export class DBOS {
       DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
       process.exit(0);
+      return; // return for cases where process.exit is mocked 
     }
 
     DBOSExecutor.globalInstance.scheduler = new DBOSScheduler(DBOSExecutor.globalInstance);
