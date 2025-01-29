@@ -1795,13 +1795,24 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
         continue;
       }
-      this.logger.debug(`Recovering workflows of executor: ${execID}`);
+      this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
       const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
       // Re-enqueue workflows member of a queue
       for (const wID of wIDs) {
         const workflowStatus = await this.systemDatabase.getWorkflowStatus(wID); // This really sucks and we should be able to get more than an ID from getPendingWorkflows
+        this.logger.debug(`Recovering workflow: ${wID}. Workflow status: ${JSON.stringify(workflowStatus)}`);
         if (workflowStatus?.queueName) {
-          await this.systemDatabase.reEnqueueWorkflow(wID, this.#getQueueByName(workflowStatus.queueName));
+          try {
+            await this.systemDatabase.reEnqueueWorkflow(wID, this.#getQueueByName(workflowStatus.queueName));
+          } catch (e) {
+            // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
+            if (this.userDatabase.isRetriableTransactionError(e)) {
+              this.logger.warn(`Failed to re-enqueue workflow ${wID}: ${(e as Error).message}`);
+            } else {
+              throw e;
+            }
+            continue;
+          }
           continue;
         } else {
           pendingWorkflows.push(wID);
