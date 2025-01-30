@@ -222,7 +222,7 @@ export class DBOSHttpServer {
       const workflowId = koaCtxt.params.workflow_id;
       console.log(`Cancelling workflow with ID: ${workflowId}`);
       await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.CANCELLED, false);
-      await koaNext();
+      koaCtxt.status = 204;
     };
     router.post(workflowCancelUrl, workflowCancelHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowCancelUrl}`);  
@@ -244,7 +244,7 @@ export class DBOSHttpServer {
 
       await dbosExec.executeWorkflowUUID(workflowId, false);
 
-      await koaNext();
+      koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
@@ -262,11 +262,10 @@ export class DBOSHttpServer {
     const workflowResumeHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       const workflowId = koaCtxt.params.workflow_id;
       console.log(`Restarting workflow: ${workflowId} with a new id`);
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
 
       await dbosExec.executeWorkflowUUID(workflowId, true);
 
-      await koaNext();
+      koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
