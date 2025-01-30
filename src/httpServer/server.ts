@@ -65,6 +65,9 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRecoveryEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerPerfEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerDeactivateEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerCancelWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerResumeWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
