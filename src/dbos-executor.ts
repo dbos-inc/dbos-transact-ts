@@ -1,15 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Span } from '@opentelemetry/sdk-trace-base';
-import {
-  DBOSError,
-  DBOSInitializationError,
-  DBOSWorkflowConflictUUIDError,
-  DBOSNotRegisteredError,
-  DBOSDebuggerError,
-  DBOSConfigKeyTypeError,
-  DBOSFailedSqlTransactionError,
-  DBOSMaxStepRetriesError,
-} from './error';
+import { Span } from "@opentelemetry/sdk-trace-base";
+import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError, DBOSFailedSqlTransactionError, DBOSMaxStepRetriesError, DBOSWorkflowRecoveryError  } from "./error";
 import {
   InvokedHandle,
   Workflow,
@@ -1796,26 +1787,25 @@ export class DBOSExecutor implements DBOSExecutorContext {
         continue;
       }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
+      const foundPendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
       // Re-enqueue workflows member of a queue
-      for (const wID of wIDs) {
-        const workflowStatus = await this.systemDatabase.getWorkflowStatus(wID); // This really sucks and we should be able to get more than an ID from getPendingWorkflows
-        this.logger.debug(`Recovering workflow: ${wID}. Workflow status: ${JSON.stringify(workflowStatus)}`);
-        if (workflowStatus?.queueName) {
+      for (const pendingWorkflow of foundPendingWorkflows) {
+        this.logger.debug(`Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`)
+        if (pendingWorkflow.queueName) {
           try {
-            await this.systemDatabase.reEnqueueWorkflow(wID);
+            await this.systemDatabase.reEnqueueWorkflow(pendingWorkflow.workflowUUID);
           } catch (e) {
             // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
             if (this.userDatabase.isRetriableTransactionError(e)) {
-              this.logger.warn(`Failed to re-enqueue workflow ${wID}: ${(e as Error).message}`);
+              this.logger.warn(`Failed to re-enqueue workflow ${pendingWorkflow.workflowUUID}: ${(e as Error).message}`);
             } else {
-              throw e;
+              throw new DBOSWorkflowRecoveryError(pendingWorkflow.workflowUUID, (e as Error).message);
             }
             continue;
           }
           continue;
         } else {
-          pendingWorkflows.push(wID);
+          pendingWorkflows.push(pendingWorkflow.workflowUUID);
         }
       }
     }

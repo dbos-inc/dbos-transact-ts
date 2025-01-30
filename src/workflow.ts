@@ -97,6 +97,11 @@ export interface GetWorkflowQueueOutput {
   }[];
 }
 
+export interface GetPendingWorkflowsOutput {
+  workflowUUID: string;
+  queueName?: string;
+}
+
 export interface PgTransactionId {
   txid: string;
 }

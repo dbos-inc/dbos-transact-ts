@@ -1,22 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { deserializeError, serializeError } from 'serialize-error';
-import { DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
-import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
-import {
-  DBOSWorkflowConflictUUIDError,
-  DBOSNonExistentWorkflowError,
-  DBOSDeadLetterQueueError,
-  DBOSConflictingWorkflowError,
-} from './error';
-import {
-  GetWorkflowQueueInput,
-  GetWorkflowQueueOutput,
-  GetWorkflowsInput,
-  GetWorkflowsOutput,
-  StatusString,
-  WorkflowStatus,
-} from './workflow';
+import { deserializeError, serializeError } from "serialize-error";
+import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
+import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
+import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError, DBOSConflictingWorkflowError } from "./error";
+import { GetPendingWorkflowsOutput, GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
 import {
   notifications,
   operation_outputs,
@@ -47,7 +35,7 @@ export interface SystemDatabase {
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
-  getPendingWorkflows(executorID: string): Promise<Array<string>>;
+  getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
@@ -471,12 +459,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getPendingWorkflows(executorID: string): Promise<Array<string>> {
-    const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
-      [StatusString.PENDING, executorID],
+  async getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>> {
+    const { rows } = await this.pool.query<workflow_status>(`SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`, [
+      StatusString.PENDING,
+      executorID,
+    ]);
+    return rows.map(
+      (i) =>
+        <GetPendingWorkflowsOutput>{
+          workflowUUID: i.workflow_uuid,
+          queueName: i.queue_name,
+        }
     );
-    return rows.map((i) => i.workflow_uuid);
   }
 
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
