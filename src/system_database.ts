@@ -1239,25 +1239,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async reEnqueueWorkflow(workflowId: string): Promise<void> {
     const client: PoolClient = await this.pool.connect();
-    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
-    await client.query<workflow_queue>(
-      `
-      UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
-      SET started_at_epoch_ms = NULL, executor_id = NULL
-      WHERE workflow_uuid = $1;
-    `,
-      [workflowId]
-    );
-    await client.query<workflow_status>(
-      `
-      UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-      SET status = $2
-      WHERE workflow_uuid = $1;
-    `,
-      [workflowId, StatusString.ENQUEUED]
-    );
-    await client.query("COMMIT");
-    client.release();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await client.query<workflow_queue>(
+        `
+        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+        SET started_at_epoch_ms = NULL, executor_id = NULL
+        WHERE workflow_uuid = $1;
+      `,
+        [workflowId]
+      );
+      await client.query<workflow_status>(
+        `
+        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
+        SET status = $2, executor_id = NULL
+        WHERE workflow_uuid = $1;
+      `,
+        [workflowId, StatusString.ENQUEUED]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
