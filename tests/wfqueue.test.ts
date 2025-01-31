@@ -703,7 +703,7 @@ describe("queued-wf-tests-recovery", () => {
         expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
         // Unblock the two first workflows
-        await TestWFs.blockedWorkflowResolve?.();
+        TestWFs.blockedWorkflowResolve?.();
         expect(await wfh1.getResult()).toBe(null);
         expect(await wfh2.getResult()).toBe(null);
         // Now the third workflow should have been dequeeud and complete

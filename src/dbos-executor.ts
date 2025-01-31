@@ -1798,12 +1798,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
             // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
             if (this.userDatabase.isRetriableTransactionError(e)) {
               this.logger.warn(`Failed to re-enqueue workflow ${pendingWorkflow.workflowUUID}: ${(e as Error).message}`);
+              continue;
             } else {
               throw new DBOSWorkflowRecoveryError(pendingWorkflow.workflowUUID, (e as Error).message);
             }
-            continue;
           }
-          continue;
         } else {
           pendingWorkflows.push(pendingWorkflow.workflowUUID);
         }
