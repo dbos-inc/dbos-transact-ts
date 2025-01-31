@@ -639,7 +639,6 @@ describe("queued-wf-tests-recovery", () => {
 
     beforeEach(async () => {
         TestWFs.reset();
-        process.env["DBOS__VMID"] = "test-vmid-1";
         await DBOS.launch();
         systemDBClient = new Client({
             user: config.poolConfig.user,
@@ -654,7 +653,6 @@ describe("queued-wf-tests-recovery", () => {
     afterEach(async () => {
         await DBOS.shutdown();
         await systemDBClient.end();
-        delete process.env["DBOS__VMID"];
     }, 10000);
 
     test("queued-wf-recovery", async () => {
@@ -684,10 +682,10 @@ describe("queued-wf-tests-recovery", () => {
         const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
         expect(workflows.workflows.length).toBe(3);
         expect(workflows.workflows[2].workflowID).toBe(wfid1);
-        expect(workflows.workflows[2].executorID).toBe("test-vmid-1");
+        expect(workflows.workflows[2].executorID).toBe("local");
         expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
         expect(workflows.workflows[1].workflowID).toBe(wfid2);
-        expect(workflows.workflows[1].executorID).toBe("test-vmid-1");
+        expect(workflows.workflows[1].executorID).toBe("local");
         expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
         expect(workflows.workflows[0].workflowID).toBe(wfid3);
         expect(workflows.workflows[0].executorID).toBe(null);
@@ -708,9 +706,9 @@ describe("queued-wf-tests-recovery", () => {
         expect(await wfh2.getResult()).toBe(null);
         // Now the third workflow should have been dequeeud and complete
         expect(await wfh3.getResult()).toBe(null);
-        // (And executed by test-vmid-1)
+        // (And executed by local)
         const result = await systemDBClient.query("SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid = $1", [wfh3.workflowID]);
-        expect(result.rows).toEqual([{ executor_id: "test-vmid-1" }]);
+        expect(result.rows).toEqual([{ executor_id: "local" }]);
 
         TestWFs.blockedWorkflowPromise = undefined;
     }, 20000);
