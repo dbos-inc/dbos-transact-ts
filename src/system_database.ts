@@ -671,7 +671,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       let { rows } = await client.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
       if (rows.length > 0) {
         await client.query("ROLLBACK");
-        client.release();
         return;
       }
       ({ rows } = await client.query(
