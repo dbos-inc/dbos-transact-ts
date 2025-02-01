@@ -530,6 +530,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+      } else {
+        throw err;
       }
     }
   }
