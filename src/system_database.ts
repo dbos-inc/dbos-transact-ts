@@ -526,14 +526,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query<operation_outputs>(`INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`, [workflowUUID, functionID, DBOSJSON.stringify(output)]);
     } catch (error) {
-      await client.query("ROLLBACK");
-      client.release();
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "40001" || err.code === "23505") {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(workflowUUID);
-      } else {
-        throw err;
       }
     }
   }
@@ -563,16 +559,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const { rows } = await client.query<operation_outputs>(`SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`, [workflowUUID, functionID]);
       if (rows.length > 0) {
         await client.query("ROLLBACK");
-        client.release();
         return;
       }
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
         [destinationUUID, topic, DBOSJSON.stringify(message)]
       );
+      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
+      await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
-      client.release();
       const err: DatabaseError = error as DatabaseError;
       if (err.code === "23503") {
         // Foreign key constraint violation (only expected for the INSERT query)
@@ -580,11 +576,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else {
         throw err;
       }
-    }
-
-    await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
-    try {
-      await client.query("COMMIT");
     } finally {
       client.release();
     }
@@ -657,19 +648,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = DBOSJSON.parse(finalRecvRows[0].message) as T;
       }
+      await this.recordNotificationOutput(client, workflowUUID, functionID, message);
+      await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
-      client.release();
       throw e;
-    }
-
-    await this.recordNotificationOutput(client, workflowUUID, functionID, message);
-    try {
-      await client.query(`COMMIT`);
     } finally {
       client.release();
     }
+
     return message;
   }
 
@@ -692,16 +680,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
          RETURNING workflow_uuid;`,
         [workflowUUID, key, DBOSJSON.stringify(message)]
       ));
+      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
+      await client.query("COMMIT");
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
-      client.release();
       throw e;
-    }
-
-    await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
-    try {
-      await client.query("COMMIT");
     } finally {
       client.release();
     }
