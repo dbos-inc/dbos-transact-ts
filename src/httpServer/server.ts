@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow } from '../workflow';
+import { Workflow, StatusString } from "../workflow";
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -16,16 +16,15 @@ import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { runWithHandlerContext } from '../context';
-import { QueueParameters, wfQueueRunner } from '../wfqueue';
-export type QueueMetadataResponse = QueueParameters & { name: string };
+import { wfQueueRunner, QueueParameters } from "../wfqueue";
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
 export const HealthUrl = '/dbos-healthz';
 export const PerfUrl = '/dbos-perf';
 // FIXME this should be /dbos-deactivate to be consistent with other endpoints.
-export const DeactivateUrl = '/deactivate';
-export const WorkflowQueuesMetadataUrl = '/dbos-workflow-queues-metadata';
+export const DeactivateUrl = "/deactivate";
+export const WorkflowQueuesMetadataUrl = "/dbos-workflow-queues-metadata";
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -168,18 +167,19 @@ export class DBOSHttpServer {
    */
   static registerQueueMetadataEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const queueMetadataHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      const queueDetailsArray: QueueMetadataResponse[] = [];
-      wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
-        queueDetailsArray.push({
-          name: qn,
-          concurrency: q.concurrency,
-          workerConcurrency: q.workerConcurrency,
-          rateLimit: q.rateLimit,
+        type QueueMetadataResponse = QueueParameters & { name: string };
+        const queueDetailsArray: QueueMetadataResponse[] = [];
+        wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
+            queueDetailsArray.push({
+                name: qn,
+                concurrency: q.concurrency,
+                workerConcurrency: q.workerConcurrency,
+                rateLimit: q.rateLimit,
+            });
         });
-      });
-      koaCtxt.body = queueDetailsArray;
+        koaCtxt.body = queueDetailsArray;
 
-      await koaNext();
+        await koaNext();
     };
 
     router.get(WorkflowQueuesMetadataUrl, queueMetadataHandler);
@@ -251,6 +251,7 @@ export class DBOSHttpServer {
     const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      console.log(`Cancelling workflow with ID: ${workflowId}`);
       await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
@@ -268,7 +269,7 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/resume';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
+      console.log(`Resuming workflow with ID: ${workflowId}`);
       await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
@@ -448,7 +449,7 @@ export class DBOSHttpServer {
               koaCtxt.body = await (
                 await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
               ).getResult();
-            } else if (ro.stepConfig) {
+            } else if (ro.commConfig) {
               koaCtxt.body = await dbosExec.external(
                 ro.registeredFunction as StepFunction<unknown[], unknown>,
                 wfParams,
