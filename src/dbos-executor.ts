@@ -645,7 +645,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
       maxRetries: wCtxt.maxRecoveryAttempts,
-      recovery: params.recovery === true,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -1654,7 +1653,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (wfInfo) {
       return this.workflow(wfInfo.workflow, {
-        workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst, recovery: true,
+        workflowUUID: workflowStartUUID, parentCtx: parentCtx, configuredInstance: configuredInst,
         queueName: wfStatus.queueName, executeWorkflow: true,
       },
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -1715,7 +1714,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     return this.workflow(temp_workflow, {
       workflowUUID: workflowStartUUID, parentCtx: parentCtx ?? undefined, configuredInstance: clsinst,
-      recovery: true, tempWfType, tempWfClass, tempWfName,
+      tempWfType, tempWfClass, tempWfName,
     },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       ...inputs);
