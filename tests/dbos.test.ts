@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers"
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
 import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
-import { PoolClient } from "pg";
+import { PoolClient, Client } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { transaction_outputs } from "../schemas/user_db_schema";
 import { DBOSFailedSqlTransactionError } from "../src/error";
@@ -35,6 +35,27 @@ describe("dbos-tests", () => {
     const workflowHandle: WorkflowHandle<string> = await testRuntime.startWorkflow(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
+  });
+
+  test("simple-workflow-attempts-counter", async () => {
+    const systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    try {
+        await systemDBClient.connect();
+        const handle = await testRuntime.startWorkflow(DBOSTestClass).noopWorkflow()
+        for (let i = 0; i < 10; i++) {
+            await testRuntime.startWorkflow(DBOSTestClass, handle.getWorkflowUUID()).noopWorkflow();
+            let result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+            expect(result.rows[0].attempts).toBe(String(i + 2));
+        }
+    } finally {
+        await systemDBClient.end();
+    }
   });
 
   test("return-void", async () => {
@@ -364,5 +385,9 @@ class DBOSTestClass {
     return 0;
   }
 
+  @Workflow()
+  static async noopWorkflow(ctxt: WorkflowContext) {
+    return Promise.resolve();
+  }
 
 }

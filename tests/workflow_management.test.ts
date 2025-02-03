@@ -228,7 +228,7 @@ describe("workflow-management-tests", () => {
     expect(info).toEqual(getInfo);
   });
 
-  test.only("test-cancel-retry-restart", async () => {
+  test("test-cancel-retry-restart", async () => {
     TestEndpoints.tries = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     const handle = await testRuntime.startWorkflow(TestEndpoints).waitingWorkflow();
