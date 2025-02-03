@@ -51,16 +51,22 @@ async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: str
 
 export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
-  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
-  await systemDatabase.destroy();
+  try {
+  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest)
   return info;
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 // Cancelling a workflow prevents it from being automatically recovered, but active executions are not halted.
 export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
+  try {
   await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false)
-  await systemDatabase.destroy();
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSRuntimeConfig | null, workflowUUID: string, startNewWorkflow: boolean) {
@@ -68,12 +74,15 @@ export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSR
   if (runtimeConfig !== null) {
     await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
   }
-  await dbosExec.init();
-  if (!startNewWorkflow) {
-    await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+  try {
+    await dbosExec.init();
+    if (!startNewWorkflow) {
+      await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+    }
+    const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
+    const output = await handle.getResult();
+    return output;
+  } finally {
+    await dbosExec.destroy();
   }
-  const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
-  const output = await handle.getResult();
-  await dbosExec.destroy();
-  return output;
 }

@@ -263,7 +263,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
-    // Every time we init the status, we increment `recovery_attempts` by 1
+    // Every time we init the status, we increment `recovery_attempts` by 1.
     // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
     const attempts = resRow.recovery_attempts;
     if (attempts > initStatus.maxRetries) {
