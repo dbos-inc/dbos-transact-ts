@@ -52,7 +52,7 @@ async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: str
 export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
   try {
-  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest)
+    const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest)
   return info;
   } finally {
     await systemDatabase.destroy();
@@ -63,7 +63,7 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
 export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
   try {
-  await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false)
+    await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false)
   } finally {
     await systemDatabase.destroy();
   }
