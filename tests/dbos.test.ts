@@ -50,7 +50,7 @@ describe("dbos-tests", () => {
         const handle = await testRuntime.startWorkflow(DBOSTestClass).noopWorkflow()
         for (let i = 0; i < 10; i++) {
             await testRuntime.startWorkflow(DBOSTestClass, handle.getWorkflowUUID()).noopWorkflow();
-            let result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+            const result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
             expect(result.rows[0].attempts).toBe(String(i + 2));
         }
     } finally {
@@ -386,7 +386,7 @@ class DBOSTestClass {
   }
 
   @Workflow()
-  static async noopWorkflow(ctxt: WorkflowContext) {
+  static async noopWorkflow(_: WorkflowContext) {
     return Promise.resolve();
   }
 
