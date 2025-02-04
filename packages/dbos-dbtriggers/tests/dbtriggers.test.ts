@@ -1,19 +1,13 @@
-import { Knex } from "knex";
 import {
     createTestingRuntime,
     TestingRuntime,
-    Transaction,
-    TransactionContext,
-    Workflow,
-    WorkflowContext
+    DBOS,
 } from "@dbos-inc/dbos-sdk";
 import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
 
 const testTableName = "dbos_test_orders";
 
 function sleepms(ms: number) {return new Promise((r) => setTimeout(r, ms)); }
-
-type KnexTransactionContext = TransactionContext<Knex>;
 
 class DBOSTestNoClass {
 
@@ -56,9 +50,9 @@ class DBOSTriggerTestClass {
     }
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true})
-    @Workflow()
-    static async triggerWF(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        ctxt.logger.debug(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    @DBOS.workflow()
+    static async triggerWF(op: TriggerOperation, key: number[], rec: unknown) {
+        DBOS.logger.debug(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect(op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClass.wfRecordMap.set(key[0], rec as TestTable);
@@ -67,19 +61,19 @@ class DBOSTriggerTestClass {
         return Promise.resolve();
     }
 
-    @Transaction()
-    static async insertRecord(ctx: KnexTransactionContext, rec: TestTable) {
-        await ctx.client<TestTable>(testTableName).insert(rec);
+    @DBOS.transaction()
+    static async insertRecord(rec: TestTable) {
+        await DBOS.knexClient<TestTable>(testTableName).insert(rec);
     }
 
-    @Transaction()
-    static async deleteRecord(ctx: KnexTransactionContext, order_id: number) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).delete();
+    @DBOS.transaction()
+    static async deleteRecord(order_id: number) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).delete();
     }
 
-    @Transaction()
-    static async updateRecordStatus(ctx: KnexTransactionContext, order_id: number, status: string) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).update({status});
+    @DBOS.transaction()
+    static async updateRecordStatus(order_id: number, status: string) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).update({status});
     }
 }
 
@@ -121,7 +115,7 @@ describe("test-db-triggers", () => {
     });
 
     test("trigger-nonwf", async () => {
-        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
+        await DBOSTriggerTestClass.insertRecord({order_id: 1, order_date: new Date(), price: 10, item: "Spacely Sprocket", status:"Ordered"});
         while (DBOSTriggerTestClass.nInserts < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(1);
         expect(DBOSTriggerTestClass.recordMap.get(1)?.status).toBe("Ordered");
@@ -129,7 +123,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nWFUpdates).toBe(1);
         expect(DBOSTriggerTestClass.wfRecordMap.get(1)?.status).toBe("Ordered");
 
-        await testRuntime.invoke(DBOSTriggerTestClass).insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await DBOSTriggerTestClass.insertRecord({order_id: 2, order_date: new Date(), price: 10, item: "Cogswell Cog", status:"Ordered"});
         while (DBOSTriggerTestClass.nInserts < 2) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(0);
@@ -139,7 +133,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.nWFUpdates).toBe(2);
         expect(DBOSTriggerTestClass.wfRecordMap.get(2)?.status).toBe("Ordered");
 
-        await testRuntime.invoke(DBOSTriggerTestClass).deleteRecord(2);
+        await DBOSTriggerTestClass.deleteRecord(2);
         while (DBOSTriggerTestClass.nDeletes < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);
@@ -147,7 +141,7 @@ describe("test-db-triggers", () => {
         expect(DBOSTriggerTestClass.recordMap.get(2)?.status).toBeUndefined();
         expect(DBOSTriggerTestClass.nWFUpdates).toBe(2); // Workflow does not trigger on delete
 
-        await testRuntime.invoke(DBOSTriggerTestClass).updateRecordStatus(1, "Shipped");
+        await DBOSTriggerTestClass.updateRecordStatus(1, "Shipped");
         while (DBOSTriggerTestClass.nUpdates < 1) await sleepms(10);
         expect(DBOSTriggerTestClass.nInserts).toBe(2);
         expect(DBOSTriggerTestClass.nDeletes).toBe(1);

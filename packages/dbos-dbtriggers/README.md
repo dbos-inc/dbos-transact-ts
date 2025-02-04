@@ -37,11 +37,10 @@ This database trigger package supports workflow and non-workflow functions.  Wor
 
 #### Decorating Workflow Methods
 Workflow methods marked with `@DBTriggerWorkflow` will run in response to database records.  Workflows are guaranteed to run exactly once per record in the source database, provided that new records can be identified by querying the source table using simple predicates.  The workflow method must:
-* Be `async`, `static`, and decorated with `@Workflow`
-* Have the arguments `ctxt: WorkflowContext, op: TriggerOperation, key: unknown[], rec: unknown`
+* Be `async`, `static`, and decorated with `@DBOS.workflow`
+* Have the arguments `op: TriggerOperation, key: unknown[], rec: unknown`
 
 The decorator is `DBTriggerWorkflow(triggerConfig: DBTriggerConfig)`.  The parameters provided to each method invocation are:
-* `ctxt`: The [workflow context](https://docs.dbos.dev/typescript/reference/contexts#workflowcontext).
 * `op`: The operation (insert/update/delete) that occurred.
 * `key`: An array of record fields that have been extracted as the record key.  The list of fields extracted is controlled by the `DBTriggerConfig`.
 * `rec`: The new contents of the database record.
@@ -125,15 +124,15 @@ Alternatively, if source records are inserted or updated with a sequence number,
 The information above is always used by methods decorated with `@DBTriggerWorkflow`, for the formulation of catch-up queries.  If `useDBNotifications` and `installDBTrigger` are both false, the configuration will also be used to generate queries for polling the source table.  A query will be scheduled every `dbPollingInterval` milliseconds.
 
 #### Using Workflow Queues for Concurrency and Rate Limiting
-By default, `@DBTriggerWorkflow` workflows are started immediately upon receiving database updates.  If `queueName` is provided to the `DBTriggerConfig`, then the workflows will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/workflow-queues) and subject to rate limits.
+By default, `@DBTriggerWorkflow` workflows are started immediately upon receiving database updates.  If `queueName` is provided to the `DBTriggerConfig`, then the workflows will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues) and subject to rate limits.
 
 ## Using This Code As A Starting Point
 The `dbos-dbtriggers` package can be used as a starting point for a custom solution.  It is loosely broken into the following parts:
 * Decorators and configuration
-* An [event receiver](https://docs.dbos.dev/typescript/tutorials/custom-event-receiver), which handles the process of listening to the database and invoking workflows
+* An [event receiver](https://docs.dbos.dev/typescript/tutorials/requestsandevents/custom-event-receiver), which handles the process of listening to the database and invoking workflows
 * Tests, which perform database operations and ensure the trigger functions are executed under a variety of conditions, including system restarts.
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To learn how to create an application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/quickstart)
+- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

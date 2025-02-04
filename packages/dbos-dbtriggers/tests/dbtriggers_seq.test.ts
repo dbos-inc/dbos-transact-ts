@@ -1,12 +1,7 @@
-import { Knex } from "knex";
-
 import {
+    DBOS,
     createTestingRuntime,
     TestingRuntime,
-    Transaction,
-    TransactionContext,
-    Workflow,
-    WorkflowContext
 } from "@dbos-inc/dbos-sdk";
 
 import { DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
@@ -14,8 +9,6 @@ import { DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
 function sleepms(ms: number) {return new Promise((r) => setTimeout(r, ms)); }
 
 const testTableName = "dbos_test_trig_seq";
-
-type KnexTransactionContext = TransactionContext<Knex>;
 
 class DBOSTestNoClass {
 
@@ -37,9 +30,9 @@ class DBOSTriggerTestClassSN {
     }
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], sequenceNumColumn: 'seqnum', sequenceNumJitter: 2, installDBTrigger: true})
-    @Workflow()
-    static async triggerWFBySeq(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        ctxt.logger.debug(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    @DBOS.workflow()
+    static async triggerWFBySeq(op: TriggerOperation, key: number[], rec: unknown) {
+        DBOS.logger.debug(`WFSN ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], rec as TestTable);
@@ -49,9 +42,9 @@ class DBOSTriggerTestClassSN {
     }
 
     @DBTriggerWorkflow({tableName: testTableName, recordIDColumns: ['order_id'], timestampColumn: 'update_date', timestampSkewMS: 60000, installDBTrigger: true})
-    @Workflow()
-    static async triggerWFByTS(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        ctxt.logger.debug(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    @DBOS.workflow()
+    static async triggerWFByTS(op: TriggerOperation, key: number[], rec: unknown) {
+        DBOS.logger.debug(`WFTS ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             DBOSTriggerTestClassSN.tsRecordMap.set(key[0], rec as TestTable);
@@ -60,19 +53,19 @@ class DBOSTriggerTestClassSN {
         return Promise.resolve();
     }
 
-    @Transaction()
-    static async insertRecord(ctx: KnexTransactionContext, rec: TestTable) {
-        await ctx.client<TestTable>(testTableName).insert(rec);
+    @DBOS.transaction()
+    static async insertRecord(rec: TestTable) {
+        await DBOS.knexClient<TestTable>(testTableName).insert(rec);
     }
 
-    @Transaction()
-    static async deleteRecord(ctx: KnexTransactionContext, order_id: number) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).delete();
+    @DBOS.transaction()
+    static async deleteRecord(order_id: number) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).delete();
     }
 
-    @Transaction()
-    static async updateRecordStatus(ctx: KnexTransactionContext, order_id: number, status: string, seqnum: number, update_date: Date) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).update({status, seqnum, update_date});
+    @DBOS.transaction()
+    static async updateRecordStatus(order_id: number, status: string, seqnum: number, update_date: Date) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).update({status, seqnum, update_date});
     }
 }
 
@@ -116,16 +109,16 @@ describe("test-db-triggers", () => {
     });
 
     test("trigger-seqnum", async () => {
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
         while (DBOSTriggerTestClassSN.nSNUpdates < 2 || DBOSTriggerTestClassSN.nTSUpdates < 2) await sleepms(10);
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(2);
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(2);
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Packed");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Packed");
 
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
         while (DBOSTriggerTestClassSN.nSNUpdates < 4 || DBOSTriggerTestClassSN.nTSUpdates < 4) await sleepms(10);
         expect(DBOSTriggerTestClassSN.nSNUpdates).toBe(4);
         expect(DBOSTriggerTestClassSN.nTSUpdates).toBe(4);
@@ -139,12 +132,12 @@ describe("test-db-triggers", () => {
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 999, seqnum: -999, update_date: new Date('1900-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 999, seqnum: -999, update_date: new Date('1900-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
 
         // A few more valid records, back in time a little
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 3, seqnum: 4, update_date: new Date('2024-01-01 11:11:14'), price: 10, item: "Griswold Gear", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 4, seqnum: 6, update_date: new Date('2024-01-01 11:11:16'), price: 10, item: "Wallace Wheel", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(4, "Shipped", 7, new Date('2024-01-01 11:11:17'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 3, seqnum: 4, update_date: new Date('2024-01-01 11:11:14'), price: 10, item: "Griswold Gear", status:"Ordered"});
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 4, seqnum: 6, update_date: new Date('2024-01-01 11:11:16'), price: 10, item: "Wallace Wheel", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(4, "Shipped", 7, new Date('2024-01-01 11:11:17'));
 
         // Test restore
         console.log("************************************************** Restart *****************************************************");

@@ -1,14 +1,7 @@
-import { Knex } from "knex";
-
 import {
+    DBOS,
     createTestingRuntime,
-    Step,
-    StepContext,
     TestingRuntime,
-    Transaction,
-    TransactionContext,
-    Workflow,
-    WorkflowContext,
     WorkflowQueue
 } from "@dbos-inc/dbos-sdk";
 
@@ -17,8 +10,6 @@ import { DBTriggerWorkflow, TriggerOperation } from "../dbtrigger/dbtrigger";
 function sleepms(ms: number) {return new Promise((r) => setTimeout(r, ms)); }
 
 const testTableName = "dbos_test_trig_seq";
-
-type KnexTransactionContext = TransactionContext<Knex>;
 
 class DBOSTestNoClass {
 
@@ -49,16 +40,16 @@ class DBOSTriggerTestClassSN {
         queueName: q.name,
         dbPollingInterval: 1000
     })
-    @Workflow()
-    static async pollWFBySeq(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        ctxt.logger.debug(`WFSN Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    @DBOS.workflow()
+    static async pollWFBySeq(op: TriggerOperation, key: number[], rec: unknown) {
+        DBOS.logger.debug(`WFSN Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         const trec = rec as TestTable;
         if (!DBOSTriggerTestClassSN.snRecordMap.has(key[0]) ||
             trec.seqnum > DBOSTriggerTestClassSN.snRecordMap.get(key[0])!.seqnum)
         {
             DBOSTriggerTestClassSN.snRecordMap.set(key[0], trec);
-            await ctxt.invoke(DBOSTriggerTestClassSN).snUpdate();
+            await DBOSTriggerTestClassSN.snUpdate();
         }
         return Promise.resolve();
     }
@@ -70,9 +61,9 @@ class DBOSTriggerTestClassSN {
         timestampSkewMS: 60000,
         dbPollingInterval: 1000
     })
-    @Workflow()
-    static async pollWFByTS(ctxt: WorkflowContext, op: TriggerOperation, key: number[], rec: unknown) {
-        ctxt.logger.debug(`WFTS Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
+    @DBOS.workflow()
+    static async pollWFByTS(op: TriggerOperation, key: number[], rec: unknown) {
+        DBOS.logger.debug(`WFTS Poll ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
         expect (op).toBe(TriggerOperation.RecordUpserted);
         if (op === TriggerOperation.RecordUpserted) {
             const trec = rec as TestTable;
@@ -80,37 +71,37 @@ class DBOSTriggerTestClassSN {
                 trec.update_date > DBOSTriggerTestClassSN.tsRecordMap.get(key[0])!.update_date)
             {
                 DBOSTriggerTestClassSN.tsRecordMap.set(key[0], trec);
-                await ctxt.invoke(DBOSTriggerTestClassSN).tsUpdate();
+                await DBOSTriggerTestClassSN.tsUpdate();
             }
         }
         return Promise.resolve();
     }
 
-    @Step()
-    static async snUpdate(_ctx: StepContext) {
+    @DBOS.step()
+    static async snUpdate() {
         ++DBOSTriggerTestClassSN.nSNUpdates;
         return Promise.resolve();
     }
 
-    @Step()
-    static async tsUpdate(_ctx: StepContext) {
+    @DBOS.step()
+    static async tsUpdate() {
         ++DBOSTriggerTestClassSN.nTSUpdates;
         return Promise.resolve();
     }
 
-    @Transaction()
-    static async insertRecord(ctx: KnexTransactionContext, rec: TestTable) {
-        await ctx.client<TestTable>(testTableName).insert(rec);
+    @DBOS.transaction()
+    static async insertRecord(rec: TestTable) {
+        await DBOS.knexClient<TestTable>(testTableName).insert(rec);
     }
 
-    @Transaction()
-    static async deleteRecord(ctx: KnexTransactionContext, order_id: number) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).delete();
+    @DBOS.transaction()
+    static async deleteRecord(order_id: number) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).delete();
     }
 
-    @Transaction()
-    static async updateRecordStatus(ctx: KnexTransactionContext, order_id: number, status: string, seqnum: number, update_date: Date) {
-        await ctx.client<TestTable>(testTableName).where({order_id}).update({status, seqnum, update_date});
+    @DBOS.transaction()
+    static async updateRecordStatus(order_id: number, status: string, seqnum: number, update_date: Date) {
+        await DBOS.knexClient<TestTable>(testTableName).where({order_id}).update({status, seqnum, update_date});
     }
 }
 
@@ -154,8 +145,8 @@ describe("test-db-trigger-polling", () => {
     });
 
     test("dbpoll-seqnum", async () => {
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 1, seqnum: 1, update_date: new Date('2024-01-01 11:11:11'), price: 10, item: "Spacely Sprocket", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(1, "Packed", 2, new Date('2024-01-01 11:11:12'));
         while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Packed") await sleepms(10);
         while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Packed") await sleepms(10);
         while (DBOSTriggerTestClassSN.nSNUpdates < 1 || DBOSTriggerTestClassSN.nTSUpdates < 1) await sleepms(10);
@@ -168,8 +159,8 @@ describe("test-db-trigger-polling", () => {
         expect(DBOSTriggerTestClassSN.snRecordMap.get(1)?.status).toBe("Packed");
         expect(DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status).toBe("Packed");
 
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 2, seqnum: 3, update_date: new Date('2024-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(1, "Shipped", 5, new Date('2024-01-01 11:11:15'));
         while (DBOSTriggerTestClassSN.snRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
         while (DBOSTriggerTestClassSN.tsRecordMap.get(1)?.status !== "Shipped") await sleepms(10);
         while (DBOSTriggerTestClassSN.snRecordMap.get(2)?.status !== "Ordered") await sleepms(10);
@@ -185,12 +176,12 @@ describe("test-db-trigger-polling", () => {
 
         // Do more stuff
         // Invalid record, won't show up because it is well out of sequence
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 999, seqnum: -999, update_date: new Date('1900-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 999, seqnum: -999, update_date: new Date('1900-01-01 11:11:13'), price: 10, item: "Cogswell Cog", status:"Ordered"});
 
         // A few more valid records, back in time a little
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 3, seqnum: 4, update_date: new Date('2024-01-01 11:11:14'), price: 10, item: "Griswold Gear", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).insertRecord({order_id: 4, seqnum: 6, update_date: new Date('2024-01-01 11:11:16'), price: 10, item: "Wallace Wheel", status:"Ordered"});
-        await testRuntime.invoke(DBOSTriggerTestClassSN).updateRecordStatus(4, "Shipped", 7, new Date('2024-01-01 11:11:17'));
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 3, seqnum: 4, update_date: new Date('2024-01-01 11:11:14'), price: 10, item: "Griswold Gear", status:"Ordered"});
+        await DBOSTriggerTestClassSN.insertRecord({order_id: 4, seqnum: 6, update_date: new Date('2024-01-01 11:11:16'), price: 10, item: "Wallace Wheel", status:"Ordered"});
+        await DBOSTriggerTestClassSN.updateRecordStatus(4, "Shipped", 7, new Date('2024-01-01 11:11:17'));
 
         // Test restore
         console.log("************************************************** Restart *****************************************************");

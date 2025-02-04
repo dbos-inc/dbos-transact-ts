@@ -4,7 +4,6 @@ import {
     DBOSExecutorContext,
     DBNotification,
     DBNotificationListener,
-    WorkflowContext,
     WorkflowFunction,
     associateMethodWithEventReceiver,
 } from "@dbos-inc/dbos-sdk";
@@ -168,7 +167,7 @@ interface TriggerPayload {
 }
 
 export type TriggerFunction<Key extends unknown[]> = (op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
-export type TriggerFunctionWF<Key extends unknown[]> = (ctx: WorkflowContext, op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
+export type TriggerFunctionWF<Key extends unknown[]> = (op: TriggerOperation, key: Key, rec: unknown) => Promise<void>;
 
 class TriggerPayloadQueue
 {
@@ -646,10 +645,10 @@ export function DBTrigger(triggerConfig: DBTriggerConfig) {
 }
 
 export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerConfig) {
-    function trigdec<This, Ctx extends WorkflowContext, Return, Key extends unknown[]>(
+    function trigdec<This, Return, Key extends unknown[]>(
         target: object,
         propertyKey: string,
-        inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>>
+        inDescriptor: TypedPropertyDescriptor<(this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>>
     ) {
         if (!dbTrig) dbTrig = new DBOSDBTrigger();
         const {descriptor, receiverInfo} = associateMethodWithEventReceiver(dbTrig, target, propertyKey, inDescriptor);
