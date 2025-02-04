@@ -1,4 +1,4 @@
-import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime, DBOS } from "../src/";
+import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
