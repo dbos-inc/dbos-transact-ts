@@ -22,6 +22,7 @@ jobs:
           packages/dbos-cloud,
           packages/dbos-compiler,
           packages/dbos-confluent-kafka,
+          packages/dbos-dbtriggers,
           packages/dbos-kafkajs,
           packages/dbos-sqs,
         ]
